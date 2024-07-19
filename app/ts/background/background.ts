@@ -5,7 +5,7 @@ import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimu
 import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
@@ -24,7 +24,7 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
-import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
@@ -41,7 +41,13 @@ import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/Enri
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 
-async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsForEachTransaction: readonly EnrichedEthereumEvents[], inputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[]) {
+async function updateMetadataForSimulation(
+	simulationState: SimulationState,
+	ethereum: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
+	inputData: readonly EnrichedEthereumInputData[],
+) {
 	const settingsPromise = getSettings()
 	const settings = await settingsPromise
 	const allEvents = eventsForEachTransaction.flat()
@@ -51,13 +57,13 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereum, allEvents, addressBookEntries)
 	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
 	const namedTokenIds = await namedTokenIdPromises
-	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, inputData, protectorResults, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise })
 	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.currentRpcNetwork))
+	const ens = { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }
 	return {
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
-		simulatedAndVisualizedTransactions,
 		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
+		ens
 	}
 }
 
@@ -161,26 +167,47 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const eventsForEachTransactionPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum, requestAbortController)))
+	
+	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
+		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
+		if (wethAddr === undefined) return undefined
+		const entry = await identifyAddress(ethereum, requestAbortController, wethAddr)
+		if (entry.type !== 'ERC20') return undefined
+		return entry
+	}
+	const weth = await getWeth()
 	const parsedInputData = await Promise.all(transactions.map((transaction) => parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)))
-	const protectors = await protectorPromises
 	const eventsForEachTransaction = await eventsForEachTransactionPromise
-	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, parsedInputData, protectors)
-
+	
+	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
+	
+	const updatedMetadata = await updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, parsedInputData)
+	
+	const tokenPriceEstimates = weth === undefined ? [] : await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	const protectors = await protectorPromises
+	
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, parsedInputData, protectors, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth)
+	
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
-	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
-	const updatedMetadata = await updatedMetadataPromise
-	const weth = getWethForChainId(ethereum.getRpcEntry().chainId)
-	const tokenPrices = weth === undefined ? [] : await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
-	return { ...updatedMetadata, tokenPrices, eventsForEachTransaction, parsedInputData, protectors, simulationState }
+	return {
+		...updatedMetadata,
+		simulatedAndVisualizedTransactions,
+		tokenPriceEstimates,
+		tokenPriceQuoteToken: weth,
+		eventsForEachTransaction,
+		parsedInputData,
+		protectors,
+		simulationState,
+	}
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
 		try {
-			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.parsedInputData, prevState.protectors)
+			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.parsedInputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (error instanceof Error && isNewBlockAbort(error)) return prevState
@@ -213,7 +240,8 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 		const emptyDoneResults: CompleteVisualizedSimulation = {
 			...doneState,
 			addressBookEntries: [],
-			tokenPrices: [],
+			tokenPriceEstimates: [],
+			tokenPriceQuoteToken: undefined,
 			eventsForEachTransaction: [],
 			protectors: [],
 			namedTokenIds: [],

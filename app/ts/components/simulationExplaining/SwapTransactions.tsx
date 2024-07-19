@@ -1,10 +1,10 @@
-import { SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../types/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { addressString } from '../../utils/bigint.js'
-import { TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
+import { TokenAmount, TokenOrEthValue, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
-import { assertNever, getWithDefault } from '../../utils/typescript.js'
+import { assertNever } from '../../utils/typescript.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
@@ -29,17 +29,22 @@ const SwapAsset = funtypes.Union(
 		tokenIdName: funtypes.Union(funtypes.Undefined, funtypes.String),
 		beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
 	}),
-	funtypes.Intersect(
-		funtypes.Union(
-			funtypes.ReadonlyObject({ type: funtypes.Literal('ERC20'), token: Erc20TokenEntry }),
-			funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), token: Erc721Entry }),
-		),
-		funtypes.ReadonlyObject({
-			amount: EthereumQuantity,
-			tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
-			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
-		})
-	)
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ERC721'),
+		token: Erc721Entry,
+		amount: EthereumQuantity,
+		tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
+		beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ERC20'),
+		token: Erc20TokenEntry,
+		amount: EthereumQuantity,
+		tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
+		beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
+		tokenPriceEstimateQuoteToken: funtypes.Union(Erc20TokenEntry, funtypes.Undefined),
+		tokenPriceEstimate: funtypes.Union(TokenPriceEstimate,funtypes.Undefined),
+	})
 )
 
 export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
@@ -65,21 +70,26 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const aggregate = (logEntry: TokenVisualizerResultWithMetadata, toUs: boolean) => {
 		if (logEntry.isApproval) throw new Error('the log entry included an approval even thought it never should as we check it before')
 		const identifier = getUniqueSwapAssetIdentifier(logEntry)
-		const previousValue = getWithDefault(aggregatedAssets, identifier, {
-			...logEntry,
-			amount: 0n,
-			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
-			...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
-			beforeAfterBalance: undefined,
-		})
+		const perviousAmount = aggregatedAssets.get(identifier)?.amount ?? 0n
 		const multiplier = toUs ? 1n : -1n
-		aggregatedAssets.set(identifier, {
-			...logEntry,
-			amount: previousValue.amount + ('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
-			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
-			...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
-			beforeAfterBalance: undefined,
-		})
+		if (logEntry.type === 'ERC20') {
+			aggregatedAssets.set(identifier, {
+				...logEntry,
+				amount: perviousAmount + ('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
+				tokenId: undefined,
+				beforeAfterBalance: undefined,
+				tokenPriceEstimate: simTransaction.tokenPriceEstimates.find((tokenPrice) => tokenPrice.token.address === logEntry.token.address),
+				tokenPriceEstimateQuoteToken: simTransaction.tokenPriceQuoteToken,
+			})
+		} else {
+			aggregatedAssets.set(identifier, {
+				...logEntry,
+				amount: perviousAmount + ('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
+				tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
+				...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
+				beforeAfterBalance: undefined,
+			})
+		}
 	}
 
 	for (const logEntry of tokenEvents) {
@@ -107,7 +117,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			sendAsset: {
 				...sentToken.value,
 				amount: sentToken.value.amount * -1n,
-				beforeAfterBalance: sendBalanceAfter !== undefined ? { beforeBalance: sendBalanceAfter + sentToken.value.amount, afterBalance: sendBalanceAfter } : undefined
+				beforeAfterBalance: sendBalanceAfter !== undefined ? { beforeBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter } : undefined
 			},
 			receiveAsset: {
 				...receiveToken.value,
@@ -290,7 +300,19 @@ function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: S
 					</div>
 				</span>
 				<span class = 'grid swap-grid'>
-					<div class = 'log-cell'/>
+					<div style = { { display: 'flex', justifyContent: 'left' } }>
+						{ swapAsset.tokenPriceEstimate !== undefined && swapAsset.tokenPriceEstimateQuoteToken !== undefined ? <>
+							<p style = { balanceTextStyle }>(</p>
+							<TokenPrice
+								amount = { swapAsset.amount }
+								tokenPriceEstimate = { swapAsset.tokenPriceEstimate }
+								style = { balanceTextStyle }
+								quoteTokenEntry = { swapAsset.tokenPriceEstimateQuoteToken }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+							<p style = { balanceTextStyle }>)</p>
+						</> : <></> }
+					</div>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
@@ -306,7 +328,7 @@ function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: S
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {
-	if ( param.identifiedSwap === false ) return <></>
+	if (param.identifiedSwap === false) return <></>
 
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>

@@ -1,6 +1,6 @@
 import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
-import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
-import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate } from '../types/visualizer-types.js'
+import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { Interface } from 'ethers'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
@@ -71,7 +71,7 @@ const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNam
 	}
 }
 
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
@@ -133,6 +133,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
 			gasSpent: simulatedTx.ethSimulateV1CallResult.gasUsed,
 			quarantine: protectorResult.quarantine,
+			tokenPriceEstimates,
+			tokenPriceQuoteToken,
 			quarantineReasons: protectorResult.quarantineReasons,
 			...(simulatedTx.ethSimulateV1CallResult.status === 'failure'
 				? {

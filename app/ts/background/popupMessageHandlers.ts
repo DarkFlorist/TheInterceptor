@@ -190,6 +190,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			const ensNameHashesPromise = retrieveEnsNodeHashes(ethereumClientService, allEvents, addressBookEntries)
 			const namedTokenIds = await namedTokenIdsPromise
 			const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
+			const visualizedSimulatorState =  await visualizedSimulatorStatePromise
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
@@ -198,7 +199,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 						{ simulationResults: {
 							statusCode: 'success',
 							data: modifyObject(first.simulationResults.data, {
-								simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }),
+								simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }, visualizedSimulatorState.tokenPriceEstimates, visualizedSimulatorState.tokenPriceQuoteToken),
 								addressBookEntries,
 								eventsForEachTransaction,
 							})

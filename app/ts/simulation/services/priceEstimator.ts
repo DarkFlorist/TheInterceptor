@@ -4,7 +4,6 @@ import { EthereumClientService } from './EthereumClientService.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { calculatePricesFromUniswapLikeReturnData, calculateUniswapLikePools, constructUniswapLikeSpotCalls } from '../../utils/uniswap.js'
 import { addressString, stringToUint8Array } from '../../utils/bigint.js'
-import { identifyAddress } from '../../background/metadataUtils.js'
 import { Erc20TokenEntry } from '../../types/addressBookTypes.js'
 import { getWithDefault } from '../../utils/typescript.js'
 
@@ -60,12 +59,10 @@ export class TokenPriceService {
 		}
 	}
 
-	public async estimateEthereumPricesForTokens (requestAbortController: AbortController | undefined, quoteTokenAddress: bigint, tokens: TokenDecimals[]) : Promise<TokenPriceEstimate[]> {
+	public async estimateEthereumPricesForTokens (requestAbortController: AbortController | undefined, quoteToken: Erc20TokenEntry, tokens: TokenDecimals[]) : Promise<TokenPriceEstimate[]> {
 		if (tokens.length === 0) return []
 		this.cleanUpCacheIfNeeded()
-		const quoteToken = await identifyAddress(this.ethereumClientService, requestAbortController, quoteTokenAddress)
-		const quoteTokenAddressString = addressString(quoteTokenAddress)
-		if (quoteToken.type !== 'ERC20') return []
+		const quoteTokenAddressString = addressString(quoteToken.address)
 		const tokenPricePromises: Promise<TokenPriceEstimate | undefined>[] = tokens.map(async (token) => {
 			const tokenAddressString = addressString(token.address)
 			if (token.address === quoteToken.address) return { token, quoteToken, price: 10n ** quoteToken.decimals }

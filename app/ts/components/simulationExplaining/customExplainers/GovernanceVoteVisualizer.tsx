@@ -126,7 +126,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 				simulationConductedTimestamp: simulateExecutionReply.data.result.simulationState.simulationConductedTimestamp,
 				addressBookEntries: simulateExecutionReply.data.result.addressBookEntries,
 				rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
-				tokenPrices: simulateExecutionReply.data.result.tokenPrices,
+				tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
 				activeAddress: activeAddress,
 				simulatedAndVisualizedTransactions: simulateExecutionReply.data.result.simulatedAndVisualizedTransactions,
 				visualizedPersonalSignRequests: simulateExecutionReply.data.result.visualizedPersonalSignRequests,

@@ -121,7 +121,7 @@ export function App() {
 		const setSimulationState = (
 			simState: SimulationState | undefined,
 			addressBookEntries: AddressBookEntries,
-			tokenPrices: readonly TokenPriceEstimate[],
+			tokenPriceEstimates: readonly TokenPriceEstimate[],
 			simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
 			personalSignRequests: readonly VisualizedPersonalSignRequest[],
 			activeSimulationAddress: EthereumAddress | undefined,
@@ -136,7 +136,7 @@ export function App() {
 				simulatedAndVisualizedTransactions,
 				visualizedPersonalSignRequests: personalSignRequests,
 				rpcNetwork: simState.rpcNetwork,
-				tokenPrices,
+				tokenPriceEstimates,
 				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
@@ -158,7 +158,7 @@ export function App() {
 					setSimulationState(
 						data.visualizedSimulatorState.simulationState,
 						data.visualizedSimulatorState.addressBookEntries,
-						data.visualizedSimulatorState.tokenPrices,
+						data.visualizedSimulatorState.tokenPriceEstimates,
 						data.visualizedSimulatorState.simulatedAndVisualizedTransactions,
 						data.visualizedSimulatorState.visualizedPersonalSignRequests,
 						data.visualizedSimulatorState.activeAddress,

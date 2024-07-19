@@ -32,28 +32,32 @@ type Erc20BalanceChangeParams = {
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
-		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange) => (
-			<div class = 'vertical-center' style = 'display: flex'>
+		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange) => {
+			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
+			return <div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<TokenWithAmount
 						tokenEntry = { erc20TokenBalanceChange }
 						amount = { erc20TokenBalanceChange.changeAmount }
 						showSign = { true }
-						style = { { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor } }
+						style = { style }
 						useFullTokenName = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						fontSize = 'normal'
 					/>
+					
+					<p style = { style }>&nbsp;(</p>
 					<TokenPrice
 						amount = { erc20TokenBalanceChange.changeAmount }
 						tokenPriceEstimate = { erc20TokenBalanceChange.tokenPriceEstimate }
-						style = { { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor } }
+						style = { style }
 						quoteTokenEntry = { erc20TokenBalanceChange.tokenPriceEstimateQuoteToken }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
+					<p style = { style }>)</p>
 				</div>
 			</div>
-		))}
+		})}
 	</>
 }
 
@@ -487,7 +491,7 @@ type AccountChangesCardParams = {
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds)
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPriceEstimates, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.activeAddress)
 
@@ -648,7 +652,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices, param.simulationAndVisualisationResults.namedTokenIds)
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPriceEstimates, param.simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.activeAddress)
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
