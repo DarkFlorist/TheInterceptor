@@ -18,6 +18,7 @@ function listenContentScript(conectionName: string | undefined) {
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
 	const connectionNameNotUndefined = conectionName === undefined ? generateId(40) : conectionName
+	let connected = true
 	const extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
 
 	// forward all message events to the background script, which will then filter and process them
@@ -58,15 +59,18 @@ function listenContentScript(conectionName: string | undefined) {
 		}
 	})
 
-	extensionPort.onDisconnect.addListener(() => {
-		try {
+	extensionPort.onDisconnect.addListener(() => { connected = false })
+
+	// https://web.dev/articles/bfcache
+	globalThis.addEventListener('pageshow', () => {
+		checkAndThrowRuntimeLastError()
+		if (!connected) {
 			globalThis.removeEventListener('message', listener)
 			listenContentScript(connectionNameNotUndefined)
-			checkAndThrowRuntimeLastError()
-		} catch (error: unknown) {
-			console.error(error)
 		}
+		checkAndThrowRuntimeLastError()
 	})
+
 	try {
 		checkAndThrowRuntimeLastError()
 	} catch (error: unknown) {
