@@ -31,13 +31,13 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 		await func()
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		console.error(error)
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return
 		if (error instanceof Error && error.message?.includes('the message channel is closed')) {
 			// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
 			// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
 			return
 		}
+		console.error(error)
 		handleUnexpectedError(error)
 	}
 }
