@@ -1,4 +1,4 @@
-function listenContentScript(conectionName: string | undefined) {
+function listenContentScript(connectionName: string | undefined) {
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
@@ -17,13 +17,14 @@ function listenContentScript(conectionName: string | undefined) {
 		globalThis.crypto.getRandomValues(arr)
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
-	const connectionNameNotUndefined = conectionName === undefined ? generateId(40) : conectionName
-	let connected = true
-	const extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
+	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
+	let pageHidden = false
+	let extensionPort: browser.runtime.Port | undefined = undefined
 
 	// forward all message events to the background script, which will then filter and process them
 	// biome-ignore lint/suspicious/noExplicitAny: MessageEvent default signature
-	const listener = (messageEvent: MessageEvent<any>) => {
+	globalThis.addEventListener('message', (messageEvent: MessageEvent<any>) => {
+		if (extensionPort === undefined) return
 		try {
 			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
 			if (!('data' in messageEvent)) return
@@ -40,36 +41,46 @@ function listenContentScript(conectionName: string | undefined) {
 			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [error] } })
 			throw error
 		}
-	}
-	globalThis.addEventListener('message', listener)
-
-	// forward all messages we get from the background script to the window so the page script can filter and process them
-	extensionPort.onMessage.addListener(messageEvent => {
-		if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
-			console.error('Malformed message:')
-			console.error(messageEvent)
-			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [messageEvent] } })
-			return
-		}
-		try {
-			globalThis.postMessage(messageEvent, '*')
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			console.error(error)
-		}
 	})
 
-	extensionPort.onDisconnect.addListener(() => { connected = false })
+	const connect = () => {
+		if (extensionPort) extensionPort.disconnect()
+		extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
+
+		// forward all messages we get from the background script to the window so the page script can filter and process them
+		extensionPort.onMessage.addListener(messageEvent => {
+			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
+				console.error('Malformed message:')
+				console.error(messageEvent)
+				if (extensionPort === undefined) return
+				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [messageEvent] } })
+				return
+			}
+			try {
+				globalThis.postMessage(messageEvent, '*')
+				checkAndThrowRuntimeLastError()
+			} catch (error) {
+				console.error(error)
+			}
+		})
+
+		extensionPort.onDisconnect.addListener(() => { pageHidden = true })
+	}
+	connect()
 
 	// https://web.dev/articles/bfcache
-	globalThis.addEventListener('pageshow', () => {
-		checkAndThrowRuntimeLastError()
-		if (!connected) {
-			globalThis.removeEventListener('message', listener)
-			listenContentScript(connectionNameNotUndefined)
+	const bfCachePageShow = () => {
+		try {
+			checkAndThrowRuntimeLastError()
+			if (pageHidden) connect()
+			checkAndThrowRuntimeLastError()
+			pageHidden = false
+		} catch (error: unknown) {
+			console.error(error)
 		}
-		checkAndThrowRuntimeLastError()
-	})
+	}
+	globalThis.addEventListener('pageshow', () => bfCachePageShow(), false)
+	globalThis.addEventListener('pagehide', () => { pageHidden = true }, false)
 
 	try {
 		checkAndThrowRuntimeLastError()
