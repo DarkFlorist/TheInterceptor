@@ -81,7 +81,7 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	}
 }
 
-type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner' }
+type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
@@ -553,13 +553,37 @@ class InterceptorMessageListener {
 			const sendToSignerWithCatchError = async () => {
 				try {
 					const reply = await signerRequest({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
-					return { success: true, forwardRequest, reply }
+					return { success: true as const, forwardRequest, reply }
 				} catch(error: unknown) {
-					return { success: false, forwardRequest, error }
+					return { success: false as const, forwardRequest, error }
 				}
 			}
 			const signerReply = await sendToSignerWithCatchError()
 			try {
+				if ('replyWithSignersReply' in forwardRequest) {
+					if (signerReply.success) {
+						await this.handleReplyRequest({
+							requestId: forwardRequest.requestId,
+							interceptorApproved: true,
+							method: forwardRequest.method,
+							type: 'result',
+							result: signerReply.reply,
+						})
+						return
+					} else {
+						const pending = this.outstandingRequests.get(forwardRequest.requestId)
+						if (pending === undefined) throw new Error('Request did not exist anymore')
+						const error = signerReply.error
+						if (typeof error === 'object' && error !== null
+							&& 'code' in error && error.code !== undefined && typeof error.code === 'number'
+							&& 'message' in error && error.message !== undefined && typeof error.message === 'string'
+						) {
+							return pendingRequest.reject(new EthereumJsonRpcError(error.code, error.message, 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : undefined))
+						}
+						pending.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error }))
+						return
+					}
+				}
 				await this.sendMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
 			} catch(error: unknown) {
 				if (error instanceof Error) return pendingRequest.reject(error)
