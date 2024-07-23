@@ -164,6 +164,7 @@ export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.R
 	lastConnnectionAttempt: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
 	latestBlock: funtypes.Union(funtypes.Undefined, EthereumBlockHeader),
+	retrying: funtypes.Boolean,
 }))
 
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>

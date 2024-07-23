@@ -36,7 +36,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		return setIcon(ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
-	if (settings.currentRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, 'Interceptor is on an unsupported network and simulation mode is disabled.')
+	if (settings.currentRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, `The Interceptor is disabled while it's on an unsupported network`)
 	const tabState = await getTabState(tabId)
 	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }
@@ -47,7 +47,7 @@ export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) 
 
 export async function updateExtensionBadge() {
 	const connectionStatus = await getRpcConnectionStatus()
-	if ((connectionStatus?.isConnected === false || noNewBlockForOverTwoMins(connectionStatus)) && connectionStatus) {
+	if (connectionStatus?.isConnected === false || noNewBlockForOverTwoMins(connectionStatus) && connectionStatus && connectionStatus.retrying) {
 		const nextConnectionAttempt = new Date(connectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
 		if (nextConnectionAttempt.getTime() - new Date().getTime() > 0) {
 			await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
