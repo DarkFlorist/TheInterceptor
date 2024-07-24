@@ -9,7 +9,7 @@ import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
+import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackOldReply, GetSimulationStackReply } from './simulationStackTypes.js'
@@ -172,8 +172,7 @@ export const InterceptorMessageToInpage = funtypes.Intersect(
 
 export type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
 export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata'),
-	data: ConfirmTransactionDialogState
+	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata')
 }).asReadonly()
 
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
@@ -366,10 +365,10 @@ export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookData
 export const GetAddressBookDataFilter = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		filter: AddressBookCategory,
-		startIndex: funtypes.Number,
-		maxIndex: funtypes.Number,
 	}).asReadonly(),
 	funtypes.Partial({
+		startIndex: funtypes.Number,
+		maxIndex: funtypes.Number,
 		searchString: funtypes.String,
 	}).asReadonly()
 )
