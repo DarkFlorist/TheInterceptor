@@ -2,7 +2,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, TransactionStack } from '../types/visualizer-types.js'
 import { defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
@@ -277,5 +277,16 @@ export async function addEnsLabelHash(label: string) {
 		const oldEntries = await getEnsLabelHashes() || []
 		if (oldEntries.find((old) => old.labelHash === entry.labelHash)) return
 		return await browserStorageLocalSet({ ensLabelHashes: [...oldEntries, entry] })
+	})
+}
+
+const transactionStackSemaphore = new Semaphore(1)
+export const getTransactionStack = async () => (await browserStorageLocalGet('transactionStack'))?.transactionStack ?? { transactions: [], signedMessages: [] } 
+export async function updateTransactionStack(updateFunc: (prevStack: TransactionStack) => TransactionStack): Promise<TransactionStack> {
+	return await transactionStackSemaphore.execute(async () => {
+		const prevStack = await getTransactionStack()
+		const transactionStack = updateFunc(prevStack)
+		await browserStorageLocalSet({ transactionStack })
+		return transactionStack
 	})
 }

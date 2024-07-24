@@ -1,6 +1,6 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution, resetSimulatorStateFromConfig, simulateGnosisSafeMetaTransaction } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
-import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
@@ -12,9 +12,8 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meda
 import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsLabelHashes, retrieveEnsNodeHashes } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { refreshSimulationState, removeSignedMessageFromSimulation, removeTransactionAndUpdateTransactionNonces } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
-import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationState } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, ModifyAddressWindowState, PreSimulationTransaction, TransactionStack } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
@@ -129,18 +128,49 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 }
 
 export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
-	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, async (simulationState) => {
-		if (simulationState === undefined) return
-		if (params.data.type === 'Transaction') return await removeTransactionAndUpdateTransactionNonces(simulator.ethereum, simulationState, params.data.transactionIdentifier)
-		return await removeSignedMessageFromSimulation(simulator.ethereum, undefined, simulationState, params.data.messageIdentifier)
-	}, settings.activeSimulationAddress, true)
+	await updateTransactionStack((prevStack: TransactionStack) => {
+		switch(params.data.type) {
+			case 'Transaction': {
+				const transactionIdentifier = params.data.transactionIdentifier
+				const transactionToBeRemoved = prevStack.transactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
+				if (transactionToBeRemoved === undefined) return prevStack
+			
+				const newTransactions: PreSimulationTransaction[] = []
+				let transactionWasFound = false
+			
+				for (const transaction of prevStack.transactions) {
+					if (transactionIdentifier === transaction.transactionIdentifier) {
+						transactionWasFound = true
+						continue
+					}
+					const shouldUpdateNonce = transactionWasFound && transaction.signedTransaction.from === transactionToBeRemoved.signedTransaction.from
+					const newTransaction = modifyObject(transaction.signedTransaction, shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {})
+					newTransactions.push({
+						signedTransaction: newTransaction,
+						website: transaction.website,
+						created: transaction.created,
+						originalRequestParameters: transaction.originalRequestParameters,
+						transactionIdentifier: transaction.transactionIdentifier,
+					})
+				}
+				return { ...prevStack, transactions: newTransactions }
+			}
+			case 'SignedMessage': {
+				const messageIdentifier = params.data.messageIdentifier
+				const numberOfMessages = prevStack.signedMessages.length
+				const newSignedMessages = prevStack.signedMessages.filter((message) => message.messageIdentifier !== messageIdentifier)
+				if (numberOfMessages === newSignedMessages.length) return prevStack
+				return { ...prevStack, messages: newSignedMessages }
+			}
+			default: assertNever(params.data)
+		}
+	})
+	
+	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, true)
 }
 
-export async function refreshSimulation(simulator: Simulator, settings: Settings, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean): Promise<SimulationState | undefined> {
-	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, async (simulationState) => {
-		if (simulationState === undefined) return
-		return await refreshSimulationState(simulator.ethereum, undefined, simulationState)
-	}, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
+export async function refreshSimulation(simulator: Simulator, settings: Settings, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean) {
+	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
@@ -396,7 +426,7 @@ export async function setNewRpcList(simulator: Simulator, request: SetRpcList, s
 	const primary = await getPrimaryRpcForChain(settings.currentRpcNetwork.chainId)
 	if (primary !== undefined) {
 		// reset to primary on update
-		simulator?.reset(primary)
+		simulator.reset(primary)
 	}
 }
 

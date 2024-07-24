@@ -6,6 +6,12 @@ export function areEqualUint8Arrays(first?: Uint8Array, second?: Uint8Array) {
 	return first.every((value, index) => value === second[index])
 }
 
+export function areEqualArrays<T>(first: T[], second: T[]) {
+	if (first === second) return true
+	if (first.length !== second.length) return false
+	return first.every((value, index) => value === second[index])
+}
+
 export function stripLeadingZeros(byteArray: Uint8Array): Uint8Array {
 	let i = 0
 	for (; i < byteArray.length; ++i) {

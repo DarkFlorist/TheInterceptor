@@ -172,8 +172,8 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
 
 	for (const tx of simulationState.simulatedTransactions) {
-		addressesToFetchMetadata.push(tx.signedTransaction.from)
-		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
+		addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
+		if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
 	}
 
 	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
