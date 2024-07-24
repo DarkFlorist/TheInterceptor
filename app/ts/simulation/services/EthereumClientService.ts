@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
-import { BlockCalls, ethSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
+import { BlockCalls, EthSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
@@ -197,7 +197,7 @@ export class EthereumClientService {
 		console.log(stringifyJSONWithBigInts(unvalidatedResult))
 		console.log('end')
 		*/
-		return ethSimulateV1Result.parse(unvalidatedResult)
+		return EthSimulateV1Result.parse(unvalidatedResult)
 	}
 
 	public readonly simulateTransactionsAndSignatures = async (transactions: readonly OptionalEthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, requestAbortController: AbortController | undefined, extraAccountOverrides: StateOverrides = {}) => {

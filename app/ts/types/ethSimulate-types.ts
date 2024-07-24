@@ -118,8 +118,8 @@ export const EthSimulateV1CallResult = funtypes.Union(EthSimulateCallResultFailu
 export type EthSimulateV1CallResults = funtypes.Static<typeof EthSimulateV1CallResults>
 export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1CallResult)
 
-type ethSimulateV1BlockResult = funtypes.Static<typeof ethSimulateV1BlockResult>
-const ethSimulateV1BlockResult = funtypes.ReadonlyObject({
+type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
+const EthSimulateV1BlockResult = funtypes.ReadonlyObject({
     number: EthereumQuantity,
     hash: EthereumBytes32,
     timestamp: EthereumQuantity,
@@ -129,5 +129,5 @@ const ethSimulateV1BlockResult = funtypes.ReadonlyObject({
     calls: EthSimulateV1CallResults,
 })
 
-export type ethSimulateV1Result = funtypes.Static<typeof ethSimulateV1Result>
-export const ethSimulateV1Result = funtypes.ReadonlyArray(ethSimulateV1BlockResult)
+export type EthSimulateV1Result = funtypes.Static<typeof EthSimulateV1Result>
+export const EthSimulateV1Result = funtypes.ReadonlyArray(EthSimulateV1BlockResult)
