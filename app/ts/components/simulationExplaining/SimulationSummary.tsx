@@ -45,16 +45,17 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 						renameAddressCallBack = { param.renameAddressCallBack }
 						fontSize = 'normal'
 					/>
-					
-					<p style = { style }>&nbsp;(</p>
-					<TokenPrice
-						amount = { erc20TokenBalanceChange.changeAmount }
-						tokenPriceEstimate = { erc20TokenBalanceChange.tokenPriceEstimate }
-						style = { style }
-						quoteTokenEntry = { erc20TokenBalanceChange.tokenPriceEstimateQuoteToken }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
-					<p style = { style }>)</p>
+					{ erc20TokenBalanceChange.tokenPriceEstimate !== undefined && erc20TokenBalanceChange.tokenPriceEstimateQuoteToken !== undefined ? <>
+						<p style = { style }>&nbsp;(</p>
+						<TokenPrice
+							amount = { erc20TokenBalanceChange.changeAmount }
+							tokenPriceEstimate = { erc20TokenBalanceChange.tokenPriceEstimate }
+							style = { style }
+							quoteTokenEntry = { erc20TokenBalanceChange.tokenPriceEstimateQuoteToken }
+							renameAddressCallBack = { param.renameAddressCallBack }
+						/>
+						<p style = { style }>)</p>
+					</> : <></> }
 				</div>
 			</div>
 		})}
