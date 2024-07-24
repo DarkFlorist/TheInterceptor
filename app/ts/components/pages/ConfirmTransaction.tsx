@@ -413,9 +413,8 @@ export function ConfirmTransaction() {
 		} })
 	}
 	const refreshMetadata = async () => {
-		if (currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.type !== 'Transaction' || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return
-		if (currentPendingTransactionOrSignableMessage.simulationResults === undefined || currentPendingTransactionOrSignableMessage.simulationResults.statusCode === 'failed') return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata', data: currentPendingTransactionOrSignableMessage.simulationResults.data })
+		if (currentPendingTransactionOrSignableMessage === undefined) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata'})
 	}
 	const refreshSimulation = async () => {
 		if (currentPendingTransactionOrSignableMessage === undefined) return
