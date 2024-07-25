@@ -5,7 +5,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcNetwork } from '../types/rpc.js'
-import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
@@ -92,21 +92,22 @@ const wethForChainId = new Map<string, EthereumAddress>([
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
 export async function getSettings() : Promise<Settings> {
-	const results = await browserStorageLocalGet([
+	const resultsPromise = browserStorageLocalGet([
 		'activeSimulationAddress',
 		'openedPageV2',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
-		'currentRpcNetwork',
 		'simulationMode',
 	])
+	const currentRpcNetwork = await browserStorageLocalSafeParseGet('currentRpcNetwork')
+	const results = await resultsPromise
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	return {
 		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultActiveAddresses[0].address,
 		openedPage: results.openedPageV2 ?? { page: 'Home' },
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
-		currentRpcNetwork: results.currentRpcNetwork !== undefined ? results.currentRpcNetwork : defaultRpcs[0],
+		currentRpcNetwork: currentRpcNetwork?.currentRpcNetwork !== undefined ? currentRpcNetwork.currentRpcNetwork : defaultRpcs[0],
 		simulationMode: results.simulationMode ?? true,
 	}
 }
