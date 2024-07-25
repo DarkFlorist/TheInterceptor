@@ -56,8 +56,8 @@ export const BlockCalls = funtypes.Intersect(
 	})
 )
 
-export type ethSimulateV1ParamObject = funtypes.Static<typeof ethSimulateV1ParamObject>
-const ethSimulateV1ParamObject = funtypes.ReadonlyObject({
+export type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
+const EthSimulateV1ParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
 	validation: funtypes.Boolean,
@@ -66,7 +66,7 @@ const ethSimulateV1ParamObject = funtypes.ReadonlyObject({
 export type EthSimulateV1Params = funtypes.Static<typeof EthSimulateV1Params>
 export const EthSimulateV1Params = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_simulateV1'),
-	params: funtypes.ReadonlyTuple(ethSimulateV1ParamObject, EthereumBlockTag),
+	params: funtypes.ReadonlyTuple(EthSimulateV1ParamObject, EthereumBlockTag),
 })
 
 export type EthereumEvent = funtypes.Static<typeof EthereumEvent>
