@@ -53,7 +53,10 @@ body { font-family: "Inter" !important; }
 	--alpha-005: rgba(255, 255, 255, 0.05);
 	--alpha-015: rgba(255, 255, 255, 0.15);
 
-	--modal-background-color: rgba(10, 10, 10, .7)
+	--modal-background-color: rgba(10, 10, 10, .7);
+
+	--big-font-size: 28px;
+	--normal-font-size: 14px;
 }
 
 button:where(:not(.btn)) {
