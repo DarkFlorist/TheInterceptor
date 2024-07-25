@@ -8,4 +8,5 @@ export const SignerName = funtypes.Union(
 	funtypes.Literal('Brave'),
 	funtypes.Literal('CoinbaseWallet'),
 	funtypes.Literal('NoSignerDetected'),
+	funtypes.Literal('OKX Wallet'),
 )

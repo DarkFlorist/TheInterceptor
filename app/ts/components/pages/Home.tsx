@@ -5,7 +5,7 @@ import { ActiveAddressComponent, WebsiteOriginText, getActiveAddressEntry } from
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
-import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
+import { SignerLogoText, SignersLogoName, getSignerNameAndLogo } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -35,7 +35,7 @@ function SignerExplanation(param: SignerExplanationParams) {
 		if (param.tabState.signerName === 'NoSignerDetected' || param.tabState.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
 	}
-	return <ErrorComponent text = { `No account connected (or wallet is locked) in ${ param.tabState.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.signerName) }.` }/>
+	return <ErrorComponent text = { `No account connected (or wallet is locked) in ${ param.tabState.signerName === 'NoSigner' ? 'signer' : getSignerNameAndLogo(param.tabState.signerName).name }.` }/>
 }
 
 function FirstCardHeader(param: FirstCardParams) {
@@ -126,11 +126,11 @@ function FirstCard(param: FirstCardParams) {
 							<button className = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
 								<SignerLogoText
 									signerName = { param.tabState.signerName }
-									text = { `Connect to ${ getPrettySignerName(param.tabState.signerName) }` }
+									text = { `Connect to ${ getSignerNameAndLogo(param.tabState.signerName).name }` }
 								/>
 							</button>
 						</div>
-						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
+						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getSignerNameAndLogo(param.tabState?.signerName ?? 'NoSignerDetected').name }` } </p>
 					}
 				</> : <div style = 'display: flex; justify-content: space-between; padding-top: 10px'>
 					<label class = 'form-control'>

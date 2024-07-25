@@ -8,12 +8,12 @@ import Hint from '../subcomponents/Hint.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { getPrettySignerName } from '../subcomponents/signers.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
 import { Page } from '../../types/exportedSettingsTypes.js'
+import { getSignerNameAndLogo } from '../subcomponents/signers.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
@@ -125,7 +125,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 									buttonText = { 'Refresh' }
 								/>
 								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
-									{ `You can change active address by changing it directly from ${ getPrettySignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
+									{ `You can change active address by changing it directly from ${ getSignerNameAndLogo(accessRequest.signerName).name } and clicking refresh here afterwards` }
 								</p>
 							</>
 						}

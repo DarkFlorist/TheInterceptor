@@ -1,6 +1,12 @@
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from './wire-types.js'
 
+export type NetworkType = funtypes.Static<typeof NetworkType>
+export const NetworkType = funtypes.Union(
+	funtypes.Literal('Ethereum'),
+	funtypes.Literal('OptimismLike'),
+)
+
 export type RpcEntry = funtypes.Static<typeof RpcEntry>
 export const RpcEntry = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -14,6 +20,7 @@ export const RpcEntry = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({	
 		currencyLogoUri: funtypes.String,
+		networkType: NetworkType
 	})
 )
 
@@ -29,6 +36,8 @@ export const RpcNetwork = funtypes.Union(
 		name: funtypes.String,
 		currencyName: funtypes.Literal('Ether?'),
 		currencyTicker: funtypes.Literal('ETH?'),
+		primary: funtypes.Literal(false),
+		minimized: funtypes.Literal(true),
 	})
 )
 

@@ -132,9 +132,12 @@ type UnsupportedWindowEthereumMethods = {
 type WindowEthereum = InjectFunctions & {
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
+	isOkxWallet?: boolean,
 	isInterceptor?: boolean,
 	providerMap?: Map<string, WindowEthereum>, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
 	isCoinbaseWallet?: boolean,
+
+	target?: WindowEthereum
 
 	// for metamask compatibility mode
 	selectedAddress?: string | null,
@@ -160,7 +163,7 @@ interface EIP6963ProviderInfo {
 type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
-type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
+type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet' | 'OKX Wallet'
 
 class InterceptorMessageListener {
 	private connected = false
@@ -672,8 +675,9 @@ class InterceptorMessageListener {
 
 	public readonly injectEthereumIntoWindow = () => {
 		if (!('ethereum' in window) || !window.ethereum) {
+			console.log('first inject')
 			// no existing signer found
-			window.ethereum = {
+			const interceptorObject = {
 				isInterceptor: true,
 				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
 				request: this.WindowEthereumRequest.bind(window.ethereum),
@@ -684,6 +688,7 @@ class InterceptorMessageListener {
 				enable: this.WindowEthereumEnable.bind(window.ethereum),
 				...this.unsupportedMethods(window.ethereum),
 			}
+			Object.defineProperty(window, 'ethereum', { value: interceptorObject, writable: false, configurable: false })
 			this.connected = true
 			this.connectToSigner('NoSigner')
 			return
@@ -709,24 +714,39 @@ class InterceptorMessageListener {
 		this.connected = !window.ethereum.isConnected || window.ethereum.isConnected()
 		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
 
-		if (window.ethereum.isBraveWallet || window.ethereum.providerMap || window.ethereum.isCoinbaseWallet) {
-			const signerName = window.ethereum.providerMap || window.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
-			const oldWinEthereum = (window.ethereum.providerMap ? window.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? window.ethereum
+		const identifySigner = () => {
+			if (window.ethereum === undefined) return 'NoSigner'
+			if (window.ethereum.isBraveWallet || window.ethereum.target?.isBraveWallet) return 'Brave'
+			if (window.ethereum.isOkxWallet || window.ethereum.target?.isOkxWallet) return 'OKX Wallet'
+			if (window.ethereum.isCoinbaseWallet || window.ethereum.target?.isCoinbaseWallet) return 'CoinbaseWallet'
+			if (window.ethereum.isMetaMask || window.ethereum.target?.isMetaMask) return 'MetaMask'
+			return 'NotRecognizedSigner'
+		}
+		const signerName = identifySigner()
+		console.log('isinterceptor:', window.ethereum.isInterceptor)
+		console.log(signerName)
+
+		if (signerName !== 'MetaMask' && signerName != 'NotRecognizedSigner') {
+			console.log('innj!')
+			const oldEthereum = (window.ethereum.providerMap ? window.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? window.ethereum
+			const provider = 'target' in window.ethereum ? window.ethereum.target : oldEthereum
 			window.ethereum = {
 				isInterceptor: true,
-				isConnected: this.WindowEthereumIsConnected.bind(oldWinEthereum),
-				request: this.WindowEthereumRequest.bind(oldWinEthereum),
-				send: this.WindowEthereumSend.bind(oldWinEthereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(oldWinEthereum),
-				on: this.WindowEthereumOn.bind(oldWinEthereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(oldWinEthereum),
-				enable: this.WindowEthereumEnable.bind(oldWinEthereum),
-				...this.unsupportedMethods(oldWinEthereum),
+				isConnected: this.WindowEthereumIsConnected.bind(provider),
+				request: this.WindowEthereumRequest.bind(provider),
+				send: this.WindowEthereumSend.bind(provider),
+				sendAsync: this.WindowEthereumSendAsync.bind(provider),
+				on: this.WindowEthereumOn.bind(provider),
+				removeListener: this.WindowEthereumRemoveListener.bind(provider),
+				enable: this.WindowEthereumEnable.bind(provider),
+				...this.unsupportedMethods(provider),
 			}
+		}
+		if (window.ethereum.isInterceptor) {
 			this.connectToSigner(signerName)
 			return
 		}
-		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
+		console.log('assign!')
 		Object.assign(window.ethereum, {
 			isInterceptor: true,
 			isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
@@ -738,7 +758,7 @@ class InterceptorMessageListener {
 			enable: this.WindowEthereumEnable.bind(window.ethereum),
 			...this.unsupportedMethods(window.ethereum),
 		})
-		this.connectToSigner(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
+		this.connectToSigner(signerName)
 	}
 }
 
@@ -746,15 +766,17 @@ function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onMessage)
 	window.dispatchEvent(new Event('ethereum#initialized'))
+	window.dispatchEvent(new Event('wallet-standard:register-wallet'))
 
 	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor
 	const interceptorCapturedDispatcher = window.dispatchEvent
 	window.dispatchEvent = (event: Event) => {
 		interceptorCapturedDispatcher(event)
+		console.log(event)
 		if (!(typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string')) return true
-		if (event.type !== 'ethereum#initialized') return true
+		if (event.type !== 'ethereum#initialized' && event.type !== 'wallet-standard:register-wallet') return true
+		console.log('inject!')
 		interceptorMessageListener.injectEthereumIntoWindow()
-		window.dispatchEvent = interceptorCapturedDispatcher
 		return true
 	}
 }

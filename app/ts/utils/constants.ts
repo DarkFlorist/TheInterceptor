@@ -155,6 +155,7 @@ export const GAS_PER_BLOB = 2n**17n
 export const METAMASK_LOGO = '../img/signers/metamask.svg'
 export const BRAVE_LOGO = '../img/signers/brave.svg'
 export const COINBASEWALLET_LOGO = '../img/signers/coinbasewallet.svg'
+export const OKX_WALLET_LOGO = '../img/signers/OKX_Logo.svg'
 
 export function getChainName(chainId: bigint) { return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${chainId.toString()}` }
 

@@ -1,4 +1,3 @@
-import { getPrettySignerName } from '../components/subcomponents/signers.js'
 import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
@@ -10,6 +9,7 @@ import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVa
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, safeGetTab } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
+import { getSignerNameAndLogo } from '../components/subcomponents/signers.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
@@ -38,7 +38,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
 	if (settings.currentRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, 'Interceptor is on an unsupported network and simulation mode is disabled.')
 	const tabState = await getTabState(tabId)
-	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
+	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getSignerNameAndLogo(tabState.signerName).name } once sent.`)
 }
 
 export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {
