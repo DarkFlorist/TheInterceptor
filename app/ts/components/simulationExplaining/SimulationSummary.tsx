@@ -796,7 +796,24 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 									</ViewSelector.List>
 									<ViewSelector.Triggers />
 								</>
-							) : <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> }
+							) : <>
+								<ViewSelector.List>
+									<ViewSelector.View title = 'View Parsed' value = 'parsed'> 
+									<div style = 'display: flex;'>
+										{ transaction.to !== undefined ? <>
+ 											<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;</p>
+												<SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } />
+										</> : <>
+											<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
+										</> }
+									</div>
+									</ViewSelector.View>
+									<ViewSelector.View title = 'View Raw' value = 'raw'>
+										<pre>{ dataStringWith0xStart(transaction.input) }</pre>
+									</ViewSelector.View>
+								</ViewSelector.List>
+								<ViewSelector.Triggers />
+							</> }
 						</ViewSelector>
 					</div>
 				</div>
