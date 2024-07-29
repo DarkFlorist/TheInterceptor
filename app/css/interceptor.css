@@ -558,33 +558,28 @@ svg.spinner > circle {
 	grid-auto-columns: auto;
 	grid-auto-flow: column;
 	width: 100%;
-	margin: 0 0.2em;
 }
 
 .log-table {
 	display: grid;
 	grid-template-columns: max-content auto auto auto auto;
 	width: 100%;
-	margin: 0 0.2em;
 }
 
 .log-table-4 {
 	display: grid;
 	grid-template-columns: max-content auto auto auto;
 	width: 100%;
-	margin: 0 0.2em;
 }
 .log-table-3 {
 	display: grid;
 	grid-template-columns: max-content auto auto;
 	width: 100%;
-	margin: 0 0.2em;
 }
 .log-table-1 {
 	display: grid;
 	grid-template-columns: auto;
 	width: 100%;
-	margin: 0 0.2em;
 }
 
 .log-cell {

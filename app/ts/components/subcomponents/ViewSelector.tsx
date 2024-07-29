@@ -28,7 +28,6 @@ export const ViewSelector = ({ children, id }: { children: ComponentChildren, id
 	)
 }
 
-
 const useViewSwitcher = () => {
 	const context = useContext(ViewSelectorContext)
 	if (context === undefined) throw new Error('useViewSwitcher can only be used within children of DisplayRoot')

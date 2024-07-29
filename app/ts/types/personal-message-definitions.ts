@@ -364,6 +364,7 @@ const PersonalSignRequestBase = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	rawMessage: funtypes.String,
+	stringifiedMessage: funtypes.String,
 	messageIdentifier: EthereumQuantity,
 })
 
