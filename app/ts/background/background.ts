@@ -425,7 +425,7 @@ async function handleRPCRequest(
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, unknownMethod: true, ...request }
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {
 			type: 'result' as const,
 			method: request.method,
@@ -435,6 +435,10 @@ async function handleRPCRequest(
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
 		}
+	}
+	if (settings.currentRpcNetwork.httpsRpc === undefined && forwardToSigner) {
+		// we are using network that is not supported by us
+		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
 	const parsedRequest = maybeParsedRequest.value
 	makeSureInterceptorIsNotSleeping(simulator.ethereum)
