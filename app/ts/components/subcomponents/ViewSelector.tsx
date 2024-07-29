@@ -1,5 +1,5 @@
-import { Signal, useComputed, useSignal } from '@preact/signals'
-import { ComponentChildren, createContext } from 'preact'
+import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { ComponentChildren, createContext, toChildArray } from 'preact'
 import { useContext, useEffect } from 'preact/hooks'
 
 type ViewConfig = {
@@ -35,21 +35,28 @@ const useViewSwitcher = () => {
 }
 
 const List = ({ children }: { children: ComponentChildren }) => {
+	const { views } = useViewSwitcher()
+
+	const isActiveViewDefined = useComputed(() => views.value.some(view => view.isActive === true)) 
+	const hasAllChildrenRendered = useComputed(() => toChildArray(children).length === views.value.length)
+
+	useSignalEffect(() => {
+		if (!hasAllChildrenRendered.value || isActiveViewDefined.value) return
+		const [firstChild, ...restOfChildren] = views.peek()
+		if (firstChild === undefined) return
+		views.value = [{ ...firstChild, isActive: true }, ...restOfChildren]
+	})
+
 	return <div>{ children }</div>
 }
 
-const View = ({ children, title, value }: ViewConfig & { children: ComponentChildren }) => {
+const View = ({ children, title, value, isActive }: ViewConfig & { children: ComponentChildren }) => {
 	const context = useViewSwitcher()
-
 	const activeView = useComputed(() => context.views.value.find(view => view.isActive === true))
-
 	useEffect(() => {
-		const isActiveSet = context.views.value.length < 1
-		context.views.value = [...context.views.peek(), { title, value, isActive: isActiveSet }]
+		context.views.value = [...context.views.peek(), { title, value, isActive }]
 	}, [])
-
 	if (activeView.value?.value === value) return <div>{ children }</div>
-
 	return <></>
 }
 
