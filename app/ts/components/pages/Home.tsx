@@ -283,7 +283,7 @@ export function Home(param: HomeParams) {
 
 	return <>
 		{ rpcNetwork.httpsRpc === undefined ?
-			<ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
+			<ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.name }.` }/>
 		: <></> }
 
 		<FirstCard

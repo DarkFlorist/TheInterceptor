@@ -154,6 +154,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			lastConnnectionAttempt: new Date(),
 			latestBlock: blockheader,
 			rpcNetwork: ethereumClientService.getRpcEntry(),
+			retrying: ethereumClientService.isBlockPolling(),
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
@@ -180,6 +181,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 			lastConnnectionAttempt: new Date(),
 			latestBlock: ethereumClientService.getCachedBlock(),
 			rpcNetwork: ethereumClientService.getRpcEntry(),
+			retrying: ethereumClientService.isBlockPolling(),
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
