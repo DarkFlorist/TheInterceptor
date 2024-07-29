@@ -497,7 +497,7 @@ class InterceptorMessageListener {
 	}
 
 	private parseRpcError = (maybeErrorObject: unknown) => {
-		if (typeof maybeErrorObject !== 'object' || maybeErrorObject === null) return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { maybeErrorObject } )
+		if (typeof maybeErrorObject !== 'object' || maybeErrorObject === null) return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { rawError: maybeErrorObject } )
 		if ('code' in maybeErrorObject
 			&& maybeErrorObject.code !== undefined && typeof maybeErrorObject.code === 'number'
 			&& 'message' in maybeErrorObject && maybeErrorObject.message !== undefined && typeof maybeErrorObject.message === 'string'
