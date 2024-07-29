@@ -31,8 +31,13 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 		await func()
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		console.error(error)
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		if (error instanceof Error && error.message?.includes('the message channel is closed')) {
+			// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
+			// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
+			return
+		}
+		console.error(error)
 		handleUnexpectedError(error)
 	}
 }
@@ -69,13 +74,8 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
-	const newConnection = {
-		port: port,
-		socket: socket,
-		websiteOrigin: websiteOrigin,
-		approved: false,
-		wantsToConnect: false,
-	}
+	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+
 	port.onDisconnect.addListener(() => {
 		catchAllErrorsAndCall(async () => {
 			const tabConnection = websiteTabConnections.get(socket.tabId)
@@ -85,6 +85,18 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 				websiteTabConnections.delete(socket.tabId)
 			}
 		})
+		try {
+			checkAndThrowRuntimeLastError()
+		} catch (error) {
+			if (error instanceof Error) {
+				if (error.message?.includes('the message channel is closed')) {
+					// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
+					// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
+					return
+				}
+			}
+			throw error
+		}
 	})
 
 	port.onMessage.addListener((payload) => {
@@ -195,7 +207,6 @@ async function startup() {
 	})
 	browser.runtime.onConnect.addListener(async (port) => await catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
 	browser.runtime.onMessage.addListener(async (message: unknown) => await catchAllErrorsAndCall(async () => popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())))
-
 
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))
