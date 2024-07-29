@@ -132,16 +132,18 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
+			const decoded = decodeMessage(visualizedPersonalSignRequest.message)
+			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
 			return <Viewer id = 'personal_sign'>
 				<Viewer.List>
-					<Viewer.View title = 'View Raw' value = 'raw' isActive = { !isNinetyFivePercentNumbersOrASCII(decodeMessage(visualizedPersonalSignRequest.message)) }>
+					<Viewer.View title = 'View Raw' value = 'raw' isActive = { !isDecodedAsciiOrNumbers }>
 						<div class = 'textbox'>
 							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
 						</div>
 					</Viewer.View>
-					<Viewer.View title = 'View Parsed' value = 'parsed' isActive = { isNinetyFivePercentNumbersOrASCII(decodeMessage(visualizedPersonalSignRequest.message)) }>
+					<Viewer.View title = 'View Parsed' value = 'parsed' isActive = { isDecodedAsciiOrNumbers }>
 						<div class = 'textbox'>
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decodeMessage(visualizedPersonalSignRequest.message) }</p>
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decoded }</p>
 						</div>
 					</Viewer.View>
 				</Viewer.List>
