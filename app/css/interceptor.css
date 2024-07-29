@@ -68,7 +68,7 @@ button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:not(.btn):disabled, button:not(.btn)[disabled] {
+button:not(.btn, .card-header-icon):disabled, button:not(.btn, .card-header-icon)[disabled] {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }
