@@ -29,6 +29,8 @@ export const RpcNetwork = funtypes.Union(
 		name: funtypes.String,
 		currencyName: funtypes.Literal('Ether?'),
 		currencyTicker: funtypes.Literal('ETH?'),
+		primary: funtypes.Literal(false),
+		minimized: funtypes.Literal(true),
 	})
 )
 
