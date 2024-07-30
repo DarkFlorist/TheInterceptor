@@ -209,10 +209,13 @@ export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetad
 }
 
 export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {
-	const hashes = events.map((event) => 'logInformation' in event && 'node' in event.logInformation ? event.logInformation.node : undefined).filter((maybeNodeHash): maybeNodeHash is bigint => maybeNodeHash !== undefined)
-	const deduplicatedHashes = Array.from(new Set(hashes))
+	const hashes = new Set<bigint>()
+	for (const event of events) {
+		if (!('logInformation' in event && 'node' in event.logInformation)) continue
+		hashes.add(event.logInformation.node)
+	}
 	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((addressBookEntry) => getEnsReverseNodeHash(addressBookEntry.address))
-	return await Promise.all(deduplicatedHashes.map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsLabelHashes)))
+	return Promise.all([...hashes].map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsLabelHashes)))
 }
 
 export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {
