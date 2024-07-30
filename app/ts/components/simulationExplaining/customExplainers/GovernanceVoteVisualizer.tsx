@@ -5,7 +5,6 @@ import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-
 import { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
-import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
@@ -43,7 +42,7 @@ function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters
 	return <>
 		<div class = 'notification transaction-importance-box'>
 			<div style = 'display: flex; justify-content: center;' >
-				<p style = { { 'font-size': BIG_FONT_SIZE } } >
+				<p style = { { 'font-size': 'var(--big-font-size)' } } >
 					Vote&nbsp;<b>{ interpretSupport(inputParams.support) }</b>&nbsp;{`for proposal: ${ inputParams.proposalId } `}
 				</p>
 			</div>

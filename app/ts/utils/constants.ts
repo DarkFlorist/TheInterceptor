@@ -172,9 +172,6 @@ export const PRIMARY_COLOR = '#58a5b3'
 
 export const CANNOT_SIMULATE_OFF_LEGACY_BLOCK = 'Cannot simulate off a legacy block'
 
-export const BIG_FONT_SIZE = '28px'
-export const NORMAL_FONT_SIZE = '14px'
-
 export const NEW_BLOCK_ABORT = 'New Block Abort'
 
 export const MAKE_YOU_RICH_TRANSACTION = {
