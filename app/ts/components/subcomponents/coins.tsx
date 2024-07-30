@@ -7,7 +7,7 @@ import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { BIG_FONT_SIZE, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, NORMAL_FONT_SIZE } from '../../utils/constants.js'
+import { ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { Blockie } from './SVGBlockie.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
@@ -46,7 +46,7 @@ export function EtherAmount(param: EtherAmountParams) {
 		'text-overflow': 'ellipsis',
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
+		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
@@ -71,7 +71,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		overflow: 'hidden',
 		'text-overflow': 'ellipsis',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
+		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 	const etheName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
 
@@ -145,7 +145,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
 		...unTrusted ? { color: 'var(--warning-color)' } : {},
-		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
+		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
 	const name = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
@@ -191,7 +191,7 @@ export function TokenAmount(param: TokenAmountParams) {
 		display: 'inline-flex',
 		'align-items': 'center',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
+		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
@@ -262,7 +262,7 @@ export function AllApproval(param: AllApprovalParams ) {
 	const style = {
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
+		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 	if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
 	return <p style = { style }><b>ALL</b></p>
