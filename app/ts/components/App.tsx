@@ -377,7 +377,7 @@ export function App() {
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									signerAccounts = { tabState?.signerAccounts ?? [] }
-									setAndSaveAppPage = { setAndSaveAppPage }
+									close = { () => setAndSaveAppPage({ page: 'Home' }) }
 									activeAddresses = { activeAddresses }
 									signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 									renameAddressCallBack = { renameAddressCallBack }

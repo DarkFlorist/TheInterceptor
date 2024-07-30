@@ -54,7 +54,7 @@ export type HomeParams = {
 
 export type ChangeActiveAddressParam = {
 	activeAddresses: AddressBookEntries
-	setAndSaveAppPage: (page: Page) => void,
+	close: () => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
 	signerName: SignerName,

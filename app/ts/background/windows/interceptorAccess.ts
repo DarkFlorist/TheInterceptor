@@ -126,7 +126,6 @@ export async function requestAccessFromUser(
 
 		const justAddToPending = await verifyPendingRequests()
 		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
-
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, simulator, socket, request, websiteTabConnections)
 			return
@@ -182,8 +181,9 @@ export async function requestAccessFromUser(
 			return previousPendingAccessRequests
 		})
 		if (pendingRequests.current.find((x) => x.accessRequestId === accessRequestId) === undefined) return pendingAccessRequests.resolve(pendingRequests.current)
-
-		if (pendingRequests.previous.find((x) => x.accessRequestId === accessRequestId) !== undefined) {
+		const oldPendingRequest = pendingRequests.previous.find((x) => x.accessRequestId === accessRequestId)
+		if (oldPendingRequest !== undefined) {
+			await tryFocusingTabOrWindow(oldPendingRequest.popupOrTabId)
 			if (request !== undefined) {
 				replyToInterceptedRequest(websiteTabConnections, {
 					type: 'result',

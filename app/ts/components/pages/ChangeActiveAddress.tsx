@@ -6,7 +6,7 @@ import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcompon
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
-		param.setAndSaveAppPage({ page: 'Home' })
+		param.close()
 		param.setActiveAddressAndInformAboutIt(activeAddress)
 	}
 
@@ -19,10 +19,6 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 
 	function isSignerConnected(address: bigint) {
 		return address !== undefined && getSignerAccount() === address
-	}
-
-	function goHome() {
-		param.setAndSaveAppPage({ page: 'Home' })
 	}
 
 	function changePageToAddAddress() {
@@ -45,7 +41,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					Change Active Address
 					</p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
+				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
 				</button>
 			</header>
@@ -101,7 +97,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</ul>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary is-success' onClick = { goHome }> Close </button>
+				<button class = 'button is-primary is-success' onClick = { param.close }> Close </button>
 				<button class = 'button is-primary' onClick = { changePageToAddAddress }> Add New Address </button>
 			</footer>
 		</div>
