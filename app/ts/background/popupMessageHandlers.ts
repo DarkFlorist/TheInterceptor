@@ -325,13 +325,11 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 
 export async function requestNewHomeData(simulator: Simulator, requestAbortController: AbortController | undefined) {
 	const settings = await getSettings()
-	simulator.ethereum.setBlockPolling(true) // wakes up the RPC block querying if it was sleeping
 	if (settings.simulationMode) await updateSimulationMetadata(simulator.ethereum, requestAbortController)
 	await refreshHomeData(simulator)
 }
 
 export async function refreshHomeData(simulator: Simulator) {
-	makeSureInterceptorIsNotSleeping(simulator.ethereum)
 	const settingsPromise = getSettings()
 	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
@@ -343,6 +341,7 @@ export async function refreshHomeData(simulator: Simulator) {
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
+	if (settings.currentRpcNetwork.httpsRpc !== undefined) makeSureInterceptorIsNotSleeping(simulator.ethereum)
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const updatedPage: UpdateHomePage = {

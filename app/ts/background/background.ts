@@ -1,7 +1,7 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings, SimulateExecutionReplyData } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator, parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
-import { getSimulationResults, getTabState, getTransactionStack, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack, updateTransactionStack } from './storageVariables.js'
+import { getSimulationResults, getTabState, getTransactionStack, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack, updateTransactionStack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass } from './popupMessageHandlers.js'
@@ -425,7 +425,7 @@ async function handleRPCRequest(
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, unknownMethod: true, ...request }
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {
 			type: 'result' as const,
 			method: request.method,
@@ -435,6 +435,10 @@ async function handleRPCRequest(
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
 		}
+	}
+	if (settings.currentRpcNetwork.httpsRpc === undefined && forwardToSigner) {
+		// we are using network that is not supported by us
+		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
 	const parsedRequest = maybeParsedRequest.value
 	makeSureInterceptorIsNotSleeping(simulator.ethereum)
@@ -566,6 +570,7 @@ export async function changeActiveRpc(simulator: Simulator, websiteTabConnection
 	})
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
+	await promoteRpcAsPrimary(rpcNetwork)
 }
 
 function getProviderHandler(method: string) {
