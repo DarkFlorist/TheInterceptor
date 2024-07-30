@@ -117,11 +117,11 @@ const ForwardToWallet = 	funtypes.Intersect( // forward directly to wallet
 	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
 )
 
-type UnknownMethodForward = funtypes.Static<typeof UnknownMethodForward>
-const UnknownMethodForward = funtypes.Intersect(
+type ReplyWithSignersReplyForward = funtypes.Static<typeof ReplyWithSignersReplyForward>
+const ReplyWithSignersReplyForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
-		unknownMethod: funtypes.Literal(true),
+		replyWithSignersReply: funtypes.Literal(true),
 		method: funtypes.String,
 	}),
 	funtypes.Partial({
@@ -133,7 +133,7 @@ export type RPCReply = funtypes.Static<typeof RPCReply>
 export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
 	ForwardToWallet,
-	UnknownMethodForward,
+	ReplyWithSignersReplyForward,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
@@ -337,7 +337,7 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	funtypes.Union(ForwardToWallet, UnknownMethodForward)
+	funtypes.Union(ForwardToWallet, ReplyWithSignersReplyForward)
 )
 
 export type SignerReply = funtypes.Static<typeof SignerReply>
