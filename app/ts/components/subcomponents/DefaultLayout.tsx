@@ -35,8 +35,8 @@ export const Layout = ({ children }: { children: ComponentChildren }) => {
 	}))
 
 	return (
-		<LayoutContext.Provider value={ { offsetTop, observer, isStacked } }>
-			<main><div class='layout' style={ { '--header-height': `${offsetTop.value}px` } }>{ children }</div></main>
+		<LayoutContext.Provider value = { { offsetTop, observer, isStacked } }>
+			<main><div class = 'layout' style = { { '--header-height': `${offsetTop.value}px` } }>{ children }</div></main>
 		</LayoutContext.Provider>
 	)
 }
@@ -58,7 +58,7 @@ const Header = ({ children }: { children: ComponentChildren }) => {
 		return () => { observer.value.unobserve(headerElement) }
 	})
 
-	return <header ref={ headerRef }>{ children }</header>
+	return <header ref = { headerRef }>{ children }</header>
 }
 
 const Sidebar = ({ children }: { children: ComponentChildren }) => {
@@ -72,7 +72,7 @@ const Sidebar = ({ children }: { children: ComponentChildren }) => {
 		return () => { observer.value.unobserve(asideElement) }
 	})
 
-	return <aside ref={ asideRef }>{ children }</aside>
+	return <aside ref = { asideRef }>{ children }</aside>
 }
 
 const Main = ({ children }: { children: ComponentChildren }) => {
@@ -86,7 +86,7 @@ const Main = ({ children }: { children: ComponentChildren }) => {
 		return () => { observer.value.unobserve(articleElement) }
 	})
 
-	return <article ref={ articleRef }>{ children }</article>
+	return <article ref = { articleRef }>{ children }</article>
 }
 
 Layout.Header = Header
