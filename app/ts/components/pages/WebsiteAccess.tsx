@@ -77,7 +77,7 @@ export const WebsiteAccessView = () => {
 		<WebsiteAccessProvider>
 			<Layout>
 				<Layout.Header>
-					<h1 style={ { flex: 1, fontSize: '1.5rem', fontWeight: 500, whiteSpace: 'nowrap', color: 'var(--text-color)', padding: '1rem 0' } }>Manage Websites</h1>
+					<h1 style = { { flex: 1, fontSize: '1.5rem', fontWeight: 500, whiteSpace: 'nowrap', color: 'var(--text-color)', padding: '1rem 0' } }>Manage Websites</h1>
 					<SearchForm hidden={ true } id='site_search' name='search' placeholder='Enter a website address' />
 				</Layout.Header>
 				<Layout.Sidebar>
