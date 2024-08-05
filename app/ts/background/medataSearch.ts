@@ -73,8 +73,9 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 }
 
 async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined): Promise<AddressBookEntries> {
+	const sanitizeValue = (value: string) => value.replace(/[.*+?^${}()|\[\]\\]/, '\\$&')
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim().toLowerCase() : undefined
-	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').join('.*?') }))`) : undefined
+	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').map(sanitizeValue).join('.*?') }))`) : undefined
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
 	const userEntries = (await getUserAddressBookEntries()).filter((entry) => entry.entrySource !== 'OnChain')
 	switch(addressBookCategory) {
