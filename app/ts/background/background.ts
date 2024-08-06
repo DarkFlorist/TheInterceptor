@@ -727,7 +727,7 @@ export async function popupMessageHandler(
 			case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
 			case 'popup_setEnsNameForHash': return await setEnsNameForHash(parsedRequest)
 			case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
-			case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess()
+			case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess(parsedRequest)
 			default: assertUnreachable(parsedRequest)
 		}
 	} catch(error: unknown) {

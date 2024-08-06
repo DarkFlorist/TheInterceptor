@@ -8,7 +8,7 @@ import { EthereumAddress, serialize } from '../../types/wire-types.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
 import { Layout, useLayout } from '../subcomponents/DefaultLayout.js'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
+import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
@@ -22,26 +22,34 @@ type SearchParameters = {
 
 type WebsiteAccessContext = {
 	search: Signal<SearchParameters>
-	accessList: Signal<WebsiteAccess[]>
+	accessList: Signal<WebsiteAccessArray | undefined>
 	selectedDomain: Signal<string | undefined>
 }
 
-const syncAccessList = () => { sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data: { query: '' } }) }
-
 const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
-	const websiteAccessListFromStore = useSignal<WebsiteAccessArray | undefined>(undefined)
+	const accessList = useSignal<WebsiteAccessArray | undefined>(undefined)
 	const addressAccessFromStore = useSignal<AddressBookEntries | undefined>(undefined)
 
 	const search = useSignal<SearchParameters>({ query: '', preSelectIndex: 0 })
-	const accessList = useComputed(() => websiteAccessListFromStore.value?.filter(access => access.website.websiteOrigin.includes(search.value.query)) || [])
 
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
-	useSignalEffect(() => {
-		if (selectedDomain.value !== undefined) return
-		selectedDomain.value = accessList.value.at(0)?.website.websiteOrigin
-	})
+	const syncAccessList = (filter?: RetrieveWebsiteAccessFilter) => {
+		const data = filter ? filter : { query: '' }
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data })
+	}
+
+	const updateListOnSearch = () => { syncAccessList({ query: search.value.query }) }
+	const setDefaultSelection = () => {
+		if (accessList.value === undefined) return
+		const [firstWebsiteAccess] = accessList.value
+		if (firstWebsiteAccess === undefined) return
+		selectedDomain.value = firstWebsiteAccess.website.websiteOrigin
+	}
+
+	useSignalEffect(updateListOnSearch)
+	useSignalEffect(setDefaultSelection)
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -50,9 +58,9 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			const parsed = maybeParsed.value
 			switch (parsed.method) {
 				case 'popup_setDisableInterceptorReply':
-				case 'popup_websiteAccess_changed': syncAccessList(); break
+				case 'popup_websiteAccess_changed': syncAccessList({ query: '' }); break
 				case 'popup_retrieveWebsiteAccessReply':
-					websiteAccessListFromStore.value = parsed.data.websiteAccess
+					accessList.value = parsed.data.websiteAccess
 					addressAccessFromStore.value = parsed.data.addressAccess
 					break
 			}
@@ -161,6 +169,7 @@ const WebsiteAccessListing = () => {
 		listRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
 	})
 
+	if (!accessList.value) return <></>
 	if (accessList.value.length < 1) return <EmptyAccessList />
 
 	return (
@@ -238,7 +247,7 @@ const WebsiteAccessDetails = () => {
 		detailsRef.current.scrollIntoView({ behavior: 'smooth' })
 	}
 
-	const activeAccess = useComputed(() => accessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
+	const activeAccess = useComputed(() => accessList.value?.find(access => access.website.websiteOrigin === selectedDomain.value))
 	useSignalEffect(scrollIntoViewOnUserSelection)
 
 	if (!activeAccess.value) return <></>
