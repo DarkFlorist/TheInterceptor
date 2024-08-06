@@ -26,7 +26,7 @@ type WebsiteAccessContext = {
 	selectedDomain: Signal<string | undefined>
 }
 
-const syncAccessList = () => { sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess' }) }
+const syncAccessList = () => { sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data: { query: '' } }) }
 
 const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
@@ -77,8 +77,8 @@ export const WebsiteAccessView = () => {
 		<WebsiteAccessProvider>
 			<Layout>
 				<Layout.Header>
-					<h1 style = { { flex: 1, fontSize: '1.5rem', fontWeight: 500, whiteSpace: 'nowrap', color: 'var(--text-color)', padding: '1rem 0' } }>Manage Websites</h1>
-					<SearchForm hidden = { true } id = 'site_search' name = 'search' placeholder = 'Enter a website address' />
+					<h1 style = { { flex: 1, fontSize: '1.5rem', fontWeight: 500, whiteSpace: 'nowrap', color: 'var(--text-color)' } }>Manage Websites</h1>
+					<SearchForm id = 'site_search' name = 'search' placeholder = 'Enter a website address' />
 				</Layout.Header>
 				<Layout.Sidebar>
 					<WebsiteAccessListing />
@@ -126,10 +126,8 @@ const SearchForm = ({ hidden, ...props }: SearchFormProps) => {
 		}
 	}
 
-	if (hidden) return <></>
-
 	return (
-		<form role = 'search' onInput = { updateSearchParameters } onSubmit = { commitSelectionOrReset } style = { { visibility: 'hidden' } }>
+		<form role = 'search' onInput = { updateSearchParameters } onSubmit = { commitSelectionOrReset }>
 			<fieldset>
 				<label for = { props.id }><SearchIcon /> </label>
 				<input { ...props } name = { props.name } ref = { inputRef } type = 'search' value = { search.value.query } autoFocus autoComplete = 'off' />
@@ -306,7 +304,7 @@ const AddressAccessCard = ({ websiteAccess, addressAccess }: { websiteAccess: We
 			return Array.from(newWebsiteAccessMap.values())
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
 	}
 
 	const toggleAddressAccess = (event: JSX.TargetedEvent<HTMLInputElement>) => {
@@ -338,7 +336,7 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 			return Array.from(newWebsiteAccessMap.values())
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {
@@ -406,7 +404,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }
 			})
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
 	}
 
 	const confirmOrRejectDialog = (response: string) => {
@@ -455,7 +453,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: WebsiteAcc
 	const disableWebsiteProtection = async (shouldDisable: boolean = true) => {
 		if (!websiteAccess) return
 		await setInterceptorDisabledForWebsite(websiteAccess.website, shouldDisable)
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
 	}
 
 	const confirmOrRejectDialog = async (response: string) => {
@@ -500,7 +498,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess 
 	const confirmOrRejectUpdate = async (response: string) => {
 		if (response !== 'confirm') return
 		await updateWebsiteAccess((previousAccess) => previousAccess.filter(access => access.website.websiteOrigin !== websiteAccess.website.websiteOrigin))
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
 	}
 
 	return (
