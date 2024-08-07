@@ -3,10 +3,10 @@ import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-int
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
-import { NonTokenLogAnalysis, ParsedInputData, TokenLogAnalysis } from './Transactions.js'
+import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
+import { addressString, bytes32String, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
@@ -18,8 +18,8 @@ import { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
-import { ViewSelector } from '../subcomponents/ViewSelector.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
+import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -783,21 +783,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 
 					<div>
 						<p class = 'paragraph' style = { {  color: 'var(--subtitle-text-color)', marginBottom: '0.25rem'} }>Transaction Input</p>
-						<ViewSelector id = 'transaction_input'>
-							{ parsedInputData?.type === 'Parsed' ? (
-								<>
-									<ViewSelector.List>
-										<ViewSelector.View title = 'View Parsed' value = 'parsed'>
-											<ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
-										</ViewSelector.View>
-										<ViewSelector.View title = 'View Raw' value = 'raw'>
-											<pre>{ dataStringWith0xStart(transaction.input) }</pre>
-										</ViewSelector.View>
-									</ViewSelector.List>
-									<ViewSelector.Triggers />
-								</>
-							) : <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> }
-						</ViewSelector>
+						<TransactionInput parsedInputData = { parsedInputData } input = { transaction.input } to = { transaction.to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					</div>
 				</div>
 			</div>
