@@ -14,6 +14,7 @@ import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 import { namehash } from 'ethers'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
+import { modifyObject } from '../utils/typescript.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -213,14 +214,25 @@ export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepi
 
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
+export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
+	if (rpcNetwork.primary) return
+	const rpcs = await getRpcList()
+	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+}
+
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
 	const rpcs = await getRpcList()
-	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	const primary = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	if (primary) return primary
+
+	// no primary was found, try to find what ever we have for that chain id
+	const nonPrimary = rpcs.find((rpc) => rpc.chainId === chainId)
+	if (nonPrimary) return nonPrimary
+	return undefined
 }
 
 export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
-	const rpcs = await getRpcList()
-	const rpc = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	const rpc = await getPrimaryRpcForChain(chainId)
 	if (rpc !== undefined) return rpc
 	return {
 		chainId: chainId,
@@ -228,6 +240,8 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		currencyTicker: 'ETH?',
 		name: getChainName(chainId),
 		httpsRpc: undefined,
+		primary: false,
+		minimized: true,
 	}
 }
 export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? []
