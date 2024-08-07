@@ -17,17 +17,17 @@ export function TransactionInput({ parsedInputData, input, to, addressMetaData, 
 	return <ViewSelector id = 'transaction_input'>
 		{ parsedInputData?.type === 'Parsed' ? ( <>
 			<ViewSelector.List>
-				<ViewSelector.View title = 'View Parsed' value = 'parsed'>
+				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { true }>
 					<ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
 				</ViewSelector.View>
-				<ViewSelector.View title = 'View Raw' value = 'raw'>
+				<ViewSelector.View title = 'View Raw' value = 'raw' isActive = { false }>
 					<pre>{ dataStringWith0xStart(input) }</pre>
 				</ViewSelector.View>
 			</ViewSelector.List>
 			<ViewSelector.Triggers />
 		</> ) : <>
 			<ViewSelector.List>
-				<ViewSelector.View title = 'View Parsed' value = 'parsed'> 
+				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { false }> 
 					<div style = 'display: flex;'>
 						{ to !== undefined ? <>
 							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;</p>
@@ -37,7 +37,7 @@ export function TransactionInput({ parsedInputData, input, to, addressMetaData, 
 						</> }
 					</div>
 				</ViewSelector.View>
-				<ViewSelector.View title = 'View Raw' value = 'raw'>
+				<ViewSelector.View title = 'View Raw' value = 'raw' isActive = { true }>
 					<pre>{ dataStringWith0xStart(input) }</pre>
 				</ViewSelector.View>
 			</ViewSelector.List>

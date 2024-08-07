@@ -122,29 +122,33 @@ const decodeMessage = (message: string) => {
 	return message
 }
 
+function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
+	const asciiCount = input.split('').filter(char => char.charCodeAt(0) <= 127).length
+	const numberCount = input.split('').filter(char => !isNaN(Number(char))).length
+	const validCount = asciiCount + numberCount
+	return validCount / input.length >= 0.95
+}
+
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			if (visualizedPersonalSignRequest.method === 'personal_sign') return (
-				<Viewer id = 'personal_sign'>
-					<Viewer.List>
-						<Viewer.View title = 'View Raw' value = 'raw'>
-							<div class = 'textbox'>
-								<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
-							</div>
-						</Viewer.View>
-						<Viewer.View title = 'View Parsed' value = 'parsed'>
-							<div class = 'textbox'>
-								<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decodeMessage(visualizedPersonalSignRequest.message) }</p>
-							</div>
-						</Viewer.View>
-					</Viewer.List>
-					<Viewer.Triggers />
-				</Viewer>
-			)
-			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
-			</div>
+			const decoded = decodeMessage(visualizedPersonalSignRequest.message)
+			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
+			return <Viewer id = 'personal_sign'>
+				<Viewer.List>
+					<Viewer.View title = 'View Raw' value = 'raw' isActive = { !isDecodedAsciiOrNumbers }>
+						<div class = 'textbox'>
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
+						</div>
+					</Viewer.View>
+					<Viewer.View title = 'View Parsed' value = 'parsed' isActive = { isDecodedAsciiOrNumbers }>
+						<div class = 'textbox'>
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decoded }</p>
+						</div>
+					</Viewer.View>
+				</Viewer.List>
+				<Viewer.Triggers />
+			</Viewer>
 		}
 		case 'SafeTx': return <GnosisSafeVisualizer
 			gnosisSafeMessage = { visualizedPersonalSignRequest }
