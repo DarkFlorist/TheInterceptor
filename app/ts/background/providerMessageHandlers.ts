@@ -49,9 +49,8 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 async function changeSignerChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
-	if ((await getTabState(port.sender.tab.id)).signerChain === signerChain) return
-	await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerChain }))
-
+	const oldSignerChain = (await getTabState(port.sender.tab.id)).signerChain 
+	if (oldSignerChain !== signerChain) await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerChain }))
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.currentRpcNetwork.chainId !== signerChain) {
@@ -60,7 +59,7 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 			rpcNetwork: await getRpcNetworkForChain(signerChain),
 		})
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
 export async function signerChainChanged(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
