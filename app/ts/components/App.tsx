@@ -23,7 +23,6 @@ import { VisualizedPersonalSignRequest } from '../types/personal-message-definit
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
-import { useSignal } from '@preact/signals'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
@@ -47,14 +46,14 @@ type NetworkErrorParams = {
 export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 	if (rpcConnectionStatus === undefined) return <></>
 	const nextConnectionAttempt = new Date(rpcConnectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
-	const retrying = useSignal((nextConnectionAttempt.getTime() - new Date().getTime()) > 0)
+	if (rpcConnectionStatus.retrying === false) return <></>
 	return <>
-		{ rpcConnectionStatus.isConnected === false && retrying.value ?
+		{ rpcConnectionStatus.isConnected === false ?
 			<ErrorComponent warning = { true } text = {
 				<>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
 			}/>
 		: <></> }
-		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) && retrying.value  ?
+		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
 			<ErrorComponent warning = { true } text = {
 				<>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
 			}/>

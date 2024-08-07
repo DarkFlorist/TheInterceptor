@@ -117,6 +117,12 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
+export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
+	const parsed = LocalStorageItems.safeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	if (parsed.success) return parsed.value
+	return undefined
+}
+
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
