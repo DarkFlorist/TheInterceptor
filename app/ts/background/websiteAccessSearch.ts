@@ -21,21 +21,47 @@ export function searchWebsiteAccess(query: string, accessList: WebsiteAccessArra
 	return accessList
 		.map(access => injectSearchMetadata(query, access))
 		.filter(({ _searchMetadata: _search }) => _search.scores.size > 0)
-		.sort((a, b) => { return a._searchMetadata.closest - b._searchMetadata.closest })
+		.sort((a, b) => {
+			if (!a._searchMetadata.closest || !b._searchMetadata.closest) return 0
+			return a._searchMetadata.closest < b._searchMetadata.closest ? 1 : -1
+		})
+}
+
+function bestMatch(matches: RegExpMatchArray | null) {
+	if (matches) return [...matches].sort((a, b) => b.length - a.length)[0]
+	return undefined
+}
+
+const createRegexPattern = (searchString: string) => {
+	const sanitizeSpecialCharacters = (text: string) => text.replace(/[.*+?^${}()|\[\]\\]/, '\\$&')
+	return new RegExp(`(?=(${searchString.split('').map(sanitizeSpecialCharacters).join('.*?')}))`)
+}
+
+type MatchProximity = [number, number]
+
+function computeProximity(query: string, target: string): MatchProximity | undefined {
+	const queryString = query.trim().toLowerCase()
+	const regexPattern = createRegexPattern(queryString)
+
+	const targetString = target.trim().toLowerCase()
+	const bestMatchString = bestMatch(targetString.match(regexPattern))
+	if (bestMatchString === undefined) return undefined
+
+	return [bestMatchString.length, targetString.indexOf(bestMatchString)]
 }
 
 type SearchMetadata = {
 	_targets: string[]
-	_scores: Map<string, number>
+	_closest: MatchProximity | undefined
 	targets: string[]
-	scores: Map<string, number>
-	closest: number
+	scores: Map<string, MatchProximity>
+	closest: MatchProximity | undefined
 }
 
 const createSearchMetadata = (query: string): SearchMetadata => {
 	return {
 		_targets: [],
-		_scores: new Map(),
+		_closest: undefined,
 		get targets() {
 			return this._targets
 		},
@@ -43,66 +69,18 @@ const createSearchMetadata = (query: string): SearchMetadata => {
 			this._targets = values
 		},
 		get scores() {
-			this._scores = new Map<string, number>()
+			const scores = new Map<string, MatchProximity>()
 			for (const target of this._targets) {
-				const distance = getClosestDistance(query, target)
-				if (distance === Infinity) continue
-				this._scores.set(target, distance)
+				const proximity = computeProximity(query, target)
+				if (proximity === undefined) continue
+				this._closest = this._closest && this._closest < proximity ? this._closest : proximity
+				scores.set(target, proximity)
 			}
-			return this._scores
+			return scores
 		},
-		get closest(): number {
-			let minDistance = Infinity
-			for (const [_, distance] of this._scores) {
-				if (distance >= minDistance) continue
-				minDistance = distance
-			}
-			return minDistance
+		get closest() {
+			return this._closest
 		}
 	}
 }
 
-function getClosestDistance(query: string, target: string): number {
-	const targetWords = target.toLowerCase().split(/[-.\s]+/)
-	const sanitizedQuery = query.trim().toLowerCase()
-
-	let minDistance = Infinity
-
-	for (const targetWord of targetWords) {
-		// start distance with 1 if search string is a fragment of the target
-		if (targetWord.includes(sanitizedQuery)) minDistance = 1
-
-		const distance = levenshteinDistance(sanitizedQuery, targetWord)
-
-		// should not take the entire length of the query string to match
-		if (distance === targetWord.length || distance >= query.length || distance >= minDistance) continue
-
-		minDistance = distance
-	}
-
-	return minDistance
-}
-
-function levenshteinDistance(source: string, target: string): number {
-	const memo: Map<string, number> = new Map()
-
-	function computeDistance(sourceIndex: number, targetIndex: number): number {
-		const key = `${sourceIndex},${targetIndex}`
-		if (memo.has(key)) return memo.get(key)!
-
-		if (sourceIndex === 0) return targetIndex
-		if (targetIndex === 0) return sourceIndex
-
-		const cost = source[sourceIndex - 1] === target[targetIndex - 1] ? 0 : 1
-
-		const deletion = computeDistance(sourceIndex - 1, targetIndex) + 1
-		const insertion = computeDistance(sourceIndex, targetIndex - 1) + 1
-		const substitution = computeDistance(sourceIndex - 1, targetIndex - 1) + cost
-
-		const result = Math.min(deletion, insertion, substitution)
-		memo.set(key, result)
-		return result
-	}
-
-	return computeDistance(source.length, target.length)
-}

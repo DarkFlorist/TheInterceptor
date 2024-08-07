@@ -218,7 +218,7 @@ const WebsiteAccessOverview = ({ website, interceptorDisabled, declarativeNetReq
 			<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
 				<div style = { { flex: 1 } }>
 					<h4 class = 'truncate' style = { { color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ website.title }</h4>
-					<p class = 'truncate' style = { { fontSize: '0.875rem', lineHeight: 1.25, direction: 'rtl', color: 'var(--subheading-color)' } }>{ website.websiteOrigin }</p>
+					<p class = 'truncate' style = { { fontSize: '0.875rem', lineHeight: 1.25, direction: 'rtl', color: 'var(--subheading-color)' } }>&lrm;{ website.websiteOrigin }</p>
 				</div>
 				<SiteStatusIndicator statuses = { statuses } />
 			</div>
@@ -260,7 +260,7 @@ const WebsiteAccessDetails = () => {
 					<figure><img width = '34' height = '34' src = { activeAccess.value.website.icon } /></figure>
 					<div style = { { flex: 1 } }>
 						<h2 class = 'truncate' style = { { fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ activeAccess.value.website.title }</h2>
-						<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>{ activeAccess.value.website.websiteOrigin }</span></p>
+						<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ activeAccess.value.website.websiteOrigin }</span></p>
 					</div>
 				</div>
 			</header>
