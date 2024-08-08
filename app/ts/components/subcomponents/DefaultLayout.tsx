@@ -4,6 +4,7 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 
 type LayoutContext = {
 	offsetTop: Signal<number>
+	mainContentHeight: Signal<number>
 	observer: Signal<ResizeObserver>
 	isStacked: Signal<boolean>
 }
@@ -12,6 +13,7 @@ const LayoutContext = createContext<LayoutContext | undefined>(undefined)
 
 export const Layout = ({ children }: { children: ComponentChildren }) => {
 	const offsetTop = useSignal<number>(0)
+	const mainContentHeight = useSignal<number>(0)
 	const dimensions = useSignal<Map<string, { width: number, height: number }>>(new Map())
 
 	const isStacked = useComputed(() => (new Set(Array.from(dimensions.value.values()).map(({ width }) => width))).size === 1)
@@ -25,6 +27,9 @@ export const Layout = ({ children }: { children: ComponentChildren }) => {
 				if (entry.target.nodeName === 'HEADER') {
 					offsetTop.value = entry.target.getBoundingClientRect().height
 				}
+				if (entry.target.nodeName === 'ARTICLE') {
+					mainContentHeight.value = entry.target.getBoundingClientRect().height
+				}
 				const { width, height } = entry.target.getBoundingClientRect()
 				const nodeName = entry.target.nodeName
 				dimensionsMap.set(nodeName, { width, height })
@@ -35,7 +40,7 @@ export const Layout = ({ children }: { children: ComponentChildren }) => {
 	}))
 
 	return (
-		<LayoutContext.Provider value = { { offsetTop, observer, isStacked } }>
+		<LayoutContext.Provider value = { { offsetTop, observer, isStacked, mainContentHeight } }>
 			<main><div class = 'layout' style = { { '--header-height': `${offsetTop.value}px` } }>{ children }</div></main>
 		</LayoutContext.Provider>
 	)
@@ -76,8 +81,13 @@ const Sidebar = ({ children }: { children: ComponentChildren }) => {
 }
 
 const Main = ({ children }: { children: ComponentChildren }) => {
-	const { observer } = useLayout()
+	const { observer, mainContentHeight } = useLayout()
 	const articleRef = useRef<HTMLElement>(null)
+
+	const computedStyles = useComputed(() => {
+		if (mainContentHeight.value <= window.innerHeight) return
+		return { '--sticky-top': `calc(100vh - ${mainContentHeight.value}px)` }
+	})
 
 	useSignalEffect(() => {
 		const articleElement = articleRef.current
@@ -86,7 +96,7 @@ const Main = ({ children }: { children: ComponentChildren }) => {
 		return () => { observer.value.unobserve(articleElement) }
 	})
 
-	return <article ref = { articleRef }>{ children }</article>
+	return <article ref = { articleRef } style = { computedStyles.value }>{ children }</article>
 }
 
 Layout.Header = Header

@@ -1336,8 +1336,7 @@ fieldset label:has([type=radio]:checked):before {
 .layout > article {
 	flex: 3 0 28ch;
 	position: sticky;
-	top: var(--header-height);
-	min-height: calc(100vh - var(--header-height));
+	top: var(--sticky-top, var(--header-height));
 }
 
 /* Search Component */
