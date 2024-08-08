@@ -32,10 +32,8 @@ function bestMatch(matches: RegExpMatchArray | null) {
 	return undefined
 }
 
-const createRegexPattern = (searchString: string) => {
-	const sanitizeSpecialCharacters = (text: string) => text.replace(/[.*+?^${}()|\[\]\\]/, '\\$&')
-	return new RegExp(`(?=(${searchString.split('').map(sanitizeSpecialCharacters).join('.*?')}))`)
-}
+const unicodeEscapeString = (input: string) => `\\u{${input.charCodeAt(0).toString(16)}}`
+const createRegexPattern = (searchString: string) => new RegExp(`(?=(${searchString.split('').map(unicodeEscapeString).join('.*?')}))`)
 
 type MatchProximity = [number, number]
 
