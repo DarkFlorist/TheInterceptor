@@ -687,6 +687,17 @@ export const ChangeAddOrModifyAddressWindowState = funtypes.ReadonlyObject({
 	})
 })
 
+export type RetrieveWebsiteAccessFilter = funtypes.Static<typeof RetrieveWebsiteAccessFilter>
+export const RetrieveWebsiteAccessFilter = funtypes.ReadonlyObject({
+	query: funtypes.String,
+}).asReadonly()
+
+export type RetrieveWebsiteAccess = funtypes.Static<typeof RetrieveWebsiteAccess>
+export const RetrieveWebsiteAccess = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_retrieveWebsiteAccess'),
+	data: RetrieveWebsiteAccessFilter,
+}).asReadonly()
+
 type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
 const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
@@ -816,7 +827,7 @@ export const PopupMessage = funtypes.Union(
 	DisableInterceptor,
 	SetEnsNameForHash,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_retrieveWebsiteAccess') })
+	RetrieveWebsiteAccess
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
