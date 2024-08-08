@@ -30,9 +30,7 @@ const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(und
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
 	const accessList = useSignal<WebsiteAccessArray | undefined>(undefined)
 	const addressAccessFromStore = useSignal<AddressBookEntries | undefined>(undefined)
-
 	const search = useSignal<SearchParameters>({ query: '', preSelectIndex: 0 })
-
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
 	const syncAccessList = (filter?: RetrieveWebsiteAccessFilter) => {
@@ -40,16 +38,19 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data })
 	}
 
-	const updateListOnSearch = () => { syncAccessList({ query: search.value.query }) }
+	const updateListOnSearch = () => {
+		selectedDomain.value = undefined
+		syncAccessList({ query: search.value.query })
+	}
+
 	const setDefaultSelection = () => {
-		if (accessList.value === undefined) return
-		const [firstWebsiteAccess] = accessList.value
-		if (firstWebsiteAccess === undefined) return
-		selectedDomain.value = firstWebsiteAccess.website.websiteOrigin
+		if (selectedDomain.value !== undefined) return
+		selectedDomain.value = accessList.value?.at(0)?.website.websiteOrigin
 	}
 
 	useSignalEffect(updateListOnSearch)
-	useSignalEffect(setDefaultSelection)
+
+	useSignalEffect(() => console.log(selectedDomain.value))
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -62,6 +63,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 				case 'popup_retrieveWebsiteAccessReply':
 					accessList.value = parsed.data.websiteAccess
 					addressAccessFromStore.value = parsed.data.addressAccess
+					setDefaultSelection()
 					break
 			}
 		}
@@ -295,6 +297,7 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) 
 }
 
 const AddressAccessCard = ({ websiteAccess, addressAccess }: { websiteAccess: WebsiteAccess, addressAccess: WebsiteAddressAccess }) => {
+	const { search } = useWebsiteAccess()
 	const updateAddressAccessForWebsite = async (shouldAllowAccess: boolean) => {
 		const websiteOrigin = websiteAccess.website.websiteOrigin
 		await updateWebsiteAccess((existingAccessList) => {
@@ -313,7 +316,7 @@ const AddressAccessCard = ({ websiteAccess, addressAccess }: { websiteAccess: We
 			return Array.from(newWebsiteAccessMap.values())
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
 	}
 
 	const toggleAddressAccess = (event: JSX.TargetedEvent<HTMLInputElement>) => {
@@ -330,6 +333,7 @@ const AddressAccessCard = ({ websiteAccess, addressAccess }: { websiteAccess: We
 }
 
 const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint, websiteOrigin: string }) => {
+	const { search } = useWebsiteAccess()
 	const addressString = serialize(EthereumAddress, address)
 
 	const removeAddressAccessForWebsite = async () => {
@@ -345,7 +349,7 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 			return Array.from(newWebsiteAccessMap.values())
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {
@@ -399,6 +403,7 @@ const AdvancedSettings = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) =
 }
 
 const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
+	const { search } = useWebsiteAccess()
 	const requestBlockMode = useComputed(() => websiteAccess.declarativeNetRequestBlockMode)
 
 	const blockExternalRequests = async (shouldBlock: boolean = true) => {
@@ -413,7 +418,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }
 			})
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
 	}
 
 	const confirmOrRejectDialog = (response: string) => {
@@ -457,12 +462,13 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }
 }
 
 const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
+	const { search} = useWebsiteAccess()
 	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.interceptorDisabled))
 
 	const disableWebsiteProtection = async (shouldDisable: boolean = true) => {
 		if (!websiteAccess) return
 		await setInterceptorDisabledForWebsite(websiteAccess.website, shouldDisable)
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
 	}
 
 	const confirmOrRejectDialog = async (response: string) => {
@@ -504,10 +510,11 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: WebsiteAcc
 }
 
 const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
+	const { search } = useWebsiteAccess()
 	const confirmOrRejectUpdate = async (response: string) => {
 		if (response !== 'confirm') return
 		await updateWebsiteAccess((previousAccess) => previousAccess.filter(access => access.website.websiteOrigin !== websiteAccess.website.websiteOrigin))
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: '' } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
 	}
 
 	return (
