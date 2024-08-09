@@ -285,12 +285,27 @@ export function handleEnsExpiryExtended(eventLog: ParsedEvent) {
 	}
 }
 
+function decodeENSName(encodedName: Uint8Array): string {
+	let i = 0
+	let decodedName = ''
+	while (i < encodedName.length) {
+		const length = encodedName[i]
+		if (length === 0 || length === undefined) break
+		i++
+		let label = new TextDecoder().decode(encodedName.slice(i, i + length))
+		decodedName += label + '.'
+		i += length
+	}
+	if (decodedName.endsWith('.')) decodedName = decodedName.slice(0, -1)
+	return decodedName
+}
+
 // event NameWrapped(bytes32 indexed node, bytes name, address owner, uint32 fuses, uint64 expiry)
 export function handleNameWrapped(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'string' || eventLog.args[2]?.typeValue.type !== 'address' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger' || eventLog.args[4]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS ExpiryExtended Event')
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'bytes' || eventLog.args[2]?.typeValue.type !== 'address' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger' || eventLog.args[4]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS ExpiryExtended Event')
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
-		name: eventLog.args[1].typeValue.value,
+		name: decodeENSName(eventLog.args[1].typeValue.value),
 		owner: eventLog.args[2].typeValue.value,
 		fuses: extractENSFuses(eventLog.args[3]?.typeValue.value),
 		expires: eventLog.args[4].typeValue.value,
