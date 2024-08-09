@@ -16,7 +16,7 @@ import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
 
-export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined}
+export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
 
 const pendingTransactionsSemaphore = new Semaphore(1)

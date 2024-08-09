@@ -89,7 +89,8 @@ const files = [
 	'html/interceptorAccess.html',
 	'html/changeChain.html',
 	'html/addressBook.html',
-	'html/settingsView.html'
+	'html/settingsView.html',
+	'html/websiteAccess.html'
 ]
 
 vendorDependencies(files).catch(error => {

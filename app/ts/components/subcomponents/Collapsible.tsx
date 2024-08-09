@@ -15,7 +15,7 @@ export const Collapsible = (props: CollapsibleProps) => {
 				<Indicator/>
 				<span>{ props.summary }</span>
 			</summary>
-			<article>{ props.children }</article>
+			{ props.children }
 		</details>
 	)
 }
