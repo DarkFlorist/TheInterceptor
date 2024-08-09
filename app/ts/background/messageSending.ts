@@ -1,11 +1,12 @@
 import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from "../types/interceptor-messages.js"
-import { WebsiteSocket } from "../utils/requests.js"
+import { WebsiteSocket, checkAndPrintRuntimeLastError } from "../utils/requests.js"
 import { WebsiteTabConnections } from "../types/user-interface-types.js"
 import { websiteSocketToString } from "./backgroundUtils.js"
 import { serialize } from "../types/wire-types.js"
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
+		checkAndPrintRuntimeLastError()
 		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 	} catch (error) {
 		if (error instanceof Error) {
@@ -18,6 +19,7 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 		}
 		throw error
 	}
+	checkAndPrintRuntimeLastError()
 }
 
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
