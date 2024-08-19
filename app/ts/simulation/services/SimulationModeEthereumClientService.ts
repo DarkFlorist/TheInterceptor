@@ -225,7 +225,6 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
 	const transactionData = simulationState === undefined ? [transactionWebsiteData] : simulationState.simulatedTransactions.map((x) => ({ website: x.preSimulationTransaction.website, created: x.preSimulationTransaction.created, originalRequestParameters: x.preSimulationTransaction.originalRequestParameters, transactionIdentifier: x.preSimulationTransaction.transactionIdentifier })).concat(transactionWebsiteData)
 	if (ethSimulateV1CallResult.calls.length !== signedTxs.length) throw 'multicall length does not match in appendTransaction'
-
 	const tokenBalancesAfter = await getTokenBalancesAfter(
 		ethereumClientService,
 		requestAbortController,
@@ -558,7 +557,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		baseFeePerGas: getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
 		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction.signedTransaction),
-		withdrawals: [], // TODO: this is wrong
+		withdrawals: [],
 		withdrawalsRoot: 0n, // TODO: this is wrong
 	} as const
 }
@@ -782,7 +781,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		return {
 			target: addressString(balanceQuery.token),
 			allowFailure: true,
-			input: stringToUint8Array(erc1155TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceQuery.owner), balanceQuery.tokenId])),
+			callData: stringToUint8Array(erc1155TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceQuery.owner), EthereumQuantity.serialize(balanceQuery.tokenId)])),
 		}
 	})]))
 	const callTransaction: EthereumUnsignedTransaction = {
@@ -801,7 +800,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const aggregate3CallResult = multicallResults.calls[multicallResults.calls.length - 1]
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
-  if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
+	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
 	return multicallReturnData.map((singleCallResult, callIndex) => {
 		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
@@ -919,7 +918,6 @@ export const getTokenBalancesAfter = async (
 		const balancesPromises = getSimulatedTokenBalances(ethereumClientService, requestAbortController, signedTxs.slice(0, resultIndex + 1), signedMessages, [...erc20sAddresses, ...erc1155AddressIds], blockNumber, extraAccountOverrides)
 		tokenBalancesAfter.push(balancesPromises)
 	}
-
 	return await Promise.all(tokenBalancesAfter)
 }
 
