@@ -1,7 +1,7 @@
 import { WebsiteAccess, WebsiteAccessArray } from "../types/websiteAccessTypes.js"
 import { EthereumAddress, serialize } from "../types/wire-types.js"
 
-const injectSearchMetadata = (query: string, access: WebsiteAccess): WebsiteAccess & { _searchMetadata: SearchMetadata } => {
+const injectSearchMetadata = (query: string, access: WebsiteAccess): WebsiteAccess & { searchMetadata: SearchMetadata } => {
 	const metadata = createSearchMetadata(query)
 
 	metadata.targets.push(access.website.websiteOrigin)
@@ -14,16 +14,16 @@ const injectSearchMetadata = (query: string, access: WebsiteAccess): WebsiteAcce
 		}
 	}
 
-	return { ...access, _searchMetadata: metadata }
+	return { ...access, searchMetadata: metadata }
 }
 
 export function searchWebsiteAccess(query: string, accessList: WebsiteAccessArray) {
 	return accessList
 		.map(access => injectSearchMetadata(query, access))
-		.filter(({ _searchMetadata: _search }) => _search.scores.size > 0)
+		.filter(({ searchMetadata: _search }) => _search.scores.size > 0)
 		.sort((a, b) => {
-			if (!a._searchMetadata.closest || !b._searchMetadata.closest) return 0
-			return a._searchMetadata.closest < b._searchMetadata.closest ? 1 : -1
+			if (!a.searchMetadata.closest || !b.searchMetadata.closest) return 0
+			return a.searchMetadata.closest < b.searchMetadata.closest ? 1 : -1
 		})
 }
 
