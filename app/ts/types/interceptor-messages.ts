@@ -698,11 +698,23 @@ export const RetrieveWebsiteAccess = funtypes.ReadonlyObject({
 	data: RetrieveWebsiteAccessFilter,
 }).asReadonly()
 
+export type SearchProximity = funtypes.Static<typeof SearchProximity>
+export const SearchProximity = funtypes.ReadonlyTuple(funtypes.Number, funtypes.Number)
+
+export type SearchMetadata = funtypes.Static<typeof SearchMetadata>
+export const SearchMetadata = funtypes.Object({
+	_targets: funtypes.MutableArray(funtypes.String),
+	closestProximity: SearchProximity,
+	scores: funtypes.Record(funtypes.String, SearchProximity),
+	targets: funtypes.Array(funtypes.String)
+})
+
 type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
 const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
 	data: funtypes.ReadonlyObject({
 		websiteAccess: WebsiteAccessArray,
+		searchMetadata: funtypes.Record(funtypes.String, SearchMetadata),
 		addressAccess: AddressBookEntries
 	})
 }).asReadonly()

@@ -30,7 +30,7 @@ import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/reque
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { searchWebsiteAccess } from './websiteAccessSearch.js'
+import { fuzzySearchWebsiteAccess } from './websiteAccessSearch.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -135,10 +135,10 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 				const transactionIdentifier = params.data.transactionIdentifier
 				const transactionToBeRemoved = prevStack.transactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 				if (transactionToBeRemoved === undefined) return prevStack
-			
+
 				const newTransactions: PreSimulationTransaction[] = []
 				let transactionWasFound = false
-			
+
 				for (const transaction of prevStack.transactions) {
 					if (transactionIdentifier === transaction.transactionIdentifier) {
 						transactionWasFound = true
@@ -166,7 +166,7 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 			default: assertNever(params.data)
 		}
 	})
-	
+
 	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, true)
 }
 
@@ -206,7 +206,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
 			])
 		}
-		case 'Transaction': {		
+		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults.statusCode === 'failed') return
 			const oldEventsForEachTransaction = first.simulationResults.data.eventsForEachTransaction
 			const oldSimulatedAndVisualizedTransactions = first.simulationResults.data.simulatedAndVisualizedTransactions
@@ -227,15 +227,15 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				data: {
 					pendingTransactionAndSignableMessages: [
 						modifyObject(first,
-						{ simulationResults: {
-							statusCode: 'success',
-							data: modifyObject(first.simulationResults.data, {
-								simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }, visualizedSimulatorState.tokenPriceEstimates, visualizedSimulatorState.tokenPriceQuoteToken),
-								addressBookEntries,
-								eventsForEachTransaction,
-							})
-						} })
-					, ...promises.slice(1)],
+							{ simulationResults: {
+								statusCode: 'success',
+								data: modifyObject(first.simulationResults.data, {
+									simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }, visualizedSimulatorState.tokenPriceEstimates, visualizedSimulatorState.tokenPriceQuoteToken),
+									addressBookEntries,
+									eventsForEachTransaction,
+								})
+							} })
+						, ...promises.slice(1)],
 					currentBlockNumber: await currentBlockNumberPromise,
 				}
 			}
@@ -586,12 +586,13 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
 	const settings = await getSettings()
 	const addressAccess = await getAddressMetadataForAccess(settings.websiteAccess)
-	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
+	const { matches: websiteAccess, metadata: searchMetadata } = fuzzySearchWebsiteAccess(settings.websiteAccess, parsedRequest.data.query)
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_retrieveWebsiteAccessReply' as const,
 		data: {
 			websiteAccess,
+			searchMetadata,
 			addressAccess
 		}
 	})

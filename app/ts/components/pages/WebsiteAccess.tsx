@@ -7,30 +7,28 @@ import { Modal } from '../subcomponents/Modal.js'
 import { EthereumAddress, serialize } from '../../types/wire-types.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
-import { Layout, useLayout } from '../subcomponents/DefaultLayout.js'
-import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
+import { Layout } from '../subcomponents/DefaultLayout.js'
+import { MessageToPopup, RetrieveWebsiteAccessFilter, SearchMetadata } from '../../types/interceptor-messages.js'
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 import { updateWebsiteAccess } from '../../background/settings.js'
 import { setInterceptorDisabledForWebsite } from '../../background/accessManagement.js'
 
-type SearchParameters = {
-	query: string
-	preSelectIndex: number
-}
-
 type WebsiteAccessContext = {
-	search: Signal<SearchParameters>
-	accessList: Signal<WebsiteAccessArray | undefined>
+	searchQuery: Signal<string>
+	searchResultMap: Signal<Map<string, SearchMetadata>>
+	websiteAccessList: Signal<WebsiteAccessArray>
 	selectedDomain: Signal<string | undefined>
 }
 
 const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
+
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
-	const accessList = useSignal<WebsiteAccessArray | undefined>(undefined)
+	const websiteAccessList = useSignal<WebsiteAccessArray>([])
+	const searchQuery = useSignal<string>('')
 	const addressAccessFromStore = useSignal<AddressBookEntries | undefined>(undefined)
-	const search = useSignal<SearchParameters>({ query: '', preSelectIndex: 0 })
+	const searchResultMap = useSignal<Map<string, SearchMetadata>>(new Map())
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
 	const syncAccessList = (filter?: RetrieveWebsiteAccessFilter) => {
@@ -40,17 +38,10 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	const updateListOnSearch = () => {
 		selectedDomain.value = undefined
-		syncAccessList({ query: search.value.query })
-	}
-
-	const setDefaultSelection = () => {
-		if (selectedDomain.value !== undefined) return
-		selectedDomain.value = accessList.value?.at(0)?.website.websiteOrigin
+		syncAccessList({ query: searchQuery.value })
 	}
 
 	useSignalEffect(updateListOnSearch)
-
-	useSignalEffect(() => console.log(selectedDomain.value))
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -61,9 +52,8 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 				case 'popup_setDisableInterceptorReply':
 				case 'popup_websiteAccess_changed': syncAccessList({ query: '' }); break
 				case 'popup_retrieveWebsiteAccessReply':
-					accessList.value = parsed.data.websiteAccess
+					websiteAccessList.value = parsed.data.websiteAccess
 					addressAccessFromStore.value = parsed.data.addressAccess
-					setDefaultSelection()
 					break
 			}
 		}
@@ -73,7 +63,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	useEffect(syncAccessList, [])
 
-	return <WebsiteAccessContext.Provider value = { { search, accessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, searchResultMap, websiteAccessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
@@ -87,14 +77,12 @@ export const WebsiteAccessView = () => {
 		<WebsiteAccessProvider>
 			<Layout>
 				<Layout.Header>
-					<h1 style = { { flex: 1, fontSize: '1.5rem', fontWeight: 500, whiteSpace: 'nowrap', color: 'var(--text-color)' } }>Manage Websites</h1>
+					<h1>Manage Websites</h1>
 					<SearchForm id = 'site_search' name = 'search' placeholder = 'Enter a website address' />
 				</Layout.Header>
-				<Layout.Sidebar>
-					<WebsiteAccessListing />
-				</Layout.Sidebar>
 				<Layout.Main>
-					<WebsiteAccessDetails />
+					<WebsiteSettingsList />
+					<WebsiteSettingsDetail />
 				</Layout.Main>
 			</Layout>
 		</WebsiteAccessProvider>
@@ -106,41 +94,45 @@ type SearchFormProps = {
 	name: string
 	placeholder?: string
 	defaultValue?: string
-	hidden?: boolean
 }
 
-const SearchForm = ({ hidden, ...props }: SearchFormProps) => {
+const SearchForm = (props: SearchFormProps) => {
 	const inputRef = useRef<HTMLInputElement>(null)
-	const { search } = useWebsiteAccess()
+	const { searchQuery } = useWebsiteAccess()
 
 	const updateSearchParameters = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const formData = new FormData(event.currentTarget)
 		const inputValue = formData.get(props.name)?.toString()
-		search.value = { query: inputValue || '', preSelectIndex: 0 }
+		searchQuery.value = inputValue || ''
 	}
 
 	const commitSelectionOrReset = (event: Event) => {
 		event.preventDefault()
-		if (!(event instanceof SubmitEvent)) return
-		if (!(event.currentTarget instanceof HTMLFormElement) || !inputRef.current) return
+		if (!(event instanceof SubmitEvent) || !(event.currentTarget instanceof HTMLFormElement) || !inputRef.current) return
 
 		if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'clear') {
 			event.currentTarget.reset()
 
 			const formData = new FormData(event.currentTarget)
 			const inputValue = formData.get(props.name)?.toString()
-			search.value = { query: inputValue || '', preSelectIndex: 0 }
+			searchQuery.value = inputValue || ''
 			inputRef.current.focus()
 			return
 		}
 	}
 
+	const updateSelection = (event: KeyboardEvent) => {
+		if (event.key !== 'ArrowDown') return
+		event.preventDefault()
+		inputRef.current?.blur()
+	}
+
 	return (
-		<form role = 'search' onInput = { updateSearchParameters } onSubmit = { commitSelectionOrReset }>
+		<form role = 'search' onInput = { updateSearchParameters } onSubmit = { commitSelectionOrReset } onKeyDown = { updateSelection }>
 			<fieldset>
-				<label for = { props.id }><SearchIcon /> </label>
-				<input { ...props } name = { props.name } ref = { inputRef } type = 'search' value = { search.value.query } autoFocus autoComplete = 'off' />
+				<label for = { props.id }><SearchIcon /></label>
+				<input { ...props } name = { props.name } ref = { inputRef } type = 'search' value = { searchQuery.value } autoFocus autoComplete = 'off' />
 				<input type = 'submit' style = { { display: 'none' } } />
 				<button type = 'submit' value = 'clear'>
 					<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
@@ -152,133 +144,200 @@ const SearchForm = ({ hidden, ...props }: SearchFormProps) => {
 	)
 }
 
-const WebsiteAccessListing = () => {
-	const { isStacked } = useLayout()
-	const listRef = useRef<HTMLDivElement>(null)
-	const { accessList, search, selectedDomain } = useWebsiteAccess()
-
-	const queryString = useComputed(() => search.value.query)
+const WebsiteSettingsList = () => {
+	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 
 	const updateSelection = (event: Event) => {
-		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		event.preventDefault()
-		const formData = new FormData(event.currentTarget)
-		selectedDomain.value = formData.get('search_option')?.toString() || ''
+		const formElement = event.currentTarget
+		if (!(event instanceof SubmitEvent) || !(formElement instanceof HTMLFormElement)) return
+		requestAnimationFrame(() => {
+			const formData = new FormData(formElement)
+			selectedDomain.value = formData.get('websiteOrigin')?.toString()
+		})
 	}
 
-	useSignalEffect(() => {
-		if (!isStacked.value || !(typeof queryString.value === 'string') || !listRef.current) return
-		listRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+	const accessList = useComputed(() => {
+		const listItems = []
+		let isDefaultChecked = true
+
+		for (const { ...access } of websiteAccessList.value) {
+			const listItem = <WebsiteAccessOverview key = { access.website.websiteOrigin } websiteAccess = { access } checked = { isDefaultChecked } />
+			listItems.push(listItem)
+			isDefaultChecked = false
+		}
+
+		if (listItems.length < 1) return <EmptyAccessList />
+
+		return (
+			<>
+				<ul role = 'listbox'>{ listItems }</ul>
+				<input type = 'submit' style = { { display: 'none' } } />
+			</>
+		)
 	})
 
-	if (!accessList.value) return <></>
-	if (accessList.value.length < 1) return <EmptyAccessList />
-
 	return (
-		<section ref = { listRef } style = { { scrollMarginTop: 'var(--header-height)', paddingBlock: '1rem' } }>
-			<h4 style = { { fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
-			<form onChange = { updateSelection }>
-				<div role = 'listbox'>
-					{ accessList.value.map((access) => (
-						<WebsiteAccessOverview key = { access.website.websiteOrigin } { ...access } />
-					)) }
-				</div>
+		<section style = { { scrollMarginTop: 'var(--header-height)', paddingBlock: '1rem' } }>
+			<h4 style = { { fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Matched Sites <span>3 / 4</span></h4>
+			<form onSubmit = { updateSelection }>
+				{ accessList.value }
 			</form>
 		</section>
 	)
 }
 
 const EmptyAccessList = () => {
-	const { search } = useWebsiteAccess()
-	const clearSearch = () => { search.value = { ...search.peek(), query: '' } }
-
+	const { searchQuery } = useWebsiteAccess()
+	const clearSearch = () => { searchQuery.value = '' }
 	return (
-		<div style = { { display: 'flex', flexDirection: 'column', rowGap: '0.5rem', border: '1px dashed var(--line-color)', padding: '1rem', textAlign: 'center' } }>
+		<div style = { { display: 'flex', flexDirection: 'column', rowGap: '0.5rem', border: '1px dashed var(--line-color)', padding: '2rem 1rem', textAlign: 'center', margin: '1rem 0', alignItems: 'center' } }>
 			<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.9rem', lineHeight: 1.2 } }>Did not find anything that matched your search query</p>
 			<button onClick = { clearSearch } type = 'button' class = 'btn btn--outline btn--sm' style = { { fontSize: '0.9rem' } }>Clear Search</button>
 		</div>
 	)
 }
 
-const WebsiteAccessOverview = ({ website, interceptorDisabled, declarativeNetRequestBlockMode }: WebsiteAccess) => {
-	const { selectedDomain } = useWebsiteAccess()
+type SiteOverviewProps = {
+	websiteAccess: WebsiteAccess
+	checked: boolean
+}
 
-	const isSelected = useComputed(() => selectedDomain.value === website.websiteOrigin)
-	const statusMap = {
-		'disabled': interceptorDisabled,
-		'blocking': declarativeNetRequestBlockMode === 'block-all'
+
+const WebsiteAccessOverview = ({ websiteAccess, checked }: SiteOverviewProps) => {
+	const priviledgedAccess = useComputed(() => websiteAccess.access === true ? websiteAccess : undefined)
+
+	const handleChange = (event: Event) => {
+		if (!(event.currentTarget instanceof HTMLLabelElement) || !event.currentTarget.form) return
+		event.currentTarget.form.requestSubmit()
 	}
 
-	// list only status for properties that are enabled
-	const statuses = Object.keys(Object.fromEntries(Object.entries(statusMap).filter(([_, value]) => value)))
-
 	return (
-		<label role = 'option' htmlFor = { website.websiteOrigin } class = 'flexy flexy-sm' tabIndex = { -1 }>
-			<input type = 'radio' id = { website.websiteOrigin } name = 'search_option' value = { website.websiteOrigin } checked = { isSelected.value } />
-			{ website.icon ? <img role = 'img' src = { website.icon } style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' /> : <></>
-			}
-			<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
-				<div style = { { flex: 1 } }>
-					<h4 class = 'truncate' style = { { color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ website.title }</h4>
-					<p class = 'truncate' style = { { fontSize: '0.875rem', lineHeight: 1.25, direction: 'rtl', color: 'var(--subheading-color)' } }>&lrm;{ website.websiteOrigin }</p>
+		<li role = 'option'>
+			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = 'websiteOrigin' value = { websiteAccess.website.websiteOrigin } defaultChecked = { checked } />
+			<label htmlFor = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } } onClick = { handleChange }>
+				<div class = 'flexy flexy-sm'>
+					<img role = 'img' src = { websiteAccess.website.icon } style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
+					<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
+						<div style = { { flex: 1 } }>
+							<h4 class = 'truncate' style = { { color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ websiteAccess.website.title }</h4>
+							<p class = 'truncate' style = { { fontSize: '0.875rem', lineHeight: 1.25, direction: 'rtl', color: 'var(--subheading-color)' } }>{ websiteAccess.website.websiteOrigin }</p>
+						</div>
+						{
+							priviledgedAccess.value ? (
+								<SiteStatusIndicator status = { priviledgedAccess.value.interceptorDisabled ? 'disabled' : priviledgedAccess.value.declarativeNetRequestBlockMode ? 'blocked' : undefined } />
+							) : <></>
+						}
+					</div>
 				</div>
-				<SiteStatusIndicator statuses = { statuses } />
-			</div>
-		</label>
+				<AddressAccessOverview websiteAccess = { websiteAccess } />
+			</label>
+		</li>
 	)
 }
 
-const SiteStatusIndicator = ({ statuses }: { statuses: string[] }) => {
-	return <>
-		{ statuses.includes('blocking') ? (
-			<span class = 'status-warn' role = 'img' title = 'External Request Blocked' aria-label = 'External Request Blocked'><RequestBlockedIcon /></span>
-		) : <></> }
-		{ statuses.includes('disabled') ? (
-			<span class = 'status-danger' role = 'img' title = 'Protection Disabled' aria-label = 'Protection Disabled'><InterceptorDisabledIcon /></span>
-		) : <></> }
-	</>
-}
+const MAX_ADDRESS_ICONS = 10
 
-const WebsiteAccessDetails = () => {
-	const detailsRef = useRef<HTMLDivElement>(null)
-	const { isStacked } = useLayout()
-	const { accessList, selectedDomain } = useWebsiteAccess()
+const AddressAccessOverview = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
+	const { searchResultMap } = useWebsiteAccess()
 
-	const scrollIntoViewOnUserSelection = () => {
-		if (!isStacked.value || !selectedDomain.value || !detailsRef.current) return
-		detailsRef.current.scrollIntoView({ behavior: 'smooth' })
+	const websiteOrigin = websiteAccess.website.websiteOrigin
+	const searchMetadata = useComputed(() => searchResultMap.value.get(websiteOrigin)?.scores)
+
+	if (!websiteAccess.addressAccess || !searchMetadata.value) return <></>
+
+	let addressIcons = []
+
+	for (const { address } of websiteAccess.addressAccess) {
+		const addressString = serialize(EthereumAddress, address)
+		const score = searchMetadata.value[addressString]
+		if (score === undefined || score >= ([Infinity, Infinity] as const)) continue
+		addressIcons.push(<div style = { { borderRadius: '3px', overflow: 'hidden', fontSize: '1.5rem' } } title = { addressString }><Blockie address = { address } /></div>)
 	}
 
-	const activeAccess = useComputed(() => accessList.value?.find(access => access.website.websiteOrigin === selectedDomain.value))
-	useSignalEffect(scrollIntoViewOnUserSelection)
-
-	if (!activeAccess.value) return <></>
+	if (addressIcons.length < 1) return <></>
 
 	return (
-		<div ref = { detailsRef } style = { { scrollMarginTop: 'var(--header-height)' } }>
-			<header style = { { paddingBlock: '1rem', position: 'sticky', top: 'var(--header-height)', background: 'var(--bg-color)', zIndex: 1 } }>
-				<BackToTop />
-				<div class = 'flexy' style = { { '--gap-x': '1rem' } }>
-					<figure><img width = '34' height = '34' src = { activeAccess.value.website.icon } /></figure>
-					<div style = { { flex: 1 } }>
-						<h2 class = 'truncate' style = { { fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ activeAccess.value.website.title }</h2>
-						<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ activeAccess.value.website.websiteOrigin }</span></p>
-					</div>
-				</div>
-			</header>
-			<AddressAccessList websiteAccess = { activeAccess.value } />
-			<AdvancedSettings websiteAccess = { activeAccess.value } />
+		<div style = { { paddingLeft: '2.5rem', display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'min-content', columnGap: '0.5rem', alignItems: 'center', paddingBottom: '0.5rem' } }>
+			{ addressIcons.slice(0, MAX_ADDRESS_ICONS) }
+			{ addressIcons.length > MAX_ADDRESS_ICONS ? <div style = { { fontSize: '0.75rem', lineHeight: 1, padding: '0.125rem 0.1875rem', backgroundColor: 'darkgoldenrod', color: 'white', borderRadius: 2, fontWeight: 600, border: '1px solid goldenrod' } }>+{ addressIcons.length - MAX_ADDRESS_ICONS }</div> : <></> }
+			{ addressIcons.length > MAX_ADDRESS_ICONS ? (
+				<div style = { { color: 'darkgoldenrod', fontSize: '0.75rem', whiteSpace: 'nowrap' } }> addresses</div>
+			) : <></> }
 		</div>
 	)
 }
 
-const BackToTop = () => {
-	const { isStacked } = useLayout()
-	const scrollToTop = () => { window.scrollTo({ top: 0, behavior: 'smooth' }) }
 
-	if (!isStacked.value) return <></>
+const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) => {
+	switch (status) {
+		case 'blocked':
+			return <span class = 'status-warn' role = 'img' title = 'External Request Blocked' aria-label = 'External Request Blocked'><RequestBlockedIcon /></span>
+		case 'disabled':
+			return <span class = 'status-danger' role = 'img' title = 'Protection Disabled' aria-label = 'Protection Disabled'><InterceptorDisabledIcon /></span>
+		default:
+			return <></>
+	}
+}
 
-	return <button type = 'button' class = 'btn btn--outline' style = { { width: '100%', marginBottom: '0.5rem' } } onClick = { scrollToTop }>&uarr; Show website list</button>
+const WebsiteSettingsDetail = () => {
+	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
+	const dialogRef = useRef<HTMLDialogElement>(null)
+
+	const websiteAccess = useComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
+
+	const closeDetails = () => { selectedDomain.value = undefined }
+
+	useSignalEffect(() => {
+		const dialogElement = dialogRef.current
+		if (!websiteAccess.value || dialogElement === null) return
+		dialogElement.showModal()
+	})
+
+	useEffect(() => {
+		const dialogElement = dialogRef.current
+		if (!dialogElement) return
+		dialogElement.addEventListener('close', closeDetails)
+		return () => dialogElement.removeEventListener('close', closeDetails)
+	}, [dialogRef.current])
+
+	return (
+		<dialog ref = { dialogRef } class = 'access-details'>
+			<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
+				<header style = { { paddingBlock: '1rem' } }>
+					<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
+					{ !websiteAccess.value ? <></> : (
+						<div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
+							<figure><img width = '34' height = '34' src = { websiteAccess.value.website.icon } /></figure>
+							<div style = { { flex: 1 } }>
+								<h2 class = 'truncate' style = { { fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.value.website.title }</h2>
+								<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>{ websiteAccess.value.website.websiteOrigin }</span></p>
+							</div>
+						</div>)
+					}
+				</header>
+				{ websiteAccess.value && websiteAccess.value.access ? (
+					<article>
+						<AddressAccessList websiteAccess = { websiteAccess.value } />
+						<AdvancedSettings websiteAccess = { websiteAccess.value } />
+					</article>
+				) : <NoAccessPrompt />
+				}
+			</form>
+
+		</dialog>
+	)
+}
+
+const NoAccessPrompt = () => {
+	return (
+		<article style = { { height: 'calc(100% + 1px)' } }>
+			<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '1rem', maxWidth: '32ch', textAlign: 'center', margin: '1rem auto' } }>
+				<h4 style = { { fontWeight: 600, color: 'var(--text-color)' } }>Website is not connected</h4>
+				<p style = { { fontSize: '0.875rem', lineHeight: 1.25 } }>This website does not have access to The Interceptor. Try visiting website connect using Interceptor.</p>
+			</div>
+		</article>
+	)
 }
 
 const AddressAccessList = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
@@ -286,10 +345,10 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) 
 
 	return (
 		<Collapsible summary = 'Address Access' defaultOpen>
-			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access these address(es). <button class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
+			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
 			<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
 				{ websiteAccess.addressAccess.map(addressAcces => (
-					<AddressAccessCard key = { Object.values(addressAcces).join('_') } websiteAccess = { websiteAccess } addressAccess = { addressAcces } />
+					<AddressAccessCard websiteAccess = { websiteAccess } addressAccess = { addressAcces } />
 				)) }
 			</div>
 		</Collapsible>
@@ -297,43 +356,22 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) 
 }
 
 const AddressAccessCard = ({ websiteAccess, addressAccess }: { websiteAccess: WebsiteAccess, addressAccess: WebsiteAddressAccess }) => {
-	const { search } = useWebsiteAccess()
-	const updateAddressAccessForWebsite = async (shouldAllowAccess: boolean) => {
-		const websiteOrigin = websiteAccess.website.websiteOrigin
-		await updateWebsiteAccess((existingAccessList) => {
-			// use Map to have mutable copies of current configuration
-			const newWebsiteAccessMap = new Map(existingAccessList.map(existingAccess => [existingAccess.website.websiteOrigin, { ...existingAccess }]))
-			if (newWebsiteAccessMap.has(websiteOrigin)) {
-				// get should already be known here https://github.com/microsoft/TypeScript/issues/13086
-				const websiteAccessOfWebsiteOrigin = newWebsiteAccessMap.get(websiteOrigin)!
-				if (!websiteAccessOfWebsiteOrigin.addressAccess) return existingAccessList
-				const addressAccessOfWebsiteOriginMap = new Map(websiteAccessOfWebsiteOrigin.addressAccess.map(addressAccess => [addressAccess.address, { ...addressAccess }]))
-				if (addressAccessOfWebsiteOriginMap.has(addressAccess.address)) {
-					addressAccessOfWebsiteOriginMap.get(addressAccess.address)!.access = shouldAllowAccess
-				}
-				websiteAccessOfWebsiteOrigin.addressAccess = Array.from(addressAccessOfWebsiteOriginMap.values())
-			}
-			return Array.from(newWebsiteAccessMap.values())
-		})
-
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
-	}
-
-	const toggleAddressAccess = (event: JSX.TargetedEvent<HTMLInputElement>) => {
-		updateAddressAccessForWebsite(event.currentTarget.checked)
+	const updateAddressAccess = (event: Event) => {
+		// TODO: update storage
+		console.log(event)
 	}
 
 	return (
 		<div style = { { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) min-content min-content', columnGap: '1rem', alignItems: 'center' } }>
-			<AddressCard key = { websiteAccess.website.websiteOrigin } address = { addressAccess.address } />
-			<RemoveAddressConfirmation key = { websiteAccess.website.websiteOrigin } websiteOrigin = { websiteAccess.website.websiteOrigin } address = { addressAccess.address } />
-			<Switch key = { websiteAccess.website.websiteOrigin } checked = { addressAccess.access } onChange = { toggleAddressAccess } />
+			<AddressCard address = { addressAccess.address } />
+			<RemoveAddressConfirmation websiteOrigin = { websiteAccess.website.websiteOrigin } address = { addressAccess.address } />
+			<Switch checked = { addressAccess.access } onChange = { updateAddressAccess } />
 		</div>
 	)
 }
 
 const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint, websiteOrigin: string }) => {
-	const { search } = useWebsiteAccess()
+	const { searchQuery } = useWebsiteAccess()
 	const addressString = serialize(EthereumAddress, address)
 
 	const removeAddressAccessForWebsite = async () => {
@@ -349,7 +387,7 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 			return Array.from(newWebsiteAccessMap.values())
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: searchQuery.value } })
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {
@@ -395,15 +433,16 @@ const BigIntToEthereumAddress = ({ bigIntAddress, onClick, ...props }: BigIntToE
 const AdvancedSettings = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
 	return (
 		<Collapsible summary = 'Advanced Settings' defaultOpen>
-			<BlockRequestSetting key = { websiteAccess.declarativeNetRequestBlockMode } websiteAccess = { websiteAccess } />
-			<DisableProtectionSetting key = { websiteAccess.interceptorDisabled } websiteAccess = { websiteAccess } />
+			<BlockRequestSetting websiteAccess = { websiteAccess } />
+			<DisableProtectionSetting websiteAccess = { websiteAccess } />
 			<RemoveWebsiteSetting websiteAccess = { websiteAccess } />
 		</Collapsible>
 	)
 }
 
+
 const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
-	const { search } = useWebsiteAccess()
+	const { searchQuery } = useWebsiteAccess()
 	const requestBlockMode = useComputed(() => websiteAccess.declarativeNetRequestBlockMode)
 
 	const blockExternalRequests = async (shouldBlock: boolean = true) => {
@@ -418,7 +457,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }
 			})
 		})
 
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: searchQuery.value } })
 	}
 
 	const confirmOrRejectDialog = (response: string) => {
@@ -462,13 +501,13 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }
 }
 
 const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
-	const { search} = useWebsiteAccess()
+	const { searchQuery} = useWebsiteAccess()
 	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.interceptorDisabled))
 
 	const disableWebsiteProtection = async (shouldDisable: boolean = true) => {
 		if (!websiteAccess) return
 		await setInterceptorDisabledForWebsite(websiteAccess.website, shouldDisable)
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: searchQuery.value } })
 	}
 
 	const confirmOrRejectDialog = async (response: string) => {
@@ -510,11 +549,11 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: WebsiteAcc
 }
 
 const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
-	const { search } = useWebsiteAccess()
+	const { searchQuery } = useWebsiteAccess()
 	const confirmOrRejectUpdate = async (response: string) => {
 		if (response !== 'confirm') return
 		await updateWebsiteAccess((previousAccess) => previousAccess.filter(access => access.website.websiteOrigin !== websiteAccess.website.websiteOrigin))
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: search.value.query } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: searchQuery.value } })
 	}
 
 	return (

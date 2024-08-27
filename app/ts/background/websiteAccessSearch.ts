@@ -1,30 +1,70 @@
-import { WebsiteAccess, WebsiteAccessArray } from "../types/websiteAccessTypes.js"
-import { EthereumAddress, serialize } from "../types/wire-types.js"
+import { SearchMetadata, SearchProximity } from '../types/interceptor-messages.js'
+import { WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { EthereumAddress, serialize } from '../types/wire-types.js'
 
-const injectSearchMetadata = (query: string, access: WebsiteAccess): WebsiteAccess & { searchMetadata: SearchMetadata } => {
-	const metadata = createSearchMetadata(query)
+const computeSearchMetadata = ({ website, addressAccess }: WebsiteAccess, query: string): SearchMetadata => {
+	const searchMeta = createSearchInstance(query)
+	const connectedAddresses = addressAccess ? addressAccess.map(({ address }) => serialize(EthereumAddress, address)) : []
 
-	metadata.targets.push(access.website.websiteOrigin)
-	access.website.title && metadata.targets.push(access.website.title)
+	const isValidTarget = (value: unknown): value is string => typeof value === 'string'
+	searchMeta.targets = [website.websiteOrigin, website.title, ...connectedAddresses].filter(isValidTarget)
 
-	if (access.addressAccess) {
-		for (const { address } of access.addressAccess) {
-			const addressString = serialize(EthereumAddress, address)
-			metadata.targets.push(addressString)
-		}
-	}
-
-	return { ...access, searchMetadata: metadata }
+	return searchMeta
 }
 
-export function searchWebsiteAccess(query: string, accessList: WebsiteAccessArray) {
-	return accessList
-		.map(access => injectSearchMetadata(query, access))
-		.filter(({ searchMetadata: _search }) => _search.scores.size > 0)
-		.sort((a, b) => {
-			if (!a.searchMetadata.closest || !b.searchMetadata.closest) return 0
-			return a.searchMetadata.closest < b.searchMetadata.closest ? 1 : -1
-		})
+export function fuzzySearchWebsiteAccess(accessList: WebsiteAccessArray, query: string) {
+	const metadata: Record<string, SearchMetadata> = {}
+	const matches = query ? queryAccessList() : accessList
+
+	function queryAccessList() {
+		const matches = []
+		for (const access of accessList) {
+			const searchResult = computeSearchMetadata(access, query)
+			if (searchResult.closestProximity < ([Infinity, Infinity] as const)) {
+				matches.push(access)
+				metadata[access.website.websiteOrigin] = searchResult
+			}
+		}
+
+		matches.sort(closestMatchSorter)
+		return matches
+	}
+
+	function closestMatchSorter(a: WebsiteAccess, b: WebsiteAccess) {
+		const aProximity = metadata[a.website.websiteOrigin]?.closestProximity
+		const bProximity = metadata[b.website.websiteOrigin]?.closestProximity
+
+		if (!aProximity || !bProximity) return 0
+
+		const [aLength, aIndex] = aProximity
+		const [bLength, bIndex] = bProximity
+
+		return aLength === bLength ? aIndex! - bIndex! : aLength! - bLength!
+	}
+
+	return { matches, metadata }
+}
+
+const createSearchInstance = (query: string): SearchMetadata => {
+	return {
+		_targets: [],
+		closestProximity: [Infinity, Infinity] as const,
+		scores: {},
+		get targets() {
+			return this._targets
+		},
+		set targets(values) {
+			this._targets = values
+
+			// compute scores and closest proximity
+			for (const target of this._targets) {
+				const targetProximity = computeProximity(query, target)
+				if (targetProximity === undefined) continue
+				if (targetProximity < this.closestProximity) this.closestProximity = targetProximity
+				this.scores[target] = targetProximity
+			}
+		}
+	}
 }
 
 function bestMatch(matches: RegExpMatchArray | null) {
@@ -33,52 +73,16 @@ function bestMatch(matches: RegExpMatchArray | null) {
 }
 
 const unicodeEscapeString = (input: string) => `\\u{${input.charCodeAt(0).toString(16)}}`
-const createRegexPattern = (searchString: string) => new RegExp(`(?=(${searchString.split('').map(unicodeEscapeString).join('.*?')}))`)
 
-type MatchProximity = [number, number]
+const createRegexPattern = (queryString: string) => {
+	const query = queryString.trim().toLowerCase()
+	return new RegExp(`(?=(${query.split('').map(unicodeEscapeString).join('.*?')}))`, 'ui')
+}
 
-function computeProximity(query: string, target: string): MatchProximity | undefined {
-	const queryString = query.trim().toLowerCase()
-	const regexPattern = createRegexPattern(queryString)
-
-	const targetString = target.trim().toLowerCase()
-	const bestMatchString = bestMatch(targetString.match(regexPattern))
+function computeProximity(query: string, target: string): SearchProximity | undefined {
+	const regexPattern = createRegexPattern(query)
+	const bestMatchString = bestMatch(target.match(regexPattern))
 	if (bestMatchString === undefined) return undefined
 
-	return [bestMatchString.length, targetString.indexOf(bestMatchString)]
+	return [bestMatchString.length, target.indexOf(bestMatchString)]
 }
-
-type SearchMetadata = {
-	_targets: string[]
-	_closest: MatchProximity | undefined
-	targets: string[]
-	scores: Map<string, MatchProximity>
-	closest: MatchProximity | undefined
-}
-
-const createSearchMetadata = (query: string): SearchMetadata => {
-	return {
-		_targets: [],
-		_closest: undefined,
-		get targets() {
-			return this._targets
-		},
-		set targets(values) {
-			this._targets = values
-		},
-		get scores() {
-			const scores = new Map<string, MatchProximity>()
-			for (const target of this._targets) {
-				const proximity = computeProximity(query, target)
-				if (proximity === undefined) continue
-				this._closest = this._closest && this._closest < proximity ? this._closest : proximity
-				scores.set(target, proximity)
-			}
-			return scores
-		},
-		get closest() {
-			return this._closest
-		}
-	}
-}
-

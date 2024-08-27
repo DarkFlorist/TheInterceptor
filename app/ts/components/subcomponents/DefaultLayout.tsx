@@ -1,12 +1,12 @@
 import { ComponentChildren, createContext } from 'preact'
-import { useContext, useRef } from 'preact/hooks'
-import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { useContext, useEffect, useRef } from 'preact/hooks'
+import { Signal, useComputed, useSignal } from '@preact/signals'
 
 type LayoutContext = {
 	offsetTop: Signal<number>
-	mainContentHeight: Signal<number>
-	observer: Signal<ResizeObserver>
+	observer: ResizeObserver
 	isStacked: Signal<boolean>
+	mainContentHeight: Signal<number>
 }
 
 const LayoutContext = createContext<LayoutContext | undefined>(undefined)
@@ -15,13 +15,11 @@ export const Layout = ({ children }: { children: ComponentChildren }) => {
 	const offsetTop = useSignal<number>(0)
 	const mainContentHeight = useSignal<number>(0)
 	const dimensions = useSignal<Map<string, { width: number, height: number }>>(new Map())
-
 	const isStacked = useComputed(() => (new Set(Array.from(dimensions.value.values()).map(({ width }) => width))).size === 1)
 	useSignal(false)
 
-	const observer = useSignal(new ResizeObserver((entries) => {
+	const observer = new ResizeObserver((entries) => {
 		const dimensionsMap = new Map(dimensions.peek())
-		// prevent watching for resize before first paint
 		requestAnimationFrame(() => {
 			for (let entry of entries) {
 				if (entry.target.nodeName === 'HEADER') {
@@ -37,7 +35,7 @@ export const Layout = ({ children }: { children: ComponentChildren }) => {
 
 			dimensions.value = dimensionsMap
 		})
-	}))
+	})
 
 	return (
 		<LayoutContext.Provider value = { { offsetTop, observer, isStacked, mainContentHeight } }>
@@ -56,28 +54,14 @@ const Header = ({ children }: { children: ComponentChildren }) => {
 	const { observer } = useLayout()
 	const headerRef = useRef<HTMLHeadElement>(null)
 
-	useSignalEffect(() => {
+	useEffect(() => {
 		const headerElement = headerRef.current
-		if (!observer.value || !headerElement) return
-		observer.value.observe(headerElement)
-		return () => { observer.value.unobserve(headerElement) }
+		if (!headerElement) return
+		observer.observe(headerRef.current)
+		return () => { observer.unobserve(headerElement) }
 	})
 
 	return <header ref = { headerRef }>{ children }</header>
-}
-
-const Sidebar = ({ children }: { children: ComponentChildren }) => {
-	const { observer } = useLayout()
-	const asideRef = useRef<HTMLElement>(null)
-
-	useSignalEffect(() => {
-		const asideElement = asideRef.current
-		if (!observer.value || !asideElement) return
-		observer.value.observe(asideElement)
-		return () => { observer.value.unobserve(asideElement) }
-	})
-
-	return <aside ref = { asideRef }>{ children }</aside>
 }
 
 const Main = ({ children }: { children: ComponentChildren }) => {
@@ -89,16 +73,16 @@ const Main = ({ children }: { children: ComponentChildren }) => {
 		return { '--sticky-top': `calc(100vh - ${mainContentHeight.value}px)` }
 	})
 
-	useSignalEffect(() => {
+	useEffect(() => {
 		const articleElement = articleRef.current
-		if (!observer.value || !articleElement) return
-		observer.value.observe(articleElement)
-		return () => { observer.value.unobserve(articleElement) }
+		if (!articleElement) return
+		observer.observe(articleRef.current)
+		return () => { observer.unobserve(articleElement) }
 	})
 
 	return <article ref = { articleRef } style = { computedStyles.value }>{ children }</article>
+
 }
 
 Layout.Header = Header
-Layout.Sidebar = Sidebar
 Layout.Main = Main
