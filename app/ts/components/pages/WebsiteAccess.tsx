@@ -400,7 +400,7 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<p style = { { marginBlock: '0.5rem' } }>This will permanently premove ***.*** access to the following address <data value = { addressString } style = { { backgroundColor: 'var(--card-bg-color)', color: 'var(--text-color)', padding: '2px 4px', borderRadius: 2 } }>{ addressString }</data></p>
+				<p style = { { marginBlock: '0.5rem' } }>This will prevent <pre>{websiteOrigin}</pre> from accessing to the following address <data value = { addressString } style = { { backgroundColor: 'var(--card-bg-color)', color: 'var(--text-color)', padding: '2px 4px', borderRadius: 2 } }>{ addressString }</data></p>
 				<p style = { { marginBlock: '1rem' } }>Are you sure you want to continue?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 					<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
