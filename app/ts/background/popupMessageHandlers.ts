@@ -549,12 +549,8 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	}
 }
 
-async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
-	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
-	else await updateContentScriptInjectionStrategyManifestV2()
-
-	// reload all connected tabs of the same origin and the current webpage
+// reload all connected tabs of the same origin and the current webpage
+async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
 	const tabIdsToRefesh = Array.from(websiteTabConnections.entries()).map(([tabId]) => tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
@@ -567,6 +563,14 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 			console.warn(e)
 		}
 	}
+}
+
+async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
+	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	else await updateContentScriptInjectionStrategyManifestV2()
+
+	reloadConnectedTabs(websiteTabConnections)
 }
 
 export async function disableInterceptor(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
@@ -608,6 +612,8 @@ async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: Websit
 			return access
 		})
 	})
+
+	reloadConnectedTabs(websiteTabConnections)
 }
 
 export async function blockOrAllowExternalRequests(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
