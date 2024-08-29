@@ -318,6 +318,21 @@ export const ChangeInterceptorAccess = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
+export type BlockOrAllowExternalRequests = funtypes.Static<typeof BlockOrAllowExternalRequests>
+export const BlockOrAllowExternalRequests = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_blockOrAllowExternalRequests'),
+	data: funtypes.Object({
+		website: Website,
+		shouldBlock: funtypes.Boolean
+	})
+}).asReadonly()
+
+export type RemoveWebsiteAccess = funtypes.Static<typeof RemoveWebsiteAccess>
+export const RemoveWebsiteAccess = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_removeWebsiteAccess'),
+	data: funtypes.Object({ websiteOrigin: funtypes.String })
+}).asReadonly()
+
 export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
 export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_signerChangeChainDialog'),
@@ -839,7 +854,9 @@ export const PopupMessage = funtypes.Union(
 	DisableInterceptor,
 	SetEnsNameForHash,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
-	RetrieveWebsiteAccess
+	RetrieveWebsiteAccess,
+	BlockOrAllowExternalRequests,
+	RemoveWebsiteAccess
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
