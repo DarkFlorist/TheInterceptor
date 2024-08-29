@@ -44,7 +44,8 @@ export async function getLastKnownCurrentTabId() {
 	const tabIdPromise = getCurrentTabId()
 	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true })
 	const tabId = await tabIdPromise
-	if (tabs[0]?.id === undefined) return tabId
+	// skip restricted or insufficient permission tabs
+	if (tabs[0]?.id === undefined || tabs[0]?.url === undefined) return tabId
 	if (tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
 }
