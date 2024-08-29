@@ -161,7 +161,7 @@ const WebsiteSettingsList = () => {
 
 	return (
 		<section style = { { scrollMarginTop: 'var(--header-height)', paddingBlock: '1rem' } }>
-			<h4 style = { { fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Matched Sites <span>3 / 4</span></h4>
+			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
 			<form onSubmit = { updateSelection }>
 				{ websiteAccessList.value.length > 1 ? (
 					<>
