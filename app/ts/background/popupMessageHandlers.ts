@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refresh
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, RetrieveWebsiteAccess, BlockOrAllowExternalRequests, RemoveWebsiteAccess } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, RetrieveWebsiteAccess, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -63,7 +63,7 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 		await setUseSignersAddressAsActiveAddress(addressChange.data.activeAddress === 'signer', signerAccount)
 
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] } )
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 
 		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: addressChange.data.simulationMode,
@@ -91,8 +91,8 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 
 export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => {
-		if (previousContacts.find((x) => x.address === entry.data.address) ) {
-			return previousContacts.map((x) => x.address === entry.data.address ? entry.data : x )
+		if (previousContacts.find((x) => x.address === entry.data.address)) {
+			return previousContacts.map((x) => x.address === entry.data.address ? entry.data : x)
 		}
 		return previousContacts.concat([entry.data])
 	})
@@ -102,7 +102,7 @@ export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteT
 
 export async function changeInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
 	await updateWebsiteAccess((previousAccess) => {
-		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin ===  acc.website.websiteOrigin)?.removed !== true)
+		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
 			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
 			if (changeForEntry === undefined) return entry
@@ -131,7 +131,7 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 
 export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
 	await updateTransactionStack((prevStack: TransactionStack) => {
-		switch(params.data.type) {
+		switch (params.data.type) {
 			case 'Transaction': {
 				const transactionIdentifier = params.data.transactionIdentifier
 				const transactionToBeRemoved = prevStack.transactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
@@ -181,7 +181,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const visualizedSimulatorStatePromise = getSimulationResults()
 	const first = promises[0]
 	if (first === undefined) return
-	switch(first.type) {
+	switch (first.type) {
 		case 'SignableMessage': {
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereumClientService, requestAbortController, first.signedMessageTransaction, ethereumClientService.getRpcEntry())
 			const message: UpdateConfirmTransactionDialog = {
@@ -213,7 +213,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			const oldSimulatedAndVisualizedTransactions = first.simulationResults.data.simulatedAndVisualizedTransactions
 			const simulationState = first.simulationResults.data.simulationState
 
-			const eventsForEachTransaction = await Promise.all(oldEventsForEachTransaction.map(async(transactionsEvents) => await parseEvents(transactionsEvents.map((event) => event), ethereumClientService, requestAbortController)))
+			const eventsForEachTransaction = await Promise.all(oldEventsForEachTransaction.map(async (transactionsEvents) => await parseEvents(transactionsEvents.map((event) => event), ethereumClientService, requestAbortController)))
 			const parsedInputData = await Promise.all(oldSimulatedAndVisualizedTransactions.map((transaction) => parseInputData({ to: transaction.transaction.to?.address, input: transaction.transaction.input, value: transaction.transaction.value }, ethereumClientService, requestAbortController)))
 			const allEvents = eventsForEachTransaction.flat()
 			const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, requestAbortController, allEvents, parsedInputData, simulationState)
@@ -222,20 +222,22 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			const ensNameHashesPromise = retrieveEnsNodeHashes(ethereumClientService, allEvents, addressBookEntries)
 			const namedTokenIds = await namedTokenIdsPromise
 			const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
-			const visualizedSimulatorState =  await visualizedSimulatorStatePromise
+			const visualizedSimulatorState = await visualizedSimulatorStatePromise
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
 					pendingTransactionAndSignableMessages: [
 						modifyObject(first,
-							{ simulationResults: {
-								statusCode: 'success',
-								data: modifyObject(first.simulationResults.data, {
-									simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }, visualizedSimulatorState.tokenPriceEstimates, visualizedSimulatorState.tokenPriceQuoteToken),
-									addressBookEntries,
-									eventsForEachTransaction,
-								})
-							} })
+							{
+								simulationResults: {
+									statusCode: 'success',
+									data: modifyObject(first.simulationResults.data, {
+										simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }, visualizedSimulatorState.tokenPriceEstimates, visualizedSimulatorState.tokenPriceQuoteToken),
+										addressBookEntries,
+										eventsForEachTransaction,
+									})
+								}
+							})
 						, ...promises.slice(1)],
 					currentBlockNumber: await currentBlockNumberPromise,
 				}
@@ -262,7 +264,7 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(simulator.ethereum, undefined, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(simulator.ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	if (refreshMessage === undefined) return
-	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transaction) => ({...transaction, simulationResults: refreshMessage }))
+	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, simulationResults: refreshMessage }))
 	await updateConfirmTransactionView(simulator.ethereum)
 }
 
@@ -286,7 +288,7 @@ export async function enableSimulationMode(simulator: Simulator, websiteTabConne
 		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: await getSignerAccount(),
-			...chainToSwitch === undefined ? {} :  { rpcNetwork: networkToSwitch },
+			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
 		})
 	} else {
 		const selectedNetworkToSwitch = settings.currentRpcNetwork.httpsRpc !== undefined ? settings.currentRpcNetwork : (await getRpcList())[0]
@@ -434,7 +436,7 @@ export async function setNewRpcList(simulator: Simulator, request: SetRpcList, s
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
-	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
+	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${request.data.transactionIdentifier}`)
 	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
 	return await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
@@ -455,7 +457,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 	// check for duplicates
 	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name)
 	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
-		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
+		return `There already exists ${duplicateEntry.type} with ${'symbol' in duplicateEntry ? `the symbol "${duplicateEntry.symbol}" and` : ''} the name "${duplicateEntry.name}".`
 	}
 
 	// check that address is valid
@@ -502,7 +504,8 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
-	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation',
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_addOrModifyAddressWindowStateInformation',
 		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState, identifiedAddress: await identifyPromise }
 	})
 }
@@ -539,7 +542,7 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	try {
 		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
 		checkAndThrowRuntimeLastError()
-	} catch(error) {
+	} catch (error) {
 		console.warn('Failed to update tab with new webpage')
 		// biome-ignore lint/suspicious/noConsoleLog: <used for support debugging>
 		console.log({ error })
@@ -604,12 +607,10 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 }
 
 async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) {
-	await updateWebsiteAccess((previousAccess) => {
-		return previousAccess.map((access) => {
-			if (access.website.websiteOrigin === website.websiteOrigin) {
-				return { ...access, declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' }
-			}
-			return access
+	await updateWebsiteAccess((previousAccessList) => {
+		return previousAccessList.map((access) => {
+			if (access.website.websiteOrigin !== website.websiteOrigin) return access
+			return { ...access, declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled', e: 'e' } as const
 		})
 	})
 
@@ -619,6 +620,23 @@ async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: Websit
 export async function blockOrAllowExternalRequests(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
 	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
+	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+}
+
+async function setAdressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
+	await updateWebsiteAccess((previousAccessList) => {
+		return previousAccessList.map((access) => {
+			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
+			const addressAccessList = access.addressAccess.map(addressAccess => (addressAccess.address !== address) ? addressAccess :  { ...addressAccess, access: allowAccess })
+			return { ...access, addressAccess: addressAccessList } })
+	})
+
+	reloadConnectedTabs(websiteTabConnections)
+}
+
+export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
+	const { website, address, allowAccess } = parsedRequest.data
+	await setAdressAccessForWebsite(websiteTabConnections, website.websiteOrigin, address, allowAccess)
 	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
