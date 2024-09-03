@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import { dataStringWith0xStart, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
+import { isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -15,11 +15,12 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
-import { ParsedInputData, QuarantineReasons } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
-import { ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
+import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
+import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -121,29 +122,33 @@ const decodeMessage = (message: string) => {
 	return message
 }
 
+function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
+	const asciiCount = input.split('').filter(char => char.charCodeAt(0) <= 127).length
+	const numberCount = input.split('').filter(char => !isNaN(Number(char))).length
+	const validCount = asciiCount + numberCount
+	return validCount / input.length >= 0.95
+}
+
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			if (visualizedPersonalSignRequest.method === 'personal_sign') return (
-				<Viewer id = 'personal_sign'>
-					<Viewer.List>
-						<Viewer.View title = 'View Raw' value = 'raw'>
-							<div class = 'textbox'>
-								<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
-							</div>
-						</Viewer.View>
-						<Viewer.View title = 'View Parsed' value = 'parsed'>
-							<div class = 'textbox'>
-								<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decodeMessage(visualizedPersonalSignRequest.message) }</p>
-							</div>
-						</Viewer.View>
-					</Viewer.List>
-					<Viewer.Triggers />
-				</Viewer>
-			)
-			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
-			</div>
+			const decoded = decodeMessage(visualizedPersonalSignRequest.message)
+			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
+			return <Viewer id = 'personal_sign'>
+				<Viewer.List>
+					<Viewer.View title = 'View Raw' value = 'raw' isActive = { !isDecodedAsciiOrNumbers }>
+						<div class = 'textbox'>
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
+						</div>
+					</Viewer.View>
+					<Viewer.View title = 'View Parsed' value = 'parsed' isActive = { isDecodedAsciiOrNumbers }>
+						<div class = 'textbox'>
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decoded }</p>
+						</div>
+					</Viewer.View>
+				</Viewer.List>
+				<Viewer.Triggers />
+			</Viewer>
 		}
 		case 'SafeTx': return <GnosisSafeVisualizer
 			gnosisSafeMessage = { visualizedPersonalSignRequest }
@@ -287,7 +292,6 @@ type ExtraDetailsCardParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-
 type GnosisSafeExtraDetailsParams = {
 	visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx
 	renameAddressCallBack: RenameAddressCallBack
@@ -333,11 +337,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/>  }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
-		<div class = 'textbox'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(visualizedPersonalSignRequestSafeTx.message.message.data) }</p>
-		</div>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed Gnosis Safe meta transaction: </p>
-		{ visualizedPersonalSignRequestSafeTx.parsedMessageData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/> }
+		<TransactionInput parsedInputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } to = { visualizedPersonalSignRequestSafeTx.to } input = { visualizedPersonalSignRequestSafeTx.parsedMessageData.input } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/>
 	</>
 }
 
@@ -390,15 +390,17 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 		</header>
 		{ !showSummary
 			? <></>
-			: <>
-				<div class = 'card-content'>
-					<div class = 'container' style = 'margin-bottom: 10px;'>
-						<div class = 'textbox'>
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.rawMessage }</p>
-						</div>
-					</div>
-				</div>
-			</>
+			: <ViewSelector id = 'raw_message'>
+				<ViewSelector.List>
+					<ViewSelector.View title = 'View Parsed' value = 'parsed'> 
+						<pre> { decodeMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
+					</ViewSelector.View>
+					<ViewSelector.View title = 'View Raw' value = 'raw'>
+						<pre>{ visualizedPersonalSignRequest.rawMessage }</pre>
+					</ViewSelector.View>
+				</ViewSelector.List>
+				<ViewSelector.Triggers />
+			</ViewSelector>
 		}
 	</div>
 }
@@ -429,7 +431,7 @@ export function SignatureCard(params: SignatureCardParams) {
 			</div>
 			<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>
 			<ExtraDetails { ...params }/>
-			<RawMessage { ...params }/>
+			{ params.visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <RawMessage { ...params }/> }
 
 			<Signer
 				signer = { params.visualizedPersonalSignRequest.activeAddress }

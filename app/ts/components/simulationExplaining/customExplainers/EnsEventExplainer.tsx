@@ -170,12 +170,12 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					fuses to
 				</p>
 			</div>
-			<div class = 'log-cell'>
-				{ ensEvent.logInformation.fuses.map((fuse) => {
-					<div class = 'textbox' style = 'white-space: normal;'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ fuse }</p>
+			<div class = 'log-cell' style = 'display: block;'>
+				{ ensEvent.logInformation.fuses.map((fuse) => <>
+					<div class = 'textbox' style = 'white-space: nowrap; background-color: var(--alpha-015); margin: 5px'>
+						<p class = 'paragraph'> { fuse }</p>
 					</div>
-				}) }
+				</>) }
 			</div>
 		</div>
 		case 'ENSNameChanged': return <div class = 'ens-table'>
