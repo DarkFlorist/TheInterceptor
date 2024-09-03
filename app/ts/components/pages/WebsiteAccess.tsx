@@ -163,12 +163,12 @@ const WebsiteSettingsList = () => {
 		<section style = { { scrollMarginTop: 'var(--header-height)', paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
 			<form onSubmit = { updateSelection }>
-				{ websiteAccessList.value.length > 1 ? (
+				{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : (
 					<>
 						<ul role = 'listbox'>{ websiteAccessList.value.map((access, index) => <WebsiteAccessOverview websiteAccess = { access } checked = { index === 0 } />) }</ul>
 						<input type = 'submit' style = { { display: 'none' } } />
 					</>
-				) : <EmptyAccessList /> }
+				)}
 			</form>
 		</section>
 	)
@@ -342,13 +342,16 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcc
 }
 
 const AddressAccessCard = ({ website, addressAccess }: { website: Website, addressAccess: WebsiteAddressAccess }) => {
-	const updateAddressAccess = () => {}
+	const setAddressAccess = (event: Event) => {
+		if (!(event.target instanceof HTMLInputElement)) return
+		sendPopupMessageToBackgroundPage({ method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address: addressAccess.address, allowAccess: event.target.checked } })
+	}
 
 	return (
 		<div style = { { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) min-content min-content', columnGap: '1rem', alignItems: 'center' } }>
 			<AddressCard address = { addressAccess.address } />
 			<RemoveAddressConfirmation websiteOrigin = { website.websiteOrigin } address = { addressAccess.address } />
-			<Switch checked = { addressAccess.access } onChange = { updateAddressAccess } />
+			<Switch checked = { addressAccess.access } onChange = { setAddressAccess } />
 		</div>
 	)
 }
