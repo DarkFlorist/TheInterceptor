@@ -74,7 +74,7 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 
 async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined): Promise<AddressBookEntries> {
 	const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
-	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim().toLowerCase() : undefined
+	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim() : undefined
 	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
 	const userEntries = (await getUserAddressBookEntries()).filter((entry) => entry.entrySource !== 'OnChain')
@@ -83,7 +83,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = userEntries.filter((entry): entry is ContactEntry => entry.type === 'contact')
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ContactEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -92,7 +92,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = userEntries.filter((entry) => entry.useAsActiveAddress === true)
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: AddressBookEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -101,7 +101,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = concatArraysUniqueByAddress(userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155'), Array.from(erc1155Metadata).map(convertErc1155DefinitionToAddressBookEntry))
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc1155Entry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -110,7 +110,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = concatArraysUniqueByAddress(userEntries.filter((entry): entry is Erc20TokenEntry => entry.type === 'ERC20'), Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry))
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc20TokenEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol.toLowerCase()} ${ entry.name.toLowerCase()}`, addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol} ${ entry.name}`, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -119,7 +119,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = concatArraysUniqueByAddress(userEntries.filter((entry): entry is Erc721Entry => entry.type === 'ERC721'), Array.from(erc721Metadata).map(convertErc721DefinitionToAddressBookEntry))
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc721Entry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol.toLowerCase()} ${ entry.name.toLowerCase()}`, addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol} ${ entry.name}`, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -128,7 +128,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = concatArraysUniqueByAddress(userEntries.filter((entry): entry is ContractEntry => entry.type === 'contract'), Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry))
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ContractEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in entry && entry.protocol !== undefined ? entry.protocol.toLowerCase() : ''} ${ entry.name.toLowerCase() }`, addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in entry && entry.protocol !== undefined ? entry.protocol : ''} ${ entry.name }`, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
