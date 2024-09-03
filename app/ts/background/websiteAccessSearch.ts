@@ -16,6 +16,18 @@ export function fuzzySearchWebsiteAccess(accessList: WebsiteAccessArray, query: 
 	const metadata: Record<string, SearchMetadata> = {}
 	const matches = query ? queryAccessList() : accessList
 
+	function closestMatchSorter(a: WebsiteAccess, b: WebsiteAccess) {
+		const aProximity = metadata[a.website.websiteOrigin]?.closestProximity
+		const bProximity = metadata[b.website.websiteOrigin]?.closestProximity
+
+		if (!aProximity || !bProximity) return 0
+
+		const [aLength, aIndex] = aProximity
+		const [bLength, bIndex] = bProximity
+
+		return aLength === bLength ? aIndex! - bIndex! : aLength! - bLength!
+	}
+
 	function queryAccessList() {
 		const matches = []
 		for (const access of accessList) {
@@ -30,25 +42,13 @@ export function fuzzySearchWebsiteAccess(accessList: WebsiteAccessArray, query: 
 		return matches
 	}
 
-	function closestMatchSorter(a: WebsiteAccess, b: WebsiteAccess) {
-		const aProximity = metadata[a.website.websiteOrigin]?.closestProximity
-		const bProximity = metadata[b.website.websiteOrigin]?.closestProximity
-
-		if (!aProximity || !bProximity) return 0
-
-		const [aLength, aIndex] = aProximity
-		const [bLength, bIndex] = bProximity
-
-		return aLength === bLength ? aIndex! - bIndex! : aLength! - bLength!
-	}
-
 	return { matches, metadata }
 }
 
 const createSearchInstance = (query: string): SearchMetadata => {
 	return {
 		_targets: [],
-		closestProximity: [Infinity, Infinity] as const,
+		closestProximity: [Infinity, Infinity],
 		scores: {},
 		get targets() {
 			return this._targets
@@ -59,7 +59,7 @@ const createSearchInstance = (query: string): SearchMetadata => {
 			// compute scores and closest proximity
 			for (const target of this._targets) {
 				const targetProximity = computeProximity(query, target)
-				if (targetProximity === undefined) continue
+				if (targetProximity.every(value => value === Infinity)) continue
 				if (targetProximity < this.closestProximity) this.closestProximity = targetProximity
 				this.scores[target] = targetProximity
 			}
@@ -79,10 +79,9 @@ const createRegexPattern = (queryString: string) => {
 	return new RegExp(`(?=(${query.split('').map(unicodeEscapeString).join('.*?')}))`, 'ui')
 }
 
-function computeProximity(query: string, target: string): SearchProximity | undefined {
+function computeProximity(query: string, target: string): SearchProximity {
 	const regexPattern = createRegexPattern(query)
 	const bestMatchString = bestMatch(target.match(regexPattern))
-	if (bestMatchString === undefined) return undefined
-
+	if (bestMatchString === undefined) return [Infinity, Infinity]
 	return [bestMatchString.length, target.indexOf(bestMatchString)]
 }
