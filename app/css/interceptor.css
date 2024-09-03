@@ -53,10 +53,7 @@ body { font-family: "Inter" !important; }
 	--alpha-005: rgba(255, 255, 255, 0.05);
 	--alpha-015: rgba(255, 255, 255, 0.15);
 
-	--modal-background-color: rgba(10, 10, 10, .7);
-
-	--big-font-size: 28px;
-	--normal-font-size: 14px;
+	--modal-background-color: rgba(10, 10, 10, .7)
 }
 
 :where(svg[role=img], figure > img) { display: block }
@@ -78,7 +75,7 @@ button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:not(.btn, .card-header-icon):disabled, button:not(.btn, .card-header-icon)[disabled] {
+button:not(.btn):disabled, button:not(.btn)[disabled] {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }
@@ -937,7 +934,7 @@ strong { color: inherit }
 	--s-bg: var(--btn-bg-color, gray);
 	--s-fg: var(--btn-text-color, var(--text-color));
 	--s-size: var(--btn-text-size , 1em);
-	--s-outline: var(--btn-outline, 1px solid transparent);
+	--s-outline: var(--btn-outline, none);
 	--s-brightness: var(--btn-brightness, 1);
 	--s-saturation: var(--btn-saturation, 1);
 	--s-contrast: var(--btn-contrast, 1);
@@ -1307,37 +1304,37 @@ fieldset label:has([type=radio]:checked):before {
 }
 
 /* Layout Component */
-.layout {
-	--line-color: #505050;
-	--header-height: 0px;
-	display: flex;
-	flex-wrap: wrap;
-	align-items: start;
-	flex: 8 auto;
-	column-gap: 2rem;
-}
+:has(> .layout:first-child):not(dialog:not([open])) {
+	background: var(--bg-color);
+	display: grid;
+	grid-template-columns: var(--grid-columns, minmax(1rem,auto) minmax(min-content,800px) minmax(1rem,auto));
 
-.layout > * { grid-column: content }
+	.layout {
+		--grid-col: var(--grid-column, 2);
+		--line-color: #505050;
+		--header-height: 0px;
+		display: grid;
+		grid-column: var(--grid-col);
+		min-height: 100vh;
+		grid-template-rows: min-content 1fr;
 
-.layout > header {
-	border-bottom: 1px solid var(--line-color);
-	width: 100%;
-	background-color: var(--bg-color);
-	position: sticky;
-	top: 0;
-	z-index: 10;
-}
 
-.layout > aside {
-	flex: 1 0 22ch;
-	background-color: var(--bg-color);
-}
+		&:has(header + article) {
+			grid-template-rows: min-content 1fr;
 
-.layout > article {
-	flex: 3 0 28ch;
-	position: sticky;
-	top: var(--header-height);
-	min-height: calc(100vh - var(--header-height));
+			> header {
+				background-color: var(--bg-color);
+				position: sticky;
+				top: 0;
+				z-index: 10;
+			}
+		}
+
+		&:is(main > .layout) > header {
+			border-bottom: 1px solid var(--line-color);
+		}
+
+	}
 }
 
 /* Search Component */
@@ -1482,22 +1479,6 @@ input[role=switch]:checked:before {
 }
 
 /* Customizations */
-main:has(.layout:is(main > .layout)) {
-	background: var(--bg-color);
-}
-
-main:has(.layout) {
-	display: flex;
-	min-height: 100vh;
-	align-items: start;
-
-}
-
-main:has(.layout):before,
-main:has(.layout):after {
-	content: '';
-	flex: 1 0 1rem;
-}
 
 header:has(form[role='search']) {
 	display: flex;
@@ -1515,10 +1496,13 @@ header:has(form[role='search']) h1 {
 	flex: 1 0 auto;
 }
 
-[role=option]:has([type=radio]){
+[role=option]:has([type=radio]) {
 	--heading-color: var(--disabled-text-color);
+	--heading-weight: normal;
 	--subheading-color: dimgray;
-	cursor: pointer;
+	margin: 0;
+	border-bottom: 1px solid #ffffff10;
+	position: relative;
 }
 
 [role=option]:has([type=radio]):focus-within {
@@ -1527,6 +1511,16 @@ header:has(form[role='search']) h1 {
 	--subheading-color: var(--text-color);
 }
 
-[role=option]:has([type=radio]:checked) {
-	background: radial-gradient(circle, #ffffff10 0%, transparent 100%);
+[role=option] [type=radio] {
+	position: absolute;
+	opacity: 0;
+}
+
+.access-details {
+	padding: 0;
+	border: 0 none;
+    background: var(--bg-color);
+    overscroll-behavior: contain;
+	min-height: 100vh;
+	min-width: 100vw;
 }
