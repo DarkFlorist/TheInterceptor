@@ -73,7 +73,7 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 }
 
 async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined): Promise<AddressBookEntries> {
-	const unicodeEscapeString = (input: string) => `\\u{${input.charCodeAt(0).toString(16)}}`
+	const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim().toLowerCase() : undefined
 	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
