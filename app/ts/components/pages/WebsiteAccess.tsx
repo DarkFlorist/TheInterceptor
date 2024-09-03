@@ -163,12 +163,12 @@ const WebsiteSettingsList = () => {
 		<section style = { { scrollMarginTop: 'var(--header-height)', paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
 			<form onSubmit = { updateSelection }>
-				{ websiteAccessList.value.length > 1 ? (
+				{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : (
 					<>
 						<ul role = 'listbox'>{ websiteAccessList.value.map((access, index) => <WebsiteAccessOverview websiteAccess = { access } checked = { index === 0 } />) }</ul>
 						<input type = 'submit' style = { { display: 'none' } } />
 					</>
-				) : <EmptyAccessList /> }
+				)}
 			</form>
 		</section>
 	)
