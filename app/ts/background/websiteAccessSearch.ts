@@ -6,8 +6,7 @@ const computeSearchMetadata = ({ website, addressAccess }: WebsiteAccess, query:
 	const searchMeta = createSearchInstance(query)
 	const connectedAddresses = addressAccess ? addressAccess.map(({ address }) => serialize(EthereumAddress, address)) : []
 
-	const isValidTarget = (value: unknown): value is string => typeof value === 'string'
-	searchMeta.targets = [website.websiteOrigin, website.title, ...connectedAddresses].filter(isValidTarget)
+	searchMeta.targets = [website.websiteOrigin, website.title, ...connectedAddresses].filter((target): target is string => Boolean(target))
 
 	return searchMeta
 }
