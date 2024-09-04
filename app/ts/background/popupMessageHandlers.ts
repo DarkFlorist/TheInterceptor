@@ -610,7 +610,7 @@ async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: Websit
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== website.websiteOrigin) return access
-			return { ...access, declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled', e: 'e' } as const
+			return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 		})
 	})
 
@@ -627,8 +627,9 @@ async function setAdressAccessForWebsite(websiteTabConnections: WebsiteTabConnec
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
-			const addressAccessList = access.addressAccess.map(addressAccess => (addressAccess.address !== address) ? addressAccess :  { ...addressAccess, access: allowAccess })
-			return { ...access, addressAccess: addressAccessList } })
+			const addressAccessList = access.addressAccess.map(addressAccess => (addressAccess.address !== address) ? addressAccess :  modifyObject(addressAccess, { access: allowAccess }))
+			return modifyObject(access, { addressAccess: addressAccessList })
+		})
 	})
 
 	reloadConnectedTabs(websiteTabConnections)
