@@ -1388,15 +1388,15 @@ form[role='search'] input[type='search'] ~ button:focus {
 input[role=switch] {
 	--bg-color: #922929;
 	--checked-bg-color: #378b37;
-    appearance: none;
-    width: 1.75rem;
-    background: var(--bg-color);
-    display: block;
-    border-radius: 1rem;
-    padding: 4px;
-    border: 0 none;
+	appearance: none;
+	width: 1.75rem;
+	background: var(--bg-color);
+	display: block;
+	border-radius: 1rem;
+	padding: 4px;
+	border: 0 none;
 	cursor: pointer;
-    transition: background 400ms;
+	transition: background 400ms;
 	box-shadow: 0 0 1px inset #000000d6;
 }
 
@@ -1411,13 +1411,13 @@ input[role=switch]:checked {
 
 input[role=switch]:before {
 	content: '';
-    display: block;
-    background: white;
-    height: 1rem;
-    border-radius: 100%;
-    width: 1rem;
-    border: none;
-    transition: transform 200ms;
+	display: block;
+	background: white;
+	height: 1rem;
+	border-radius: 100%;
+	width: 1rem;
+	border: none;
+	transition: transform 200ms;
 	transform: scale(1);
 	box-shadow: 0 0 3px #000000d6;
 }
@@ -1514,8 +1514,8 @@ header:has(form[role='search']) h1 {
 .access-details {
 	padding: 0;
 	border: 0 none;
-    background: var(--bg-color);
-    overscroll-behavior: contain;
+	background: var(--bg-color);
+	overscroll-behavior: contain;
 	min-height: 100vh;
 	min-width: 100vw;
 }
