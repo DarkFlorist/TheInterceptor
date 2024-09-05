@@ -74,8 +74,7 @@ function bestMatch(matches: RegExpMatchArray | null) {
 const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
 
 const createRegexPattern = (queryString: string) => {
-	const query = queryString.trim().toLowerCase()
-	return new RegExp(`(?=(${query.split('').map(unicodeEscapeString).join('.*?')}))`, 'ui')
+	return new RegExp(`(?=(${ queryString.trim().split('').map(unicodeEscapeString).join('.*?') }))`, 'ui')
 }
 
 function computeProximity(query: string, target: string): SearchProximity {
