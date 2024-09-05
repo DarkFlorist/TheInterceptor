@@ -71,7 +71,7 @@ function bestMatch(matches: RegExpMatchArray | null) {
 	return undefined
 }
 
-const unicodeEscapeString = (input: string) => `\\u{${input.charCodeAt(0).toString(16)}}`
+const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
 
 const createRegexPattern = (queryString: string) => {
 	const query = queryString.trim().toLowerCase()
