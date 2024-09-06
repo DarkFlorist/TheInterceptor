@@ -731,7 +731,7 @@ export async function popupMessageHandler(
 			case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(websiteTabConnections, parsedRequest)
 			case 'popup_removeWebsiteAccess': return await removeWebsiteAccess(simulator, websiteTabConnections, parsedRequest)
-			case 'popup_removeWebsiteAddressAccess': return await removeWebsiteAddressAccess(websiteTabConnections, parsedRequest)
+			case 'popup_removeWebsiteAddressAccess': return await removeWebsiteAddressAccess(simulator, websiteTabConnections, parsedRequest)
 			default: assertUnreachable(parsedRequest)
 		}
 	} catch(error: unknown) {

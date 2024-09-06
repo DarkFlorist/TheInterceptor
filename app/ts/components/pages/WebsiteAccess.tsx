@@ -12,7 +12,6 @@ import { MessageToPopup, RetrieveWebsiteAccessFilter, SearchMetadata } from '../
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
-import { updateWebsiteAccess } from '../../background/settings'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -357,23 +356,10 @@ const AddressAccessCard = ({ website, addressAccess }: { website: Website, addre
 }
 
 const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint, websiteOrigin: string }) => {
-	const { searchQuery } = useWebsiteAccess()
 	const addressString = serialize(EthereumAddress, address)
 
 	const removeAddressAccessForWebsite = async () => {
-		await updateWebsiteAccess((existingAccessList) => {
-			const newWebsiteAccessMap = new Map(existingAccessList.map(access => [access.website.websiteOrigin, { ...access }]))
-			if (newWebsiteAccessMap.has(websiteOrigin)) {
-				const websiteAccessOfWebsiteOrigin = newWebsiteAccessMap.get(websiteOrigin)!
-				if (!websiteAccessOfWebsiteOrigin.addressAccess) return existingAccessList
-				const addressAccessOfWebsiteOriginMap = new Map(websiteAccessOfWebsiteOrigin.addressAccess.map(addressAccess => [addressAccess.address, { ...addressAccess }]))
-				if (addressAccessOfWebsiteOriginMap.has(address)) addressAccessOfWebsiteOriginMap.delete(address)
-				websiteAccessOfWebsiteOrigin.addressAccess = Array.from(addressAccessOfWebsiteOriginMap.values())
-			}
-			return Array.from(newWebsiteAccessMap.values())
-		})
-
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess',  data: { query: searchQuery.value } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin, address }})
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {

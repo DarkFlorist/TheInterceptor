@@ -337,6 +337,15 @@ export const AllowOrPreventAddressAccessForWebsite = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type RemoveWebsiteAddressAccess = funtypes.Static<typeof RemoveWebsiteAddressAccess>
+export const RemoveWebsiteAddressAccess = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_removeWebsiteAddressAccess'),
+	data: funtypes.Object({
+		websiteOrigin: funtypes.String,
+		address: EthereumAddress
+	})
+}).asReadonly()
+
 export type RemoveWebsiteAccess = funtypes.Static<typeof RemoveWebsiteAccess>
 export const RemoveWebsiteAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_removeWebsiteAccess'),
@@ -867,6 +876,7 @@ export const PopupMessage = funtypes.Union(
 	RetrieveWebsiteAccess,
 	BlockOrAllowExternalRequests,
 	AllowOrPreventAddressAccessForWebsite,
+	RemoveWebsiteAddressAccess,
 	RemoveWebsiteAccess
 )
 
