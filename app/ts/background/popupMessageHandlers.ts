@@ -623,6 +623,18 @@ export async function blockOrAllowExternalRequests(simulator: Simulator, website
 	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
+export async function removeWebsiteAddressAccess(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, address: EthereumAddress) {
+	await updateWebsiteAccess((previousAccessList) => {
+		return previousAccessList.map(access => {
+			if (access.website.websiteOrigin !== websiteOrigin) return access
+			const prunedAddressAccess = access.addressAccess?.filter(addressAccess => addressAccess.address !== address)
+			return modifyObject(access, { addressAccess: prunedAddressAccess })
+		})
+	})
+
+	reloadConnectedTabs(websiteTabConnections)
+}
+
 async function setAdressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {

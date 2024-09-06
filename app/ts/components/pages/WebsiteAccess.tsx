@@ -12,7 +12,7 @@ import { MessageToPopup, RetrieveWebsiteAccessFilter, SearchMetadata } from '../
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
-import { updateWebsiteAccess } from '../../background/settings.js'
+import { updateWebsiteAccess } from '../../background/settings'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
