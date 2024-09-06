@@ -69,7 +69,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 export function useWebsiteAccess() {
 	const context = useContext(WebsiteAccessContext)
-	if (!context) throw new Error('useWebsiteAccess can only be used within chilren components of WebsiteAccessProvider')
+	if (!context) throw new Error('useWebsiteAccess can only be used within children components of WebsiteAccessProvider')
 	return context
 }
 
@@ -79,7 +79,7 @@ export const WebsiteAccessView = () => {
 			<Layout>
 				<Layout.Header>
 					<h1>Manage Websites</h1>
-					<SearchForm id = 'site_search' name = 'search' placeholder = 'Enter a website address' />
+					<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or wallet address' />
 				</Layout.Header>
 				<Layout.Main>
 					<WebsiteSettingsList />
