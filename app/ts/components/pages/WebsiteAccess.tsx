@@ -12,6 +12,7 @@ import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interce
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
+import { AddressBookProvider, useAddresBook } from '../AddressBookContext.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -72,18 +73,20 @@ export function useWebsiteAccess() {
 
 export const WebsiteAccessView = () => {
 	return (
-		<WebsiteAccessProvider>
-			<Layout>
-				<Layout.Header>
-					<h1>Manage Websites</h1>
-					<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or Ethereum address' />
-				</Layout.Header>
-				<Layout.Main>
-					<WebsiteSettingsList />
-					<WebsiteSettingsDetail />
-				</Layout.Main>
-			</Layout>
-		</WebsiteAccessProvider>
+		<AddressBookProvider>
+			<WebsiteAccessProvider>
+				<Layout>
+					<Layout.Header>
+						<h1>Manage Websites</h1>
+						<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or Ethereum address' />
+					</Layout.Header>
+					<Layout.Main>
+						<WebsiteSettingsList />
+						<WebsiteSettingsDetail />
+					</Layout.Main>
+				</Layout>
+			</WebsiteAccessProvider>
+		</AddressBookProvider>
 	)
 }
 
