@@ -56,7 +56,7 @@ body { font-family: "Inter" !important; }
 	--modal-background-color: rgba(10, 10, 10, .7)
 }
 
-:where(svg[role=img], figure > img) { display: block }
+:where(svg[role=img], figure > svg, figure > img) { display: block }
 
 data {
 	font: normal 1em "Inter";
@@ -1176,7 +1176,6 @@ summary:where(details[open] > *) {
 	white-space: nowrap;
 	text-overflow: ellipsis;
 	overflow: hidden;
-	contain: inline-size;
 	display: block;
 }
 

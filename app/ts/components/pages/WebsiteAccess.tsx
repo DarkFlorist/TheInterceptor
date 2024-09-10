@@ -206,12 +206,12 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: SiteOverviewProps) =>
 		<li role = 'option'>
 			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = 'websiteOrigin' value = { websiteAccess.website.websiteOrigin } defaultChecked = { checked } />
 			<label htmlFor = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } } onClick = { handleChange }>
-				<div class = 'flexy flexy-sm'>
+				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
 					<img role = 'img' src = { websiteAccess.website.icon } style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
 					<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
 						<div style = { { flex: 1 } }>
-							<h4 class = 'truncate' style = { { color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ websiteAccess.website.title }</h4>
-							<p class = 'truncate' style = { { fontSize: '0.875rem', lineHeight: 1.25, direction: 'rtl', color: 'var(--subheading-color)' } }>&lrm;{ websiteAccess.website.websiteOrigin }</p>
+							<h4 class = 'truncate' style = { { contain: 'inline-size',  color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ websiteAccess.website.title }</h4>
+							<p class = 'truncate' style = { { contain: 'inline-size', fontSize: '0.875rem', lineHeight: 1.25, direction: 'rtl', color: 'var(--subheading-color)' } }>&lrm;{ websiteAccess.website.websiteOrigin }</p>
 						</div>
 						<SiteStatusIndicator status = { getWebsiteStatus() } />
 					</div>
@@ -356,8 +356,6 @@ const AddressAccessCard = ({ website, addressAccess }: { website: Website, addre
 }
 
 const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint, websiteOrigin: string }) => {
-	const addressString = serialize(EthereumAddress, address)
-
 	const removeAddressAccessForWebsite = async () => {
 		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin, address }})
 	}
@@ -372,7 +370,11 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<p style = { { marginBlock: '0.5rem' } }>This will prevent <pre>{websiteOrigin}</pre> from accessing to the following address <data value = { addressString } style = { { backgroundColor: 'var(--card-bg-color)', color: 'var(--text-color)', padding: '2px 4px', borderRadius: 2 } }>{ addressString }</data></p>
+				<div style = { { marginBlock: '0.5rem' } }>This will prevent <pre>{websiteOrigin}</pre> from accessing to the following address
+					<div style = { { backgroundColor: 'var(--card-bg-color)', display: 'inline-block', padding: '0.5rem', borderRadius: 4, marginBlock: '0.5rem' } }>
+						<AddressCard address = { address } />
+					</div>
+				</div>
 				<p style = { { marginBlock: '1rem' } }>Are you sure you want to continue?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 					<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
@@ -386,9 +388,9 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 
 const AddressCard = ({ address }: { address: bigint }) => {
 	return (
-		<article class = 'flexy flexy-sm'>
+		<article style = { { display: 'grid', gridTemplateColumns: 'min-content minmax(1rem,max-content)', columnGap: '0.75rem', alignItems: 'center' } }>
 			<figure><Blockie style = { { fontSize: '2rem' } } address = { address } /></figure>
-			<section style = { { flex: 1 } }>
+			<section style = { { textAlign: 'left' } }>
 				<p style = { { color: 'var(--text-color)' } }>vitalik.eth</p>
 				<BigIntToEthereumAddress bigIntAddress = { address } class = 'truncate' style = { { fontSize: '0.875rem', color: 'var(--disabled-text-color)' } } />
 			</section>
