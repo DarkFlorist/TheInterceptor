@@ -375,7 +375,7 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 						<AddressCard address = { address } />
 					</div>
 				</div>
-				<p style = { { marginBlock: '1rem' } }>Are you sure you want to continue?</p>
+				<p style = { { marginBlock: '1rem' } }>Remove the website's access to this address anyway?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 					<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 					<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
