@@ -8,14 +8,13 @@ import { EthereumAddress, serialize } from '../../types/wire-types.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
 import { Layout } from '../subcomponents/DefaultLayout.js'
-import { MessageToPopup, RetrieveWebsiteAccessFilter, SearchMetadata } from '../../types/interceptor-messages.js'
+import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
-	searchResultMap: Signal<Record<string, SearchMetadata | undefined>>
 	websiteAccessList: Signal<WebsiteAccessArray>
 	selectedDomain: Signal<string | undefined>
 }
@@ -26,7 +25,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	const websiteAccessList = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
 	const addressAccessFromStore = useSignal<AddressBookEntries | undefined>(undefined)
-	const searchResultMap = useSignal<Record<string, SearchMetadata | undefined>>({})
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
 	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
@@ -54,7 +52,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 				case 'popup_retrieveWebsiteAccessReply':
 					websiteAccessList.value = parsed.data.websiteAccess
 					addressAccessFromStore.value = parsed.data.addressAccess
-					searchResultMap.value = parsed.data.searchMetadata
 					break
 			}
 		}
@@ -64,7 +61,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	useEffect(retrieveWebsiteAccess, [])
 
-	return <WebsiteAccessContext.Provider value = { { searchQuery, searchResultMap, websiteAccessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
@@ -105,6 +102,13 @@ const SearchForm = (props: SearchFormProps) => {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const formData = new FormData(event.currentTarget)
 		const inputValue = formData.get(props.name)?.toString()
+		return
+
+		/*
+		 * TODO: Reimplement Search
+		 * https://github.com/DarkFlorist/TheInterceptor/issues/1120
+		*/
+
 		searchQuery.value = inputValue || ''
 	}
 
@@ -216,7 +220,6 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: SiteOverviewProps) =>
 						<SiteStatusIndicator status = { getWebsiteStatus() } />
 					</div>
 				</div>
-				<AddressAccessOverview websiteAccess = { websiteAccess } />
 			</label>
 		</li>
 	)
@@ -233,43 +236,11 @@ const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) =>
 	}
 }
 
-const MAX_ADDRESS_ICONS = 10
-
-const AddressAccessOverview = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
-	const { searchResultMap } = useWebsiteAccess()
-
-	const websiteOrigin = websiteAccess.website.websiteOrigin
-	const searchMetadata = useComputed(() => searchResultMap.value[websiteOrigin]?.scores)
-
-	if (!websiteAccess.addressAccess || !searchMetadata.value) return <></>
-
-	let addressIcons = []
-
-	for (const { address } of websiteAccess.addressAccess) {
-		const addressString = serialize(EthereumAddress, address)
-		const score = searchMetadata.value[addressString]
-		if (score === undefined || score >= ([Infinity, Infinity] as const)) continue
-		addressIcons.push(<div style = { { borderRadius: '3px', overflow: 'hidden', fontSize: '1.5rem' } } title = { addressString }><Blockie address = { address } /></div>)
-	}
-
-	if (addressIcons.length < 1) return <></>
-
-	return (
-		<div style = { { paddingLeft: '2.5rem', display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'min-content', columnGap: '0.5rem', alignItems: 'center', paddingBottom: '0.5rem' } }>
-			{ addressIcons.slice(0, MAX_ADDRESS_ICONS) }
-			{ addressIcons.length > MAX_ADDRESS_ICONS ? <div style = { { fontSize: '0.75rem', lineHeight: 1, padding: '0.125rem 0.1875rem', backgroundColor: 'darkgoldenrod', color: 'white', borderRadius: 2, fontWeight: 600, border: '1px solid goldenrod' } }>+{ addressIcons.length - MAX_ADDRESS_ICONS }</div> : <></> }
-			{ addressIcons.length > MAX_ADDRESS_ICONS ? (
-				<div style = { { color: 'darkgoldenrod', fontSize: '0.75rem', whiteSpace: 'nowrap' } }> addresses</div>
-			) : <></> }
-		</div>
-	)
-}
-
 const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const dialogRef = useRef<HTMLDialogElement>(null)
 
-	const websiteAccess = useComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value)!)
+	const websiteAccess = useComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 
 	const closeDetails = () => { selectedDomain.value = undefined }
 
@@ -283,7 +254,9 @@ const WebsiteSettingsDetail = () => {
 		const dialogElement = dialogRef.current
 		if (!dialogElement) return
 		dialogElement.addEventListener('close', closeDetails)
-		return () => dialogElement.removeEventListener('close', closeDetails)
+		return () => {
+			dialogElement.removeEventListener('close', closeDetails)
+		}
 	}, [dialogRef.current])
 
 	return (
@@ -301,40 +274,63 @@ const WebsiteSettingsDetail = () => {
 						</div>)
 					}
 				</header>
-				{ websiteAccess.value ? (
-					<article>
-						<AddressAccessList websiteAccess = { websiteAccess } />
-						<AdvancedSettings websiteAccess = { websiteAccess } />
-					</article>
-				) : <NoAccessPrompt />
-				}
+				<article>
+					<NoAccessPrompt websiteAccess = { websiteAccess } />
+					<AddressAccessList websiteAccess = { websiteAccess } />
+					<AdvancedSettings websiteAccess = { websiteAccess } />
+				</article>
 			</form>
 
 		</dialog>
 	)
 }
 
-const NoAccessPrompt = () => {
+const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+	const { selectedDomain } = useWebsiteAccess()
+
+	const confirmOrRejectRemoval = async (returnValue: string) => {
+		if (returnValue !== 'confirm' || !websiteAccess.value) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
+		selectedDomain.value = undefined
+	}
+
+	if (!websiteAccess.value || websiteAccess.value.access) return <></>
+
 	return (
-		<article style = { { height: 'calc(100% + 1px)' } }>
+		<article>
 			<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '1rem', maxWidth: '32ch', textAlign: 'center', margin: '1rem auto' } }>
-				<h4 style = { { fontWeight: 600, color: 'var(--text-color)' } }>Website is not connected</h4>
-				<p style = { { fontSize: '0.875rem', lineHeight: 1.25 } }>This website does not have access to The Interceptor. Try visiting website connect using Interceptor.</p>
+				<h4 style = { { fontWeight: 600, color: 'var(--text-color)' } }>This website was denied access to The Interceptor.</h4>
+				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>You will need to remove this website from The Interceptor before you can try to reconnect with it again.</p>
+				<Modal>
+					<Modal.Open class = 'btn btn--destructive' style={{ display: 'inline-block' }}><span style = { { whiteSpace: 'nowrap' } }>Remove Website</span></Modal.Open>
+					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
+						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
+						<p></p>
+						<p style = { { marginBlock: '0.5rem' } }>This will remove your preference to deny <pre>{ websiteAccess.value.website.websiteOrigin }</pre> access to The Interceptor.</p>
+						<p style = { { marginBlock: '1rem' } }>Remove this website from The Interceptor anyway?</p>
+						<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
+							<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+							<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
+						</div>
+					</Modal.Dialog>
+				</Modal>
 			</div>
 		</article>
 	)
 }
 
-const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
-	if (websiteAccess.value.addressAccess === undefined || websiteAccess.value.addressAccess.length < 1) return <></>
+const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+	const access = websiteAccess.value
+
+	if (!access || access.addressAccess === undefined || access.addressAccess.length < 1) return <></>
 
 	return (
 		<Collapsible summary = 'Address Access' defaultOpen>
 			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
-			<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
-				{ websiteAccess.value.addressAccess.map(addressAcces => (
-					<AddressAccessCard website = { websiteAccess.value.website } addressAccess = { addressAcces } />
-				)) }
+				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
+				{ access.addressAccess.map(addressAcces => (
+					<AddressAccessCard website = { access.website } addressAccess = { addressAcces } />
+				))}
 			</div>
 		</Collapsible>
 	)
@@ -404,7 +400,9 @@ const BigIntToEthereumAddress = ({ bigIntAddress, onClick, ...props }: BigIntToE
 	return <data { ...props } value = { ethereumAddress }>{ ethereumAddress }</data>
 }
 
-const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
+const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+	if (!websiteAccess.value || !websiteAccess.value.access) return <></>
+
 	return (
 		<Collapsible summary = 'Advanced Settings' defaultOpen>
 			<BlockRequestSetting websiteAccess = { websiteAccess } />
@@ -414,20 +412,20 @@ const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcce
 	)
 }
 
-
-const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
-	const requestBlockMode = websiteAccess.value.declarativeNetRequestBlockMode
-
+const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 	const setWebsiteExternalRequestBlocking = async (shouldBlock: boolean) => {
+		if (!websiteAccess.value) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_blockOrAllowExternalRequests', data: { website: websiteAccess.value.website, shouldBlock } })
 	}
+
+	if (!websiteAccess.value) return <></>
+
+	const requestBlockMode = useComputed(() => websiteAccess.value?.declarativeNetRequestBlockMode)
 
 	const confirmOrRejectRequestBlocking = (response: string) => {
 		if (response !== 'confirm') return
 		setWebsiteExternalRequestBlocking(true)
 	}
-
-	if (!websiteAccess.value.access) return <></>
 
 	return (
 		<article class = 'flexy flexy-lg'>
@@ -439,7 +437,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 				</div>
 				<aside>
 
-					{ requestBlockMode === 'block-all' ? (
+					{ requestBlockMode.value === 'block-all' ? (
 						<button class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
 					) : (
 						<Modal>
@@ -463,11 +461,10 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 	)
 }
 
-const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
-	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.value.interceptorDisabled))
+const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 
 	const disableWebsiteProtection = async (shouldDisable: boolean = true) => {
-		if (!websiteAccess) return
+		if (!websiteAccess.value) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor',  data: { website: websiteAccess.value.website, interceptorDisabled: shouldDisable } })
 	}
 
@@ -476,7 +473,8 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 		disableWebsiteProtection()
 	}
 
-	if (!websiteAccess.value.access) return <></>
+	if (!websiteAccess.value) return <></>
+	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.value?.interceptorDisabled))
 
 	return (
 		<article class = 'flexy flexy-lg'>
@@ -511,13 +509,15 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 	)
 }
 
-const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
+const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 	const confirmOrRejectUpdate = async (response: string) => {
-		if (response !== 'confirm') return
+		if (response !== 'confirm' || !websiteAccess.value) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
 		selectedDomain.value = undefined
 	}
+
+	if (!websiteAccess.value) return <></>
 
 	return (
 		<article class = 'flexy flexy-lg'>
