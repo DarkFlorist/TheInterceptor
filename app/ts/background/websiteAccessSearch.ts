@@ -2,6 +2,10 @@ import { SearchMetadata, SearchProximity } from '../types/interceptor-messages.j
 import { WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 
+/* TODO: Reimplement Search
+ * https://github.com/DarkFlorist/TheInterceptor/issues/1120
+ */
+
 const computeSearchMetadata = ({ website, addressAccess }: WebsiteAccess, query: string): SearchMetadata => {
 	const searchMeta = createSearchInstance(query)
 	const connectedAddresses = addressAccess ? addressAccess.map(({ address }) => serialize(EthereumAddress, address)) : []
