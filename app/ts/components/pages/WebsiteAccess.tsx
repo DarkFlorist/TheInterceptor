@@ -8,14 +8,13 @@ import { EthereumAddress, serialize } from '../../types/wire-types.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
 import { Layout } from '../subcomponents/DefaultLayout.js'
-import { MessageToPopup, RetrieveWebsiteAccessFilter, SearchMetadata } from '../../types/interceptor-messages.js'
+import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
-	searchResultMap: Signal<Record<string, SearchMetadata | undefined>>
 	websiteAccessList: Signal<WebsiteAccessArray>
 	selectedDomain: Signal<string | undefined>
 }
@@ -26,7 +25,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	const websiteAccessList = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
 	const addressAccessFromStore = useSignal<AddressBookEntries | undefined>(undefined)
-	const searchResultMap = useSignal<Record<string, SearchMetadata | undefined>>({})
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
 	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
@@ -54,7 +52,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 				case 'popup_retrieveWebsiteAccessReply':
 					websiteAccessList.value = parsed.data.websiteAccess
 					addressAccessFromStore.value = parsed.data.addressAccess
-					searchResultMap.value = parsed.data.searchMetadata
 					break
 			}
 		}
@@ -64,7 +61,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	useEffect(retrieveWebsiteAccess, [])
 
-	return <WebsiteAccessContext.Provider value = { { searchQuery, searchResultMap, websiteAccessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
@@ -105,6 +102,13 @@ const SearchForm = (props: SearchFormProps) => {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const formData = new FormData(event.currentTarget)
 		const inputValue = formData.get(props.name)?.toString()
+		return
+
+		/*
+		 * TODO: Reimplement Search
+		 * https://github.com/DarkFlorist/TheInterceptor/issues/1120
+		*/
+
 		searchQuery.value = inputValue || ''
 	}
 
@@ -216,7 +220,6 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: SiteOverviewProps) =>
 						<SiteStatusIndicator status = { getWebsiteStatus() } />
 					</div>
 				</div>
-				<AddressAccessOverview websiteAccess = { websiteAccess } />
 			</label>
 		</li>
 	)
@@ -231,38 +234,6 @@ const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) =>
 		case undefined:
 			return <></>
 	}
-}
-
-const MAX_ADDRESS_ICONS = 10
-
-const AddressAccessOverview = ({ websiteAccess }: { websiteAccess: WebsiteAccess }) => {
-	const { searchResultMap } = useWebsiteAccess()
-
-	const websiteOrigin = websiteAccess.website.websiteOrigin
-	const searchMetadata = useComputed(() => searchResultMap.value[websiteOrigin]?.scores)
-
-	if (!websiteAccess.addressAccess || !searchMetadata.value) return <></>
-
-	let addressIcons = []
-
-	for (const { address } of websiteAccess.addressAccess) {
-		const addressString = serialize(EthereumAddress, address)
-		const score = searchMetadata.value[addressString]
-		if (score === undefined || score >= ([Infinity, Infinity] as const)) continue
-		addressIcons.push(<div style = { { borderRadius: '3px', overflow: 'hidden', fontSize: '1.5rem' } } title = { addressString }><Blockie address = { address } /></div>)
-	}
-
-	if (addressIcons.length < 1) return <></>
-
-	return (
-		<div style = { { paddingLeft: '2.5rem', display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'min-content', columnGap: '0.5rem', alignItems: 'center', paddingBottom: '0.5rem' } }>
-			{ addressIcons.slice(0, MAX_ADDRESS_ICONS) }
-			{ addressIcons.length > MAX_ADDRESS_ICONS ? <div style = { { fontSize: '0.75rem', lineHeight: 1, padding: '0.125rem 0.1875rem', backgroundColor: 'darkgoldenrod', color: 'white', borderRadius: 2, fontWeight: 600, border: '1px solid goldenrod' } }>+{ addressIcons.length - MAX_ADDRESS_ICONS }</div> : <></> }
-			{ addressIcons.length > MAX_ADDRESS_ICONS ? (
-				<div style = { { color: 'darkgoldenrod', fontSize: '0.75rem', whiteSpace: 'nowrap' } }> addresses</div>
-			) : <></> }
-		</div>
-	)
 }
 
 const WebsiteSettingsDetail = () => {
