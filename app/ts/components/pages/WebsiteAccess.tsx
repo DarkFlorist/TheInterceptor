@@ -297,17 +297,15 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 	if (!websiteAccess.value || websiteAccess.value.access) return <></>
 
 	return (
-		<article>
-			<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '1rem', maxWidth: '32ch', textAlign: 'center', margin: '1rem auto' } }>
-				<h4 style = { { fontWeight: 600, color: 'var(--text-color)' } }>This website was denied access to The Interceptor.</h4>
-				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>You will need to remove this website from The Interceptor before you can try to reconnect with it again.</p>
+		<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
+				<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
+				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { websiteAccess.value.website } /> for access while this preference is set.</p>
 				<Modal>
-					<Modal.Open class = 'btn btn--destructive' style={{ display: 'inline-block' }}><span style = { { whiteSpace: 'nowrap' } }>Remove Website</span></Modal.Open>
+					<Modal.Open class = 'btn btn--outline' style={{ display: 'inline-block' }}>Stop automatically denying access requests</Modal.Open>
 					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
-						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
+						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
 						<p></p>
-						<p style = { { marginBlock: '0.5rem' } }>This will remove your preference to deny <pre>{ websiteAccess.value.website.websiteOrigin }</pre> access to The Interceptor.</p>
-						<p style = { { marginBlock: '1rem' } }>Remove this website from The Interceptor anyway?</p>
+						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { websiteAccess.value.website } /> and will prompt you for permission the next time you try to connect.</p>
 						<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 							<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 							<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -315,7 +313,6 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 					</Modal.Dialog>
 				</Modal>
 			</div>
-		</article>
 	)
 }
 
@@ -345,15 +342,15 @@ const AddressAccessCard = ({ website, addressAccess }: { website: Website, addre
 	return (
 		<div style = { { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) min-content min-content', columnGap: '1rem', alignItems: 'center' } }>
 			<AddressCard address = { addressAccess.address } />
-			<RemoveAddressConfirmation websiteOrigin = { website.websiteOrigin } address = { addressAccess.address } />
+			<RemoveAddressConfirmation website = { website } address = { addressAccess.address } />
 			<Switch checked = { addressAccess.access } onChange = { setAddressAccess } />
 		</div>
 	)
 }
 
-const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint, websiteOrigin: string }) => {
+const RemoveAddressConfirmation = ({ website, address }: { address: bigint, website: Website }) => {
 	const removeAddressAccessForWebsite = async () => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin, address }})
+		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address }})
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {
@@ -366,7 +363,7 @@ const RemoveAddressConfirmation = ({ websiteOrigin, address }: { address: bigint
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<div style = { { marginBlock: '0.5rem' } }>This will prevent <pre>{websiteOrigin}</pre> from accessing to the following address
+				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from accessing to the following address
 					<div style = { { backgroundColor: 'var(--card-bg-color)', display: 'inline-block', padding: '0.5rem', borderRadius: 4, marginBlock: '0.5rem' } }>
 						<AddressCard address = { address } />
 					</div>
@@ -445,8 +442,8 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRequestBlocking }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Blocking External Requests</h2>
 								<p></p>
-								<p style = { { marginBlock: '0.5rem' } }>This will prevent <pre>{ websiteAccess.value.website.websiteOrigin }</pre> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
-								<p style = { { marginBlock: '1rem' } }>Are you sure you want to continue?</p>
+								<p style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { websiteAccess.value.website } /> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
+								<p style = { { marginBlock: '1rem' } }>Are you sure you want to block external requests from this website?</p>
 								<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -493,8 +490,8 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectDialog }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Disable Interceptor Protection</h2>
 								<p></p>
-								<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <pre>{ websiteAccess.value.website.websiteOrigin }</pre>, which could lead to a loss of assets. Please exercise caution.</p>
-								<p style = { { marginBlock: '1rem' } }>Are you sure you want to continue?</p>
+								<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { websiteAccess.value.website } />, which could potentially lead to loss of assets. Please exercise caution.</p>
+								<p style = { { marginBlock: '1rem' } }>Are you sure you want to disable protection for this website?</p>
 								<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -533,8 +530,8 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 						<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectUpdate }>
 							<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
 							<p></p>
-							<p style = { { marginBlock: '0.5rem' } }>You are about to remove <pre>{ websiteAccess.value.website.websiteOrigin }</pre> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
-							<p style = { { marginBlock: '1rem' } }>Are you sure you want to continue?</p>
+							<p style = { { marginBlock: '0.5rem' } }>You are about to remove <WebsiteCard website = { websiteAccess.value.website } /> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
+							<p style = { { marginBlock: '1rem' } }>Are you sure you want to remove this website?</p>
 							<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 								<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 								<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -545,5 +542,14 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 				</aside>
 			</section>
 		</article>
+	)
+}
+
+const WebsiteCard = ({ website }: { website: Website }) => {
+	return (
+		<div style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.125rem 0.25rem', borderRadius: '2px', backgroundColor: 'var(--card-bg-color)', verticalAlign: 'bottom' } }>
+			<img style = { { inlineSize: '1rem' } } src = { website.icon } />
+			<div style = { { fontSize: '0.875rem', color: 'var(--text-color)' } }>{ website.websiteOrigin }</div>
+		</div>
 	)
 }
