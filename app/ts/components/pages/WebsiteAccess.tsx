@@ -76,7 +76,7 @@ export const WebsiteAccessView = () => {
 			<Layout>
 				<Layout.Header>
 					<h1>Manage Websites</h1>
-					<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or wallet address' />
+					<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or Ethereum address' />
 				</Layout.Header>
 				<Layout.Main>
 					<WebsiteSettingsList />
