@@ -90,6 +90,7 @@ export function BigAddress(params: BigAddressParams) {
 						: <AddressTitle content = { title } useLegibleFont = { title === addrString } />
 					}
 					<button
+						type = 'button'
 						className = 'button is-primary is-small rename-address-button'
 						onClick = { () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry) }
 						disabled = { params.addressBookEntry === undefined }
@@ -171,7 +172,7 @@ export function SmallAddress(params: SmallAddressParams) {
 					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 						<p class = 'address-text noselect nopointer text-legible' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
 					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
+					<button type = 'button' className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
 						<span class = 'icon'>
 							<img src = '../img/rename.svg'/>
 						</span>
