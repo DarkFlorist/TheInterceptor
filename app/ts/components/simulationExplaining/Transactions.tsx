@@ -272,7 +272,7 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 
 export function TokenLogAnalysis(param: LogAnalysisParams) {
 	const tokenEvents = extractTokenEvents(param.simulatedAndVisualizedTransaction.events)
-	
+
 	if (tokenEvents.length === 0) return <p class = 'paragraph'> No token events </p>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
@@ -345,13 +345,14 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 				if ((arg.paramName === 'id' || arg.paramName === 'label') && 'logInformation' in params.nonTokenLog && 'labelHash' in params.nonTokenLog.logInformation) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
-						<EnsNamedHashComponent type = 'labelHash' nameHash = { params.nonTokenLog.logInformation.labelHash.labelHash } name = { params.nonTokenLog.logInformation.labelHash.label } editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }/>	
+						<EnsNamedHashComponent type = 'labelHash' nameHash = { params.nonTokenLog.logInformation.labelHash.labelHash } name = { params.nonTokenLog.logInformation.labelHash.label } editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }/>
 					</>
 				}
 				if (arg.paramName === 'fuses' && 'logInformation' in params.nonTokenLog && 'fuses' in params.nonTokenLog.logInformation) {
 					return <>
-						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } = [` }</p>
 						<StringElement text = { params.nonTokenLog.logInformation.fuses.join(', ') } />
+						<p style = { textStyle } class = 'paragraph'> { `]` }</p>
 					</>
 				}
 				return <>
