@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refresh
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, RetrieveWebsiteAccess, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -30,7 +30,6 @@ import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/reque
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { fuzzySearchWebsiteAccess } from './websiteAccessSearch.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -591,17 +590,15 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
+export async function retrieveWebsiteAccess() {
 	const settings = await getSettings()
-	const addressAccess = await getAddressMetadataForAccess(settings.websiteAccess)
-	const { matches: websiteAccess, metadata: searchMetadata } = fuzzySearchWebsiteAccess(settings.websiteAccess, parsedRequest.data.query)
+	const addressAccessMetadata = await getAddressMetadataForAccess(settings.websiteAccess)
 
 	await sendPopupMessageToOpenWindows({
-		method: 'popup_retrieveWebsiteAccessReply' as const,
+		method: 'popup_retrieveWebsiteAccessReply',
 		data: {
-			websiteAccess,
-			searchMetadata,
-			addressAccess
+			websiteAccess: settings.websiteAccess,
+			addressAccessMetadata
 		}
 	})
 }
@@ -623,7 +620,24 @@ export async function blockOrAllowExternalRequests(simulator: Simulator, website
 	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-async function setAdressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
+async function removeAddressAccessByAddress(websiteOrigin: string, address: EthereumAddress) {
+	await updateWebsiteAccess((previousAccessList) => {
+		return previousAccessList.map(access => {
+			if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
+			const strippedAddressAccess = access.addressAccess.filter(addressAccess => addressAccess.address !== address)
+			return modifyObject(access, { addressAccess: strippedAddressAccess })
+		})
+	})
+}
+
+export async function removeWebsiteAddressAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
+	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
+	reloadConnectedTabs(websiteTabConnections)
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
+	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+}
+
+async function setAdressAccessForWebsite(websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
@@ -631,13 +645,12 @@ async function setAdressAccessForWebsite(websiteTabConnections: WebsiteTabConnec
 			return modifyObject(access, { addressAccess: addressAccessList })
 		})
 	})
-
-	reloadConnectedTabs(websiteTabConnections)
 }
 
 export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
-	await setAdressAccessForWebsite(websiteTabConnections, website.websiteOrigin, address, allowAccess)
+	await setAdressAccessForWebsite(website.websiteOrigin, address, allowAccess)
+	reloadConnectedTabs(websiteTabConnections)
 	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 

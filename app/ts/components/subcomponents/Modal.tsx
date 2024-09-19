@@ -27,7 +27,7 @@ import { Ref, useContext, useEffect, useRef } from 'preact/hooks'
  */
 export const Modal = ({ children }: { children: ComponentChildren }) => {
 	const dialogRef = useRef<HTMLDialogElement>(null)
-	return <ModalContext.Provider value = { { dialogRef } }>{children}</ModalContext.Provider>
+	return <ModalContext.Provider value = { { dialogRef } }>{ children }</ModalContext.Provider>
 }
 
 const ModalContext = createContext<{ dialogRef: Ref<HTMLDialogElement> } | undefined>(undefined)
