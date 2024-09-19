@@ -748,7 +748,7 @@ const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
 	data: funtypes.ReadonlyObject({
 		websiteAccess: WebsiteAccessArray,
-		addressAccess: AddressBookEntries
+		addressAccessMetadata: AddressBookEntries
 	})
 }).asReadonly()
 

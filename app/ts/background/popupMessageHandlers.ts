@@ -592,13 +592,13 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 
 export async function retrieveWebsiteAccess() {
 	const settings = await getSettings()
-	const addressAccess = await getAddressMetadataForAccess(settings.websiteAccess)
+	const addressAccessMetadata = await getAddressMetadataForAccess(settings.websiteAccess)
 
 	await sendPopupMessageToOpenWindows({
-		method: 'popup_retrieveWebsiteAccessReply' as const,
+		method: 'popup_retrieveWebsiteAccessReply',
 		data: {
 			websiteAccess: settings.websiteAccess,
-			addressAccess
+			addressAccessMetadata
 		}
 	})
 }

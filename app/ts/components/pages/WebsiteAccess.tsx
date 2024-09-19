@@ -1,20 +1,20 @@
 import { useContext, useEffect, useRef } from 'preact/hooks'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { ComponentChildren, createContext, JSX } from 'preact'
-import { Blockie } from '../subcomponents/SVGBlockie.js'
+import { ComponentChildren, createContext } from 'preact'
 import { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { Modal } from '../subcomponents/Modal.js'
-import { EthereumAddress, serialize } from '../../types/wire-types.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
 import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
-import { AddressBookEntries } from '../../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
+import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
 	websiteAccessList: Signal<WebsiteAccessArray>
+	addressAccessMetadata: Signal<AddressBookEntries | undefined>
 	selectedDomain: Signal<string | undefined>
 }
 
@@ -23,7 +23,7 @@ const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(und
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
 	const websiteAccessList = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
-	const addressAccessFromStore = useSignal<AddressBookEntries | undefined>(undefined)
+	const addressAccessMetadata = useSignal<AddressBookEntries | undefined>(undefined)
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
 	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
@@ -50,7 +50,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 					break
 				case 'popup_retrieveWebsiteAccessReply':
 					websiteAccessList.value = parsed.data.websiteAccess
-					addressAccessFromStore.value = parsed.data.addressAccess
+					addressAccessMetadata.value = parsed.data.addressAccessMetadata
 					break
 			}
 		}
@@ -60,7 +60,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	useEffect(retrieveWebsiteAccess, [])
 
-	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
@@ -335,23 +335,33 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcc
 }
 
 const AddressAccessCard = ({ website, addressAccess }: { website: Website, addressAccess: WebsiteAddressAccess }) => {
+	const { addressAccessMetadata } = useWebsiteAccess()
+
 	const setAddressAccess = (event: Event) => {
 		if (!(event.target instanceof HTMLInputElement)) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address: addressAccess.address, allowAccess: event.target.checked } })
 	}
 
+	const renameAddressCallBack = (newAddress: AddressBookEntry) => {
+		console.log('new address', newAddress)
+		// TODO: Implement address rename in tabs
+	}
+
+	const addressBookEntry = useComputed(() => addressAccessMetadata.value?.find(entry => entry.address === addressAccess.address))
+
 	return (
 		<div style = { { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) min-content min-content', columnGap: '1rem', alignItems: 'center' } }>
-			<AddressCard address = { addressAccess.address } />
-			<RemoveAddressConfirmation website = { website } address = { addressAccess.address } />
+			<BigAddress addressBookEntry = { addressBookEntry.value } noEditAddress = { true } renameAddressCallBack = { renameAddressCallBack } />
+			<RemoveAddressConfirmation website = { website } addressBookEntry = { addressBookEntry.value } />
 			<Switch checked = { addressAccess.access } onChange = { setAddressAccess } />
 		</div>
 	)
 }
 
-const RemoveAddressConfirmation = ({ website, address }: { address: bigint, website: Website }) => {
+const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookEntry: AddressBookEntry | undefined, website: Website }) => {
 	const removeAddressAccessForWebsite = async () => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address }})
+		if (!addressBookEntry) return
+		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address: addressBookEntry.address }})
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {
@@ -359,15 +369,14 @@ const RemoveAddressConfirmation = ({ website, address }: { address: bigint, webs
 		removeAddressAccessForWebsite()
 	}
 
+	if (!addressBookEntry) return <></>
+
 	return (
 		<Modal>
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from accessing to the following address
-					<div style = { { backgroundColor: 'var(--card-bg-color)', display: 'inline-block', padding: '0.5rem', borderRadius: 4, marginBlock: '0.5rem' } }>
-						<AddressCard address = { address } />
-					</div>
+				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from accessing or using  <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => {} } />
 				</div>
 				<p style = { { marginBlock: '1rem' } }>Remove the website's access to this address anyway?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
@@ -378,24 +387,6 @@ const RemoveAddressConfirmation = ({ website, address }: { address: bigint, webs
 			</Modal.Dialog>
 		</Modal>
 	)
-}
-
-const AddressCard = ({ address }: { address: bigint }) => {
-	return (
-		<article style = { { display: 'grid', gridTemplateColumns: 'min-content minmax(1rem,max-content)', columnGap: '0.75rem', alignItems: 'center' } }>
-			<figure><Blockie style = { { fontSize: '2rem' } } address = { address } /></figure>
-			<section style = { { textAlign: 'left' } }>
-				<p style = { { color: 'var(--text-color)' } }>vitalik.eth</p>
-				<BigIntToEthereumAddress bigIntAddress = { address } class = 'truncate' style = { { fontSize: '0.875rem', color: 'var(--disabled-text-color)' } } />
-			</section>
-		</article>
-	)
-}
-
-type BigIntToEthereumAddress = Omit<JSX.HTMLAttributes<HTMLDataElement>, 'value'> & { bigIntAddress: bigint }
-const BigIntToEthereumAddress = ({ bigIntAddress, onClick, ...props }: BigIntToEthereumAddress) => {
-	const ethereumAddress = serialize(EthereumAddress, bigIntAddress)
-	return <data { ...props } value = { ethereumAddress }>{ ethereumAddress }</data>
 }
 
 const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
