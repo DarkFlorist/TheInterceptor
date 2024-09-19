@@ -533,7 +533,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
 		makeMeRich: funtypes.Boolean,
-		rpcConnectionStatus: RpcConnectionStatus,
+		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
