@@ -431,7 +431,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
 					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Block External Request</h1>
-					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from this domain, effectively preventing the website from dialing to unknown domains and services.</p>
+					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from this domain, effectively preventing the website from connecting to external domains and services.</p>
 				</div>
 				<aside>
 
