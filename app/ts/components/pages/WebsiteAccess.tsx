@@ -7,7 +7,6 @@ import { Modal } from '../subcomponents/Modal.js'
 import { EthereumAddress, serialize } from '../../types/wire-types.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
-import { Layout } from '../subcomponents/DefaultLayout.js'
 import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
 import { AddressBookEntries } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -73,16 +72,18 @@ export function useWebsiteAccess() {
 export const WebsiteAccessView = () => {
 	return (
 		<WebsiteAccessProvider>
-			<Layout>
-				<Layout.Header>
-					<h1>Manage Websites</h1>
-					<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or Ethereum address' />
-				</Layout.Header>
-				<Layout.Main>
-					<WebsiteSettingsList />
-					<WebsiteSettingsDetail />
-				</Layout.Main>
-			</Layout>
+			<main>
+				<div class = 'layout'>
+					<header>
+						<h1>Manage Websites</h1>
+						<SearchForm id = 'site_search' name = 'search' placeholder = 'Search website name, url or Ethereum address' />
+					</header>
+					<article>
+						<WebsiteSettingsList />
+						<WebsiteSettingsDetail />
+					</article>
+				</div>
+			</main>
 		</WebsiteAccessProvider>
 	)
 }
@@ -163,7 +164,7 @@ const WebsiteSettingsList = () => {
 	}
 
 	return (
-		<section style = { { scrollMarginTop: 'var(--header-height)', paddingBlock: '1rem' } }>
+		<section style = { { paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
 			<form onSubmit = { updateSelection }>
 				{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : (
