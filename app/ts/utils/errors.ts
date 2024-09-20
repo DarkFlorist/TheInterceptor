@@ -28,7 +28,7 @@ export const isNewBlockAbort = (error: Error) => error.message.includes(NEW_BLOC
 
 export function printError(error: unknown) {
 	if (error instanceof Error && 'data' in error) {
-		return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }`)
+		return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }\n ${ error.stack !== undefined ? error.stack : ''}`)
 	}
 	return console.error(error)
 }
@@ -38,7 +38,7 @@ export async function handleUnexpectedError(error: unknown) {
 	const errorMessage = {
 		method: 'popup_UnexpectedErrorOccured' as const,
 		data: {
-			timestamp: new Date(), 
+			timestamp: new Date(),
 			message: typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string' ? error.message : 'Please see The Interceptors console for more details on the error.'
 		}
 	}
