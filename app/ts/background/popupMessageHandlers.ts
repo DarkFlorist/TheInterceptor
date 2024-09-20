@@ -456,7 +456,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 	// check for duplicates
 	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name)
 	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
-		return `There already exists ${ duplicateEntry.type } with ${'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : ''} the name "${ duplicateEntry.name }".`
+		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
 	}
 
 	// check that address is valid
