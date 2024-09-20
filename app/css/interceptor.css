@@ -1454,23 +1454,6 @@ input[role=switch]:checked:before {
 .status-outline { --outline: #FF7272 }
 .status-lg { font-size: 1.5rem }
 
-/* Headline Component */
-[class*=headline] {
-	--heading-color: var(--text-color);
-	--heading-weight: 400;
-	--subheading-color: var(--disabled-text-color);
-}
-
-.headline-dim {
-	--heading-color: var(--disabled-text-color);
-	--subheading-color: dimgray;
-}
-
-.headline-hilite {
-	--heading-weight: 600;
-	--subheading-color: var(--text-color);
-}
-
 /* Customizations */
 
 header:has(form[role='search']) {
@@ -1490,18 +1473,17 @@ header:has(form[role='search']) h1 {
 }
 
 [role=option]:has([type=radio]) {
-	--heading-color: var(--disabled-text-color);
+	--heading-color: var(--text-color);
 	--heading-weight: normal;
-	--subheading-color: dimgray;
+	--subheading-color: var(--disabled-text-color);
 	margin: 0;
 	border-bottom: 1px solid #ffffff10;
 	position: relative;
 }
 
-[role=option]:has([type=radio]):focus-within {
-	--heading-color: var(--text-color);
-	--heading-weight: 600;
-	--subheading-color: var(--text-color);
+[role=option]:has([type=radio]):focus-within,
+[role=option]:has([type=radio]):hover {
+	background: linear-gradient(to right, transparent 0%, #ffffff08 50%, transparent 100%);
 }
 
 [role=option] [type=radio] {
