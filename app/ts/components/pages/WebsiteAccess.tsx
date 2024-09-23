@@ -38,7 +38,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	useSignalEffect(updateListOnSearch)
 
-	useEffect(() => {
+  const listenForPopupMessages = () => {
 		const popupMessageListener = async (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
@@ -56,8 +56,23 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	}
 
+  const listenForUrlParamChanges = () => {
+    const urlParamChangeListener = () => {
+      const urlParams = new URLSearchParams(window.location.search)
+      const domainParam = urlParams.get('domain')
+      console.log(`domain: ${domainParam}`)
+    }
+
+    window.addEventListener('popstate', urlParamChangeListener)
+    return () => {
+      window.removeEventListener('popstate', urlParamChangeListener)
+    }
+  }
+
+  useEffect(listenForUrlParamChanges, [])
+	useEffect(listenForPopupMessages, [])
 	useEffect(retrieveWebsiteAccess, [])
 
 	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
@@ -151,16 +166,24 @@ const SearchForm = (props: SearchFormProps) => {
 }
 
 const WebsiteSettingsList = () => {
-	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
+	const { websiteAccessList } = useWebsiteAccess()
 
 	const updateSelection = (event: Event) => {
 		event.preventDefault()
 		const formElement = event.currentTarget
 		if (!(event instanceof SubmitEvent) || !(formElement instanceof HTMLFormElement)) return
-		requestAnimationFrame(() => {
-			const formData = new FormData(formElement)
-			selectedDomain.value = formData.get('websiteOrigin')?.toString()
-		})
+
+    const formData = new FormData(formElement)
+    const selectedWebsiteOrigin = formData.get('websiteOrigin')?.toString()
+
+    if (!selectedWebsiteOrigin) {
+      history.pushState(null, '', window.location.pathname)
+      return
+    }
+
+    const encodedDomain = encodeURIComponent(selectedWebsiteOrigin)
+    const searchParams = new URLSearchParams({ domain: encodedDomain })
+    history.pushState(null, '', `?${searchParams.toString()}`)
 	}
 
 	return (
@@ -247,7 +270,8 @@ const WebsiteSettingsDetail = () => {
 
 	useSignalEffect(() => {
 		const dialogElement = dialogRef.current
-		if (!websiteAccess.value || dialogElement === null) return
+		if (dialogElement === null) return
+		if (!websiteAccess.value) { closeDetails(); return }
 		dialogElement.showModal()
 	})
 
@@ -265,15 +289,7 @@ const WebsiteSettingsDetail = () => {
 			<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
 				<header style = { { paddingBlock: '1rem' } }>
 					<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
-					{ !websiteAccess.value ? <></> : (
-						<div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
-							<figure><img width = '34' height = '34' src = { websiteAccess.value.website.icon } /></figure>
-							<div style = { { flex: 1 } }>
-								<h2 class = 'truncate' style = { { fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.value.website.title }</h2>
-								<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.value.website.websiteOrigin }</span></p>
-							</div>
-						</div>)
-					}
+          <DetailsHeader websiteAccess = { websiteAccess.value } />
 				</header>
 				<article>
 					<NoAccessPrompt websiteAccess = { websiteAccess } />
@@ -286,6 +302,18 @@ const WebsiteSettingsDetail = () => {
 	)
 }
 
+const DetailsHeader = ({ websiteAccess }: { websiteAccess: WebsiteAccess | undefined }) => {
+  if (!websiteAccess) return <></>
+  return (
+    <div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
+      <figure><img width = '34' height = '34' src = { websiteAccess.website.icon } /></figure>
+      <div style = { { flex: 1 } }>
+        <h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.website.title }</h2>
+        <p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.website.websiteOrigin }</span></p>
+      </div>
+    </div>
+  )
+}
 const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 
@@ -324,7 +352,7 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcc
 
 	return (
 		<Collapsible summary = 'Address Access' defaultOpen>
-			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
+			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button type = 'button' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
 				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
 				{ access.addressAccess.map(addressAcces => (
 					<AddressAccessCard website = { access.website } addressAccess = { addressAcces } />
