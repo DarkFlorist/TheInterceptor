@@ -325,6 +325,17 @@ type ModalState =
 	{ page: 'editEns', state: EditEnsNamedHashWindowState } |
 	{ page: 'noModal' }
 
+type RejectButtonParams = {
+	onClick: () => void
+}
+const RejectButton = ({ onClick }: RejectButtonParams) => {
+	return <div>
+		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
+			{ 'Reject' }
+		</button>
+	</div>
+}
+
 type ButtonsParams = {
 	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
 	reject: () => void
@@ -332,13 +343,8 @@ type ButtonsParams = {
 	confirmDisabled: boolean
 }
 function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, confirmDisabled }: ButtonsParams) {
-	const onlyReject = <div style = 'display: flex; flex-direction: row;'>
-		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
-			{ 'Reject' }
-		</button>
-	</div>
-	if (currentPendingTransactionOrSignableMessage === undefined) return onlyReject
-	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return onlyReject
+	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject }/>
+	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject }/>
 
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.simulationResults.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
@@ -348,7 +354,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 		return identifyTransaction(lastTx)
 	}
 	const identified = identify()
-	if (identified === undefined) return onlyReject
+	if (identified === undefined) return <RejectButton onClick = { reject }/>
 
 	return <div style = 'display: flex; flex-direction: row;'>
 		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
