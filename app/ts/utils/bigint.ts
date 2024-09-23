@@ -75,8 +75,7 @@ export function dataString(data: Uint8Array | null) {
 	return Array.from(data).map(x => x.toString(16).padStart(2, '0')).join('')
 }
 
-export function dataStringWith0xStart(data: Uint8Array | null) {
-	if (data === null) return ''
+export function dataStringWith0xStart(data: Uint8Array | null): `0x${ string }` {
 	return `0x${ dataString(data) }`
 }
 

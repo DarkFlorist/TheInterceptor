@@ -195,7 +195,9 @@ const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress
 
 function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
 	const tokenResults = extractTokenEvents(transaction.events)
-	// there need to be atleast two logs (otherwise its a simple send)
+	// no ENS logs allowed in proxy token transfer
+	if (transaction.events.some((x) => x.type === 'ENS')) return false
+	// there need to be atleast two token logs (otherwise its a simple send)
 	if (tokenResults.length < 2) return false
 	// no approvals allowed
 	if (tokenResults.filter((result) => result.isApproval).length !== 0) return false
@@ -309,7 +311,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	const simpleApproval = identifySimpleApproval(simTx)
 	if (simpleApproval !== undefined) return simpleApproval
-	
+
 	const governanceVote = identifyGovernanceVote(simTx)
 	if (governanceVote !== undefined) return governanceVote
 
