@@ -14,6 +14,7 @@ import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { GetSimulationStackOldReply, GetSimulationStackReply } from '../../types/simulationStackTypes.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
+import { JsonRpcResponseError } from '../../utils/errors.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -176,12 +177,20 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
-	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [tmp], block.number + 1n)
-	const lastResult = multiCall.calls[multiCall.calls.length - 1]
-	if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '' } }
-	if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
-	const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
-	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+	try {
+		const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [tmp], block.number + 1n)
+		const lastResult = multiCall.calls[multiCall.calls.length - 1]
+		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '' } }
+		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
+		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
+		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+	} catch (error: unknown) {
+		if (error instanceof JsonRpcResponseError) {
+			const safeParsedData = EthereumData.safeParse(error.data)
+			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
+		}
+		throw error
+	}
 }
 
 // calculates gas price for receipts

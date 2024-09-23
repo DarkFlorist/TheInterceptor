@@ -134,10 +134,10 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 				const transactionIdentifier = params.data.transactionIdentifier
 				const transactionToBeRemoved = prevStack.transactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 				if (transactionToBeRemoved === undefined) return prevStack
-			
+
 				const newTransactions: PreSimulationTransaction[] = []
 				let transactionWasFound = false
-			
+
 				for (const transaction of prevStack.transactions) {
 					if (transactionIdentifier === transaction.transactionIdentifier) {
 						transactionWasFound = true
@@ -165,7 +165,7 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 			default: assertNever(params.data)
 		}
 	})
-	
+
 	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, true)
 }
 
@@ -205,7 +205,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
 			])
 		}
-		case 'Transaction': {		
+		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults.statusCode === 'failed') return
 			const oldEventsForEachTransaction = first.simulationResults.data.eventsForEachTransaction
 			const oldSimulatedAndVisualizedTransactions = first.simulationResults.data.simulatedAndVisualizedTransactions
@@ -260,7 +260,19 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(simulator.ethereum, undefined, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(simulator.ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	if (refreshMessage === undefined) return
-	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transaction) => ({...transaction, simulationResults: refreshMessage }))
+	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
+		switch (transactionOrMessage.type) {
+			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
+			case 'Transaction': {
+				if (transactionToSimulate.success) {
+					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
+				} else {
+					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+				}
+			}
+			default: assertNever(transactionOrMessage)
+		}
+	})
 	await updateConfirmTransactionView(simulator.ethereum)
 }
 
@@ -488,7 +500,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 		}
 	}
 	await updatePage(parsedRequest.data.newState)
-	
+
 	const identifyAddressCandidate = async (addressCandidate: string | undefined) => {
 		if (addressCandidate === undefined) return undefined
 		const address = EthereumAddress.safeParse(addressCandidate.trim())
@@ -497,7 +509,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 	}
 	const identifyPromise = identifyAddressCandidate(parsedRequest.data.newState.incompleteAddressBookEntry.address)
 	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, parsedRequest.data.newState.incompleteAddressBookEntry)
-	
+
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation',
