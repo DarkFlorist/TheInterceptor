@@ -12,10 +12,11 @@ type NameHashComponentParams = {
 	readonly name: string | undefined,
 	readonly style?: JSX.CSSProperties
 	readonly editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	readonly addDotEth?: boolean
 }
 
 export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
-	const name = params.name !== undefined ? params.name : bytes32String(params.nameHash)
+	const name = params.name !== undefined ? (params.addDotEth ? `${ params.name }.eth` : params.name) : bytes32String(params.nameHash)
 	return (
 		<span className = 'small-address-container' data-value = { name }>
 			<span class = 'address-text-holder'>
