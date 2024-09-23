@@ -222,7 +222,7 @@ export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents, add
 	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address)).map((label) => ({ label, labelHash: bytesToUnsigned(keccak_256(label)) }))
 	const newLabels = [...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
-	
+
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
 	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(`${ label }.eth`)])))
@@ -246,7 +246,7 @@ export const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClie
 	const currentHashes = [ENS_ADDR_REVERSE_NODE, ...await getEnsNodeHashes()]
 	const entry = currentHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (entry !== undefined) return entry
-	
+
 	const extraNameEntry = extraNameHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (extraNameEntry !== undefined) { // extra name entries do not exist in our localstorage, so if we find a match, lets add them there
 		await addNewEnsNameEntry(extraNameEntry.name)
