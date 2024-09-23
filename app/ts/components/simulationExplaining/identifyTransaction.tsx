@@ -196,7 +196,7 @@ const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress
 function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
 	const tokenResults = extractTokenEvents(transaction.events)
 	// no ENS logs allowed in proxy token transfer
-	if (transaction.events.filter((x) => x.type === 'ENS').length > 0) return false
+	if (transaction.events.some((x) => x.type === 'ENS')) return false
 	// there need to be atleast two token logs (otherwise its a simple send)
 	if (tokenResults.length < 2) return false
 	// no approvals allowed
