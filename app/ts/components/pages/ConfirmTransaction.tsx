@@ -325,6 +325,55 @@ type ModalState =
 	{ page: 'editEns', state: EditEnsNamedHashWindowState } |
 	{ page: 'noModal' }
 
+type RejectButtonParams = {
+	onClick: () => void
+}
+const RejectButton = ({ onClick }: RejectButtonParams) => {
+	return <div>
+		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
+			{ 'Reject' }
+		</button>
+	</div>
+}
+
+type ButtonsParams = {
+	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
+	reject: () => void
+	approve: () => void
+	confirmDisabled: boolean
+}
+function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, confirmDisabled }: ButtonsParams) {
+	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject }/>
+	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject }/>
+
+	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.simulationResults.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
+	const identify = () => {
+		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
+		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		if (lastTx === undefined) return undefined
+		return identifyTransaction(lastTx)
+	}
+	const identified = identify()
+	if (identified === undefined) return <RejectButton onClick = { reject }/>
+
+	return <div style = 'display: flex; flex-direction: row;'>
+		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
+			{ identified.rejectAction }
+		</button>
+		<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
+			{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
+				<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
+				</> : <>
+					{ currentPendingTransactionOrSignableMessage.simulationMode
+						? `${ identified.simulationAction }!`
+						: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
+					}
+				</>
+			}
+		</button>
+	</div>
+}
+
 export function ConfirmTransaction() {
 	const [currentPendingTransactionOrSignableMessage, setCurrentPendingTransactionOrSignableMessage] = useState<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const [pendingTransactionsAndSignableMessages, setPendingTransactionsAndSignableMessages] = useState<readonly PendingTransactionOrSignableMessage[]>([])
@@ -468,44 +517,6 @@ export function ConfirmTransaction() {
 		})
 	}
 
-	function Buttons() {
-		const onlyReject = <div style = 'display: flex; flex-direction: row;'>
-			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
-				{ 'Reject' }
-			</button>
-		</div>
-
-		if (currentPendingTransactionOrSignableMessage === undefined) return onlyReject
-		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return onlyReject
-
-		const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.simulationResults.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
-		const identify = () => {
-			if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
-			const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
-			if (lastTx === undefined) return undefined
-			return identifyTransaction(lastTx)
-		}
-		const identified = identify()
-		if (identified === undefined) return onlyReject
-
-		return <div style = 'display: flex; flex-direction: row;'>
-			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
-				{ identified.rejectAction }
-			</button>
-			<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { isConfirmDisabled() }>
-				{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
-					<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
-					</> : <>
-						{ currentPendingTransactionOrSignableMessage.simulationMode
-							? `${ identified.simulationAction }!`
-							: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
-						}
-					</>
-				}
-			</button>
-		</div>
-	}
-
 	const getLoadingText = (current: PendingTransactionOrSignableMessage | undefined) => {
 		if (current === undefined) return 'Initializing...'
 		if (current.transactionOrMessageCreationStatus === 'Crafting') return 'Crafting Transaction...'
@@ -620,7 +631,12 @@ export function ConfirmTransaction() {
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
 							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>
-							<Buttons/>
+							<Buttons
+								currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }
+								reject = { reject }
+								approve = { approve }
+								confirmDisabled = { isConfirmDisabled() }
+							/>
 						</nav>
 					</div>
 				</div>
