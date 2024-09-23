@@ -28,7 +28,11 @@ export const isNewBlockAbort = (error: Error) => error.message.includes(NEW_BLOC
 
 export function printError(error: unknown) {
 	if (error instanceof Error && 'data' in error) {
-		return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }\n${ error.stack !== undefined ? error.stack : ''}`)
+		try {
+			return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }\n${ error.stack !== undefined ? error.stack : ''}`)
+		} catch(stringifyError) {
+			console.error(stringifyError)
+		}
 	}
 	return console.error(error)
 }
