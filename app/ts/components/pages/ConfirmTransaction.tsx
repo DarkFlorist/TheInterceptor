@@ -329,7 +329,7 @@ type RejectButtonParams = {
 	onClick: () => void
 }
 const RejectButton = ({ onClick }: RejectButtonParams) => {
-	return <div>
+	return <div style = 'display: flex;'>
 		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
 			{ 'Reject' }
 		</button>
