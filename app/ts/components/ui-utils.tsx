@@ -155,7 +155,7 @@ export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
 		// highlight the tab itself
 		return await updateTabIfExists(popupOrTab.id, { active: true, highlighted: true })
 	}
-	return await updateWindowIfExists(popupOrTab.id, { focused: true })
+	return await updateWindowIfExists(popupOrTab.id, { drawAttention: true, focused: true })
 }
 
 export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: boolean }) => {
