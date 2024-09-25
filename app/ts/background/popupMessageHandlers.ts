@@ -572,7 +572,7 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
 
-	reloadConnectedTabs(websiteTabConnections)
+	await reloadConnectedTabs(websiteTabConnections)
 }
 
 export async function disableInterceptor(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
