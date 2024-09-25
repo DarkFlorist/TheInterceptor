@@ -10,6 +10,10 @@ import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTyp
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
+import { createPortal } from 'preact/compat'
+
+const URL_HASH_KEY = 'origin'
+const URL_HASH_PREFIX = `#${URL_HASH_KEY}:`
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -36,8 +40,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		retrieveWebsiteAccess({ query: searchQuery.value })
 	}
 
-	useSignalEffect(updateListOnSearch)
-
   const listenForPopupMessages = () => {
 		const popupMessageListener = async (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
@@ -46,7 +48,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			switch (parsed.method) {
 				case 'popup_setDisableInterceptorReply':
 				case 'popup_websiteAccess_changed':
-					retrieveWebsiteAccess({ query: '' })
+					retrieveWebsiteAccess({ query: selectedDomain.value || '' })
 					break
 				case 'popup_retrieveWebsiteAccessReply':
 					websiteAccessList.value = parsed.data.websiteAccess
@@ -54,25 +56,29 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 					break
 			}
 		}
+
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}
 
-  const listenForUrlParamChanges = () => {
-    const urlParamChangeListener = () => {
-      const urlParams = new URLSearchParams(window.location.search)
-      const domainParam = urlParams.get('domain')
-      console.log(`domain: ${domainParam}`)
-    }
+	const listenForWindowHashChanges = () => {
+		const handleHashChange = () => {
+			const hash = window.location.hash
+			const domainInHash = hash.slice(URL_HASH_PREFIX.length)
+			selectedDomain.value = domainInHash || undefined
+		}
 
-    window.addEventListener('popstate', urlParamChangeListener)
-    return () => {
-      window.removeEventListener('popstate', urlParamChangeListener)
-    }
-  }
+		// initially set selectedDomain when the page loads/reloads
+		handleHashChange()
+		window.addEventListener('hashchange', handleHashChange)
+		return () => {
+			window.removeEventListener('hashchange', handleHashChange)
+		}
+	}
 
-  useEffect(listenForUrlParamChanges, [])
+	useSignalEffect(updateListOnSearch)
 	useEffect(listenForPopupMessages, [])
+	useEffect(listenForWindowHashChanges, [])
 	useEffect(retrieveWebsiteAccess, [])
 
 	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
@@ -115,17 +121,11 @@ const SearchForm = (props: SearchFormProps) => {
 	const { searchQuery } = useWebsiteAccess()
 
 	const updateSearchParameters = (event: Event) => {
-		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const formData = new FormData(event.currentTarget)
-		const inputValue = formData.get(props.name)?.toString()
-		return
-
+		return event
 		/*
 		 * TODO: Reimplement Search
 		 * https://github.com/DarkFlorist/TheInterceptor/issues/1120
 		*/
-
-		searchQuery.value = inputValue || ''
 	}
 
 	const commitSelectionOrReset = (event: Event) => {
@@ -174,16 +174,14 @@ const WebsiteSettingsList = () => {
 		if (!(event instanceof SubmitEvent) || !(formElement instanceof HTMLFormElement)) return
 
     const formData = new FormData(formElement)
-    const selectedWebsiteOrigin = formData.get('websiteOrigin')?.toString()
+    const selectedWebsiteOrigin = formData.get(URL_HASH_KEY)?.toString()
 
     if (!selectedWebsiteOrigin) {
-      history.pushState(null, '', window.location.pathname)
-      return
+			window.location.href = window.location.pathname
+			return
     }
 
-    const encodedDomain = encodeURIComponent(selectedWebsiteOrigin)
-    const searchParams = new URLSearchParams({ domain: encodedDomain })
-    history.pushState(null, '', `?${searchParams.toString()}`)
+		window.location.href = `${window.location.pathname}${URL_HASH_PREFIX}${selectedWebsiteOrigin}`
 	}
 
 	return (
@@ -212,12 +210,12 @@ const EmptyAccessList = () => {
 	)
 }
 
-type SiteOverviewProps = {
+type WebsiteAccessOverviewProps = {
 	websiteAccess: WebsiteAccess
 	checked: boolean
 }
 
-const WebsiteAccessOverview = ({ websiteAccess, checked }: SiteOverviewProps) => {
+const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
 	const handleChange = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLLabelElement) || !event.currentTarget.form) return
 		event.currentTarget.form.requestSubmit()
@@ -232,7 +230,7 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: SiteOverviewProps) =>
 
 	return (
 		<li role = 'option'>
-			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = 'websiteOrigin' value = { websiteAccess.website.websiteOrigin } defaultChecked = { checked } />
+			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } defaultChecked = { checked } />
 			<label htmlFor = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } } onClick = { handleChange }>
 				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
 					<img role = 'img' src = { websiteAccess.website.icon } style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
@@ -260,45 +258,33 @@ const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) =>
 	}
 }
 
+const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
+	return createPortal(<div class = 'access-details'>{children}</div>, document.body)
+}
+
 const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
-	const dialogRef = useRef<HTMLDialogElement>(null)
 
-	const websiteAccess = useComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
+	const selectedWebsiteAccess = useComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 
-	const closeDetails = () => { selectedDomain.value = undefined }
+	const closeDetails = () => { window.location.hash = '' }
 
-	useSignalEffect(() => {
-		const dialogElement = dialogRef.current
-		if (dialogElement === null) return
-		if (!websiteAccess.value) { closeDetails(); return }
-		dialogElement.showModal()
-	})
-
-	useEffect(() => {
-		const dialogElement = dialogRef.current
-		if (!dialogElement) return
-		dialogElement.addEventListener('close', closeDetails)
-		return () => {
-			dialogElement.removeEventListener('close', closeDetails)
-		}
-	}, [dialogRef.current])
+	if (!selectedWebsiteAccess.value) return <></>
 
 	return (
-		<dialog ref = { dialogRef } class = 'access-details'>
+		<FullFrameWindow>
 			<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
 				<header style = { { paddingBlock: '1rem' } }>
 					<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
-          <DetailsHeader websiteAccess = { websiteAccess.value } />
+          <DetailsHeader websiteAccess = { selectedWebsiteAccess.value } />
 				</header>
 				<article>
-					<NoAccessPrompt websiteAccess = { websiteAccess } />
-					<AddressAccessList websiteAccess = { websiteAccess } />
-					<AdvancedSettings websiteAccess = { websiteAccess } />
+					<NoAccessPrompt websiteAccess = { selectedWebsiteAccess } />
+					<AddressAccessList websiteAccess = { selectedWebsiteAccess } />
+					<AdvancedSettings websiteAccess = { selectedWebsiteAccess } />
 				</article>
 			</form>
-
-		</dialog>
+		</FullFrameWindow>
 	)
 }
 
@@ -314,6 +300,7 @@ const DetailsHeader = ({ websiteAccess }: { websiteAccess: WebsiteAccess | undef
     </div>
   )
 }
+
 const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 
@@ -455,7 +442,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 				<aside>
 
 					{ requestBlockMode.value === 'block-all' ? (
-						<button class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
+						<button type='button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
@@ -503,7 +490,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 				</div>
 				<aside>
 					{ isInterceptorDisabled.value ? (
-						<button class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span></button>
+						<button type='button' class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span></button>
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>
@@ -556,7 +543,6 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 								<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 								<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 							</div>
-
 						</Modal.Dialog>
 					</Modal>
 				</aside>
