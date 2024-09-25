@@ -611,7 +611,7 @@ async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: Websit
 		})
 	})
 
-	reloadConnectedTabs(websiteTabConnections)
+	await reloadConnectedTabs(websiteTabConnections)
 }
 
 export async function blockOrAllowExternalRequests(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {

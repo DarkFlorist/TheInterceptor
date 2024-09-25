@@ -317,7 +317,7 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 				<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
 				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { websiteAccess.value.website } /> for access while this preference is set.</p>
 				<Modal>
-					<Modal.Open class = 'btn btn--outline' style={{ display: 'inline-block' }}>Stop automatically denying access requests</Modal.Open>
+					<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
 					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
 						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
 						<p></p>
@@ -341,9 +341,7 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcc
 		<Collapsible summary = 'Address Access' defaultOpen>
 			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button type = 'button' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
 				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
-				{ access.addressAccess.map(addressAcces => (
-					<AddressAccessCard website = { access.website } addressAccess = { addressAcces } />
-				))}
+				{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { access.website } addressAccess = { addressAcces } />) }
 			</div>
 		</Collapsible>
 	)
@@ -359,7 +357,7 @@ const AddressAccessCard = ({ website, addressAccess }: { website: Website, addre
 
 	const renameAddressCallBack = (newAddress: AddressBookEntry) => {
 		console.log('new address', newAddress)
-		// TODO: Implement address rename in tabs
+		// TODO: Implement address editing https://github.com/DarkFlorist/TheInterceptor/issues/1131
 	}
 
 	const addressBookEntry = useComputed(() => addressAccessMetadata.value?.find(entry => entry.address === addressAccess.address))
@@ -376,7 +374,7 @@ const AddressAccessCard = ({ website, addressAccess }: { website: Website, addre
 const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookEntry: AddressBookEntry | undefined, website: Website }) => {
 	const removeAddressAccessForWebsite = async () => {
 		if (!addressBookEntry) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address: addressBookEntry.address }})
+		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address: addressBookEntry.address } })
 	}
 
 	const confirmOrRejectRemoval = (returnValue: string) => {
@@ -515,6 +513,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 
 const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
+
 	const confirmOrRejectUpdate = async (response: string) => {
 		if (response !== 'confirm' || !websiteAccess.value) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })

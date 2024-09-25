@@ -200,13 +200,13 @@ export function App() {
 					return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 				}
 				case 'popup_failed_to_get_block': return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-				case 'popup_update_rpc_list': return 
+				case 'popup_update_rpc_list': return
 				case 'popup_simulation_state_changed': return await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 			}
 			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)	
+		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
@@ -296,20 +296,20 @@ export function App() {
 	}
 
 	async function openWebsiteAccess() {
-		await sendPopupMessageToBackgroundPage( { method: 'popup_openWebsiteAccess' } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_openWebsiteAccess' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 	async function openAddressBook() {
-		await sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_openAddressBook' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 	async function openSettings() {
-		await sendPopupMessageToBackgroundPage( { method: 'popup_openSettings' } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 	async function clearUnexpectedError() {
 		setUnexpectedError(undefined)
-		await sendPopupMessageToBackgroundPage( { method: 'popup_clearUnexpectedError' } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
 	return (
@@ -333,7 +333,7 @@ export function App() {
 								</a>
 							</div>
 						</nav>
-						
+
 						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<ProviderErrors tabState = { tabState }/>
@@ -361,7 +361,7 @@ export function App() {
 						/>
 
 						<div class = { `modal ${ appPage.page !== 'Home' ? 'is-active' : ''}` }>
-							{ appPage.page === 'EditEnsNamedHash' ? 
+							{ appPage.page === 'EditEnsNamedHash' ?
 								<EditEnsLabelHash
 									close = { () => setAndSaveAppPage({ page: 'Home' }) }
 									editEnsNamedHashWindowState = { appPage.state }
