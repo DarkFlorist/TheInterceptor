@@ -377,7 +377,7 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address: addressBookEntry.address } })
 	}
 
-	const confirmOrRejectRemoval = (returnValue: string) => {
+	const confirmOrRejectRemoval = (returnValue: 'confirm' | 'reject') => {
 		if (returnValue !== 'confirm') return
 		removeAddressAccessForWebsite()
 	}
@@ -424,7 +424,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 
 	const requestBlockMode = useComputed(() => websiteAccess.value?.declarativeNetRequestBlockMode)
 
-	const confirmOrRejectRequestBlocking = (response: string) => {
+	const confirmOrRejectRequestBlocking = (response: 'confirm' | 'reject') => {
 		if (response !== 'confirm') return
 		setWebsiteExternalRequestBlocking(true)
 	}
@@ -438,7 +438,6 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from this domain, effectively preventing the website from connecting to external domains and services.</p>
 				</div>
 				<aside>
-
 					{ requestBlockMode.value === 'block-all' ? (
 						<button type='button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
 					) : (
@@ -470,7 +469,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor',  data: { website: websiteAccess.value.website, interceptorDisabled: shouldDisable } })
 	}
 
-	const confirmOrRejectDialog = async (response: string) => {
+	const confirmOrRejectDialog = (response: 'confirm' | 'reject') => {
 		if (response === 'reject') return
 		disableWebsiteProtection()
 	}
@@ -501,10 +500,9 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 								</div>
-
 							</Modal.Dialog>
-						</Modal>) }
-
+						</Modal>
+					) }
 				</aside>
 			</section>
 		</article>
@@ -514,7 +512,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 
-	const confirmOrRejectUpdate = async (response: string) => {
+	const confirmOrRejectUpdate = async (response: 'confirm' | 'reject') => {
 		if (response !== 'confirm' || !websiteAccess.value) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
 		selectedDomain.value = undefined

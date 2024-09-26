@@ -57,17 +57,17 @@ const Open = (props: Omit<JSX.IntrinsicElements['button'], 'onClick'> & { onClic
  * @extends JSX.IntrinsicElements['dialog']
  * @property {(event: Event & { currentTarget: HTMLDialogElement }) => void} onClose - Callback fired when the dialog is closed. The event.currentTarget.returnValue will contain the value from Modal.Close.
  */
-type ModalDialogProps = JSX.IntrinsicElements['dialog'] & {
-	onClose: (returnValue: string) => void
+type ModalDialogProps<T extends string> = JSX.IntrinsicElements['dialog'] & {
+	onClose: (returnValue: T) => void
 }
 
-const Dialog = ({ children, onClose, ...props }: ModalDialogProps) => {
+const Dialog = <T extends string>({ children, onClose, ...props }: ModalDialogProps<T>) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Dialog must be used within a Modal')
 
 	const closeEventCallback = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLDialogElement)) return
-		onClose(event.currentTarget.returnValue)
+		onClose(event.currentTarget.returnValue as T)
 	}
 
 	useEffect(() => {
