@@ -1494,6 +1494,7 @@ header:has(form[role='search']) h1 {
 	position: fixed;
 	inset: 0;
 	background: var(--bg-color);
+	overflow-y: scroll;
 	overscroll-behavior: contain;
 	z-index: 10;
 }
