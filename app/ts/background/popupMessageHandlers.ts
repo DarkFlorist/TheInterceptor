@@ -644,7 +644,7 @@ async function removeAddressAccessByAddress(websiteOrigin: string, address: Ethe
 
 export async function removeWebsiteAddressAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	reloadConnectedTabs(websiteTabConnections)
+	await reloadConnectedTabs(websiteTabConnections)
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
