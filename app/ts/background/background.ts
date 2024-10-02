@@ -86,7 +86,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			&& explanation !== 'Cast Vote with Reason and Additional Info'
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 			|| pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
-		
+
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
 		const voteFunction = governanceContractInterface.getFunction(fourByteString)
 		if (voteFunction === null) return returnError('Could not find the voting function')
@@ -170,7 +170,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const eventsForEachTransactionPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum, requestAbortController)))
-	
+
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
 		if (wethAddr === undefined) return undefined
@@ -181,16 +181,16 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const weth = await getWeth()
 	const parsedInputData = await Promise.all(transactions.map((transaction) => parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)))
 	const eventsForEachTransaction = await eventsForEachTransactionPromise
-	
+
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
-	
+
 	const updatedMetadata = await updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, parsedInputData)
-	
+
 	const tokenPriceEstimates = weth === undefined ? [] : await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 	const protectors = await protectorPromises
-	
+
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, parsedInputData, protectors, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth)
-	
+
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
@@ -285,7 +285,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 					return await fixedPromise
 				}
 				const updatedSimulationState = await updateSimulationState()
-				
+
 				if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) {
 					await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisSimulationsController), ...doneState })
 				} else {
@@ -377,7 +377,7 @@ export async function refreshConfirmTransactionSimulation(
 		if (error instanceof Error && isNewBlockAbort(error)) return undefined
 		if (error instanceof Error && isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
-	
+
 		const extractToAbi = async () => {
 			const params = transactionToSimulate.originalRequestParameters.params[0]
 			if (!('to' in params)) return []
@@ -395,7 +395,7 @@ export async function refreshConfirmTransactionSimulation(
 			...info,
 			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
 			simulationState: {
-				blockNumber: simState?.blockNumber || 0n, 
+				blockNumber: simState?.blockNumber || 0n,
 				simulationConductedTimestamp: new Date()
 			}
 		} }
@@ -638,7 +638,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		}
 		handleUnexpectedError(error)
 		return replyToInterceptedRequest(websiteTabConnections, {
-			type: 'result', 
+			type: 'result',
 			...request,
 			error: {
 				code: 123456,
@@ -650,11 +650,11 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 
 export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	return replyToInterceptedRequest(websiteTabConnections, {
-		type: 'result', 
+		type: 'result',
 		...request,
 		error: {
 			code: METAMASK_ERROR_NOT_AUTHORIZED,
-			message: 'User refused access to the wallet'
+			message: 'The requested method and/or account has not been authorized by the user.'
 		},
 	})
 }
