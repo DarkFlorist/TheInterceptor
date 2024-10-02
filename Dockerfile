@@ -20,6 +20,7 @@ COPY app/css/ /app/css/
 COPY app/ts/ /app/ts/
 COPY app/img/ /app/img/
 COPY app/inpage/ /app/inpage/
+COPY app/fonts/ /app/fonts/
 COPY build/tsconfig.json build/vendor.mts build/bundler.mts /build/
 
 COPY tsconfig-test.json /
