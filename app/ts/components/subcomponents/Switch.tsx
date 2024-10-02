@@ -14,18 +14,18 @@ import { JSX } from 'preact/jsx-runtime'
  *
  * @example
  * ```tsx
- * import { Switch } from './Switch';
+ * import { Switch } from './Switch'
  *
  * function App() {
  *   return (
  *     <label>
  *       Enable feature
  *       <Switch
- *         checked={isEnabled}
- *         onChange={(e) => setIsEnabled(e.currentTarget.checked)}
+ *         checked = { isEnabled }
+ *         onChange = { (e) => setIsEnabled(e.currentTarget.checked) }
  *       />
  *     </label>
- *   );
+ *   )
  * }
  * ```
  *

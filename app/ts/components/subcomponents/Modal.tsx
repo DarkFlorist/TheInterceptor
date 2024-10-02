@@ -8,17 +8,17 @@ import { Ref, useContext, useEffect, useRef } from 'preact/hooks'
  *
  * @example
  * ```tsx
- * import { Modal } from './Modal';
+ * import { Modal } from './Modal'
  *
  * function App() {
  *   return (
  *     <Modal>
  *       <Modal.Open>Open Modal</Modal.Open>
- *       <Modal.Dialog onClose={(e) => console.log(e.currentTarget.returnValue)}>
+ *       <Modal.Dialog onClose={ (e) => console.log(e.currentTarget.returnValue) }>
  *         <h2>Modal Title</h2>
  *         <p>Modal content goes here.</p>
- *         <Modal.Close value="confirm">Confirm</Modal.Close>
- *         <Modal.Close value="cancel">Cancel</Modal.Close>
+ *         <Modal.Close value = 'confirm'>Confirm</Modal.Close>
+ *         <Modal.Close value = 'cancel'>Cancel</Modal.Close>
  *       </Modal.Dialog>
  *     </Modal>
  *   );
@@ -79,7 +79,7 @@ const Dialog = <T extends string>({ children, onClose, ...props }: ModalDialogPr
 
 	return (
 		<dialog role = 'dialog' { ...props } ref = { context.dialogRef }>
-			<form method = 'dialog'>{children}</form>
+			<form method = 'dialog'>{ children }</form>
 		</dialog>
 	)
 }
@@ -91,7 +91,7 @@ const Dialog = <T extends string>({ children, onClose, ...props }: ModalDialogPr
  * The `value` prop will be passed to the onClose callback of Modal.Dialog.
  *
  * @extends Omit<JSX.IntrinsicElements['button'], 'value'>
- * @property {string | number | string[]} value - The value to be passed to the onClose callback when the modal is closed.
+ * @property { string | number | string[] } value - The value to be passed to the onClose callback when the modal is closed.
  */
 type ModalCloseProps = Omit<JSX.IntrinsicElements['button'], 'value'> & { value: string | number | string[] }
 const Close = (props: ModalCloseProps) => {
