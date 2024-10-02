@@ -653,7 +653,7 @@ async function setAdressAccessForWebsite(websiteOrigin: string, address: Ethereu
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
-			const addressAccessList = access.addressAccess.map(addressAccess => (addressAccess.address !== address) ? addressAccess :  modifyObject(addressAccess, { access: allowAccess }))
+			const addressAccessList = access.addressAccess.map(addressAccess => (addressAccess.address !== address) ? addressAccess : modifyObject(addressAccess, { access: allowAccess }))
 			return modifyObject(access, { addressAccess: addressAccessList })
 		})
 	})
@@ -662,7 +662,7 @@ async function setAdressAccessForWebsite(websiteOrigin: string, address: Ethereu
 export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
 	await setAdressAccessForWebsite(website.websiteOrigin, address, allowAccess)
-	reloadConnectedTabs(websiteTabConnections)
+	await reloadConnectedTabs(websiteTabConnections)
 	return await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 

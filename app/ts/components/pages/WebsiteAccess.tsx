@@ -13,7 +13,7 @@ import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { createPortal } from 'preact/compat'
 
 const URL_HASH_KEY = 'origin'
-const URL_HASH_PREFIX = `#${URL_HASH_KEY}:`
+const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -173,15 +173,15 @@ const WebsiteSettingsList = () => {
 		const formElement = event.currentTarget
 		if (!(event instanceof SubmitEvent) || !(formElement instanceof HTMLFormElement)) return
 
-    const formData = new FormData(formElement)
-    const selectedWebsiteOrigin = formData.get(URL_HASH_KEY)?.toString()
+		const formData = new FormData(formElement)
+		const selectedWebsiteOrigin = formData.get(URL_HASH_KEY)?.toString()
 
-    if (!selectedWebsiteOrigin) {
-			window.location.href = window.location.pathname
-			return
-    }
+		if (!selectedWebsiteOrigin) {
+				window.location.href = window.location.pathname
+				return
+		}
 
-		window.location.href = `${window.location.pathname}${URL_HASH_PREFIX}${selectedWebsiteOrigin}`
+		window.location.href = `${ window.location.pathname }${ URL_HASH_PREFIX }${ selectedWebsiteOrigin }`
 	}
 
 	return (
@@ -389,7 +389,7 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from accessing or using  <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => {} } />
+				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from accessing or using <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => {} } />
 				</div>
 				<p style = { { marginBlock: '1rem' } }>Remove the website's access to this address anyway?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
@@ -514,7 +514,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 
 	const confirmOrRejectUpdate = async (response: 'confirm' | 'reject') => {
 		if (response !== 'confirm' || !websiteAccess.value) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess', data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
 		selectedDomain.value = undefined
 	}
 
