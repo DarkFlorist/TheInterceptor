@@ -20,6 +20,7 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -732,9 +733,20 @@ type RawTransactionDetailsCardParams = {
 	transaction: TransactionWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
 	gasSpent: bigint
+	transactionIdentifier: bigint
 }
-export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const [gasLimit, setGasLimit] = useState<string>(transaction.gas.toString(10))
+
+	const isNonNegativeInteger = (number: string) => /^\d+$/.test(number)
+
+	async function forceSetGasLimitForTransaction() {
+		if (!isNonNegativeInteger(gasLimit)) return
+		const gasLimitInt = BigInt(gasLimit)
+		if (gasLimitInt === transaction.gas) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gasLimitInt, transactionIdentifier: transactionIdentifier } })
+	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
@@ -760,8 +772,20 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } fontSize = 'normal'/> }</dd>
 						<dt>Gas used</dt>
 						<dd>{ `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
-						<dt>Gas limit</dt>
-						<dd>{ `${ transaction.gas.toString(10) } gas` }</dd>
+						<dt>Gas limit </dt>
+						<dd style = 'display: flow'>
+							<input
+								className = 'input paragraph white-placeholder'
+								type = 'number'
+								value = { gasLimit }
+								placeholder = { transaction.gas.toString(10) }
+								onInput = { e => setGasLimit((e.target as HTMLInputElement).value) }
+								style = { 'width: 100px;' }
+							/>
+							gas
+							&nbsp;
+							<button disabled = { !isNonNegativeInteger(gasLimit) || BigInt(gasLimit) === transaction.gas } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+						</dd>
 						<dt>Nonce: </dt>
 						<dd>{ transaction.nonce.toString(10) }</dd>
 						<dt>Chain</dt>
