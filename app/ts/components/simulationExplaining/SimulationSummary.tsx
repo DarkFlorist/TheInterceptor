@@ -21,6 +21,8 @@ import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { IntegerInput } from '../subcomponents/AutosizingInput.js'
+import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -737,15 +739,12 @@ type RawTransactionDetailsCardParams = {
 }
 export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	const [gasLimit, setGasLimit] = useState<string>(transaction.gas.toString(10))
-
-	const isNonNegativeInteger = (number: string) => /^\d+$/.test(number)
+	const gasLimit = useOptionalSignal<bigint>(transaction.gas)
 
 	async function forceSetGasLimitForTransaction() {
-		if (!isNonNegativeInteger(gasLimit)) return
-		const gasLimitInt = BigInt(gasLimit)
-		if (gasLimitInt === transaction.gas) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gasLimitInt, transactionIdentifier: transactionIdentifier } })
+		const gas = gasLimit.deepPeek()
+		if (gas === undefined || gas === transaction.gas) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gas, transactionIdentifier: transactionIdentifier } })
 	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -773,18 +772,15 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<dt>Gas used</dt>
 						<dd>{ `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
 						<dt>Gas limit </dt>
-						<dd style = 'display: flow'>
-							<input
-								className = 'input paragraph white-placeholder'
-								type = 'number'
+						<dd style = 'display: flex; align-items: center; justify-content: center;'>
+							<IntegerInput
+								autoSize = { true }
 								value = { gasLimit }
 								placeholder = { transaction.gas.toString(10) }
-								onInput = { e => setGasLimit((e.target as HTMLInputElement).value) }
-								style = { 'width: 100px;' }
 							/>
 							gas
 							&nbsp;
-							<button disabled = { !isNonNegativeInteger(gasLimit) || BigInt(gasLimit) === transaction.gas } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+							<button disabled = { gasLimit.deepValue === transaction.gas } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
 						</dd>
 						<dt>Nonce: </dt>
 						<dd>{ transaction.nonce.toString(10) }</dd>
