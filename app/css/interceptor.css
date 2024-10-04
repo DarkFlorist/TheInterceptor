@@ -1328,7 +1328,7 @@ label:has([type=radio]:checked):before {
 	visibility: hidden;
 	white-space: pre-wrap;
 	height: 0;
-	padding-inline: 3px;
+	padding-inline: 2px;
 }
 .autosizing-label .autosizing-input:invalid {
 	outline-color: var(--negative-color);

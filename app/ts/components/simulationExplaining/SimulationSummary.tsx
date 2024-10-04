@@ -773,13 +773,14 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<dd>{ `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
 						<dt>Gas limit </dt>
 						<dd style = 'display: flex; align-items: center; justify-content: center;'>
-							<IntegerInput
-								autoSize = { true }
-								value = { gasLimit }
-								placeholder = { transaction.gas.toString(10) }
-							/>
-							gas
-							&nbsp;
+							<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
+								<IntegerInput
+									autoSize = { true }
+									value = { gasLimit }
+									placeholder = { transaction.gas.toString(10) }
+								/>
+							</span>
+							&nbsp;gas&nbsp;
 							<button disabled = { gasLimit.deepValue === transaction.gas } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
 						</dd>
 						<dt>Nonce: </dt>
