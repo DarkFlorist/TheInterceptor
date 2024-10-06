@@ -216,6 +216,7 @@ html, body {
 	border-bottom: 2px solid white;
 	box-shadow: none;
 	font-size: 13px;
+	font-family: 'Inter';
 }
 
 .input:hover {
@@ -1497,4 +1498,80 @@ header:has(form[role='search']) h1 {
 	overflow-y: scroll;
 	overscroll-behavior: contain;
 	z-index: 10;
+
+.input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.autosizing-span,
+.autosizing-label,
+.autosizing-input,
+.autosizing-span::before,
+.autosizing-label::before,
+.autosizing-input::before,
+.autosizing-span::after,
+.autosizing-label::after,
+.autosizing-input::after {
+	box-sizing: border-box;
+}
+.autosizing-span {
+	/* we want our input box to be able to shrink, even if it has no spaces */
+	box-sizing: border-box;
+	line-break: anywhere;
+}
+.autosizing-input:focus-within {
+	outline-color: var(--negative-color);
+}
+.autosizing-span,
+.autosizing-label {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	column-gap: 0.25em;
+}
+.autosizing-label {
+	min-width: 100%;
+	font: inherit;
+}
+.autosizing-span::after,
+.autosizing-label::after,
+.autosizing-input {
+	width: 100%;
+	min-width: 0;
+	font: inherit;
+	padding: 0px;
+	margin: 0;
+	resize: none;
+	background: none;
+	border: none;
+	color: var(--text-color);
+}
+.autosizing-span::after,
+.autosizing-label::after {
+	content: attr(data-value);
+	visibility: hidden;
+	white-space: pre-wrap;
+	height: 0;
+	padding-inline: 2px;
+}
+.autosizing-label .autosizing-input:invalid {
+	outline-color: var(--negative-color);
+}
+.autosizing-input:focus {
+	outline: none;
+}
+[list]::-webkit-calendar-picker-indicator {
+	display: none !important;
 }

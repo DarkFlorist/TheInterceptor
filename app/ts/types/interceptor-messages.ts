@@ -828,6 +828,15 @@ export const SetEnsNameForHash = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type ForceSetGasLimitForTransaction = funtypes.Static<typeof ForceSetGasLimitForTransaction>
+export const ForceSetGasLimitForTransaction = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_forceSetGasLimitForTransaction'),
+	data: funtypes.ReadonlyObject({
+		gasLimit: EthereumQuantity,
+		transactionIdentifier: EthereumQuantity
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -876,7 +885,8 @@ export const PopupMessage = funtypes.Union(
 	BlockOrAllowExternalRequests,
 	AllowOrPreventAddressAccessForWebsite,
 	RemoveWebsiteAddressAccess,
-	RemoveWebsiteAccess
+	RemoveWebsiteAccess,
+	ForceSetGasLimitForTransaction,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
