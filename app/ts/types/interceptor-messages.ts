@@ -318,6 +318,40 @@ export const ChangeInterceptorAccess = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
+export type BlockOrAllowExternalRequests = funtypes.Static<typeof BlockOrAllowExternalRequests>
+export const BlockOrAllowExternalRequests = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_blockOrAllowExternalRequests'),
+	data: funtypes.Object({
+		website: Website,
+		shouldBlock: funtypes.Boolean
+	})
+}).asReadonly()
+
+export type AllowOrPreventAddressAccessForWebsite = funtypes.Static<typeof AllowOrPreventAddressAccessForWebsite>
+export const AllowOrPreventAddressAccessForWebsite = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_allowOrPreventAddressAccessForWebsite'),
+	data: funtypes.Object({
+		website: Website,
+		address: EthereumAddress,
+		allowAccess: funtypes.Boolean
+	})
+}).asReadonly()
+
+export type RemoveWebsiteAddressAccess = funtypes.Static<typeof RemoveWebsiteAddressAccess>
+export const RemoveWebsiteAddressAccess = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_removeWebsiteAddressAccess'),
+	data: funtypes.Object({
+		websiteOrigin: funtypes.String,
+		address: EthereumAddress
+	})
+}).asReadonly()
+
+export type RemoveWebsiteAccess = funtypes.Static<typeof RemoveWebsiteAccess>
+export const RemoveWebsiteAccess = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_removeWebsiteAccess'),
+	data: funtypes.Object({ websiteOrigin: funtypes.String })
+}).asReadonly()
+
 export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
 export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_signerChangeChainDialog'),
@@ -687,6 +721,37 @@ export const ChangeAddOrModifyAddressWindowState = funtypes.ReadonlyObject({
 	})
 })
 
+export type RetrieveWebsiteAccessFilter = funtypes.Static<typeof RetrieveWebsiteAccessFilter>
+export const RetrieveWebsiteAccessFilter = funtypes.ReadonlyObject({
+	query: funtypes.String,
+}).asReadonly()
+
+export type RetrieveWebsiteAccess = funtypes.Static<typeof RetrieveWebsiteAccess>
+export const RetrieveWebsiteAccess = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_retrieveWebsiteAccess'),
+	data: RetrieveWebsiteAccessFilter,
+}).asReadonly()
+
+export type SearchProximity = funtypes.Static<typeof SearchProximity>
+export const SearchProximity = funtypes.ReadonlyTuple(funtypes.Number, funtypes.Number)
+
+export type SearchMetadata = funtypes.Static<typeof SearchMetadata>
+export const SearchMetadata = funtypes.Object({
+	_targets: funtypes.MutableArray(funtypes.String),
+	closestProximity: SearchProximity,
+	scores: funtypes.Record(funtypes.String, SearchProximity),
+	targets: funtypes.Array(funtypes.String)
+})
+
+type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
+const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
+	data: funtypes.ReadonlyObject({
+		websiteAccess: WebsiteAccessArray,
+		addressAccessMetadata: AddressBookEntries
+	})
+}).asReadonly()
+
 type PopupAddOrModifyAddressWindowStateInfomation = funtypes.Static<typeof PopupAddOrModifyAddressWindowStateInfomation>
 const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_addOrModifyAddressWindowStateInformation'),
@@ -763,6 +828,15 @@ export const SetEnsNameForHash = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type ForceSetGasLimitForTransaction = funtypes.Static<typeof ForceSetGasLimitForTransaction>
+export const ForceSetGasLimitForTransaction = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_forceSetGasLimitForTransaction'),
+	data: funtypes.ReadonlyObject({
+		gasLimit: EthereumQuantity,
+		transactionIdentifier: EthereumQuantity
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -806,6 +880,13 @@ export const PopupMessage = funtypes.Union(
 	OpenWebPage,
 	DisableInterceptor,
 	SetEnsNameForHash,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
+	RetrieveWebsiteAccess,
+	BlockOrAllowExternalRequests,
+	AllowOrPreventAddressAccessForWebsite,
+	RemoveWebsiteAddressAccess,
+	RemoveWebsiteAccess,
+	ForceSetGasLimitForTransaction,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -831,4 +912,5 @@ export const MessageToPopup = funtypes.Union(
 	FetchAbiAndNameFromEtherscanReply,
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
+	RetrieveWebsiteAccessReply,
 )

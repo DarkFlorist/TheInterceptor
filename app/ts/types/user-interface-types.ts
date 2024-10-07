@@ -1,4 +1,4 @@
-import { StateUpdater } from 'preact/hooks'
+import { Dispatch, StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState } from './visualizer-types.js'
@@ -16,7 +16,7 @@ import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
-	setWebsiteAccess: StateUpdater<WebsiteAccessArray | undefined>,
+	setWebsiteAccess: Dispatch<StateUpdater<WebsiteAccessArray | undefined>>,
 	websiteAccess: WebsiteAccessArray | undefined,
 	websiteAccessAddressMetadata: AddressBookEntries,
 	renameAddressCallBack: RenameAddressCallBack,
