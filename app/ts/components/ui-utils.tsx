@@ -1,8 +1,8 @@
 import { ethers } from 'ethers'
-import { Ref, useEffect } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
-import { ComponentChildren } from 'preact'
+import { ComponentChildren, RefObject } from 'preact'
 import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
@@ -15,7 +15,7 @@ function assertIsNode(e: EventTarget | null): asserts e is Node {
     }
 }
 
-export function clickOutsideAlerter(ref: Ref<HTMLDivElement>, callback: () => void) {
+export function clickOutsideAlerter(ref: RefObject<HTMLDivElement>, callback: () => void) {
 	useEffect(() => {
 		function handleClickOutside({ target }: MouseEvent) {
 			assertIsNode(target);
@@ -148,8 +148,14 @@ export function removeWindowTabListeners(onCloseWindow: (id: number) => void, on
 }
 
 export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
-	if (popupOrTab.type === 'tab') return await updateTabIfExists(popupOrTab.id, { active: true })
-	return await updateWindowIfExists(popupOrTab.id, { focused: true })
+	if (popupOrTab.type === 'tab') {
+		// highlight the window the tab is in
+		const tab = await browser.tabs.get(popupOrTab.id)
+		if (tab !== undefined && tab.windowId !== undefined) await browser.windows.update(tab.windowId, { drawAttention: true, focused: true })
+		// highlight the tab itself
+		return await updateTabIfExists(popupOrTab.id, { active: true, highlighted: true })
+	}
+	return await updateWindowIfExists(popupOrTab.id, { drawAttention: true, focused: true })
 }
 
 export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: boolean }) => {
