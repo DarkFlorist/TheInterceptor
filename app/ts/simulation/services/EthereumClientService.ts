@@ -35,7 +35,12 @@ export class EthereumClientService {
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
-	public getCachedBlock = () => this.cachedBlock
+	public getCachedBlock = () => {
+		if (this.cachedBlock === undefined) return undefined
+		// if the block is older than 100 block intervals, invalidate cache
+		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * 100) return undefined
+		return this.cachedBlock
+	}
 	public cleanup = () => this.setBlockPolling(false)
 
 	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
@@ -208,7 +213,7 @@ export class EthereumClientService {
 		})
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
-		const parentBlock = await this.getBlock(requestAbortController)
+		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		const coder = AbiCoder.defaultAbiCoder()
 
 		const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
@@ -228,7 +233,7 @@ export class EthereumClientService {
 		const query = [{
 			calls: transactionsWithRemoveZeroPricedOnes,
 			blockOverride: {
-				number: blockNumber + 1n,
+				number: parentBlock.number + 1n,
 				prevRandao: 0x1n,
 				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
 				gasLimit: parentBlock.gasLimit,
@@ -246,7 +251,7 @@ export class EthereumClientService {
 				...extraAccountOverrides,
 			}
 		}]
-		const ethSimulateResults = await this.ethSimulateV1(query, blockNumber, requestAbortController)
+		const ethSimulateResults = await this.ethSimulateV1(query, parentBlock.number, requestAbortController)
 		if (ethSimulateResults.length !== 1) throw new Error('Ran Eth Simulate for one block but did not get one block')
 		const singleMulticalResult = ethSimulateResults[0]
 		if (singleMulticalResult === undefined) throw new Error('Eth Simualte result was undefined')
