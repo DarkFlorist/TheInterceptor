@@ -654,7 +654,7 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, reque
 		...request,
 		error: {
 			code: METAMASK_ERROR_NOT_AUTHORIZED,
-			message: 'User refused access to the wallet'
+			message: 'The requested method and/or account has not been authorized by the user.'
 		},
 	})
 }
