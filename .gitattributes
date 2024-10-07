@@ -1,2 +1,10 @@
 # JSON Highlighting on GitHub w/ comments
 *.json linguist-language=jsonc
+
+# Automatically handle line endings
+* text=auto
+
+# Do not handle line endings for binaries
+*.png		binary
+*.jpg		binary
+*.woff2	binary

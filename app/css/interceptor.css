@@ -53,11 +53,18 @@ body { font-family: "Inter" !important; }
 	--alpha-005: rgba(255, 255, 255, 0.05);
 	--alpha-015: rgba(255, 255, 255, 0.15);
 
-	--modal-background-color: rgba(10, 10, 10, .7);
-
-	--big-font-size: 28px;
-	--normal-font-size: 14px;
+	--modal-background-color: rgba(10, 10, 10, .7)
 }
+
+:where(svg[role=img], figure > svg, figure > img) { display: block }
+
+data {
+	font: normal 1em "Inter";
+	font-feature-settings: 'zero' 1, 'ss01' 1;
+}
+
+/* Utility */
+.relative { position: relative }
 
 button:where(:not(.btn)) {
 	font-family: "Inter";
@@ -68,7 +75,7 @@ button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:not(.btn, .card-header-icon):disabled, button:not(.btn, .card-header-icon)[disabled] {
+button:not(.btn):disabled, button:not(.btn)[disabled] {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }
@@ -85,7 +92,7 @@ svg[role="img"] {
 	font-size: 0.8em;
 }
 
-input[type = 'checkbox'] {
+input[type=checkbox]:not([role=switch]) {
 	appearance: none;
 	background-color: #fff;
 	margin: 0;
@@ -100,7 +107,7 @@ input[type = 'checkbox'] {
 	border: 1px solid black;
 }
 
-input[type = 'checkbox']::before {
+input[type=checkbox]:not([role=switch])::before {
 	content: '✔';
 	place-content: center;
 	display: flex;
@@ -116,7 +123,7 @@ input[type = 'checkbox']::before {
 	border: 1px solid black;
 }
 
-input[type = 'checkbox']:checked::before {
+input[type=checkbox]:not([role=switch]):checked::before {
 	transform: scale(1.0);
 }
 
@@ -209,6 +216,7 @@ html, body {
 	border-bottom: 2px solid white;
 	box-shadow: none;
 	font-size: 13px;
+	font-family: 'Inter';
 }
 
 .input:hover {
@@ -917,27 +925,27 @@ svg.spinner > circle {
 /* TODO: remove override once bulma dependency is minimized */
 strong { color: inherit }
 
-button:not(.button):is(.btn) {
+:where(.btn) {
 	--s-justify: var(--btn-justify, center);
 	--s-bg: var(--btn-bg-color, gray);
 	--s-fg: var(--btn-text-color, var(--text-color));
 	--s-size: var(--btn-text-size , 1em);
-	--s-outline: var(--btn-outline, 1px solid transparent);
+	--s-outline: var(--btn-outline, none);
 	--s-brightness: var(--btn-brightness, 1);
 	--s-saturation: var(--btn-saturation, 1);
 	--s-contrast: var(--btn-contrast, 1);
 	font: inherit;
+	outline: none;
 	background-color: var(--s-bg);
 	color: var(--s-fg, var(--text-color));
 	font-size: var(--s-size, inherit);
-	border: var(--s-outline);
 	filter: saturate(var(--s-saturation)) brightness(var(--s-brightness));
 	justify-content: var(--s-justify);
 	height: 2.25em;
 	padding: 0 0.75em;
+	border: var(--s-outline);
 	border-radius: 4px;
 	cursor: pointer;
-	outline: none;
 	display: flex;
 	align-items: center;
 }
@@ -1166,10 +1174,10 @@ summary:where(details[open] > *) {
 }
 
 .truncate {
-	display: block;
 	white-space: nowrap;
 	text-overflow: ellipsis;
 	overflow: hidden;
+	display: block;
 }
 
 .key-value-pair {
@@ -1218,7 +1226,7 @@ fieldset:has([type='radio']) {
 	column-gap: 0.5rem;
 }
 
-label:has([type=radio]) {
+fieldset label:has([type=radio]) {
 	display: flex;
 	align-items: center;
 	column-gap: 0.3125rem;
@@ -1228,11 +1236,11 @@ label:has([type=radio]) {
 	color: var(--subtitle-text-color);
 }
 
-label:has([type=radio]):focus-within {
+fieldset label:has([type=radio]):focus-within {
 	background: #ffffff10;
 }
 
-label:has([type=radio]):before {
+fieldset label:has([type=radio]):before {
 	content: '';
 	background: transparent;
 	width: 0.3125rem;
@@ -1243,7 +1251,7 @@ label:has([type=radio]):before {
 	margin: 0.1875rem;
 }
 
-label:has([type=radio]:checked):before {
+fieldset label:has([type=radio]:checked):before {
 	background: white;
 }
 
@@ -1260,4 +1268,310 @@ label:has([type=radio]:checked):before {
 	border-radius: 0.25rem;
 	padding: 0.5rem;
 	align-items: start;
+}
+
+/* Flexy Component */
+[class*=flexy] {
+	--gx: var(--gap-x, 0);
+	--gy: var(--gap-y, 0);
+	--px: var(--pad-x, 0);
+	--py: var(--pad-y, 0);
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--gy) var(--gx);
+	align-items: center;
+	padding: var(--py) var(--px);
+}
+.flexy-none {
+	--gap-x: 0;
+	--gap-y: 0;
+	--pad-x: 0;
+	--pad-y: 0;
+}
+
+.flexy-sm {
+	--pad-y: 0.5rem;
+	--gap-x: 1rem;
+}
+.flexy-lg {
+	--pad-y: 1rem;
+	--gap-x: 2rem;
+}
+
+/* Layout Component */
+:has(> .layout:first-child):not(dialog:not([open])) {
+	background: var(--bg-color);
+	display: grid;
+	grid-template-columns: var(--grid-columns, minmax(1rem,auto) minmax(min-content,800px) minmax(1rem,auto));
+
+	.layout {
+		--grid-col: var(--grid-column, 2);
+		--line-color: #505050;
+		display: grid;
+		grid-column: var(--grid-col);
+		min-height: 100vh;
+		grid-template-rows: min-content 1fr;
+
+		&:has(header + article) {
+			grid-template-rows: min-content 1fr;
+
+			> header {
+				background-color: var(--bg-color);
+				position: sticky;
+				top: 0;
+				z-index: 10;
+			}
+		}
+
+		&:is(main > .layout) > header {
+			border-bottom: 1px solid var(--line-color);
+		}
+
+	}
+}
+
+/* Search Component */
+form[role='search'] { flex: 1 0 auto }
+
+form[role='search'] fieldset {
+	color: var(--text-color);
+	display: grid;
+	grid-template-columns: min-content auto min-content;
+	column-gap: 0.25rem;
+	align-items: center;
+	border: 1px solid var(--line-color);
+	padding: 0.25rem;
+	border-radius: 2px;
+}
+
+form[role='search'] fieldset:focus-within {
+	border-color: var(--text-color);
+}
+
+form[role='search'] svg { display: block }
+
+form[role='search'] label {
+	padding: 0.25rem;
+	color: var(--line-color);
+}
+
+form[role='search'] input[type='search'] {
+	font: inherit;
+	background: transparent;
+	outline: none;
+	border: 0 none;
+	color: var(--text-color);
+}
+
+form[role='search'] input[type='search']::-webkit-search-cancel-button { appearance: none }
+
+form[role='search'] input[type='search']:placeholder-shown ~ button { display: none }
+
+form[role='search'] input[type='search'] ~ button {
+	font: inherit;
+	appearance: none;
+	outline: none;
+	background: transparent;
+	border: 0 none;
+	padding: 0.25rem;
+	color: var(--disabled-text-color);
+}
+
+form[role='search'] input[type='search'] ~ button:focus {
+	color: var(--text-color);
+	outline: 1px solid;
+}
+
+/* Switch Component */
+input[role=switch] {
+	--bg-color: #922929;
+	--checked-bg-color: #378b37;
+	appearance: none;
+	width: 1.75rem;
+	background: var(--bg-color);
+	display: block;
+	border-radius: 1rem;
+	padding: 4px;
+	border: 0 none;
+	cursor: pointer;
+	transition: background 400ms;
+	box-shadow: 0 0 1px inset #000000d6;
+}
+
+input[role=switch]:focus-visible {
+	outline: 1px solid var(--text-color);
+	outline-offset: 2px;
+}
+
+input[role=switch]:checked {
+	background: var(--checked-bg-color);
+}
+
+input[role=switch]:before {
+	content: '';
+	display: block;
+	background: white;
+	height: 1rem;
+	border-radius: 100%;
+	width: 1rem;
+	border: none;
+	transition: transform 200ms;
+	transform: scale(1);
+	box-shadow: 0 0 3px #000000d6;
+}
+
+input[role=switch]:checked:before {
+	transform: translateX(0.75rem) scale(1);
+}
+
+/* Status Icon */
+[class*=status-] {
+	--bg-color: transparent;
+	--fg-color: var(--disabled-text-color);
+	--outline: none;
+
+	color: var(--fg-color);
+	background-color: var(--bg-color);
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	padding: 0.25em;
+	border-radius: 2px;
+	border: var(--outline);
+}
+
+.status-warn {
+	--bg-color: #F5934B;
+	--fg-color: #753100;
+}
+
+.status-danger {
+	--bg-color: #FF7272;
+	--fg-color: #6B2626;
+}
+
+.status-outline { --outline: #FF7272 }
+.status-lg { font-size: 1.5rem }
+
+/* Customizations */
+
+header:has(form[role='search']) {
+	display: flex;
+	column-gap: 1rem;
+	row-gap: 0.25rem;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	place-content: center;
+	padding: 1rem 0;
+}
+
+header:has(form[role='search']) h1 {
+	color: var(--text-color);
+	font-size: 1.5rem;
+	flex: 1 0 auto;
+}
+
+[role=option]:has([type=radio]) {
+	--heading-color: var(--text-color);
+	--heading-weight: normal;
+	--subheading-color: var(--disabled-text-color);
+	margin: 0;
+	border-bottom: 1px solid #ffffff10;
+	position: relative;
+}
+
+[role=option]:has([type=radio]):focus-within,
+[role=option]:has([type=radio]):hover {
+	background: linear-gradient(to right, transparent 0%, #ffffff08 50%, transparent 100%);
+}
+
+[role=option] [type=radio] {
+	position: absolute;
+	opacity: 0;
+}
+
+.access-details {
+	position: fixed;
+	inset: 0;
+	background: var(--bg-color);
+	overflow-y: scroll;
+	overscroll-behavior: contain;
+	z-index: 10;
+
+.input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.autosizing-span,
+.autosizing-label,
+.autosizing-input,
+.autosizing-span::before,
+.autosizing-label::before,
+.autosizing-input::before,
+.autosizing-span::after,
+.autosizing-label::after,
+.autosizing-input::after {
+	box-sizing: border-box;
+}
+.autosizing-span {
+	/* we want our input box to be able to shrink, even if it has no spaces */
+	box-sizing: border-box;
+	line-break: anywhere;
+}
+.autosizing-input:focus-within {
+	outline-color: var(--negative-color);
+}
+.autosizing-span,
+.autosizing-label {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	column-gap: 0.25em;
+}
+.autosizing-label {
+	min-width: 100%;
+	font: inherit;
+}
+.autosizing-span::after,
+.autosizing-label::after,
+.autosizing-input {
+	width: 100%;
+	min-width: 0;
+	font: inherit;
+	padding: 0px;
+	margin: 0;
+	resize: none;
+	background: none;
+	border: none;
+	color: var(--text-color);
+}
+.autosizing-span::after,
+.autosizing-label::after {
+	content: attr(data-value);
+	visibility: hidden;
+	white-space: pre-wrap;
+	height: 0;
+	padding-inline: 2px;
+}
+.autosizing-label .autosizing-input:invalid {
+	outline-color: var(--negative-color);
+}
+.autosizing-input:focus {
+	outline: none;
+}
+[list]::-webkit-calendar-picker-indicator {
+	display: none !important;
 }

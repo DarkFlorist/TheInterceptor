@@ -49,7 +49,7 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 async function changeSignerChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
-	const oldSignerChain = (await getTabState(port.sender.tab.id)).signerChain 
+	const oldSignerChain = (await getTabState(port.sender.tab.id)).signerChain
 	if (oldSignerChain !== signerChain) await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerChain }))
 	// update active address if we are using signers address
 	const settings = await getSettings()
@@ -78,10 +78,7 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 	if (params.accept) await changeSignerChain(simulator, websiteTabConnections, port, params.chainId, approval, activeAddress)
 	await resolveSignerChainChange({
 		method: 'popup_signerChangeChainDialog',
-		data: {
-			chainId: params.chainId,
-			accept: params.accept,
-		}
+		data: [params]
 	})
 	return returnValue
 }
