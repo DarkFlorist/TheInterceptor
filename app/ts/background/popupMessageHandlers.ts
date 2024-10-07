@@ -334,7 +334,7 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	const tab = await updateTabIfExists(addressBookTab.id, { active: true })
+	const tab = await updateTabIfExists(addressBookTab.id, { active: true, highlighted: true })
 	if (tab === undefined) await openInNewTab()
 }
 
