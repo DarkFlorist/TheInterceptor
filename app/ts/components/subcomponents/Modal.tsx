@@ -1,5 +1,5 @@
-import { ComponentChildren, createContext, JSX } from 'preact'
-import { Ref, useContext, useEffect, useRef } from 'preact/hooks'
+import { ComponentChildren, createContext, JSX, RefObject } from 'preact'
+import { useContext, useEffect, useRef } from 'preact/hooks'
 
 /**
  * Modal Component
@@ -30,7 +30,7 @@ export const Modal = ({ children }: { children: ComponentChildren }) => {
 	return <ModalContext.Provider value = { { dialogRef } }>{ children }</ModalContext.Provider>
 }
 
-const ModalContext = createContext<{ dialogRef: Ref<HTMLDialogElement> } | undefined>(undefined)
+const ModalContext = createContext<{ dialogRef: RefObject<HTMLDialogElement> } | undefined>(undefined)
 
 /**
  * Modal.Open Component
@@ -58,16 +58,16 @@ const Open = (props: Omit<JSX.IntrinsicElements['button'], 'onClick'> & { onClic
  * @property {(event: Event & { currentTarget: HTMLDialogElement }) => void} onClose - Callback fired when the dialog is closed. The event.currentTarget.returnValue will contain the value from Modal.Close.
  */
 type ModalDialogProps<T extends string> = JSX.IntrinsicElements['dialog'] & {
-	onClose: (returnValue: T) => void
+	onModalClose: (returnValue: T) => void
 }
 
-const Dialog = <T extends string>({ children, onClose, ...props }: ModalDialogProps<T>) => {
+const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDialogProps<T>) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Dialog must be used within a Modal')
 
 	const closeEventCallback = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLDialogElement)) return
-		onClose(event.currentTarget.returnValue as T)
+		onModalClose(event.currentTarget.returnValue as T)
 	}
 
 	useEffect(() => {

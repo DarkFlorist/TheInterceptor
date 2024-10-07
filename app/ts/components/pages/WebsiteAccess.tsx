@@ -318,7 +318,7 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { websiteAccess.value.website } /> for access while this preference is set.</p>
 				<Modal>
 					<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
-					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
+					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
 						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
 						<p></p>
 						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { websiteAccess.value.website } /> and will prompt you for permission the next time you try to connect.</p>
@@ -387,7 +387,7 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 	return (
 		<Modal>
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
-			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRemoval }>
+			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
 				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from accessing or using <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => {} } />
 				</div>
@@ -443,7 +443,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
-							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectRequestBlocking }>
+							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRequestBlocking }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Blocking External Requests</h2>
 								<p></p>
 								<p style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { websiteAccess.value.website } /> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
@@ -491,7 +491,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>
-							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectDialog }>
+							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectDialog }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Disable Interceptor Protection</h2>
 								<p></p>
 								<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { websiteAccess.value.website } />, which could potentially lead to loss of assets. Please exercise caution.</p>
@@ -531,7 +531,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 				<aside>
 					<Modal>
 						<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Remove Website</span></Modal.Open>
-						<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onClose = { confirmOrRejectUpdate }>
+						<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectUpdate }>
 							<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
 							<p></p>
 							<p style = { { marginBlock: '0.5rem' } }>You are about to remove <WebsiteCard website = { websiteAccess.value.website } /> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
