@@ -15,6 +15,7 @@ type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyObject({
 	addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	websiteAccess: funtypes.Union(funtypes.Undefined, funtypes.Number),
 })
 
 export type PartialIdsOfOpenedTabs = funtypes.Static<typeof PartialIdsOfOpenedTabs>
