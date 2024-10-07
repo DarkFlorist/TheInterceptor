@@ -232,7 +232,7 @@ function TransactionCard(param: TransactionCardParams) {
 					addressMetaData = { simulationAndVisualisationResults.addressBookEntries }
 				/>
 
-				<RawTransactionDetailsCard transaction = { simTx.transaction } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent } addressMetaData = { simulationAndVisualisationResults.addressBookEntries } />
+				<RawTransactionDetailsCard transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent } addressMetaData = { simulationAndVisualisationResults.addressBookEntries } />
 
 				<SenderReceiver
 					from = { simTx.transaction.from }
