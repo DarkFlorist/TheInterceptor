@@ -6,6 +6,8 @@ import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTyp
 import { Website } from '../../types/websiteAccessTypes.js'
 import { Blockie } from './SVGBlockie.js'
 import { ComponentChildren } from 'preact'
+import { InlineCard, InlineCardSelectValue } from './InlineCard.js'
+import { clipboardCopy } from './clipboardcopy.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -153,34 +155,28 @@ type SmallAddressParams = {
 	readonly style?: JSX.CSSProperties
 }
 
-export function SmallAddress(params: SmallAddressParams) {
-	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
-	return (
-		<span className = 'small-address-container' data-value = { params.addressBookEntry.name }>
-			<span class = 'address-text-holder'>
-				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
-					<span style = 'margin-right: 5px'>
-						<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!'>
-							<AddressIcon
-								address = { params.addressBookEntry.address }
-								logoUri = { 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-								isBig = { false }
-								backgroundColor = { textColor }
-							/>
-						</CopyToClipboard>
-					</span>
-					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'address-text noselect nopointer text-legible' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
-					</CopyToClipboard>
-					<button type = 'button' className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
-						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
-						</span>
-					</button>
-				</span>
-			</span>
-		</span>
-	)
+export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }: SmallAddressParams) {
+	const addressString = checksummedAddress(addressBookEntry.address)
+
+	const generateIcon = () => {
+		if (addressBookEntry.logoUri) return <img src = { addressBookEntry.logoUri } />
+		if (addressBookEntry.address) return <Blockie address = { addressBookEntry.address } />
+		return <></>
+	}
+
+	const handleSelect = (selection: InlineCardSelectValue) => {
+		switch (selection.action) {
+			case 'copy':
+				clipboardCopy(addressString)
+				// TODO: user feedback on copy
+				break;
+			case 'edit':
+				renameAddressCallBack(addressBookEntry)
+				break;
+		}
+	}
+
+	return <InlineCard label={ addressBookEntry.name } icon={ generateIcon } onSelect={ handleSelect } style = { style } />
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {

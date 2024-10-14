@@ -1498,6 +1498,7 @@ header:has(form[role='search']) h1 {
 	overflow-y: scroll;
 	overscroll-behavior: contain;
 	z-index: 10;
+}
 
 .input::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -1574,4 +1575,112 @@ header:has(form[role='search']) h1 {
 }
 [list]::-webkit-calendar-picker-indicator {
 	display: none !important;
+}
+
+.inline-card {
+	--bg-color: #444;
+	--bg-padding: 0 4px;
+	--image-size: 1em;
+	--min-text-width: 5.5ch;
+
+	font: inherit;
+	display: inline-grid;
+	align-items: baseline;
+	grid-template-columns: [start] minmax(0, min-content) [copy] minmax(0, min-content) [end];
+	grid-template-rows: [start] min-content [end];
+
+	margin-block: 1px;
+	padding: var(--bg-padding);
+	background: var(--bg-color);
+	border: 1px solid transparent;
+	border-radius: 0.15em;
+	min-width: calc(var(--image-size) + var(--min-text-width) + var(--bg-padding));
+
+	data {
+		line-height: 1em;
+		color: var(--text-color);
+		padding-inline: 0.25em;
+		text-align: center;
+		min-width: var(--min-text-width);
+	}
+
+	svg, img { font-size: var(--image-size); }
+
+	button {
+		appearance: none;
+		font-size: 0.9em;
+		background: hsl(250deg 10% 50% / 80%);
+		color: var(--text-color);
+		border: 0 none;
+		border-radius: 3px;
+		padding: 0 0.25em;
+		vertical-align: text-bottom;
+		margin-left: 0.25em;
+		cursor: pointer;
+
+		svg {
+			display: inline-block;
+			vertical-align: -0.125em;
+		}
+
+		span {
+			display: none;
+			text-transform: uppercase;
+			font-weight: bold;
+			font-size: 0.8em;
+			vertical-align: 0.05em;
+			padding-block: 0.125em;
+		}
+
+		&:hover, &:focus {
+			color: black;
+			background-color: hsl(0deg 100% 100% / 80%);
+			outline: none;
+
+			svg { display: none }
+			span { display: inline-block }
+		}
+	}
+
+	[role=img] :only-child {
+		display: inline-block;
+		vertical-align: -0.15em;
+	}
+
+	> [role=img] {
+		grid-column: start / copy;
+		grid-row: start / end;
+	}
+
+	> data {
+		grid-row: start / end;
+		grid-column: copy / end;
+	}
+
+	> [role=menu] {
+		opacity: 0;
+
+		background: var(--bg-color);
+
+		display: inline-grid;
+		grid-area: start / start / end / end;
+		grid-template-columns: minmax(0, max-content) max-content;
+		align-items: baseline;
+
+		&:hover, &:focus-within { opacity: 1 }
+	}
+
+	[role=menuitem] {
+		display: grid;
+		grid-template-columns: minmax(0, min-content) 1fr min-content;
+		align-items: baseline;
+		cursor: pointer;
+
+		> :has(data) { overflow: hidden }
+
+		&:hover button {
+			svg { display: none }
+			span { display: inline-block }
+		}
+	}
 }
