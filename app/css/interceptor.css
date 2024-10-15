@@ -1580,7 +1580,6 @@ header:has(form[role='search']) h1 {
 .inline-card {
 	--bg-color: #444;
 	--bg-inline-padding: 4px;
-	--border-width: 1px;
 	--image-size: 1em;
 	--min-text-width: 5.5ch;
 
@@ -1592,8 +1591,8 @@ header:has(form[role='search']) h1 {
 
 	margin-block: 1px;
 	padding-inline: var(--bg-inline-padding);
+	padding-block: 1px;
 	background: var(--bg-color);
-	border: var(--border-width) solid transparent;
 	border-radius: 0.15em;
 	min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + (var(--border-width) * 2));
 
@@ -1603,85 +1602,95 @@ header:has(form[role='search']) h1 {
 		padding-inline: 0.25em;
 		text-align: center;
 		min-width: var(--min-text-width);
+		pointer-events: none;
 	}
 
 	svg, img { font-size: var(--image-size); }
-
-	button {
-		appearance: none;
-		font-size: 0.9em;
-		background: hsl(250deg 10% 50% / 80%);
-		color: var(--text-color);
-		border: 0 none;
-		border-radius: 3px;
-		padding: 0 0.25em;
-		vertical-align: text-bottom;
-		margin-left: 0.25em;
-		cursor: pointer;
-
-		svg {
-			display: inline-block;
-			vertical-align: -0.125em;
-		}
-
-		span {
-			display: none;
-			text-transform: uppercase;
-			font-weight: bold;
-			font-size: 0.8em;
-			vertical-align: 0.05em;
-			padding-block: 0.125em;
-		}
-
-		&:hover, &:focus {
-			color: black;
-			background-color: hsl(0deg 100% 100% / 80%);
-			outline: none;
-
-			svg { display: none }
-			span { display: inline-block }
-		}
-	}
 
 	[role=img] :only-child {
 		display: inline-block;
 		vertical-align: -0.15em;
 	}
 
-	> [role=img] {
-		grid-column: start / copy;
-		grid-row: start / end;
-	}
+	> [role=img] { grid-area: start / start / end / copy }
 
-	> data {
-		grid-row: start / end;
-		grid-column: copy / end;
-	}
+	> data { grid-area: start / copy / end / end }
 
 	> [role=menu] {
-		opacity: 0;
-
 		background: var(--bg-color);
-
 		display: inline-grid;
 		grid-area: start / start / end / end;
 		grid-template-columns: minmax(0, max-content) max-content;
 		align-items: baseline;
 
-		&:hover, &:focus-within { opacity: 1 }
+		opacity: 0;
+		&:has(:hover), &:focus-within { opacity: 1 }
+
+		> button {
+			font: inherit;
+			appearance: none;
+			background: transparent;
+			padding: 0;
+			border: 0 none;
+			outline: none;
+
+			display: grid;
+			grid-template-columns: minmax(0, min-content) 1fr min-content;
+			align-items: baseline;
+			cursor: pointer;
+			pointer-events: all;
+
+			> :has(data) { overflow: hidden }
+
+			> :has(svg):has(span) {
+				font-size: 0.9em;
+				background: hsl(250deg 10% 50% / 80%);
+				color: var(--text-color);
+				border: 0 none;
+				border-radius: 3px;
+				padding: 0 0.25em;
+				vertical-align: text-bottom;
+				margin-left: 0.25em;
+
+				svg {
+					display: inline-block;
+					vertical-align: -0.125em;
+				}
+
+				span {
+					display: none;
+					text-transform: uppercase;
+					font-weight: bold;
+					font-size: 0.8em;
+					vertical-align: 0.05em;
+					padding-block: 0.125em;
+				}
+
+				&:is(:is(:hover,:focus) > *) {
+					color: black;
+					background-color: hsl(0deg 100% 100% / 80%);
+					outline: none;
+
+					svg { display: none }
+					span { display: inline-block }
+				}
+			}
+		}
 	}
 
-	[role=menuitem] {
-		display: grid;
-		grid-template-columns: minmax(0, min-content) 1fr min-content;
-		align-items: baseline;
-		cursor: pointer;
+	[role=status] {
+		grid-area: start / start / end / end;
+		background: hsl(0deg 0% 19% / 93%);
+		margin-inline: calc(var(--bg-inline-padding) * -1);
+		margin-block: -1px;
+		text-align: center;
+		border-radius: 0.15em;
+		border: 1px solid hsl(0deg 100% 100% / 10%);
 
-		> :has(data) { overflow: hidden }
-
-		&:hover button {
-			svg { display: none }
-			span { display: inline-block }
+		> span {
+			display: inline-block;
+			font-size: 0.8em;
+			color: white;
 		}
 	}
 }

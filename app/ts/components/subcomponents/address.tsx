@@ -6,8 +6,7 @@ import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTyp
 import { Website } from '../../types/websiteAccessTypes.js'
 import { Blockie } from './SVGBlockie.js'
 import { ComponentChildren } from 'preact'
-import { InlineCard, InlineCardSelectValue } from './InlineCard.js'
-import { clipboardCopy } from './clipboardcopy.js'
+import { InlineCard } from './InlineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -164,19 +163,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 		return <></>
 	}
 
-	const handleSelect = (selection: InlineCardSelectValue) => {
-		switch (selection.action) {
-			case 'copy':
-				clipboardCopy(addressString)
-				// TODO: user feedback on copy
-				break;
-			case 'edit':
-				renameAddressCallBack(addressBookEntry)
-				break;
-		}
-	}
-
-	return <InlineCard label={ addressBookEntry.name } icon={ generateIcon } onSelect={ handleSelect } style = { style } />
+	return <InlineCard label={ addressString } icon={ generateIcon } editCallback={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
