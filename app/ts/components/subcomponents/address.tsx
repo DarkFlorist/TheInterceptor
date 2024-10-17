@@ -1,11 +1,11 @@
+import { ComponentChildren } from 'preact'
+import { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { CopyToClipboard } from './CopyToClipboard.js'
-import { JSX } from 'preact/jsx-runtime'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './SVGBlockie.js'
-import { ComponentChildren } from 'preact'
 import { InlineCard } from './InlineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
@@ -147,6 +147,7 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 		</div>
 	</div>
 }
+
 type SmallAddressParams = {
 	readonly addressBookEntry: AddressBookEntry
 	readonly textColor?: string
@@ -163,7 +164,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 		return <></>
 	}
 
-	return <InlineCard label={ addressString } icon={ generateIcon } editCallback={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
+	return <InlineCard label={ addressString } icon={ generateIcon } onEditClick={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {

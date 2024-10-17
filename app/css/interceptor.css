@@ -1578,8 +1578,13 @@ header:has(form[role='search']) h1 {
 }
 
 .inline-card {
-	--bg-color: #444;
+	--bg-color: #444;					/* dark gray */
+	--button-color: #77738ccc;			/* light gray */
+	--button-color-hilite: white;
+	--status-backdrop-color: #303030ed; /* opaque black */
+	--status-success-color: #4fb64f;	/* vivid green */
 	--bg-inline-padding: 4px;
+	--bg-block-padding: 1px;
 	--image-size: 1em;
 	--min-text-width: 5.5ch;
 
@@ -1591,10 +1596,10 @@ header:has(form[role='search']) h1 {
 
 	margin-block: 1px;
 	padding-inline: var(--bg-inline-padding);
-	padding-block: 1px;
+	padding-block: var(--bg-block-padding);
 	background: var(--bg-color);
 	border-radius: 0.15em;
-	min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + (var(--border-width) * 2));
+	min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2));
 
 	data {
 		line-height: 1em;
@@ -1644,7 +1649,7 @@ header:has(form[role='search']) h1 {
 
 			> :has(svg):has(span) {
 				font-size: 0.9em;
-				background: hsl(250deg 10% 50% / 80%);
+				background: var(--button-color);
 				color: var(--text-color);
 				border: 0 none;
 				border-radius: 3px;
@@ -1668,7 +1673,7 @@ header:has(form[role='search']) h1 {
 
 				&:is(:is(:hover,:focus) > *) {
 					color: black;
-					background-color: hsl(0deg 100% 100% / 80%);
+					background: var(--button-color-hilite);
 					outline: none;
 
 					svg { display: none }
@@ -1680,17 +1685,23 @@ header:has(form[role='search']) h1 {
 
 	[role=status] {
 		grid-area: start / start / end / end;
-		background: hsl(0deg 0% 19% / 93%);
-		margin-inline: calc(var(--bg-inline-padding) * -1);
-		margin-block: -1px;
+		background: var(--status-backdrop-color);
 		text-align: center;
 		border-radius: 0.15em;
-		border: 1px solid hsl(0deg 100% 100% / 10%);
+		position: relative;
+		margin-inline: calc(var(--bg-inline-padding) * -1 + 1px);
+		color: var(--status-success-color);
+
+		> svg {
+			display: inline-block;
+			vertical-align: -0.15em;
+		}
 
 		> span {
 			display: inline-block;
 			font-size: 0.8em;
-			color: white;
+			margin-left: 0.25em;
+			font-weight: 500;
 		}
 	}
 }
