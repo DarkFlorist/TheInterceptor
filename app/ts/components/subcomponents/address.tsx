@@ -164,7 +164,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 		return <></>
 	}
 
-	return <InlineCard label={ addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
+	return <InlineCard label={ addressBookEntry.name } copyValue = { addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
