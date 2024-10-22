@@ -15,13 +15,27 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { GetSimulationStackOldReply, GetSimulationStackReply } from './simulationStackTypes.js'
 import { EnrichedEthereumEvent, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
+type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
+const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
+	funtypes.ReadonlyObject({
+		accept: funtypes.Literal(true),
+		chainId: EthereumQuantity,
+	}),
+	funtypes.ReadonlyObject({
+		accept: funtypes.Literal(false),
+		chainId: EthereumQuantity,
+		error: funtypes.ReadonlyObject({
+			code: funtypes.Number,
+			message: funtypes.String,
+		})
+	})
+))
+
+
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
 export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_switchEthereumChain_reply'),
-	params: funtypes.Tuple(funtypes.ReadonlyObject({
-		accept: funtypes.Boolean,
-		chainId: EthereumQuantity,
-	}))
+	params: WalletSwitchEthereumChainReplyParams
 }).asReadonly()
 
 type InpageScriptRequestWithoutIdentifier = funtypes.Static<typeof InpageScriptRequestWithoutIdentifier>
@@ -355,10 +369,7 @@ export const RemoveWebsiteAccess = funtypes.ReadonlyObject({
 export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
 export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_signerChangeChainDialog'),
-	data: funtypes.ReadonlyObject({
-		chainId: EthereumQuantity,
-		accept: funtypes.Boolean,
-	})
+	data: WalletSwitchEthereumChainReplyParams,
 }).asReadonly()
 
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>

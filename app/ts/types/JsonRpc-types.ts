@@ -291,7 +291,7 @@ export const GetSimulationStack = funtypes.ReadonlyObject({
 export type WalletAddEthereumChain = funtypes.Static<typeof WalletAddEthereumChain>
 export const WalletAddEthereumChain = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_addEthereumChain'),
-	params: funtypes.Intersect(
+	params: funtypes.Tuple(funtypes.Intersect(
 		funtypes.ReadonlyObject({
 			chainId: EthereumQuantity,
 			chainName: funtypes.String,
@@ -300,13 +300,13 @@ export const WalletAddEthereumChain = funtypes.ReadonlyObject({
 				symbol: funtypes.String,
 				decimals: funtypes.Number,
 			}),
-			rpcUrls: funtypes.ReadonlyArray(EthereumAddress),
+			rpcUrls: funtypes.ReadonlyArray(funtypes.String),
 		}),
 		funtypes.Partial({
 			blockExplorerUrls: funtypes.ReadonlyArray(funtypes.String),
 			iconUrls: funtypes.ReadonlyArray(funtypes.String),
 		}).asReadonly()
-	)
+	))
 })
 
 type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>
