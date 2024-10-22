@@ -11,6 +11,7 @@ import { ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/co
 import { RpcNetwork } from '../../types/rpc.js'
 import { Blockie } from './SVGBlockie.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
+import { InlineCard } from './InlineCard.js'
 
 type EtherParams = {
 	amount: bigint
@@ -65,22 +66,9 @@ type EtherSymbolParams = {
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
-	const style = {
-		color: 'var(--text-color)',
-		display: 'inline-block',
-		overflow: 'hidden',
-		'text-overflow': 'ellipsis',
-		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
-	}
-	const etheName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
-
-	return <>
-		<div style = 'overflow: initial; height: 28px;'>
-			<img class = 'noselect nopointer' style = 'max-height: 25px; max-width: 25px;' src = { ETHEREUM_COIN_ICON }/>
-		</div>
-		<p class = 'noselect nopointer' style = { style }> { etheName } </p>
-	</>
+	const etherName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
+	const Icon = () => <img class = 'noselect nopointer' style = { { minWidth: '1em', minHeight: '1em' } } src = { ETHEREUM_COIN_ICON }/>
+	return <InlineCard label = { etherName } icon = { Icon } style = { { '--bg-color': '#0000001a', marginLeft: '0.25em' } } />
 }
 
 type TokenPriceParams = {
