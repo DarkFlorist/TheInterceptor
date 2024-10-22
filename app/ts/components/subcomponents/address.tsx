@@ -159,12 +159,12 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 	const addressString = checksummedAddress(addressBookEntry.address)
 
 	const generateIcon = () => {
-		if (addressBookEntry.logoUri) return <img src = { addressBookEntry.logoUri } />
+		if (addressBookEntry.logoUri) return <img src = { addressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
 		if (addressBookEntry.address) return <Blockie address = { addressBookEntry.address } />
 		return <></>
 	}
 
-	return <InlineCard label={ addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
+	return <InlineCard label={ addressBookEntry.name } copyValue = { addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
