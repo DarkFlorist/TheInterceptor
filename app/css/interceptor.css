@@ -1498,6 +1498,7 @@ header:has(form[role='search']) h1 {
 	overflow-y: scroll;
 	overscroll-behavior: contain;
 	z-index: 10;
+}
 
 .input::-webkit-outer-spin-button {
     -webkit-appearance: none;
