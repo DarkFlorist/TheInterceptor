@@ -1,11 +1,12 @@
+import { ComponentChildren } from 'preact'
+import { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { CopyToClipboard } from './CopyToClipboard.js'
-import { JSX } from 'preact/jsx-runtime'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './SVGBlockie.js'
-import { ComponentChildren } from 'preact'
+import { InlineCard } from './InlineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -146,6 +147,7 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 		</div>
 	</div>
 }
+
 type SmallAddressParams = {
 	readonly addressBookEntry: AddressBookEntry
 	readonly textColor?: string
@@ -153,34 +155,16 @@ type SmallAddressParams = {
 	readonly style?: JSX.CSSProperties
 }
 
-export function SmallAddress(params: SmallAddressParams) {
-	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
-	return (
-		<span className = 'small-address-container' data-value = { params.addressBookEntry.name }>
-			<span class = 'address-text-holder'>
-				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
-					<span style = 'margin-right: 5px'>
-						<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!'>
-							<AddressIcon
-								address = { params.addressBookEntry.address }
-								logoUri = { 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-								isBig = { false }
-								backgroundColor = { textColor }
-							/>
-						</CopyToClipboard>
-					</span>
-					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'address-text noselect nopointer text-legible' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
-					</CopyToClipboard>
-					<button type = 'button' className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
-						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
-						</span>
-					</button>
-				</span>
-			</span>
-		</span>
-	)
+export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }: SmallAddressParams) {
+	const addressString = checksummedAddress(addressBookEntry.address)
+
+	const generateIcon = () => {
+		if (addressBookEntry.logoUri) return <img src = { addressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
+		if (addressBookEntry.address) return <Blockie address = { addressBookEntry.address } />
+		return <></>
+	}
+
+	return <InlineCard label={ addressBookEntry.name } copyValue = { addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
