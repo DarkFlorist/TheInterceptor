@@ -13,7 +13,7 @@ type PartialResult = {
 
 function fuzzyCompare(pattern: RegExp, searchQuery: string, lowerCasedName: string, address: string) {
 	const regexpMatch = bestMatch(lowerCasedName.match(pattern))
-	const addressMatch = address.includes(searchQuery) ? searchQuery : ''
+	const addressMatch = address.toLowerCase().includes(searchQuery.toLowerCase()) ? searchQuery.toLowerCase() : ''
 	const bestMatchString = regexpMatch === undefined || addressMatch.length > regexpMatch.length ? addressMatch : regexpMatch
 	if (bestMatchString.length === 0) return undefined
 	return {
