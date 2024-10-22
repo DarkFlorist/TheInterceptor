@@ -11,6 +11,7 @@ import { ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/co
 import { RpcNetwork } from '../../types/rpc.js'
 import { Blockie } from './SVGBlockie.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
+import { InlineCard } from './InlineCard.js'
 
 type EtherParams = {
 	amount: bigint
@@ -139,44 +140,25 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const address = useSignal<bigint>(param.tokenEntry.address)
 	useEffect(() => { address.value = param.tokenEntry.address }, [param.tokenEntry.address])
 
-	const tokenString = checksummedAddress(param.tokenEntry.address)
-	const unTrusted = param.tokenEntry.entrySource === 'OnChain'
-	const style = {
-		color: 'var(--text-color)',
-		...(param.style === undefined ? {} : param.style),
-		...unTrusted ? { color: 'var(--warning-color)' } : {},
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+	// TODO: implement untrusted warning in inline card
+	// const unTrusted = param.tokenEntry.entrySource === 'OnChain'
+
+	const tokenName = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
+	const tokenAddressString = checksummedAddress(param.tokenEntry.address)
+	const defaultCardStyles:JSX.CSSProperties = {
+		'--bg-color': '#0000001a',				// 10% opaque black
 	}
 
-	const name = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
-	return <span style = 'display: flex; align-items: center;'>
-		<TokenIdOrNameOrNothing { ...param } style = { style }/>
-		<span class = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
-			<span class = 'token-name-holder'>
-				{ param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS ? <>
-					<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
-					<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
-				</> : <>
-					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
-						{ param.tokenEntry.logoUri === undefined ?
-							<Blockie address = { param.tokenEntry.address } style = { { display: 'block' } } />
-							:
-							<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
-						}
-					</CopyToClipboard>
-					{ unTrusted ? <p class = 'noselect nopointer blink' style = { style } >⚠</p> : <></> }
-					<CopyToClipboard content = { name } copyMessage = 'Name copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
-					</CopyToClipboard>
-					<button class = 'button is-primary is-small rename-token-button' onClick = { () => param.renameAddressCallBack(param.tokenEntry) }>
-						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
-						</span>
-					</button>
-				</> }
-			</span>
-		</span>
-	</span>
+	const generateIcon = () => {
+		if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
+		if (param.tokenEntry.logoUri === undefined) return <Blockie address = { param.tokenEntry.address } />
+		return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
+	}
+
+	return <>
+        <TokenIdOrNameOrNothing { ...param } />
+		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } style = {{ ...defaultCardStyles, ...param.style }} />
+	</>
 }
 
 type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
