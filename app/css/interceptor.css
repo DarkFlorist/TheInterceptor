@@ -593,6 +593,12 @@ svg.spinner > circle {
 	width: 100%;
 }
 
+.nontoken-log-table {
+	display: grid;
+	grid-template-columns: auto auto auto;
+	width: 100%;
+}
+
 .log-cell {
 	text-overflow: ellipsis;
 	overflow: hidden;
