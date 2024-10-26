@@ -315,14 +315,8 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 			<div class = 'log-cell' style = { cellStyle }>
 				<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
 			</div>
-			<div class = 'log-cell' style = { cellStyle }>
-				<span class = 'log-table-1' style = 'justify-content: center; column-gap: 5px;'>
-					{ params.nonTokenLog.topics.map((topic) =>
-						<div class = 'log-cell' style = { cellStyle }>
-							<p class = 'paragraph' style = { textStyle }> { bytes32String(topic) }</p>
-						</div>
-					) }
-				</span>
+			<div class = 'log-cell' style = { 'grid-column: 2 / 4; display: flex; flex-wrap: wrap;' } >
+				{ params.nonTokenLog.topics.map((topic) => <p class = 'paragraph' style = { textStyle }> { bytes32String(topic) } </p>) }
 			</div>
 		</>
 	}
@@ -333,6 +327,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 		</div>
+		<div style = 'display: contents;'/>
 		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
 			<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
 			{ insertBetweenElements(params.nonTokenLog.args.map((arg) => {
@@ -367,7 +362,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
-	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
+	return <span class = 'nontoken-log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
 		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
 	</span>
 }
