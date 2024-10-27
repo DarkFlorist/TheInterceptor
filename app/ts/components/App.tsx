@@ -53,7 +53,7 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 				<>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
 			}/>
 		: <></> }
-		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
+		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) && rpcConnectionStatus.latestBlock !== null ?
 			<ErrorComponent warning = { true } text = {
 				<>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
 			}/>

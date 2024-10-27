@@ -97,6 +97,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
+		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, undefined, [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number, [signedExecutionTransaction], [], {})
