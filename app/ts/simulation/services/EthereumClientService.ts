@@ -1,6 +1,6 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, OptionalEthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
@@ -37,8 +37,8 @@ export class EthereumClientService {
 
 	public getCachedBlock = () => {
 		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
-		// if the block is older than 100 block intervals, invalidate cache
-		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * 100) return undefined
+		// if the block is older than MAX_BLOCK_CACHE block intervals, invalidate cache
+		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE) return undefined
 		return this.cachedBlock
 	}
 	public cleanup = () => this.setBlockPolling(false)
