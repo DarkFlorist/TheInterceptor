@@ -200,7 +200,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		case 'ENSNameWrapped': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis paragraph' style = { textStyle }>
-					{ `Wrap ${ ensEvent.logInformation.name }` }
+					Wrap
 				</p>
 			</div>
 			<div class = 'log-cell'>
