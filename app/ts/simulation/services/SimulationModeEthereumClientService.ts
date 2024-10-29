@@ -2,7 +2,7 @@ import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
 import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
+import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
 import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed, TransactionStack, PreSimulationTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
@@ -726,31 +726,36 @@ const getHashOfSimulatedBlock = (simulationState: SimulationState) => BigInt(sim
 export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
 export type MessageHashAndSignature = { signature: string, messageHash: string }
 
-export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
-	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
-	const signMessage = async () => {
-		switch (params.method) {
-			case 'eth_signTypedData': throw new Error('no support for eth_signTypedData')
-			case 'eth_signTypedData_v1':
-			case 'eth_signTypedData_v2':
-			case 'eth_signTypedData_v3':
-			case 'eth_signTypedData_v4': {
-				const typesWithoutDomain = Object.assign({}, params.params[1].types)
-				delete typesWithoutDomain.EIP712Domain
-				const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
-				return {
-					signature: await wallet.signTypedData(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message),
-					messageHash: TypedDataEncoder.hash(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message)
-				}
-			}
-			case 'personal_sign': return {
-				signature: await wallet.signMessage(stringToUint8Array(params.params[0])),
-				messageHash: hashMessage(params.params[0])
-			}
-			default: assertNever(params)
-		}
+export const isValidMessage = (params: SignMessageParams, signingAddress: EthereumAddress) => {
+	try {
+		simulatePersonalSign(params, signingAddress)
+		return true
+	} catch(e) {
+		return false
 	}
-	return await signMessage()
+}
+
+export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
+	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
+	switch (params.method) {
+		case 'eth_signTypedData': throw new Error('no support for eth_signTypedData')
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4': {
+			const typesWithoutDomain = Object.assign({}, params.params[1].types)
+			delete typesWithoutDomain.EIP712Domain
+			const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
+			const messageHash = ethers.TypedDataEncoder.hash(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message)
+			const signature = wallet.signMessageSync(messageHash)
+			return { signature, messageHash }
+		}
+		case 'personal_sign': return {
+			signature: wallet.signMessageSync(stringToUint8Array(params.params[0])),
+			messageHash: hashMessage(params.params[0])
+		}
+		default: assertNever(params)
+	}
 }
 
 type BalanceQuery = {
