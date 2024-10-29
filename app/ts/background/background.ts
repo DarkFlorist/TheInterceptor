@@ -10,7 +10,7 @@ import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
-import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsLabelHashes, retrieveEnsNodeHashes } from './metadataUtils.js'
+import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -55,16 +55,14 @@ async function updateMetadataForSimulation(
 	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, requestAbortController, allEvents, inputData, simulationState)
 	const namedTokenIdPromises = nameTokenIds(ethereum, allEvents)
 	const addressBookEntries = await addressBookEntryPromises
-	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereum, allEvents, addressBookEntries)
-	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
+	const ensPromise = retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries)
 	const namedTokenIds = await namedTokenIdPromises
 	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.currentRpcNetwork))
-	const ens = { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }
 	return {
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
 		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
-		ens
+		ens: await ensPromise
 	}
 }
 
@@ -97,6 +95,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
+		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, undefined, [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number, [signedExecutionTransaction], [], {})

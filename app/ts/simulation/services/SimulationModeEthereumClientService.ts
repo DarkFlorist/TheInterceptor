@@ -139,6 +139,7 @@ const transactionQueueTotalGasLimit = (simulationState: SimulationState) => {
 }
 
 const simulationGasLeft = (simulationState: SimulationState | undefined, blockHeader: EthereumBlockHeader) => {
+	if (blockHeader === null) throw new Error('The latest block is null')
 	if (simulationState === undefined) return blockHeader.gasLimit * 1023n / 1024n
 	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 }
@@ -155,6 +156,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock(requestAbortController)
+	if (block === null) throw new Error('The latest block is null')
 	const maxGas = simulationGasLeft(simulationState, block)
 
 	const getGasPriceFields = (data: DappRequestTransaction) => {
@@ -178,7 +180,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		accessList: []
 	}
 	try {
-		const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [tmp], block.number + 1n)
+		const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [tmp], block.number)
 		const lastResult = multiCall.calls[multiCall.calls.length - 1]
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
@@ -224,6 +226,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	}
 
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
+	if (parentBlock === null) throw new Error('The latest block is null')
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
@@ -286,6 +289,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 		}
 	}
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
+	if (parentBlock === null) throw new Error('The latest block is null')
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
@@ -389,6 +393,7 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 
 
 export const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader, unsignedTxts: readonly PreSimulationTransaction[]): readonly PreSimulationTransaction[] => {
+	if (parentBlock === null) return unsignedTxts
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) return unsignedTxts
 	return unsignedTxts.map((transaction) => {
@@ -503,6 +508,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		} as const
 	}
 	const block = await ethereumClientService.getBlock(requestAbortController)
+	if (block === null) throw new Error('The latest block is null')
 
 	const atInterface = new ethers.Interface(['function at(address) returns (bytes)'])
 	const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
@@ -520,7 +526,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], block.number + 1n, { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
+	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], block.number, { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
 	const lastResult = multiCall.calls[multiCall.calls.length - 1]
 	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
 	if (lastResult.status === 'failure') return { statusCode: 'failure' } as const
@@ -542,6 +548,7 @@ const getNextBaseFeePerGas = (parentGasUsed: bigint, parentGasLimit: bigint, par
 async function getSimulatedMockBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
 	// make a mock block based on the previous block
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
+	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	return {
 		author: parentBlock.miner,
@@ -939,9 +946,10 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 	//const numberOfBlocks = Number(request.params[0]) // number of blocks, not used atm as we just return one block
 	const blockTag = request.params[1]
 	const rewardPercentiles = request.params[2]
-	const currentRealBlockNumber = (await ethereumClientService.getBlock(requestAbortController)).number
+	const currentRealBlockNumber = await ethereumClientService.getBlockNumber(requestAbortController)
 	const clampedBlockTag = typeof blockTag === 'bigint' && blockTag > currentRealBlockNumber ? currentRealBlockNumber : blockTag
 	const newestBlock = await ethereumClientService.getBlock(requestAbortController, clampedBlockTag, true)
+	if (newestBlock === null) throw new Error('The latest block is null')
 	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
 	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
 	return {

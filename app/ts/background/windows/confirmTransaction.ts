@@ -199,6 +199,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from)
 	const parentBlock = await parentBlockPromise
+	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const maxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoEth/gas
 	const transactionWithoutGas = {

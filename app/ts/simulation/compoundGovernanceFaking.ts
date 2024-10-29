@@ -50,6 +50,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		}
 	]
 	const parentBlock = await ethereumClientService.getBlock(undefined)
+	if (parentBlock === null) throw new Error('The latest block is null')
 	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number, undefined)).calls
 	for (const call of governanceContractCalls) {
 		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')

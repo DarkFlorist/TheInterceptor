@@ -150,6 +150,8 @@ export const ETHEREUM_COIN_ICON = '../../img/coins/ethereum.png'
 
 export const DEFAULT_CALL_ADDRESS = 0x1n
 
+export const MAX_BLOCK_CACHE = 5
+
 export const TIME_BETWEEN_BLOCKS = 12
 export const GAS_PER_BLOB = 2n**17n
 export const METAMASK_LOGO = '../img/signers/metamask.svg'
