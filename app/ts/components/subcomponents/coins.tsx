@@ -40,15 +40,16 @@ type EtherAmountParams = {
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const style = {
+	const style:JSX.CSSProperties = {
 		display: 'inline-flex',
 		overflow: 'hidden',
-		'align-items': 'center',
-		'text-overflow': 'ellipsis',
+		alignItems: 'baseline',
+		textOverflow: 'ellipsis',
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
+
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
@@ -174,12 +175,12 @@ type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
 
 export function TokenAmount(param: TokenAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
-	const style = {
+	const style:JSX.CSSProperties = {
 		color: 'var(--text-color)',
 		display: 'inline-flex',
-		'align-items': 'center',
+		alignItems: 'baseline',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
