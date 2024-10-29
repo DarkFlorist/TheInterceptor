@@ -126,7 +126,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 			connections: { [identifier]: newConnection },
 		})
 		await updateTabState(socket.tabId, (previousState: TabState) => {
-			return modifyObject(previousState, { 
+			return modifyObject(previousState, {
 				website: { websiteOrigin, icon: undefined, title: undefined },
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
@@ -148,6 +148,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) {
 	if (ethereumClientService.getChainId() !== simulator.ethereum.getChainId()) throw new Error(`Chain Id Mismatch, node is on ${ ethereumClientService.getChainId() } while simulator is on ${ simulator.ethereum.getChainId() }`)
+	if (blockheader === null) throw new Error('The latest block is null')
 	try {
 		const rpcConnectionStatus = {
 			isConnected: true,

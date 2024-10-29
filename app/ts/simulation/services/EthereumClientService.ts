@@ -36,7 +36,7 @@ export class EthereumClientService {
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
 	public getCachedBlock = () => {
-		if (this.cachedBlock === undefined) return undefined
+		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
 		// if the block is older than 100 block intervals, invalidate cache
 		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * 100) return undefined
 		return this.cachedBlock
@@ -74,6 +74,7 @@ export class EthereumClientService {
 			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, undefined, true, 6000)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
+			if (newBlock === null) return
 			console.info(`Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
@@ -184,6 +185,7 @@ export class EthereumClientService {
 
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
+		if (parentBlock === null) throw new Error('The latest block is null')
 		const call = {
 			method: 'eth_simulateV1',
 			params: [{
@@ -214,6 +216,7 @@ export class EthereumClientService {
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
+		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 		const coder = AbiCoder.defaultAbiCoder()
 
 		const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
