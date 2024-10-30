@@ -186,11 +186,19 @@ type TokenWithAmountParams = TokenSymbolParams & {
 }
 
 export function TokenWithAmount(param: TokenWithAmountParams) {
-	return <div style = 'width: fit-content; display: flex'>
-		<TokenAmount { ...param } />
-		<p>&nbsp;</p>
-		<TokenSymbol { ...param }/>
-	</div>
+	const containerStyles: JSX.CSSProperties = {
+		display: 'inline-flex',
+		width: 'fit-content',
+		columnGap: '0.25ch',
+		alignItems: 'baseline'
+	}
+
+	return (
+		<div style = { containerStyles }>
+			<TokenAmount { ...param } />
+			<TokenSymbol { ...param }/>
+		</div>
+	)
 }
 
 export type TokenOrEtherParams = TokenWithAmountParams | EtherParams | TokenSymbolParams
