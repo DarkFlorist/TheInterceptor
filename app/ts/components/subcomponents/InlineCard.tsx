@@ -7,12 +7,13 @@ export type InlineCardProps = {
 	icon: () => JSX.Element
 	label: string
 	copyValue?: string
+	noCopy?: boolean
 	style?: JSX.CSSProperties
 	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement>
 	statusMessageDuration?: number
 }
 
-export const InlineCard = ({ icon: Icon, label, copyValue, onEditClicked, style, statusMessageDuration = 1500 }: InlineCardProps) => {
+export const InlineCard = ({ icon: Icon, label, copyValue, noCopy, onEditClicked, style, statusMessageDuration = 1500 }: InlineCardProps) => {
 	const copyStatus = useSignal(false)
 
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
@@ -32,14 +33,16 @@ export const InlineCard = ({ icon: Icon, label, copyValue, onEditClicked, style,
 				<span role = 'img'><Icon /></span>
 				<data class = 'truncate text-legible' value = { label }>{label}</data>
 				<span role = 'menu'>
-					<button type = 'button' onClick = { copyTextToClipboard } value = { copyValue } tabIndex = { 1 }>
-						<span role = 'img'><Icon /></span>
-						<span><data class = 'truncate text-legible' value = { label }>{label}</data></span>
-						<span>
-							<CopyIcon />
-							<span>copy</span>
-						</span>
-					</button>
+					{ !noCopy ? (
+						<button type = 'button' onClick = { copyTextToClipboard } value = { copyValue } tabIndex = { 1 }>
+							<span role = 'img'><Icon /></span>
+							<span><data class = 'truncate text-legible' value = { label }>{label}</data></span>
+							<span>
+								<CopyIcon />
+								<span>copy</span>
+							</span>
+						</button>
+					) : <></> }
 					{ onEditClicked ? (
 						<button type = 'button' value = { copyValue } onClick = { onEditClicked } tabIndex = { 1 }>
 							<span>

@@ -1621,6 +1621,11 @@ header:has(form[role='search']) h1 {
 	[role=img] :only-child {
 		display: inline-block;
 		vertical-align: -0.15em;
+
+		&:is(img) {
+			aspect-ratio: 1;
+			max-width: var(--image-size);
+		}
 	}
 
 	> [role=img] { grid-area: start / start / end / copy }

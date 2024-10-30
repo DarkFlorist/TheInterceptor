@@ -68,8 +68,8 @@ type EtherSymbolParams = {
 
 export function EtherSymbol(param: EtherSymbolParams) {
 	const etherName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
-	const Icon = () => <img class = 'noselect nopointer' style = { { minWidth: '1em', minHeight: '1em' } } src = { ETHEREUM_COIN_ICON }/>
-	return <InlineCard label = { etherName } icon = { Icon } style = { { '--bg-color': '#0000001a', marginLeft: '0.25em' } } />
+	const Icon = () => <img class = 'noselect nopointer' src = { ETHEREUM_COIN_ICON }/>
+	return <InlineCard label = { etherName } noCopy icon = { Icon } style = { { '--bg-color': '#0000001a', '--min-text-width': '4ch', marginLeft: '0.25em' } } />
 }
 
 type TokenPriceParams = {
