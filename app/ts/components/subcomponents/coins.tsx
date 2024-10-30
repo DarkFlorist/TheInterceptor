@@ -40,15 +40,16 @@ type EtherAmountParams = {
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const style = {
+	const style:JSX.CSSProperties = {
 		display: 'inline-flex',
 		overflow: 'hidden',
-		'align-items': 'center',
-		'text-overflow': 'ellipsis',
+		alignItems: 'baseline',
+		textOverflow: 'ellipsis',
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
+
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
@@ -66,22 +67,9 @@ type EtherSymbolParams = {
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
-	const style = {
-		color: 'var(--text-color)',
-		display: 'inline-block',
-		overflow: 'hidden',
-		'text-overflow': 'ellipsis',
-		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
-	}
-	const etheName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
-
-	return <>
-		<div style = 'overflow: initial; height: 28px;'>
-			<img class = 'noselect nopointer' style = 'max-height: 25px; max-width: 25px;' src = { ETHEREUM_COIN_ICON }/>
-		</div>
-		<p class = 'noselect nopointer' style = { style }> { etheName } </p>
-	</>
+	const etherName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
+	const Icon = () => <img class = 'noselect nopointer' style = { { minWidth: '1em', minHeight: '1em' } } src = { ETHEREUM_COIN_ICON }/>
+	return <InlineCard label = { etherName } icon = { Icon } style = { { '--bg-color': '#0000001a', marginLeft: '0.25em' } } />
 }
 
 type TokenPriceParams = {
@@ -168,12 +156,12 @@ type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
 
 export function TokenAmount(param: TokenAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
-	const style = {
+	const style:JSX.CSSProperties = {
 		color: 'var(--text-color)',
 		display: 'inline-flex',
-		'align-items': 'center',
+		alignItems: 'baseline',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {

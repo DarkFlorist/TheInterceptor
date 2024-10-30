@@ -208,32 +208,32 @@ export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetad
 	return events.filter((tokenEvent): tokenEvent is EnsEvent => tokenEvent.type === 'ENS')
 }
 
-export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {
-	const hashes = new Set<bigint>()
-	for (const event of events) {
-		if (!('logInformation' in event && 'node' in event.logInformation)) continue
-		hashes.add(event.logInformation.node)
-	}
-	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((addressBookEntry) => getEnsReverseNodeHash(addressBookEntry.address))
-	return Promise.all([...hashes].map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsLabelHashes)))
-}
-
-export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {
+export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) => {
 	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address)).map((label) => ({ label, labelHash: bytesToUnsigned(keccak_256(label)) }))
 	const newLabels = [...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
 
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
-	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(`${ label }.eth`)])))
+	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(label.endsWith('.eth') ? label : `${ label }.eth`)])))
 
 	// return the label hashes that we have now available
 	const currentLabelHashes = [...reverseEnsLabelHashes, ...await getEnsLabelHashes()]
-	return Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
+	const ensLabelHashes = Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
 		const found = currentLabelHashes.find((entry) => entry.labelHash === labelHash)
 		if (found) addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
 		return { labelHash, label: found?.label }
 	})
+
+	const hashes = new Set<bigint>()
+	for (const event of events) {
+		if (!('logInformation' in event && 'node' in event.logInformation)) continue
+		hashes.add(event.logInformation.node)
+	}
+	const reverseEnsNameHashes = addressBookEntriesToMatchReverseResolutions.map((addressBookEntry) => getEnsReverseNodeHash(addressBookEntry.address))
+	const ensNameHashes = await Promise.all([...hashes].map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsNameHashes)))
+
+	return { ensNameHashes, ensLabelHashes }
 }
 
 const addNewEnsNameEntry = async (name: string) => {

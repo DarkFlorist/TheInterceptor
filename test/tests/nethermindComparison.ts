@@ -92,6 +92,7 @@ export async function main() {
 
 		should('getBlock with true aligns with Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
+			if (block === null) throw new Error('Block was null')
 			const serialized = GetBlockReturn.serialize(block)
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 			assertIsObject(expected)
@@ -109,6 +110,7 @@ export async function main() {
 
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
+			if (block === null) throw new Error('Block was null')
 			const newState = await appendTransaction(ethereum, undefined, simulationState, {
 				transaction: exampleTransaction,
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -118,6 +120,7 @@ export async function main() {
 				transactionIdentifier: 1n,
 			})
 			const nextBlock = await getSimulatedBlock(ethereum, undefined, newState, blockNumber + 1n, true)
+			if (nextBlock === null) throw new Error('Block was null')
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
 
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)

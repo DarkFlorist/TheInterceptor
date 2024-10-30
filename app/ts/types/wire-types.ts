@@ -431,10 +431,10 @@ export const EthereumBlockHeaderWithTransactionHashes = funtypes.Union(funtypes.
 ))
 
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
-export const EthereumBlockHeader = funtypes.Intersect(
+export const EthereumBlockHeader = funtypes.Union(funtypes.Null, funtypes.Intersect(
 	EthereumBlockHeaderWithoutTransactions,
 	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumSignedTransaction) })
-)
+))
 
 //
 // Helpers

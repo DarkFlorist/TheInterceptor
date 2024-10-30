@@ -40,12 +40,14 @@ export const InlineCard = ({ icon: Icon, label, copyValue, onEditClicked, style,
 							<span>copy</span>
 						</span>
 					</button>
-					<button type = 'button' value = { copyValue } onClick = { onEditClicked } tabIndex = { 1 }>
-						<span>
-							<EditIcon />
-							<span>edit</span>
-						</span>
-					</button>
+					{ onEditClicked ? (
+						<button type = 'button' value = { copyValue } onClick = { onEditClicked } tabIndex = { 1 }>
+							<span>
+								<EditIcon />
+								<span>edit</span>
+							</span>
+						</button>
+					) : <></> }
 				</span>
 
 				{ copyStatus.value ? <span role='status'><CheckIcon /><span>Copied!</span></span> : <></> }

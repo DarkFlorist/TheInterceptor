@@ -1,6 +1,6 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, OptionalEthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
@@ -35,7 +35,12 @@ export class EthereumClientService {
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
-	public getCachedBlock = () => this.cachedBlock
+	public getCachedBlock = () => {
+		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
+		// if the block is older than MAX_BLOCK_CACHE block intervals, invalidate cache
+		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE) return undefined
+		return this.cachedBlock
+	}
 	public cleanup = () => this.setBlockPolling(false)
 
 	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
@@ -69,6 +74,7 @@ export class EthereumClientService {
 			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, undefined, true, 6000)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
+			if (newBlock === null) return
 			console.info(`Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
@@ -179,6 +185,7 @@ export class EthereumClientService {
 
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
+		if (parentBlock === null) throw new Error('The latest block is null')
 		const call = {
 			method: 'eth_simulateV1',
 			params: [{
@@ -208,7 +215,8 @@ export class EthereumClientService {
 		})
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
-		const parentBlock = await this.getBlock(requestAbortController)
+		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
+		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 		const coder = AbiCoder.defaultAbiCoder()
 
 		const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
@@ -228,7 +236,7 @@ export class EthereumClientService {
 		const query = [{
 			calls: transactionsWithRemoveZeroPricedOnes,
 			blockOverride: {
-				number: blockNumber + 1n,
+				number: parentBlock.number + 1n,
 				prevRandao: 0x1n,
 				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
 				gasLimit: parentBlock.gasLimit,
@@ -246,7 +254,7 @@ export class EthereumClientService {
 				...extraAccountOverrides,
 			}
 		}]
-		const ethSimulateResults = await this.ethSimulateV1(query, blockNumber, requestAbortController)
+		const ethSimulateResults = await this.ethSimulateV1(query, parentBlock.number, requestAbortController)
 		if (ethSimulateResults.length !== 1) throw new Error('Ran Eth Simulate for one block but did not get one block')
 		const singleMulticalResult = ethSimulateResults[0]
 		if (singleMulticalResult === undefined) throw new Error('Eth Simualte result was undefined')
