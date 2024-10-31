@@ -1584,35 +1584,36 @@ header:has(form[role='search']) h1 {
 }
 
 .inline-card {
-	--bg-color: #444;					/* dark gray */
-	--button-color: #77738ccc;			/* light gray */
+	--bg-color: var(--card-bg-color);
+	--button-color: #77738ccc;
 	--button-color-hilite: white;
-	--status-backdrop-color: #303030ed; /* opaque black */
-	--status-success-color: #4fb64f;	/* vivid green */
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
 	--min-text-width: 5.5ch;
+	--status-backdrop-color: #303030ed;
+	--status-success-color: #4fb64f;
 
 	font: inherit;
 	display: inline-grid;
 	align-items: baseline;
-	grid-template-columns: [start] minmax(0, min-content) [copy] minmax(0, min-content) [end];
+	grid-template-columns: minmax(0, min-content) [start] minmax(0, min-content) [copy] minmax(0, min-content) [end] minmax(0, min-content);
 	grid-template-rows: [start] min-content [end];
 
 	margin-block: 1px;
 	padding-inline: var(--bg-inline-padding);
 	padding-block: var(--bg-block-padding);
-	background: var(--bg-color);
+	background: var(--bg-status-color, var(--bg-color));
 	border-radius: 0.15em;
 	min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2));
+
+	> data { min-width: var(--min-text-width) }
 
 	data {
 		line-height: 1em;
 		color: var(--text-color);
 		padding-inline: 0.25em;
 		text-align: center;
-		min-width: var(--min-text-width);
 		pointer-events: none;
 	}
 
@@ -1633,7 +1634,7 @@ header:has(form[role='search']) h1 {
 	> data { grid-area: start / copy / end / end }
 
 	> [role=menu] {
-		background: var(--bg-color);
+		background: var(--bg-status-color, var(--bg-color));
 		display: inline-grid;
 		grid-area: start / start / end / end;
 		grid-template-columns: minmax(0, max-content) max-content;
@@ -1656,6 +1657,8 @@ header:has(form[role='search']) h1 {
 			cursor: pointer;
 			pointer-events: all;
 
+			button + & { margin-left: 0.25em }
+
 			> :has(data) { overflow: hidden }
 
 			> :has(svg):has(span) {
@@ -1666,7 +1669,6 @@ header:has(form[role='search']) h1 {
 				border-radius: 3px;
 				padding: 0 0.25em;
 				vertical-align: text-bottom;
-				margin-left: 0.25em;
 
 				svg {
 					display: inline-block;
@@ -1679,7 +1681,7 @@ header:has(form[role='search']) h1 {
 					font-weight: bold;
 					font-size: 0.8em;
 					vertical-align: 0.05em;
-					padding-block: 0.125em;
+					/* padding-block: 0.125em; */
 				}
 
 				&:is(:is(:hover,:focus) > *) {
@@ -1714,5 +1716,19 @@ header:has(form[role='search']) h1 {
 			margin-left: 0.25em;
 			font-weight: 500;
 		}
+	}
+
+	&:has([role=alert]) {
+		--bg-status-color: #c05858; /* dark red */
+		min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + 4ch);
+
+	}
+
+	[role=alert] {
+		color: #e6cb1f; /* bright yellow */
+		cursor: pointer;
+
+		&:has(+ *) { margin-right: 0.25em }
+		* + & { margin-left: 0.25em }
 	}
 }

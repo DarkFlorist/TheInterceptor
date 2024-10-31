@@ -128,14 +128,10 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const address = useSignal<bigint>(param.tokenEntry.address)
 	useEffect(() => { address.value = param.tokenEntry.address }, [param.tokenEntry.address])
 
-	// TODO: implement untrusted warning in inline card
-	// const unTrusted = param.tokenEntry.entrySource === 'OnChain'
-
+	const warningMessage = param.tokenEntry.entrySource === 'OnChain' ? 'Untrusted address' : undefined
 	const tokenName = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
 	const tokenAddressString = checksummedAddress(param.tokenEntry.address)
-	const defaultCardStyles:JSX.CSSProperties = {
-		'--bg-color': '#0000001a',				// 10% opaque black
-	}
+	const defaultCardStyles:JSX.CSSProperties = { '--bg-color': '#0000001a', /* 10% opaque black */ }
 
 	const generateIcon = () => {
 		if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
@@ -144,8 +140,8 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	}
 
 	return <>
-        <TokenIdOrNameOrNothing { ...param } />
-		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } style = {{ ...defaultCardStyles, ...param.style }} />
+		<TokenIdOrNameOrNothing { ...param } />
+		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } warningMessage = { warningMessage } style = {{ ...defaultCardStyles, ...param.style }} />
 	</>
 }
 
