@@ -369,7 +369,6 @@ export function AddressBook() {
 							rpcEntries = { rpcEntries }
 							modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
 								if (modalState.value.page !== 'addNewAddress') return
-								console.log('setstate!', newState.incompleteAddressBookEntry.chainId)
 								modalState.value = { page: modalState.value.page, state: newState }
 							} }
 						/>
