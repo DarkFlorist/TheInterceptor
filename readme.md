@@ -19,7 +19,7 @@ You can also watch [Interceptor introduction video](https://www.youtube.com/watc
 <img src = "popup_view.png" alt = "The cutest dino" style = "width: 300px;"/>
 
 # Privacy
-We value your privacy highly. The Interceptor is designed to minimize privacy leakage: We don't query external sites for anything. However, The Interceptor Alpha is currently connecting to Ethereum RPC nodes operated by [Dark Florists (us)](https://www.dark.florist/) because we utilize some custom tooling on the backend. Work is underway to get our custom tooling standardized across clients so Interceptor will work with any standards compliant Ethereum client.
+Your privacy is our priority. The Interceptor is purpose-built to minimize data leakage: no external queries are made without direct user input. By default, it connects to Ethereum RPC nodes operated by [Dark Florists (us)](https://www.dark.florist/), though you can configure it to connect to other RPC nodes if desired. Please note, The Interceptor requires RPC nodes that support the mandatory `eth_simulateV1` endpoint, currently available in Geth and Nethermind.
 
 # Development
 
