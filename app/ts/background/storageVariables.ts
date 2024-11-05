@@ -244,7 +244,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		minimized: true,
 	}
 }
-export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? []
+export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV3'))?.userAddressBookEntriesV3 ?? []
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => {
 	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
@@ -261,6 +261,13 @@ const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
+		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
+	})
+}
+
+export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
+		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? []
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
 	})
 }
@@ -270,7 +277,7 @@ export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressB
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && (entry.chainId || 1n) === (newEntry.chainId || 1n) )
 		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: entries.concat(newEntry) })
+		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
 	})
 }
 

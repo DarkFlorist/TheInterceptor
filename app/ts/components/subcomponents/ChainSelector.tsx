@@ -2,6 +2,7 @@ import { useRef, useState } from 'preact/hooks'
 import { clickOutsideAlerter, rpcEntriesToChainEntriesWithAllChainsEntry } from '../ui-utils.js'
 import { ChainEntry, RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
+import { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
 
 interface RpcSelectorParams {
 	rpcNetwork: ReadonlySignal<RpcNetwork | undefined>
@@ -39,7 +40,7 @@ export function RpcSelector(params: RpcSelectorParams) {
 }
 
 interface ChainSelectorParams {
-	chain: ReadonlySignal<ChainEntry | undefined>
+	chainId: ReadonlySignal<ChainIdWithUniversal>
 	rpcEntries: Signal<RpcEntries>
 	changeChain: (entry: ChainEntry) => void
 }
@@ -48,7 +49,7 @@ interface ChainSelectorParams {
 export function ChainSelector(params: ChainSelectorParams) {
 	const [isOpen, setIsOpen] = useState(false)
 	const chains = useComputed(() => rpcEntriesToChainEntriesWithAllChainsEntry(params.rpcEntries.value))
-
+	const chain = useComputed(() => chains.value.find((chainEntry) => chainEntry.chainId === params.chainId.value))
 	const wrapperRef = useRef<HTMLDivElement>(null)
 	clickOutsideAlerter(wrapperRef, () => setIsOpen(false))
 
@@ -59,15 +60,15 @@ export function ChainSelector(params: ChainSelectorParams) {
 
 	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` } style = { { justifyContent: 'end', width: '100%' } }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button className = { `button is-primary is-reveal ${ params.chain.value === undefined ? 'is-danger' : ''}` } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) } title = { params.chain.value === undefined ? 'unknown' : params.chain.value.name  } style = { { width: '100%', columnGap: '0.5em' } }>
-				<span class = 'truncate' style = { { contain: 'content' } }>{ params.chain.value === undefined ? 'unknown' : params.chain.value.name }</span>
+			<button className = { `button is-primary is-reveal ${ chain.value === undefined ? 'is-danger' : ''}` } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) } title = { chain.value === undefined ? 'unknown' : chain.value.name  } style = { { width: '100%', columnGap: '0.5em' } }>
+				<span class = 'truncate' style = { { contain: 'content' } }>{ chain.value === undefined ? 'unknown' : chain.value.name }</span>
 			</button>
 		</div>
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { left: 'unset' } }>
 			<div class = 'dropdown-content' style = { { position: 'fixed' } }> {
-				chains.value.map((chain) => <>
-					<button type = 'button' class = { `dropdown-item ${ params.chain.value !== undefined ? 'is-active' : '' }` } onClick = { () => changeChain(chain) } >
-						{ chain.name }
+				chains.value.map((chainEntry) => <>
+					<button type = 'button' class = { `dropdown-item ${ chain.value !== undefined && chainEntry.chainId === chain.value?.chainId ? 'is-active' : '' }` } onClick = { () => changeChain(chainEntry) } >
+						{ chainEntry.name }
 					</button>
 				</>)
 			} </div>

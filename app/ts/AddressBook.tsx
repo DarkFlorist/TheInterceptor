@@ -173,6 +173,7 @@ type ViewFilter = {
 export function AddressBook() {
 	const addressBookEntries = useSignal<AddressBookEntries>([])
 	const currentChain = useSignal<ChainEntry | undefined>(undefined)
+	const currentChainId = useComputed(() => currentChain.value?.chainId || 1n)
 	const rpcEntries = useSignal<RpcEntries>([])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
@@ -220,10 +221,12 @@ export function AddressBook() {
 
 	function changeFilter(activeFilter: FilterKey) {
 		viewFilter.value = { ...viewFilter.peek(), activeFilter }
+		sendQuery()
 	}
 
 	function search(searchString: string) {
 		viewFilter.value = { ...viewFilter.peek(), searchString }
+		sendQuery()
 	}
 
 	function getNoResultsError() {
@@ -316,7 +319,7 @@ export function AddressBook() {
 				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
 					<div style = { { padding: '1rem 0'} }>
 						<div style = 'padding: 10px;'>
-							<ChainSelector rpcEntries = { rpcEntries } chain = { currentChain } changeChain = { changeCurrentChain }/>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { currentChainId } changeChain = { changeCurrentChain }/>
 						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>

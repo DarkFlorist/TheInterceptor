@@ -130,7 +130,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 	if (incompleteAddressBookEntry.value === undefined) return <></>
 	const disableDueToSource = incompleteAddressBookEntry.value.entrySource === 'DarkFloristMetadata' || incompleteAddressBookEntry.value.entrySource === 'Interceptor'
 	const logoUri = incompleteAddressBookEntry.value.addingAddress === false && 'logoUri' in incompleteAddressBookEntry ? incompleteAddressBookEntry.value.logoUri : undefined
-	const selectedNetwork = useComputed(() => rpcEntries.value.find((entry) => incompleteAddressBookEntry.value !== undefined && entry.chainId === incompleteAddressBookEntry.value.chainId))
+	const selectedChainId = useComputed(() => incompleteAddressBookEntry.value?.chainId || 1n)
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -141,7 +141,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 			<div class = 'container' style = 'margin-bottom: 10px;'>
 				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 					<CellElement element = { <Text text = { 'Chain: ' }/> }/>
-					<CellElement element = { <ChainSelector rpcEntries = { rpcEntries } chain = { selectedNetwork } changeChain = { setChain }/> } />
+					<CellElement element = { <ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain }/> } />
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
 					<CellElement element = { <NameInput nameInput = { incompleteAddressBookEntry.value.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/>

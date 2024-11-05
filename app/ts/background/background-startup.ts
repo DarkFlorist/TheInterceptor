@@ -2,7 +2,7 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
 import { handleInterceptedRequest, popupMessageHandler, resetSimulatorStateFromConfig } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
@@ -49,7 +49,7 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 	clearTabStates()
 }
 
-async function migrateAddressInfoAndContacts() {
+async function migrateAddressInfoAndContactsFromV1ToV2() {
 	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries'])).userAddressBookEntries
 	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry | OldActiveAddressEntry): AddressBookEntry => {
 		if (entry.type !== 'activeAddress') return entry
@@ -58,11 +58,29 @@ async function migrateAddressInfoAndContacts() {
 	if (userAddressBookEntries === undefined) return
 	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
 	if (updated.length > 0) {
-		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address']))
+		await updateUserAddressBookEntriesV2Old((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address']))
 		await browserStorageLocalRemove(['userAddressBookEntries'])
 	}
 }
-migrateAddressInfoAndContacts()
+async function migrateAddressInfoAndContactsFromV2ToV3() {
+	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntriesV2'])).userAddressBookEntriesV2
+	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry): AddressBookEntry => {
+		if ('chainId' in entry && entry.chainId !== undefined) return entry
+		if (entry.useAsActiveAddress === true && entry.type === 'contact') return { ...entry, chainId: 'AllChains' }
+		return { ...entry, chainId: 1n }
+	}
+	if (userAddressBookEntries === undefined) return
+	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
+	if (updated.length > 0) {
+		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address', 'chainId']))
+		await browserStorageLocalRemove(['userAddressBookEntriesV2'])
+	}
+}
+async function migrateAddressBook() {
+	await migrateAddressInfoAndContactsFromV1ToV2()
+	await migrateAddressInfoAndContactsFromV2ToV3()
+}
+migrateAddressBook()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
