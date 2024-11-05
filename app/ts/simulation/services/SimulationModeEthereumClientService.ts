@@ -738,7 +738,7 @@ export const isValidMessage = (params: SignMessageParams, signingAddress: Ethere
 export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
 	switch (params.method) {
-		case 'eth_signTypedData': throw new Error('no support for eth_signTypedData')
+		case 'eth_signTypedData': throw new Error('No support for eth_signTypedData')
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
