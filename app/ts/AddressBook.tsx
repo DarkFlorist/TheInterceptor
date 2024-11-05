@@ -170,8 +170,14 @@ type ViewFilter = {
 	chain: ChainEntry | undefined
 }
 
+type AddressBookEntriesWithFilter = {
+	addressBookEntries: AddressBookEntries
+	activeFilter: FilterKey
+}
+
 export function AddressBook() {
-	const addressBookEntries = useSignal<AddressBookEntries>([])
+	const addressBookEntriesWithFilter = useSignal<AddressBookEntriesWithFilter>({ addressBookEntries: [], activeFilter: 'My Active Addresses' })
+	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const currentChain = useSignal<ChainEntry | undefined>(undefined)
 	const currentChainId = useComputed(() => currentChain.value?.chainId || 1n)
 	const rpcEntries = useSignal<RpcEntries>([])
@@ -213,7 +219,10 @@ export function AddressBook() {
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
 			if (currentChain.peek()?.chainId === reply.data.data.chainId) {
-				addressBookEntries.value = reply.data.entries
+				addressBookEntriesWithFilter.value = {
+					addressBookEntries: reply.data.entries,
+					activeFilter: reply.data.data.filter,
+				}
 			}
 			return
 		}
@@ -344,11 +353,11 @@ export function AddressBook() {
 							</button>
 						</div>
 						<div style = { { minHeight: 0 } }>
-							{ addressBookEntries.value.length
+							{ addressBookEntriesWithFilter.value.addressBookEntries.length
 								? <DynamicScroller
 									items = { addressBookEntries }
 									renderItem = { addressBookEntry => (
-										<AddressBookEntryCard { ...addressBookEntry } category = { viewFilter.value.activeFilter } removeEntry = { () => modalState.value = { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry } } renameAddressCallBack = { renameAddressCallBack } />
+										<AddressBookEntryCard { ...addressBookEntry } category = { addressBookEntriesWithFilter.value.activeFilter } removeEntry = { () => modalState.value = { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry } } renameAddressCallBack = { renameAddressCallBack } />
 									) }
 								/>
 								: <GetNoResultsError/>
