@@ -45,7 +45,6 @@ interface ChainSelectorParams {
 	changeChain: (entry: ChainEntry) => void
 }
 
-
 export function ChainSelector(params: ChainSelectorParams) {
 	const [isOpen, setIsOpen] = useState(false)
 	const chains = useComputed(() => rpcEntriesToChainEntriesWithAllChainsEntry(params.rpcEntries.value))

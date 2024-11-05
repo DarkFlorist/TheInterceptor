@@ -177,8 +177,20 @@ export function AddressBook() {
 	const rpcEntries = useSignal<RpcEntries>([])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
+	const modifyAddressSignal = useComputed(() => modalState.value.page === 'addNewAddress' ? modalState.value.state : undefined)
+	function sendQuery() {
+		const filterValue = viewFilter.value
+		if (filterValue.chain === undefined) return
+		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
+			chainId: filterValue.chain.chainId,
+			filter: filterValue.activeFilter,
+			searchString: filterValue.searchString
+		} })
+	}
+	useSignalEffect(sendQuery)
+
 	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -194,42 +206,37 @@ export function AddressBook() {
 				if (prevCurrentNetwork === undefined || prevCurrentNetwork.chainId === parsed.data.currentRpcNetwork.chainId) {
 					currentChain.value = parsed.data.currentRpcNetwork
 					if (prevCurrentNetwork === undefined || viewFilter.value.chain === undefined) {
-						viewFilter.value.chain = currentChain.value === undefined ? undefined : { name: currentChain.value.name, chainId: currentChain.value.chainId }
-						sendQuery()
+						viewFilter.value = { ...viewFilter.value, chain: currentChain.value === undefined ? undefined : { name: currentChain.value.name, chainId: currentChain.value.chainId } }
 					}
 				}
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			if(currentChain.peek()?.chainId === reply.data.data.chainId) {
+			if (currentChain.peek()?.chainId === reply.data.data.chainId) {
 				addressBookEntries.value = reply.data.entries
 			}
+			return
 		}
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
 	}, [])
 
-	function sendQuery() {
-		const filterValue = viewFilter.peek()
-		if (filterValue.chain === undefined) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
-			chainId: filterValue.chain.chainId,
-			filter: filterValue.activeFilter,
-			searchString: filterValue.searchString
-		} })
-	}
-
 	function changeFilter(activeFilter: FilterKey) {
 		viewFilter.value = { ...viewFilter.peek(), activeFilter }
-		sendQuery()
 	}
 
 	function search(searchString: string) {
 		viewFilter.value = { ...viewFilter.peek(), searchString }
-		sendQuery()
 	}
 
-	function getNoResultsError() {
+	function changeCurrentChain(entry: ChainEntry) {
+		if (entry.chainId === currentChain.peek()?.chainId) return
+		currentChain.value = entry
+		viewFilter.value = { ...viewFilter.peek(), chain: { name: entry.name, chainId: entry.chainId } }
+	}
+
+	function GetNoResultsError() {
 		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
 			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
 			: `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
@@ -302,17 +309,6 @@ export function AddressBook() {
 			}
 		})
 	}
-
-	const changeCurrentChain = (entry: ChainEntry) => {
-		if (entry.chainId === currentChain.peek()?.chainId) return
-		currentChain.value = entry
-		viewFilter.value = { ...viewFilter.peek(), chain: { name: entry.name, chainId: entry.chainId } }
-		sendQuery()
-	}
-
-	useSignalEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) })
-	if (currentChain.value === undefined) return <main></main>
-	const modifyAddressSignal = useComputed(() => modalState.value.page === 'addNewAddress' ? modalState.value.state : undefined)
 	return (
 		<main>
 			<Hint>
@@ -350,13 +346,12 @@ export function AddressBook() {
 						<div style = { { minHeight: 0 } }>
 							{ addressBookEntries.value.length
 								? <DynamicScroller
-									key = { [Object.values(viewFilter.value)].join('_') }
 									items = { addressBookEntries }
 									renderItem = { addressBookEntry => (
 										<AddressBookEntryCard { ...addressBookEntry } category = { viewFilter.value.activeFilter } removeEntry = { () => modalState.value = { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry } } renameAddressCallBack = { renameAddressCallBack } />
 									) }
 								/>
-								: getNoResultsError()
+								: <GetNoResultsError/>
 							}
 						</div>
 					</div>
