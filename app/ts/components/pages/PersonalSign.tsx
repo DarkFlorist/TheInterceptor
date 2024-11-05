@@ -169,7 +169,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			/>
 		}
 		case 'Permit': {
-			if (visualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (visualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit1 request. The tokentype is not ERC20' }/>
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
@@ -186,7 +186,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			/>
 		}
 		case 'Permit2': {
-			if (visualizedPersonalSignRequest.token.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (visualizedPersonalSignRequest.token.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit2 request. The tokentype is not ERC20' }/>
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
