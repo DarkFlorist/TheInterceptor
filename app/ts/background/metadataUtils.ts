@@ -7,7 +7,7 @@ import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainId } from './storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
@@ -52,7 +52,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	}
 
 	if (useLocalStorage) {
-		const userEntry = (await getUserAddressBookEntriesForChainId(rpcEntry?.chainId || 1n)).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId || 1n)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)

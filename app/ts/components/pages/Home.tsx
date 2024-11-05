@@ -3,7 +3,6 @@ import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
-import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -11,12 +10,13 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { RpcEntries, RpcEntry } from '../../types/rpc.js'
+import { RpcEntries } from '../../types/rpc.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon } from '../subcomponents/icons.js'
 import { useSignal } from '@preact/signals'
+import { RpcSelector } from '../subcomponents/ChainSelector.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -66,7 +66,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 			</div>
 			<div>
-				<ChainSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { (entry: RpcEntry) => { param.changeActiveRpc(entry) } }/>
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
 			</div>
 		</header>
 	</>

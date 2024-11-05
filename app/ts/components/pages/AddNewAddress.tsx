@@ -13,7 +13,7 @@ import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
-import { RpcEntries, RpcNetwork } from '../../types/rpc.js'
+import { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
 
 const readableAddressType = {
@@ -91,7 +91,7 @@ type RenderinCompleteAddressBookParams = {
 	setDeclarativeNetRequestBlockMode: (declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) => void
 	setAbi: (abi: string) => void
 	fetchAbiAndNameFromEtherscan: () => Promise<void>
-	setRpcNetwork: (rpcNetwork: RpcNetwork) => void
+	setChain: (chainEntry: ChainEntry) => void
 }
 
 const CellElement = (param: { element: ComponentChildren }) => {
@@ -121,7 +121,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode, setRpcNetwork }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode, setChain }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
@@ -141,7 +141,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 			<div class = 'container' style = 'margin-bottom: 10px;'>
 				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 					<CellElement element = { <Text text = { 'Chain: ' }/> }/>
-					<CellElement element = { <ChainSelector rpcEntries = { rpcEntries } rpcNetwork = { selectedNetwork } changeRpc = { setRpcNetwork }/> } />
+					<CellElement element = { <ChainSelector rpcEntries = { rpcEntries } chain = { selectedNetwork } changeChain = { setChain }/> } />
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
 					<CellElement element = { <NameInput nameInput = { incompleteAddressBookEntry.value.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/>
@@ -319,12 +319,11 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (previous === undefined) return
 		modifyState(modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { name }) }))
 	}
-	const setRpcNetwork = async (rpcNetwork: RpcNetwork) => {
+	const setChain = async (chainEntry: ChainEntry) => {
 		const previous = param.modifyAddressWindowState.peek()
 		if (previous === undefined) return
-		modifyState(modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { chainId: rpcNetwork.chainId }) }))
+		modifyState(modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { chainId: chainEntry.chainId }) }))
 	}
-
 	const setAbi = async (abi: string | undefined) => {
 		const previous = param.modifyAddressWindowState.peek()
 		if (previous === undefined) return
@@ -412,7 +411,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setName = { setName }
 							setSymbol = { setSymbol }
 							setAbi = { setAbi }
-							setRpcNetwork = { setRpcNetwork }
+							setChain = { setChain }
 							rpcEntries = { param.rpcEntries }
 							setUseAsActiveAddress = { setUseAsActiveAddress }
 							setDeclarativeNetRequestBlockMode = { setDeclarativeNetRequestBlockMode }

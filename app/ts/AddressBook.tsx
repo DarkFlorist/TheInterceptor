@@ -12,7 +12,7 @@ import { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { RpcEntries, RpcEntry, RpcNetwork } from './types/rpc.js'
+import { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 
 type Modals =  { page: 'noModal' }
@@ -167,14 +167,14 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 type ViewFilter = {
 	activeFilter: FilterKey
 	searchString: string
-	rpcNetwork: { readonly name: string, readonly chainId: bigint } | undefined
+	chain: ChainEntry | undefined
 }
 
 export function AddressBook() {
 	const addressBookEntries = useSignal<AddressBookEntries>([])
-	const currentRpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
+	const currentChain = useSignal<ChainEntry | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
-	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', rpcNetwork: undefined })
+	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -182,25 +182,25 @@ export function AddressBook() {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				const chainId = currentRpcNetwork.peek()?.chainId
+				const chainId = currentChain.peek()?.chainId
 				if (chainId !== undefined) sendQuery()
 				return
 			}
 			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
-				const prevCurrentNetwork = currentRpcNetwork.peek()
+				const prevCurrentNetwork = currentChain.peek()
 				if (prevCurrentNetwork === undefined || prevCurrentNetwork.chainId === parsed.data.currentRpcNetwork.chainId) {
-					currentRpcNetwork.value = parsed.data.currentRpcNetwork
-					if (prevCurrentNetwork === undefined || viewFilter.value.rpcNetwork === undefined) {
-						viewFilter.value.rpcNetwork = currentRpcNetwork.value === undefined ? undefined : { name: currentRpcNetwork.value.name, chainId: currentRpcNetwork.value.chainId }
+					currentChain.value = parsed.data.currentRpcNetwork
+					if (prevCurrentNetwork === undefined || viewFilter.value.chain === undefined) {
+						viewFilter.value.chain = currentChain.value === undefined ? undefined : { name: currentChain.value.name, chainId: currentChain.value.chainId }
 						sendQuery()
 					}
 				}
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			if(currentRpcNetwork.peek()?.chainId === reply.data.data.chainId) {
+			if(currentChain.peek()?.chainId === reply.data.data.chainId) {
 				addressBookEntries.value = reply.data.entries
 			}
 		}
@@ -210,9 +210,9 @@ export function AddressBook() {
 
 	function sendQuery() {
 		const filterValue = viewFilter.peek()
-		if (filterValue.rpcNetwork === undefined) return
+		if (filterValue.chain === undefined) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
-			chainId: filterValue.rpcNetwork.chainId,
+			chainId: filterValue.chain.chainId,
 			filter: filterValue.activeFilter,
 			searchString: filterValue.searchString
 		} })
@@ -228,8 +228,8 @@ export function AddressBook() {
 
 	function getNoResultsError() {
 		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
-			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.rpcNetwork?.name }`
-			: `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.rpcNetwork?.name }`
+			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
+			: `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
 		return <div style = { { width: 500, padding: '0 1rem', margin: '0 1rem' } }>{ errorMessage }</div>
 	}
 
@@ -262,7 +262,7 @@ export function AddressBook() {
 				abi: undefined,
 				useAsActiveAddress: filter === 'My Active Addresses',
 				declarativeNetRequestBlockMode: undefined,
-				chainId: currentRpcNetwork.peek()?.chainId || 1n,
+				chainId: currentChain.peek()?.chainId || 1n,
 			}
 		} }
 		return
@@ -300,15 +300,15 @@ export function AddressBook() {
 		})
 	}
 
-	const changeCurrentRpcEntry = (entry: RpcEntry) => {
-		if (entry.chainId === currentRpcNetwork.peek()?.chainId) return
-		currentRpcNetwork.value = entry
-		viewFilter.value = { ...viewFilter.peek(), rpcNetwork: { name: entry.name, chainId: entry.chainId } }
+	const changeCurrentChain = (entry: ChainEntry) => {
+		if (entry.chainId === currentChain.peek()?.chainId) return
+		currentChain.value = entry
+		viewFilter.value = { ...viewFilter.peek(), chain: { name: entry.name, chainId: entry.chainId } }
 		sendQuery()
 	}
 
 	useSignalEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) })
-	if (currentRpcNetwork.value === undefined) return <main></main>
+	if (currentChain.value === undefined) return <main></main>
 	const modifyAddressSignal = useComputed(() => modalState.value.page === 'addNewAddress' ? modalState.value.state : undefined)
 	return (
 		<main>
@@ -316,7 +316,7 @@ export function AddressBook() {
 				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
 					<div style = { { padding: '1rem 0'} }>
 						<div style = 'padding: 10px;'>
-							<ChainSelector rpcEntries = { rpcEntries } rpcNetwork = { currentRpcNetwork } changeRpc = { changeCurrentRpcEntry }/>
+							<ChainSelector rpcEntries = { rpcEntries } chain = { currentChain } changeChain = { changeCurrentChain }/>
 						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>
