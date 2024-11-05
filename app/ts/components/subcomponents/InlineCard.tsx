@@ -34,17 +34,17 @@ export const InlineCard = ({ icon: Icon, label, copyValue, noCopy, onEditClicked
 		<span class = 'inline-card' role = 'figure' style = { style } title = { label }>
 			{ warningMessage ? <WarningSign /> : <></> }
 			<span role = 'img'><Icon /></span>
-			<data class = 'truncate text-legible' value = { label }>{label}</data>
+			<data class = 'truncate text-legible' value = { label }>{ label }</data>
 			<span role = 'menu'>
 				{ !noCopy ? (
 					<button type = 'button' onClick = { copyTextToClipboard } value = { copyValue } tabIndex = { 1 }>
-					<span role = 'img'><Icon /></span>
-					<span><data class = 'truncate text-legible' value = { label }>{label}</data></span>
-					<span>
-						<CopyIcon />
-						<span>copy</span>
-					</span>
-				</button>
+						<span role = 'img'><Icon /></span>
+						<span><data class = 'truncate text-legible' value = { label }>{ label }</data></span>
+						<span>
+							<CopyIcon />
+							<span>copy</span>
+						</span>
+					</button>
 				) : <></> }
 				{ onEditClicked ? (
 					<button type = 'button' value = { copyValue } onClick = { onEditClicked } tabIndex = { 1 }>

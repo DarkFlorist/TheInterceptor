@@ -1639,6 +1639,8 @@ header:has(form[role='search']) h1 {
 		grid-area: start / start / end / end;
 		grid-template-columns: minmax(0, max-content) max-content;
 		align-items: baseline;
+		padding-inline: var(--bg-inline-padding);
+		margin-inline: calc(var(--bg-inline-padding) * -1);
 
 		opacity: 0;
 		&:has(:hover), &:focus-within { opacity: 1 }
@@ -1681,7 +1683,6 @@ header:has(form[role='search']) h1 {
 					font-weight: bold;
 					font-size: 0.8em;
 					vertical-align: 0.05em;
-					/* padding-block: 0.125em; */
 				}
 
 				&:is(:is(:hover,:focus) > *) {
