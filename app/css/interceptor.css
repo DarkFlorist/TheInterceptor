@@ -1735,3 +1735,15 @@ header:has(form[role='search']) h1 {
 		* + & { margin-left: 0.25em }
 	}
 }
+
+.tooltip {
+	background: #222222;
+	color: #ffffff;
+	padding: 0.3125rem 0.6875rem;
+	border: 0 none;
+	border-radius: 4px;
+	font-size: 0.8125rem;
+	white-space: nowrap;
+	pointer-events: none;
+	margin: 0;
+}

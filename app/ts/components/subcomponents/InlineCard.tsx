@@ -16,18 +16,17 @@ export type InlineCardProps = {
 }
 
 export const InlineCard = ({ icon: Icon, label, copyValue, noCopy, onEditClicked, style, statusMessageDuration = 1500, warningMessage: warningMessage }: InlineCardProps) => {
-	const copyStatus = useSignal(false)
 	const tooltip = useSignal<TooltipConfig | undefined>(undefined)
 
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.currentTarget.blur()
 		await clipboardCopy(event.currentTarget.value || label)
-		copyStatus.value = true
+		tooltip.value = { message: 'Copied!', x: event.clientX, y: event.clientY }
 	}
 
 	useSignalEffect(() => {
-		if (copyStatus.value !== true) return
-		setTimeout(() => copyStatus.value = false, statusMessageDuration)
+		if (tooltip.value === undefined) return
+		setTimeout(() => tooltip.value = undefined, statusMessageDuration)
 	})
 
 	return (
