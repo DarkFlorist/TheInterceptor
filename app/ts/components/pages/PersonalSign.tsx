@@ -22,6 +22,7 @@ import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelec
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
+import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -449,4 +450,11 @@ export function SignatureCard(params: SignatureCardParams) {
 
 export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
 	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
+}
+
+export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage }) {
+	if (pendingTransactionOrSignableMessage.type !== 'SignableMessage') return <></>
+	if (pendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <></>
+	if (pendingTransactionOrSignableMessage.visualizedPersonalSignRequest.isValidMessage !== false) return <></>
+	return <ErrorComponent warning = { true } text = { 'The requested message format is invalid and cannot be signed.' }/>
 }
