@@ -17,11 +17,11 @@ export class EthereumClientService {
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private retrievingBlock = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
-	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>
+	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>, rpcEntry: RpcEntry) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
@@ -80,8 +80,8 @@ export class EthereumClientService {
 			if (gotNewBlock) this.requestHandler.clearCache()
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
-		} catch(error) {
-			return this.onErrorBlockCallback(this)
+		} catch(error: unknown) {
+			return this.onErrorBlockCallback(this, error)
 		} finally {
 			this.retrievingBlock = false
 		}
