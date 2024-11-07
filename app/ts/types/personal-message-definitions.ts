@@ -352,21 +352,26 @@ export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject
 })
 
 type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
-const PersonalSignRequestBase = funtypes.ReadonlyObject({
-	activeAddress: AddressBookEntry,
-	rpcNetwork: RpcNetwork,
-	request: InterceptedRequest,
-	simulationMode: funtypes.Boolean,
-	signerName: SignerName,
-	quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
-	quarantine: funtypes.Boolean,
-	account: AddressBookEntry,
-	website: Website,
-	created: EthereumTimestamp,
-	rawMessage: funtypes.String,
-	stringifiedMessage: funtypes.String,
-	messageIdentifier: EthereumQuantity,
-})
+const PersonalSignRequestBase = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		activeAddress: AddressBookEntry,
+		rpcNetwork: RpcNetwork,
+		request: InterceptedRequest,
+		simulationMode: funtypes.Boolean,
+		signerName: SignerName,
+		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
+		quarantine: funtypes.Boolean,
+		account: AddressBookEntry,
+		website: Website,
+		created: EthereumTimestamp,
+		rawMessage: funtypes.String,
+		stringifiedMessage: funtypes.String,
+		messageIdentifier: EthereumQuantity,
+	}),
+	funtypes.ReadonlyPartial({
+		isValidMessage: funtypes.Boolean,
+	})
+)
 
 type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
 const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
