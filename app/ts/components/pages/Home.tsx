@@ -10,12 +10,10 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { RpcEntries } from '../../types/rpc.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon } from '../subcomponents/icons.js'
-import { useSignal } from '@preact/signals'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 
 async function enableMakeMeRich(enabled: boolean) {
@@ -211,7 +209,6 @@ export function Home(param: HomeParams) {
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removedTransactionOrSignedMessages, setRemovedTransactionOrSignedMessages] = useState<readonly TransactionOrMessageIdentifier[]>([])
-	const rpcEntries = useSignal<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
@@ -294,7 +291,7 @@ export function Home(param: HomeParams) {
 			tabState = { tabState }
 			tabIconDetails = { tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
-			rpcEntries = { rpcEntries }
+			rpcEntries = { param.rpcEntries }
 		/>
 
 		{ simulationMode && activeSimulationAddress !== undefined ? <SimulationResults
