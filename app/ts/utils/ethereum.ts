@@ -49,6 +49,18 @@ export interface IUnsignedTransaction1559 {
 	}[]
 }
 
+export interface IOptimismDepositTransaction {
+	readonly type: 'optimismDeposit'
+	readonly sourceHash: bigint
+	readonly from: bigint
+	readonly to: bigint | null
+	readonly mint: bigint
+	readonly value: bigint
+	readonly gas: bigint
+	readonly data: Uint8Array
+	readonly hash: bigint
+}
+
 interface IUnsignedTransaction4844 {
 	readonly type: '4844'
 	readonly from: bigint
@@ -91,7 +103,7 @@ type ISignedTransaction1559 = IUnsignedTransaction1559 & ITransactionSignature15
 type ISignedTransactionLegacy = IUnsignedTransactionLegacy & ITransactionSignatureLegacy
 type ISignedTransaction2930 = IUnsignedTransaction2930 & ITransactionSignature1559and2930and4844
 type ISignedTransaction4844 = IUnsignedTransaction4844 & ITransactionSignature1559and2930and4844
-type ISignedTransaction = ISignedTransaction1559 | ISignedTransactionLegacy | ISignedTransaction2930 | ISignedTransaction4844
+type ISignedTransaction = ISignedTransaction1559 | ISignedTransactionLegacy | ISignedTransaction2930 | ISignedTransaction4844 | IOptimismDepositTransaction
 
 function calculateV(transaction: DistributiveOmit<ITransactionSignatureLegacy, 'hash'>): bigint {
 	if ('v' in transaction) return transaction.v
@@ -241,6 +253,7 @@ export function serializeSignedTransactionToBytes(transaction: DistributiveOmit<
 		case '2930': return new Uint8Array([1, ...rlpEncodeSigned2930TransactionPayload(transaction)])
 		case '1559': return new Uint8Array([2, ...rlpEncodeSigned1559TransactionPayload(transaction)])
 		case '4844': return new Uint8Array([2, ...rlpEncodeSigned4844TransactionPayload(transaction)])
+		case 'optimismDeposit': throw new Error('Serializing optimismDeposit (0x7e) transaction is not supported')
 		default: assertNever(transaction)
 	}
 }
@@ -291,6 +304,7 @@ export function EthereumSignedTransactionToSignedTransaction(transaction: Ethere
 			...transaction,
 			gasLimit: transaction.gas,
 		}
+		case 'optimismDeposit': return transaction
 		default: assertNever(transaction)
 	}
 }

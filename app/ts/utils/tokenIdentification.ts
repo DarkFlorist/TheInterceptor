@@ -1,9 +1,8 @@
 import { Interface } from 'ethers'
-import { Erc20ABI, Erc721ABI, MulticallABI } from './abi.js'
+import { Erc20ABI, Erc721ABI } from './abi.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { UniswapV3Multicall2 } from './constants.js'
-import { addressString, checksummedAddress, stringToUint8Array } from './bigint.js'
+import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 
 type EOA = {
@@ -18,12 +17,19 @@ type UnknownContract = {
 
 export type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
 
-async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, calls: { target: string, callData: string }[]): Promise<{ success: boolean, returnData: string }[]> {
-	const multicallInterface = new Interface(MulticallABI)
-	const tryAggregate = multicallInterface.getFunction('tryAggregate')
-	if (tryAggregate === null) throw new Error('tryAggregate misssing from ABI')
-	const returnData = await ethereumClientService.call({ to: UniswapV3Multicall2, input: stringToUint8Array(multicallInterface.encodeFunctionData(tryAggregate, [false, calls])) }, 'latest', requestAbortController)
-	return multicallInterface.decodeFunctionResult(tryAggregate, returnData)[0]
+async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, calls: { targetAddress: EthereumAddress, callData: Uint8Array }[]): Promise<{ success: boolean, returnData: Uint8Array }[]> {
+	const results = await ethereumClientService.ethSimulateV1([{ calls: calls.map((call) => ({
+		type: '1559' as const,
+		to: call.targetAddress,
+		input: call.callData
+	}))}], 'latest', requestAbortController)
+	const blockResult = results[0]
+	if (blockResult === undefined) throw new Error('Failed eth_simulateV1 call: did not get a block')
+	if (blockResult.calls.length !== calls.length) throw new Error('Failed eth_simulateV1 call: call length mismatch')
+	return blockResult.calls.map((call) => ({
+		success: call.status === 'success',
+		returnData: call.returnData
+	}))
 }
 
 export async function itentifyAddressViaOnChainInformation(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, address: EthereumAddress): Promise<IdentifiedAddress> {
@@ -32,16 +38,15 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 
 	const nftInterface = new Interface(Erc721ABI)
 	const erc20Interface = new Interface(Erc20ABI)
-	const target = addressString(address)
-
+	const targetAddress = address
 	const calls = [
-		{ target, callData: nftInterface.encodeFunctionData('supportsInterface', ['0x80ac58cd']) }, // Is Erc721Definition
-		{ target, callData: nftInterface.encodeFunctionData('supportsInterface', ['0x5b5e139f']) }, // Is Erc721Metadata
-		{ target, callData: nftInterface.encodeFunctionData('supportsInterface', ['0xd9b67a26']) }, // Is Erc1155Definition
-		{ target, callData: erc20Interface.encodeFunctionData('name', []) },
-		{ target, callData: erc20Interface.encodeFunctionData('symbol', []) },
-		{ target, callData: erc20Interface.encodeFunctionData('decimals', []) },
-		{ target, callData: erc20Interface.encodeFunctionData('totalSupply', []) }
+		{ targetAddress, callData: stringToUint8Array(nftInterface.encodeFunctionData('supportsInterface', ['0x80ac58cd'])) }, // Is Erc721Definition
+		{ targetAddress, callData: stringToUint8Array(nftInterface.encodeFunctionData('supportsInterface', ['0x5b5e139f'])) }, // Is Erc721Metadata
+		{ targetAddress, callData: stringToUint8Array(nftInterface.encodeFunctionData('supportsInterface', ['0xd9b67a26'])) }, // Is Erc1155Definition
+		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('name', [])) },
+		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('symbol', [])) },
+		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('decimals', [])) },
+		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('totalSupply', [])) }
 	]
 
 	try {

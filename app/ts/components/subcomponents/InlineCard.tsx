@@ -1,57 +1,63 @@
 import { JSX } from 'preact/jsx-runtime'
-import { useSignal, useSignalEffect } from '@preact/signals'
+import { useSignal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
-import { CheckIcon, CopyIcon, EditIcon } from './icons.js'
+import { CopyIcon, EditIcon } from './icons.js'
+import { Tooltip, TooltipConfig } from './Tooltip.js'
 
 export type InlineCardProps = {
 	icon: () => JSX.Element
 	label: string
 	copyValue?: string
+	noCopy?: boolean
 	style?: JSX.CSSProperties
 	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement>
 	statusMessageDuration?: number
+	warningMessage?: string
+	noExpandButtons?: boolean
 }
 
-export const InlineCard = ({ icon: Icon, label, copyValue, onEditClicked, style, statusMessageDuration = 1500 }: InlineCardProps) => {
-	const copyStatus = useSignal(false)
+export const InlineCard = (props: InlineCardProps) => {
+	const tooltip = useSignal<TooltipConfig | undefined>(undefined)
 
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.currentTarget.blur()
-		await clipboardCopy(event.currentTarget.value || label)
-		copyStatus.value = true
+		await clipboardCopy(event.currentTarget.value || props.label)
+		tooltip.value = { message: 'Copied!', x: event.clientX, y: event.clientY, duration: props.statusMessageDuration || 1500 }
 	}
 
-	useSignalEffect(() => {
-		if (copyStatus.value !== true) return
-		setTimeout(() => copyStatus.value = false, statusMessageDuration)
-	})
+	const Icon = props.icon
 
 	return (
-		<>
-			<span class = 'inline-card' role = 'figure' style = { style } title = { label }>
-				<span role = 'img'><Icon /></span>
-				<data class = 'truncate text-legible' value = { label }>{label}</data>
-				<span role = 'menu'>
-					<button type = 'button' onClick = { copyTextToClipboard } value = { copyValue } tabIndex = { 1 }>
+		<span class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
+			{ props.warningMessage ? <WarningSign /> : <></> }
+			<span role = 'img'><Icon /></span>
+			<data class = 'truncate text-legible' value = { props.label }>{ props.label }</data>
+			<span role = 'menu' aria-label = { props.noExpandButtons ? undefined : 'Spell-out actions' }>
+				{ !props.noCopy ? (
+					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } tabIndex = { 1 }>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'truncate text-legible' value = { label }>{label}</data></span>
-						<span>
+						<span><data class = 'truncate text-legible' value = { props.label }>{ props.label }</data></span>
+						<span title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
 						</span>
 					</button>
-					{ onEditClicked ? (
-						<button type = 'button' value = { copyValue } onClick = { onEditClicked } tabIndex = { 1 }>
-							<span>
-								<EditIcon />
-								<span>edit</span>
-							</span>
-						</button>
-					) : <></> }
-				</span>
-
-				{ copyStatus.value ? <span role='status'><CheckIcon /><span>Copied!</span></span> : <></> }
+				) : <></> }
+				{ props.onEditClicked ? (
+					<button type = 'button' value = { props.copyValue } onClick = { props.onEditClicked } tabIndex = { 1 }>
+						<span title = 'Edit'>
+							<EditIcon />
+							<span>edit</span>
+						</span>
+					</button>
+				) : <></> }
 			</span>
-		</>
+			{ props.warningMessage ? <WarningSign /> : <></> }
+			<Tooltip config = { tooltip } />
+		</span>
 	)
+}
+
+const WarningSign = ({ message = 'Warning' }: { message?: string }) => {
+	return <span role = 'alert' title = { message }>⚠</span>
 }
