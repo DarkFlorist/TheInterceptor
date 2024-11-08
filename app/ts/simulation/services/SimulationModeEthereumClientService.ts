@@ -224,6 +224,11 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		const signed = mockSignTransaction(transaction.transaction)
 		return simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.preSimulationTransaction.signedTransaction).concat([signed])
 	}
+	const getMakeMeRichAddress = async () => {
+		if (simulationState === undefined) return undefined // we are not simulation, don't make anyone rich
+		if (typeof browser === 'undefined') return simulationState.addressToMakeRich // if we are not running in browser (tests)
+		return await getAddressToMakeRich()
+	}
 
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
@@ -231,7 +236,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
 	const signedTxs = getSignedTransactions()
-	const addressToMakeRich = typeof browser === 'undefined' ? simulationState?.addressToMakeRich : await getAddressToMakeRich()
+	const addressToMakeRich = await getMakeMeRichAddress()
 	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
 	const ethSimulateV1CallResult = await ethereumClientService.simulateTransactionsAndSignatures(signedTxs, signedMessages, parentBlock.number, requestAbortController, makeMeRich)
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
