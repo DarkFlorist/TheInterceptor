@@ -68,12 +68,12 @@ export function BigAddress(params: BigAddressParams) {
 		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry)
 	}
 
-	const labelConfig:ActionableTextProps = {
+	const labelConfig: ActionableTextProps = {
 		displayText: title,
 		action: !params.noEditAddress && title !== addrString ? renameAddressAction : undefined
 	}
 
-	const noteConfig:ActionableTextProps = {
+	const noteConfig: ActionableTextProps = {
 		displayText: subTitle,
 		action: addrString && subTitle !== addrString ? renameAddressAction : undefined
 	}
