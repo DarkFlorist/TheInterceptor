@@ -10,6 +10,12 @@ export const ChainEntry = funtypes.Intersect(
 	}),
 )
 
+export type BlockExplorer = funtypes.Static<typeof BlockExplorer>
+export const BlockExplorer = funtypes.ReadonlyObject({
+	apiUrl: funtypes.String,
+	apiKey: funtypes.String,
+})
+
 export type RpcEntry = funtypes.Static<typeof RpcEntry>
 export const RpcEntry = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -23,6 +29,7 @@ export const RpcEntry = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		currencyLogoUri: funtypes.String,
+		blockExplorer: BlockExplorer
 	})
 )
 

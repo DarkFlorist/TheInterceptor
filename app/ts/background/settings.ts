@@ -4,7 +4,7 @@ import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { RpcNetwork } from '../types/rpc.js'
+import { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
@@ -90,6 +90,19 @@ const wethForChainId = new Map<string, EthereumAddress>([
 	['8453', 0x4200000000000000000000000000000000000006n], // Base
 	['42161', 0x82af49447d8a07e3bd95bd0d56f35241523fbab1n], // Arbitrum
 ])
+
+const defaultBlockExplorer = new Map<string, { apiUrl: string, apiKey: string }>([
+	['1', { apiUrl: 'https://api.etherscan.io/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' } ],
+	['17000', { apiUrl: 'https://api-holesky.etherscan.io/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' }],
+	['11155111', { apiUrl: 'https://api-sepolia.etherscan.io/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' }],
+	['10', { apiUrl: 'https://api-optimistic.etherscan.io/api', apiKey: '4E726IGJ2FAU4IDHZ1TJF5HA9JZ1YKRFK9' }],
+	['420', { apiUrl: 'https://api-goerli-optimistic.etherscan.io/api', apiKey: '4E726IGJ2FAU4IDHZ1TJF5HA9JZ1YKRFK9' }],
+	['8453', { apiUrl: 'https://api.basescan.org/api', apiKey: 'HHH4UCPI43IYIJGP9MV16Q5REIRSDTAACA' }],
+	['84532', { apiUrl: 'https://api-sepolia.basescan.org/api', apiKey: 'HHH4UCPI43IYIJGP9MV16Q5REIRSDTAACA' }],
+	['42161', { apiUrl: 'https://api.arbiscan.io/api', apiKey: 'DDP8M43XJYSRBMB8RJGTJ2CW3M8K73CIY6' }],
+])
+
+export const getDefaultBlockExplorer = (chainId: bigint): BlockExplorer | undefined => defaultBlockExplorer.get(chainId.toString())
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 

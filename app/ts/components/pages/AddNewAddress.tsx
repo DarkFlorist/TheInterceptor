@@ -8,7 +8,7 @@ import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, DeclarativeNetRequestBlockMode, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
+import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
@@ -131,6 +131,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 	const disableDueToSource = incompleteAddressBookEntry.value.entrySource === 'DarkFloristMetadata' || incompleteAddressBookEntry.value.entrySource === 'Interceptor'
 	const logoUri = incompleteAddressBookEntry.value.addingAddress === false && 'logoUri' in incompleteAddressBookEntry ? incompleteAddressBookEntry.value.logoUri : undefined
 	const selectedChainId = useComputed(() => incompleteAddressBookEntry.value?.chainId || 1n)
+	const isBlockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -158,7 +159,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 					<CellElement element = { <>
 						<AbiInput abiInput = { incompleteAddressBookEntry.value.abi } setAbiInput = { setAbi } disabled = { false }/>
 						<div style = 'padding-left: 5px'/>
-						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.value.address) === undefined || !canFetchFromEtherScan } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
+						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.value.address) === undefined || !canFetchFromEtherScan || isBlockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
 					</> }/>
 				</span>
 			</div>
@@ -188,7 +189,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
+			if (parsed.method === 'popup_fetchAbiAndNameFromBlockExplorerReply') {
 				setCanFetchFromEtherScan(true)
 				if (param.modifyAddressWindowState.value === undefined || parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
 				if (!parsed.data.success) {
@@ -354,9 +355,10 @@ export function AddNewAddress(param: AddAddressParam) {
 		const address = stringToAddress(param.modifyAddressWindowState.value?.incompleteAddressBookEntry.address)
 		if (address === undefined || param.modifyAddressWindowState.value === undefined) return
 		setCanFetchFromEtherScan(false)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherscan', data: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromBlockExplorer', data: {
 			address,
 			windowStateId: param.modifyAddressWindowState.value.windowStateId,
+			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
 		} })
 	}
 
