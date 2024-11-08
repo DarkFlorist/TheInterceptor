@@ -21,6 +21,8 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
+import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -167,7 +169,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			/>
 		}
 		case 'Permit': {
-			if (visualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (visualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit1 request. The tokentype is not ERC20' }/>
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
@@ -184,7 +186,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			/>
 		}
 		case 'Permit2': {
-			if (visualizedPersonalSignRequest.token.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (visualizedPersonalSignRequest.token.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit2 request. The tokentype is not ERC20' }/>
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
@@ -392,7 +394,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 			? <></>
 			: <ViewSelector id = 'raw_message'>
 				<ViewSelector.List>
-					<ViewSelector.View title = 'View Parsed' value = 'parsed'> 
+					<ViewSelector.View title = 'View Parsed' value = 'parsed'>
 						<pre> { decodeMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
 					</ViewSelector.View>
 					<ViewSelector.View title = 'View Raw' value = 'raw'>
@@ -448,4 +450,11 @@ export function SignatureCard(params: SignatureCardParams) {
 
 export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
 	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
+}
+
+export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage }) {
+	if (pendingTransactionOrSignableMessage.type !== 'SignableMessage') return <></>
+	if (pendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <></>
+	if (pendingTransactionOrSignableMessage.visualizedPersonalSignRequest.isValidMessage !== false) return <></>
+	return <ErrorComponent warning = { true } text = { 'The requested message format is invalid and cannot be signed.' }/>
 }

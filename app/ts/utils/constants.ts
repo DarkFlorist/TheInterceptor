@@ -14,7 +14,6 @@ export const Multicall3ABI = [
 	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
 	'function getEthBalance(address) returns (uint256)',
 ]
-export const UniswapV3Multicall2 = 0x5ba1e12693dc8f9c48aad8770482f4739beed696n
 
 // common 4-byte function sigs
 // export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
