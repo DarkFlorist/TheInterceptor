@@ -45,7 +45,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				) : <></> }
 				{ props.onEditClicked ? (
 					<button type = 'button' value = { props.copyValue } onClick = { props.onEditClicked } tabIndex = { 1 }>
-						<span title="Edit">
+						<span title = 'Edit'>
 							<EditIcon />
 							<span>edit</span>
 						</span>
