@@ -351,6 +351,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 			<BigAddress
 				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				style = { { '--bg-color': '#6d6d6d' } }
 			/> :
 			<SmallAddress
 				textColor = { positiveNegativeColors.textColor }
