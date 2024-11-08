@@ -37,7 +37,7 @@ export const InlineCard = (props: InlineCardProps) => {
 					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } tabIndex = { 1 }>
 						<span role = 'img'><Icon /></span>
 						<span><data class = 'truncate text-legible' value = { props.label }>{ props.label }</data></span>
-						<span title="Copy">
+						<span title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
 						</span>
