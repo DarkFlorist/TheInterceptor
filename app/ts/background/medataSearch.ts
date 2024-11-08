@@ -154,18 +154,19 @@ export async function findEntryWithSymbolOrName(symbol: string | undefined, name
 	const lowerCasedSymbol = symbol?.toLowerCase()
 
 	const lowerCasedEqual = (nonLowerCased: string, lowerCased: string | undefined) => nonLowerCased.toLowerCase() === lowerCased
+	if (chainId === 'AllChains' || chainId === 1n) {
+		const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name, lowerCasedName))
+		if (tokenMetadataEntry !== undefined) return convertTokenDefinitionToAddressBookEntry(tokenMetadataEntry)
 
-	const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name, lowerCasedName))
-	if (tokenMetadataEntry !== undefined) return convertTokenDefinitionToAddressBookEntry(tokenMetadataEntry)
+		const erc721MetadataEntry = Array.from(erc721Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
+		if (erc721MetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(erc721MetadataEntry)
 
-	const erc721MetadataEntry = Array.from(erc721Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
-	if (erc721MetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(erc721MetadataEntry)
+		const erc1155MetadataEntry = Array.from(erc1155Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
+		if (erc1155MetadataEntry !== undefined) return convertErc1155DefinitionToAddressBookEntry(erc1155MetadataEntry)
 
-	const erc1155MetadataEntry = Array.from(erc1155Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
-	if (erc1155MetadataEntry !== undefined) return convertErc1155DefinitionToAddressBookEntry(erc1155MetadataEntry)
-
-	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
-	if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
+		const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
+		if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
+	}
 
 	const userEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
 	const userEntry = userEntries.find((entry) => ('symbol' in entry && lowerCasedEqual(entry.symbol, lowerCasedSymbol)) || lowerCasedEqual(entry.name, lowerCasedName))
