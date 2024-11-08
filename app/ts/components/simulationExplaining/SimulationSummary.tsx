@@ -23,6 +23,7 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
+import { Signal } from '@preact/signals'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -625,7 +626,7 @@ export function TransactionCreated({ created } : { created: EthereumTimestamp })
 	</p>
 }
 
-export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date, rpcConnectionStatus: RpcConnectionStatus }) {
+export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date, rpcConnectionStatus: Signal<RpcConnectionStatus> }) {
 	return <CopyToClipboard
 		content = { simulationBlockNumber.toString() }
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
@@ -634,7 +635,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
-				simulationBlockNumber === currentBlockNumber && (rpcConnectionStatus?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
+				simulationBlockNumber === currentBlockNumber && (rpcConnectionStatus.value?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
 					currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
 			} ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
@@ -648,7 +649,7 @@ type SimulationSummaryParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
-	rpcConnectionStatus: RpcConnectionStatus,
+	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {

@@ -7,7 +7,7 @@ import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries } from './storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
@@ -48,10 +48,11 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		symbol: rpcEntry?.currencyTicker ?? 'ETH',
 		decimals: 18n,
 		logoUri: rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry ? rpcEntry.currencyLogoUri : ETHEREUM_COIN_ICON,
+		chainId: rpcEntry?.chainId,
 	}
 
 	if (useLocalStorage) {
-		const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId || 1n)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
@@ -62,6 +63,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
 		type: 'contract',
 		entrySource: 'DarkFloristMetadata',
+		chainId: rpcEntry?.chainId
 	}
 
 	const tokenData = tokenMetadata.get(addrString)
@@ -71,6 +73,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
 		type: 'ERC20',
 		entrySource: 'DarkFloristMetadata',
+		chainId: rpcEntry?.chainId
 	}
 
 	const erc721TokenData = erc721Metadata.get(addrString)
@@ -80,6 +83,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: erc721TokenData.logoUri ? `${ getFullLogoUri(erc721TokenData.logoUri) }` : undefined,
 		type: 'ERC721',
 		entrySource: 'DarkFloristMetadata',
+		chainId: rpcEntry?.chainId
 	}
 
 	const erc1155TokenData = erc1155Metadata.get(addrString)
@@ -90,6 +94,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		type: 'ERC1155',
 		entrySource: 'DarkFloristMetadata',
 		decimals: undefined,
+		chainId: rpcEntry?.chainId
 	}
 
 	if (address === MOCK_ADDRESS) return {
@@ -98,12 +103,14 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: '../../img/contracts/rhino.png',
 		type: 'contact',
 		entrySource: 'Interceptor',
+		chainId: rpcEntry?.chainId
 	}
 	if (address === 0n) return {
 		address: address,
 		name: '0x0 Address',
 		type: 'contact',
 		entrySource: 'Interceptor',
+		chainId: rpcEntry?.chainId
 	}
 	return undefined
 }
@@ -113,6 +120,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
+	const chainId = ethereumClientService.getChainId()
 	const getEntry = (tokenIdentification: IdentifiedAddress) => {
 		switch (tokenIdentification.type) {
 			case 'ERC20': return {
@@ -122,6 +130,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 				decimals: tokenIdentification.decimals,
 				type: 'ERC20' as const,
 				entrySource: 'OnChain' as const,
+				chainId
 			}
 			case 'ERC1155': return {
 				name: ethers.getAddress(addrString),
@@ -130,6 +139,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 				type: 'ERC1155' as const,
 				decimals: undefined,
 				entrySource: 'OnChain' as const,
+				chainId
 			}
 			case 'ERC721': return {
 				name: tokenIdentification.name,
@@ -137,18 +147,21 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 				symbol: tokenIdentification.symbol,
 				type: 'ERC721' as const,
 				entrySource: 'OnChain' as const,
+				chainId
 			}
 			case 'contract': return {
 				address,
 				name: ethers.getAddress(addrString),
 				type: 'contract' as const,
 				entrySource: 'OnChain' as const,
+				chainId
 			}
 			case 'EOA': return {
 				address,
 				name: ethers.getAddress(addrString),
 				type: 'contact' as const,
 				entrySource: 'OnChain' as const,
+				chainId
 			}
 			default: assertNever(tokenIdentification)
 		}

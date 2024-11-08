@@ -29,7 +29,8 @@ import { InvalidMessage, SignatureCard, SignatureHeader, identifySignature, isPo
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
-import { useComputed } from '@preact/signals'
+import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
+import { RpcEntries } from '../../types/rpc.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
@@ -130,7 +131,7 @@ type TransactionCardParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	currentBlockNumber: bigint | undefined,
-	rpcConnectionStatus: RpcConnectionStatus,
+	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 	numberOfUnderTransactions: number,
 }
 
@@ -381,10 +382,11 @@ export function ConfirmTransaction() {
 	const [completeVisualizedSimulation, setCompleteVisualizedSimulation] = useState<CompleteVisualizedSimulation | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [modalState, setModalState] = useState<ModalState>({ page: 'noModal' })
-	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
+	const modalState = useSignal<ModalState>({ page: 'noModal' })
+	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 	const [unexpectedError, setUnexpectedError] = useState<undefined | UnexpectedErrorOccured>(undefined)
+	const rpcEntries = useSignal<RpcEntries>([])
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
 		setCompleteVisualizedSimulation(message.data.visualizedSimulatorState)
@@ -395,15 +397,22 @@ export function ConfirmTransaction() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
+
+			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_requestSettingsReply') {
+				rpcEntries.value = parsed.data.rpcEntries
+				return
+			}
 			if (parsed.method === 'popup_UnexpectedErrorOccured') return setUnexpectedError(parsed)
 			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (parsed.method === 'popup_new_block_arrived') {
-				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 				refreshSimulation()
 				return setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
 			}
 			if (parsed.method === 'popup_failed_to_get_block') {
-				return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+				return
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
 				return updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(parsed))
@@ -422,7 +431,10 @@ export function ConfirmTransaction() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' }) }, [])
+	useEffect(() => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+	}, [])
 
 	async function approve() {
 		if (currentPendingTransactionOrSignableMessage === undefined) throw new Error('dialogState is not set')
@@ -491,7 +503,7 @@ export function ConfirmTransaction() {
 	})
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setModalState({
+		modalState.value = {
 			page: 'modifyAddress',
 			state: {
 				windowStateId: addressString(entry.address),
@@ -505,18 +517,19 @@ export function ConfirmTransaction() {
 					useAsActiveAddress: false,
 					abi : undefined,
 					declarativeNetRequestBlockMode: undefined,
+					chainId: entry.chainId || 1n,
 					...entry,
 					address: checksummedAddress(entry.address),
 				}
 			}
-		})
+		}
 	}
 
 	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {
-		setModalState({
+		modalState.value = {
 			page: 'editEns',
 			state: { type, nameHash, name }
-		})
+		}
 	}
 
 	const getLoadingText = (current: PendingTransactionOrSignableMessage | undefined) => {
@@ -532,23 +545,29 @@ export function ConfirmTransaction() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_clearUnexpectedError' } )
 	}
 
+	const modifyAddressSignal: ReadonlySignal<ModifyAddressWindowState | undefined> = useComputed(() => modalState.value.page === 'modifyAddress' ? modalState.value.state : undefined)
 	if (currentPendingTransactionOrSignableMessage === undefined || (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <>
 			<main>
 				<Hint>
-					<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
-						{ modalState.page === 'editEns' ?
+					<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+						{ modalState.value.page === 'editEns' ?
 							<EditEnsLabelHash
-								close = { () => { setModalState({ page: 'noModal' }) } }
-								editEnsNamedHashWindowState = { modalState.state }
+								close = { () => { modalState.value = { page: 'noModal' } } }
+								editEnsNamedHashWindowState = { modalState.value.state }
 							/>
 						: <></> }
-						{ modalState.page === 'modifyAddress' ?
+						{ modifyAddressSignal.value !== undefined ?
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { undefined }
-								modifyAddressWindowState = { modalState.state }
-								close = { () => { setModalState({ page: 'noModal' }) } }
+								modifyAddressWindowState = { modifyAddressSignal }
+								close = { () => { modalState.value = { page: 'noModal' } } }
 								activeAddress = { currentPendingTransactionOrSignableMessage?.activeAddress }
+								rpcEntries = { rpcEntries }
+								modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
+									if (modalState.value.page !== 'modifyAddress') return
+									modalState.value = { page: modalState.value.page, state: newState }
+								} }
 							/>
 						: <></> }
 					</div>
@@ -569,19 +588,24 @@ export function ConfirmTransaction() {
 	return (
 		<main>
 			<Hint>
-				<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
-					{ modalState.page === 'editEns' ?
+				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+					{ modalState.value.page === 'editEns' ?
 						<EditEnsLabelHash
-							close = { () => { setModalState({ page: 'noModal' }) } }
-							editEnsNamedHashWindowState = { modalState.state }
+							close = { () => { modalState.value = { page: 'noModal' } } }
+							editEnsNamedHashWindowState = { modalState.value.state }
 						/>
 					: <></> }
-					{ modalState.page === 'modifyAddress' ?
+					{ modifyAddressSignal !== undefined ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { modalState.state }
-							close = { () => { setModalState({ page: 'noModal' }) } }
+							modifyAddressWindowState = { modifyAddressSignal }
+							close = { () => { modalState.value = { page: 'noModal' } } }
 							activeAddress = { currentPendingTransactionOrSignableMessage?.activeAddress }
+							rpcEntries = { rpcEntries }
+							modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
+								if (modalState.value.page !== 'modifyAddress') return
+								modalState.value = { page: modalState.value.page, state: newState }
+							} }
 						/>
 					: <></> }
 				</div>

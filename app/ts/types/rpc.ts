@@ -1,5 +1,20 @@
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from './wire-types.js'
+import { ChainIdWithUniversal } from './addressBookTypes.js'
+
+export type ChainEntry = funtypes.Static<typeof ChainEntry>
+export const ChainEntry = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		name: funtypes.String,
+		chainId: ChainIdWithUniversal,
+	}),
+)
+
+export type BlockExplorer = funtypes.Static<typeof BlockExplorer>
+export const BlockExplorer = funtypes.ReadonlyObject({
+	apiUrl: funtypes.String,
+	apiKey: funtypes.String,
+})
 
 export type RpcEntry = funtypes.Static<typeof RpcEntry>
 export const RpcEntry = funtypes.Intersect(
@@ -12,8 +27,9 @@ export const RpcEntry = funtypes.Intersect(
 		primary: funtypes.Boolean,
 		minimized: funtypes.Boolean,
 	}),
-	funtypes.ReadonlyPartial({	
+	funtypes.ReadonlyPartial({
 		currencyLogoUri: funtypes.String,
+		blockExplorer: BlockExplorer
 	})
 )
 

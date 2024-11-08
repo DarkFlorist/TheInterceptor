@@ -117,8 +117,8 @@ export function SettingsView() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
-			if (parsed.method !== 'popup_settingsOpenedReply') return
+			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method !== 'popup_requestSettingsReply') return
 			setMetamaskCompatibilityMode(parsed.data.metamaskCompatibilityMode)
 			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
 			return
@@ -127,7 +127,7 @@ export function SettingsView() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' }) }, [])
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
 	async function requestToUseTabsInsteadOfPopup(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { RenameAddressCallBack } from './types/user-interface-types.js'
 import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
@@ -11,7 +11,9 @@ import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.j
 import { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
-import { useSignal, useSignalEffect } from '@preact/signals'
+import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { ChainEntry, RpcEntries } from './types/rpc.js'
+import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: ModifyAddressWindowState }
@@ -165,37 +167,69 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 type ViewFilter = {
 	activeFilter: FilterKey
 	searchString: string
+	chain: ChainEntry | undefined
+}
+
+type AddressBookEntriesWithFilter = {
+	addressBookEntries: AddressBookEntries
+	activeFilter: FilterKey
 }
 
 export function AddressBook() {
-	const addressBookEntries = useSignal<AddressBookEntries>([])
-	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: ''})
-	const [modalState, setModalState] = useState<Modals>({ page: 'noModal' })
+	const addressBookEntriesWithFilter = useSignal<AddressBookEntriesWithFilter>({ addressBookEntries: [], activeFilter: 'My Active Addresses' })
+	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
+	const currentChain = useSignal<ChainEntry | undefined>(undefined)
+	const currentChainId = useComputed(() => currentChain.value?.chainId || 1n)
+	const rpcEntries = useSignal<RpcEntries>([])
+	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
+	const modalState = useSignal<Modals>({ page: 'noModal' })
+	const modifyAddressSignal = useComputed(() => modalState.value.page === 'addNewAddress' ? modalState.value.state : undefined)
+	function sendQuery() {
+		const filterValue = viewFilter.value
+		if (filterValue.chain === undefined) return
+		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
+			chainId: filterValue.chain.chainId,
+			filter: filterValue.activeFilter,
+			searchString: filterValue.searchString
+		} })
+	}
+	useSignalEffect(sendQuery)
 
 	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				sendQuery(viewFilter.value.activeFilter, viewFilter.value.searchString)
+				const chainId = currentChain.peek()?.chainId
+				if (chainId !== undefined) sendQuery()
+				return
+			}
+			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_requestSettingsReply') {
+				rpcEntries.value = parsed.data.rpcEntries
+				const prevCurrentNetwork = currentChain.peek()
+				if (prevCurrentNetwork === undefined || prevCurrentNetwork.chainId === parsed.data.currentRpcNetwork.chainId) {
+					currentChain.value = parsed.data.currentRpcNetwork
+					if (prevCurrentNetwork === undefined || viewFilter.value.chain === undefined) {
+						viewFilter.value = { ...viewFilter.value, chain: currentChain.value === undefined ? undefined : { name: currentChain.value.name, chainId: currentChain.value.chainId } }
+					}
+				}
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			addressBookEntries.value = reply.data.entries
+			if (currentChain.peek()?.chainId === reply.data.data.chainId) {
+				addressBookEntriesWithFilter.value = {
+					addressBookEntries: reply.data.entries,
+					activeFilter: reply.data.data.filter,
+				}
+			}
+			return
 		}
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
+		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
 	}, [])
-
-	function sendQuery(filter: FilterKey, searchString: string | undefined) {
-		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
-			filter: filter,
-			searchString: searchString,
-		} })
-	}
 
 	function changeFilter(activeFilter: FilterKey) {
 		viewFilter.value = { ...viewFilter.peek(), activeFilter }
@@ -205,10 +239,16 @@ export function AddressBook() {
 		viewFilter.value = { ...viewFilter.peek(), searchString }
 	}
 
-	function getNoResultsError() {
+	function changeCurrentChain(entry: ChainEntry) {
+		if (entry.chainId === currentChain.peek()?.chainId) return
+		currentChain.value = entry
+		viewFilter.value = { ...viewFilter.peek(), chain: { name: entry.name, chainId: entry.chainId } }
+	}
+
+	function GetNoResultsError() {
 		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
-			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter }`
-			: `No cute dinosaurs in ${ viewFilter.value.activeFilter }`
+			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
+			: `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
 		return <div style = { { width: 500, padding: '0 1rem', margin: '0 1rem' } }>{ errorMessage }</div>
 	}
 
@@ -225,7 +265,7 @@ export function AddressBook() {
 			}
 		}
 
-		return setModalState({ page: 'addNewAddress', state: {
+		modalState.value = { page: 'addNewAddress', state: {
 			windowStateId: 'AddressBookAdd',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -241,12 +281,14 @@ export function AddressBook() {
 				abi: undefined,
 				useAsActiveAddress: filter === 'My Active Addresses',
 				declarativeNetRequestBlockMode: undefined,
+				chainId: currentChain.peek()?.chainId || 1n,
 			}
-		} })
+		} }
+		return
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		return setModalState({ page: 'addNewAddress', state: {
+		modalState.value = { page: 'addNewAddress', state: {
 			windowStateId: 'AddressBookRename',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -260,8 +302,10 @@ export function AddressBook() {
 				...entry,
 				abi: 'abi' in entry ? entry.abi : undefined,
 				address: checksummedAddress(entry.address),
+				chainId: entry.chainId || 1n,
 			}
-		} })
+		} }
+		return
 	}
 
 	function removeAddressBookEntry(entry: AddressBookEntry) {
@@ -270,19 +314,18 @@ export function AddressBook() {
 			data: {
 				address: entry.address,
 				addressBookCategory: viewFilter.value.activeFilter,
+				chainId: entry.chainId || 1n,
 			}
 		})
 	}
-
-	useSignalEffect(() => {
-		sendQuery(viewFilter.value.activeFilter, viewFilter.value.searchString)
-	})
-
 	return (
 		<main>
 			<Hint>
 				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
 					<div style = { { padding: '1rem 0'} }>
+						<div style = 'padding: 10px;'>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { currentChainId } changeChain = { changeCurrentChain }/>
+						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
@@ -310,35 +353,39 @@ export function AddressBook() {
 							</button>
 						</div>
 						<div style = { { minHeight: 0 } }>
-							{ addressBookEntries.value.length
+							{ addressBookEntriesWithFilter.value.addressBookEntries.length
 								? <DynamicScroller
-									key = { [Object.values(viewFilter.value)].join('_') }
 									items = { addressBookEntries }
 									renderItem = { addressBookEntry => (
-										<AddressBookEntryCard { ...addressBookEntry } category = { viewFilter.value.activeFilter } removeEntry = { () => setModalState({ page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry }) } renameAddressCallBack = { renameAddressCallBack } />
+										<AddressBookEntryCard { ...addressBookEntry } category = { addressBookEntriesWithFilter.value.activeFilter } removeEntry = { () => modalState.value = { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry } } renameAddressCallBack = { renameAddressCallBack } />
 									) }
 								/>
-								: getNoResultsError()
+								: <GetNoResultsError/>
 							}
 						</div>
 					</div>
 				</div>
 
-				<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
-					{ modalState.page === 'addNewAddress' ?
+				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }` }>
+					{ modifyAddressSignal.value !== undefined ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { modalState.state }
-							close = { () => setModalState({ page: 'noModal' }) }
+							modifyAddressWindowState = { modifyAddressSignal }
+							close = { () => modalState.value = { page: 'noModal' } }
 							activeAddress = { undefined }
+							rpcEntries = { rpcEntries }
+							modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
+								if (modalState.value.page !== 'addNewAddress') return
+								modalState.value = { page: modalState.value.page, state: newState }
+							} }
 						/>
 						: <></> }
-					{ modalState.page === 'confirmaddressBookEntryToBeRemoved'  ?
+					{ modalState.value.page === 'confirmaddressBookEntryToBeRemoved' ?
 						<ConfirmaddressBookEntryToBeRemoved
 							category = { viewFilter.value.activeFilter }
-							addressBookEntry = { modalState.addressBookEntry }
+							addressBookEntry = { modalState.value.addressBookEntry }
 							removeEntry = { removeAddressBookEntry }
-							close = { () => setModalState({ page: 'noModal' }) }
+							close = { () => modalState.value = { page: 'noModal' } }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
 						: <></> }
