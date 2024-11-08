@@ -1,8 +1,8 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
+import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
 import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed, TransactionStack, PreSimulationTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
@@ -201,7 +201,7 @@ export const calculateRealizedEffectiveGasPrice = (transaction: EthereumUnsigned
 	return min(blocksBaseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
-export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSignedTransaction => {
+export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSendableSignedTransaction => {
 	const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
 	if (unsignedTransaction.type === 'legacy') {
 		const signatureParams = { r: 0n, s: 0n, v: 0n }
@@ -224,6 +224,11 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		const signed = mockSignTransaction(transaction.transaction)
 		return simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.preSimulationTransaction.signedTransaction).concat([signed])
 	}
+	const getMakeMeRichAddress = async () => {
+		if (simulationState === undefined) return undefined // we are not simulation, don't make anyone rich
+		if (typeof browser === 'undefined') return simulationState.addressToMakeRich // if we are not running in browser (tests)
+		return await getAddressToMakeRich()
+	}
 
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
@@ -231,7 +236,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
 	const signedTxs = getSignedTransactions()
-	const addressToMakeRich = typeof browser === 'undefined' ? simulationState?.addressToMakeRich : await getAddressToMakeRich()
+	const addressToMakeRich = await getMakeMeRichAddress()
 	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
 	const ethSimulateV1CallResult = await ethereumClientService.simulateTransactionsAndSignatures(signedTxs, signedMessages, parentBlock.number, requestAbortController, makeMeRich)
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
@@ -568,7 +573,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		stateRoot: parentBlock.stateRoot, // TODO: this is wrong
 		timestamp: new Date(parentBlock.timestamp.getTime() + 12 * 1000), // estimate that the next block is after 12 secs
 		size: parentBlock.size, // TODO: this is wrong
-		totalDifficulty: parentBlock.totalDifficulty + parentBlock.difficulty, // The difficulty increases about the same amount as previously
+		totalDifficulty: (parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
 		baseFeePerGas: getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
@@ -726,31 +731,36 @@ const getHashOfSimulatedBlock = (simulationState: SimulationState) => BigInt(sim
 export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
 export type MessageHashAndSignature = { signature: string, messageHash: string }
 
-export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
-	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
-	const signMessage = async () => {
-		switch (params.method) {
-			case 'eth_signTypedData': throw new Error('no support for eth_signTypedData')
-			case 'eth_signTypedData_v1':
-			case 'eth_signTypedData_v2':
-			case 'eth_signTypedData_v3':
-			case 'eth_signTypedData_v4': {
-				const typesWithoutDomain = Object.assign({}, params.params[1].types)
-				delete typesWithoutDomain.EIP712Domain
-				const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
-				return {
-					signature: await wallet.signTypedData(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message),
-					messageHash: TypedDataEncoder.hash(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message)
-				}
-			}
-			case 'personal_sign': return {
-				signature: await wallet.signMessage(stringToUint8Array(params.params[0])),
-				messageHash: hashMessage(params.params[0])
-			}
-			default: assertNever(params)
-		}
+export const isValidMessage = (params: SignMessageParams, signingAddress: EthereumAddress) => {
+	try {
+		simulatePersonalSign(params, signingAddress)
+		return true
+	} catch(e) {
+		return false
 	}
-	return await signMessage()
+}
+
+export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
+	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
+	switch (params.method) {
+		case 'eth_signTypedData': throw new Error('No support for eth_signTypedData')
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4': {
+			const typesWithoutDomain = Object.assign({}, params.params[1].types)
+			delete typesWithoutDomain.EIP712Domain
+			const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
+			const messageHash = ethers.TypedDataEncoder.hash(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message)
+			const signature = wallet.signMessageSync(messageHash)
+			return { signature, messageHash }
+		}
+		case 'personal_sign': return {
+			signature: wallet.signMessageSync(stringToUint8Array(params.params[0])),
+			messageHash: hashMessage(params.params[0])
+		}
+		default: assertNever(params)
+	}
 }
 
 type BalanceQuery = {
@@ -915,7 +925,7 @@ export const getTokenBalancesAfter = async (
 	requestAbortController: AbortController | undefined,
 	ethSimulateV1CallResults: EthSimulateV1CallResults,
 	blockNumber: bigint,
-	signedTxs: EthereumSignedTransaction[] = [],
+	signedTxs: EthereumSendableSignedTransaction[] = [],
 	signedMessages: readonly SignatureWithFakeSignerAddress[] = [],
 	extraAccountOverrides: StateOverrides = {},
 ) => {

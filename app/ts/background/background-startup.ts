@@ -13,7 +13,7 @@ import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { handleUnexpectedError, isNewBlockAbort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
@@ -171,6 +171,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, undefined, websiteTabConnections)
 		}
 	} catch(error) {
+		if (error instanceof Error && isNewBlockAbort(error)) return
 		await handleUnexpectedError(error)
 	}
 }

@@ -1,6 +1,6 @@
 
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
@@ -74,7 +74,7 @@ export const ProtectorResults = funtypes.ReadonlyObject( {
 
 export type PreSimulationTransaction = funtypes.Static<typeof PreSimulationTransaction>
 export const PreSimulationTransaction = funtypes.ReadonlyObject({
-	signedTransaction: EthereumSignedTransaction,
+	signedTransaction: EthereumSendableSignedTransaction,
 	website: Website,
 	created: EthereumTimestamp,
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
