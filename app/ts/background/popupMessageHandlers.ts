@@ -90,8 +90,8 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 
 export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => {
-		if (previousContacts.find((x) => x.address === entry.data.address)) {
-			return previousContacts.map((x) => x.address === entry.data.address ? entry.data : x)
+		if (previousContacts.find((previous) => previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n)) ) {
+			return previousContacts.map((previous) => previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n) ? entry.data : previous)
 		}
 		return previousContacts.concat([entry.data])
 	})
@@ -383,13 +383,15 @@ export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
 	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
 	const rpcEntriesPromise = getRpcList()
+	const settingsPromise = getSettings()
 
 	await sendPopupMessageToOpenWindows({
-		method: 'popup_settingsOpenedReply' as const,
+		method: 'popup_requestSettingsReply' as const,
 		data: {
 			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
 			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
 			rpcEntries: await rpcEntriesPromise,
+			currentRpcNetwork: (await settingsPromise).currentRpcNetwork
 		}
 	})
 }
@@ -465,7 +467,7 @@ export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClie
 
 const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumClientService, incompleteAddressBookEntry: IncompleteAddressBookEntry) => {
 	// check for duplicates
-	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name)
+	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name, incompleteAddressBookEntry.chainId)
 	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
 		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
 	}

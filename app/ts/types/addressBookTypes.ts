@@ -26,7 +26,8 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+	chainId: EthereumQuantity,
 }))
 
 export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
@@ -42,7 +43,8 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+	chainId: EthereumQuantity,
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -59,7 +61,8 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+	chainId: EthereumQuantity,
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
@@ -73,7 +76,8 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+	chainId: EthereumQuantity,
 }))
 
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
@@ -91,7 +95,8 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+	chainId: EthereumQuantity,
 }))
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
@@ -121,5 +126,6 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
 	useAsActiveAddress: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
-	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Undefined, DeclarativeNetRequestBlockMode)
+	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Undefined, DeclarativeNetRequestBlockMode),
+	chainId: EthereumQuantity,
 })

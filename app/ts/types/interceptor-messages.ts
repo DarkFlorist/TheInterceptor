@@ -271,6 +271,7 @@ export const RemoveAddressBookEntry = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		address: EthereumAddress,
 		addressBookCategory: AddressBookCategory,
+		chainId: EthereumQuantity,
 	})
 }).asReadonly()
 
@@ -410,6 +411,7 @@ export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookData
 export const GetAddressBookDataFilter = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		filter: AddressBookCategory,
+		chainId: EthereumQuantity,
 	}).asReadonly(),
 	funtypes.Partial({
 		startIndex: funtypes.Number,
@@ -715,10 +717,11 @@ export const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
 
 type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
 const SettingsOpenedReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_settingsOpenedReply'),
+	method: funtypes.Literal('popup_requestSettingsReply'),
 	data: funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		currentRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})
 }).asReadonly()
@@ -883,7 +886,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	SimulateGovernanceContractExecution,
 	SimulateGnosisSafeTransaction,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_settingsOpened') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),
 	ChangeSettings,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,
