@@ -756,7 +756,7 @@ svg.spinner > circle {
 .swap-grid {
 	grid-template-columns: auto auto;
 	display: grid;
-	place-content: center;
+	place-content: between;
 	column-gap: 0.25em;
 }
 
