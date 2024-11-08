@@ -90,7 +90,7 @@ type RenderinCompleteAddressBookParams = {
 	setUseAsActiveAddress: (useAsActiveAddress: boolean) => void
 	setDeclarativeNetRequestBlockMode: (declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) => void
 	setAbi: (abi: string) => void
-	fetchAbiAndNameFromEtherscan: () => Promise<void>
+	fetchAbiAndNameFromBlockExplorer: () => Promise<void>
 	setChain: (chainEntry: ChainEntry) => void
 }
 
@@ -121,7 +121,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode, setChain }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromBlockExplorer, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode, setChain }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
@@ -131,7 +131,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 	const disableDueToSource = incompleteAddressBookEntry.value.entrySource === 'DarkFloristMetadata' || incompleteAddressBookEntry.value.entrySource === 'Interceptor'
 	const logoUri = incompleteAddressBookEntry.value.addingAddress === false && 'logoUri' in incompleteAddressBookEntry ? incompleteAddressBookEntry.value.logoUri : undefined
 	const selectedChainId = useComputed(() => incompleteAddressBookEntry.value?.chainId || 1n)
-	const isBlockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
+	const blockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -159,7 +159,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 					<CellElement element = { <>
 						<AbiInput abiInput = { incompleteAddressBookEntry.value.abi } setAbiInput = { setAbi } disabled = { false }/>
 						<div style = 'padding-left: 5px'/>
-						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.value.address) === undefined || !canFetchFromEtherScan || isBlockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
+						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.value.address) === undefined || !canFetchFromEtherScan || !blockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromBlockExplorer() } }> Fetch from Block Explorer</button>
 					</> }/>
 				</span>
 			</div>
@@ -351,7 +351,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (previous === undefined) return
 		modifyState(modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { askForAddressAccess }) }))
 	}
-	async function fetchAbiAndNameFromEtherscan() {
+	async function fetchAbiAndNameFromBlockExplorer() {
 		const address = stringToAddress(param.modifyAddressWindowState.value?.incompleteAddressBookEntry.address)
 		if (address === undefined || param.modifyAddressWindowState.value === undefined) return
 		setCanFetchFromEtherScan(false)
@@ -419,7 +419,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setDeclarativeNetRequestBlockMode = { setDeclarativeNetRequestBlockMode }
 							setAskForAddressAccess = { setAskForAddressAccess }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
-							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }
+							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
 						/>
 					</div>
 				</div>

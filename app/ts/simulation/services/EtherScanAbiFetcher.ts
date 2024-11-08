@@ -29,9 +29,7 @@ export function getBlockExplorer(chainId: ChainIdWithUniversal, rpcEntries: RpcE
 	return getDefaultBlockExplorer(chainId)
 }
 
-export function isBlockExplorerAvailableForChain(chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) {
-	return getBlockExplorer(chainId, rpcEntries) !== undefined
-}
+export const isBlockExplorerAvailableForChain = (chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) => getBlockExplorer(chainId, rpcEntries) !== undefined
 
 export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress, chainId: ChainIdWithUniversal) {
 	const api = getBlockExplorer(chainId, await getRpcList())

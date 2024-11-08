@@ -522,7 +522,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 	})
 }
 
-export async function popupFetchAbiAndNameFromEtherscan(parsedRequest: FetchAbiAndNameFromBlockExplorer) {
+export async function popupfetchAbiAndNameFromBlockExplorer(parsedRequest: FetchAbiAndNameFromBlockExplorer) {
 	const etherscanReply = await fetchAbiFromBlockExplorer(parsedRequest.data.address, parsedRequest.data.chainId)
 	if (etherscanReply.success) {
 		return await sendPopupMessageToOpenWindows({
