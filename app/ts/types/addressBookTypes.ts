@@ -1,6 +1,9 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 
+export type ChainIdWithUniversal = funtypes.Static<typeof ChainIdWithUniversal>
+export const ChainIdWithUniversal = funtypes.Union(EthereumQuantity, funtypes.Literal('AllChains'))
+
 export type EntrySource = funtypes.Static<typeof EntrySource>
 export const EntrySource = funtypes.Union(
 	funtypes.Literal('DarkFloristMetadata'),
@@ -27,7 +30,7 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: EthereumQuantity,
+	chainId: ChainIdWithUniversal,
 }))
 
 export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
@@ -44,7 +47,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: EthereumQuantity,
+	chainId: ChainIdWithUniversal,
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -62,7 +65,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: EthereumQuantity,
+	chainId: ChainIdWithUniversal,
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
@@ -77,7 +80,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: EthereumQuantity,
+	chainId: ChainIdWithUniversal,
 }))
 
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
@@ -96,7 +99,7 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: EthereumQuantity,
+	chainId: ChainIdWithUniversal,
 }))
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
@@ -127,5 +130,5 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
 	useAsActiveAddress: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Undefined, DeclarativeNetRequestBlockMode),
-	chainId: EthereumQuantity,
+	chainId: ChainIdWithUniversal,
 })
