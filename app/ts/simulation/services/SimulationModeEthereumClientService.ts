@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
@@ -201,7 +201,7 @@ export const calculateRealizedEffectiveGasPrice = (transaction: EthereumUnsigned
 	return min(blocksBaseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
-export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSignedTransaction => {
+export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSendableSignedTransaction => {
 	const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
 	if (unsignedTransaction.type === 'legacy') {
 		const signatureParams = { r: 0n, s: 0n, v: 0n }
@@ -568,7 +568,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		stateRoot: parentBlock.stateRoot, // TODO: this is wrong
 		timestamp: new Date(parentBlock.timestamp.getTime() + 12 * 1000), // estimate that the next block is after 12 secs
 		size: parentBlock.size, // TODO: this is wrong
-		totalDifficulty: parentBlock.totalDifficulty + parentBlock.difficulty, // The difficulty increases about the same amount as previously
+		totalDifficulty: (parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
 		baseFeePerGas: getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
@@ -920,7 +920,7 @@ export const getTokenBalancesAfter = async (
 	requestAbortController: AbortController | undefined,
 	ethSimulateV1CallResults: EthSimulateV1CallResults,
 	blockNumber: bigint,
-	signedTxs: EthereumSignedTransaction[] = [],
+	signedTxs: EthereumSendableSignedTransaction[] = [],
 	signedMessages: readonly SignatureWithFakeSignerAddress[] = [],
 	extraAccountOverrides: StateOverrides = {},
 ) => {

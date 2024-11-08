@@ -334,6 +334,21 @@ const EthereumTransactionLegacySignature = funtypes.Intersect(
 	)
 )
 
+type EthereumSignedTransactionOptimismDeposit = funtypes.Static<typeof EthereumSignedTransactionOptimismDeposit>
+const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject({
+	type: funtypes.Literal('0x7e').withParser(LiteralConverterParserFactory('0x7e', 'optimismDeposit' as const)),
+	sourceHash: EthereumBytes32,
+	from: EthereumAddress,
+	to: funtypes.Union(EthereumAddress, funtypes.Null),
+	mint: EthereumQuantity,
+	value: EthereumQuantity,
+	gas: EthereumQuantity,
+	data: EthereumInput,
+	hash: EthereumBytes32,
+	gasPrice: EthereumQuantity,
+	nonce: EthereumQuantity,
+})
+
 type EthereumSignedTransactionLegacy = funtypes.Static<typeof EthereumSignedTransactionLegacy>
 const EthereumSignedTransactionLegacy = funtypes.Intersect(
 	EthereumUnsignedTransactionLegacy,
@@ -358,8 +373,11 @@ const EthereumSignedTransaction4844 = funtypes.Intersect(
 	EthereumTransaction2930And1559And4844Signature,
 )
 
+export type EthereumSendableSignedTransaction = funtypes.Static<typeof EthereumSendableSignedTransaction>
+export const EthereumSendableSignedTransaction = funtypes.Union(EthereumSignedTransactionLegacy, EthereumSignedTransaction2930, EthereumSignedTransaction1559, EthereumSignedTransaction4844)
+
 export type EthereumSignedTransaction = funtypes.Static<typeof EthereumSignedTransaction>
-export const EthereumSignedTransaction = funtypes.Union(EthereumSignedTransactionLegacy, EthereumSignedTransaction2930, EthereumSignedTransaction1559, EthereumSignedTransaction4844)
+export const EthereumSignedTransaction = funtypes.Union(EthereumSendableSignedTransaction, EthereumSignedTransactionOptimismDeposit)
 
 export type EthereumSignedTransactionWithBlockData = funtypes.Static<typeof EthereumSignedTransactionWithBlockData>
 export const EthereumSignedTransactionWithBlockData = funtypes.Intersect(
@@ -409,7 +427,6 @@ const EthereumBlockHeaderWithoutTransactions = funtypes.Intersect(
 			stateRoot: EthereumBytes32,
 			timestamp: EthereumTimestamp,
 			size: EthereumQuantity,
-			totalDifficulty: EthereumQuantity,
 			uncles: funtypes.ReadonlyArray(EthereumBytes32),
 			baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 			transactionsRoot: EthereumBytes32,
@@ -420,6 +437,7 @@ const EthereumBlockHeaderWithoutTransactions = funtypes.Intersect(
 			parentBeaconBlockRoot: EthereumBytes32,
 			withdrawalsRoot: EthereumBytes32, // missing from old block
 			withdrawals: funtypes.ReadonlyArray(EthereumWithdrawal), // missing from old block
+			totalDifficulty: EthereumQuantity, // missing from new blocks
 		})
 	)
 )
