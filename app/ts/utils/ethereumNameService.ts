@@ -1,4 +1,4 @@
-import { ethers, namehash } from 'ethers'
+import { ethers, isValidName, namehash } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { addressStringWithout0x, bytes32String, stringToUint8Array } from './bigint.js'
 import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_RESOLVER, CANNOT_SET_TTL, CANNOT_TRANSFER, CANNOT_UNWRAP, CAN_DO_EVERYTHING, CAN_EXTEND_EXPIRY, ENS_TOKEN_WRAPPER, IS_DOT_ETH, MOCK_ADDRESS, PARENT_CANNOT_CONTROL } from './constants.js'
@@ -43,6 +43,7 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	const nameString: string = wrappedEthereumNameService1155TokenInterface.decodeFunctionResult('names', stringToUint8Array(await ethereumMainnet.call(tx, 'latest', requestAbortController)))[0]
 	const name = encodeEthereumNameServiceString(nameString)
 	if (name === undefined) return undefined
+	if (!isValidName(name)) return name
 	if (tokenId !== BigInt(namehash(name))) {
 		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
 		return undefined
@@ -50,7 +51,7 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	return name
 }
 
-type EnsFuseName = 
+type EnsFuseName =
   | 'Cannot Unwrap Name'
   | 'Cannot Burn Fuses'
   | 'Cannot Transfer'

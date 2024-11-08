@@ -6,7 +6,7 @@ import { ComponentChildren, createRef } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { namehash } from 'ethers'
+import { isValidName, namehash } from 'ethers'
 import { XMarkIcon } from '../subcomponents/icons.js'
 
 type EditEnsNamedHashParams = {
@@ -24,13 +24,13 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 	const [inputDisabled, setInputDisabled] = useState<boolean>(false)
 	const [name, setName] = useState<string | undefined>(undefined)
 	const [errorString, setErrorString] = useState<string>('')
-	
+
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
 		</p>
 	}
-	
+
 	type TextInputParams = {
 		value: string | undefined
 		setInput: (input: string) => void
@@ -41,11 +41,12 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		setName(name)
 		if (param.editEnsNamedHashWindowState.type === 'labelHash') {
 			const hash = bytesToUnsigned(keccak_256(name))
-			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`) 
+			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`)
 			setErrorString('Correct label found!')
 		} else {
+			if (!isValidName(name)) return setErrorString('Not a valid ENS name.')
 			const hash = BigInt(namehash(name))
-			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The name corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`) 
+			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The name corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`)
 			setErrorString('Correct name found!')
 		}
 		setInputDisabled(true)
