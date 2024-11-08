@@ -254,12 +254,12 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 	})
 }
 
-export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
+export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry, chainId: bigint) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address)
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address && entry.chainId === chainId)
 		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: entries.concat(newEntry) })
+		return await browserStorageLocalSet({ userAddressBookEntriesV2: entries.concat({...newEntry, chainId}) })
 	})
 }
 
