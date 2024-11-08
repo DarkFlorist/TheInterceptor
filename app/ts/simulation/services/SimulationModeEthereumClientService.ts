@@ -225,8 +225,8 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		return simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.preSimulationTransaction.signedTransaction).concat([signed])
 	}
 	const getMakeMeRichAddress = async () => {
-		if (typeof browser === 'undefined') return simulationState?.addressToMakeRich // if we are not running in browser (tests)
 		if (simulationState === undefined) return undefined // we are not simulation, don't make anyone rich
+		if (typeof browser === 'undefined') return simulationState.addressToMakeRich // if we are not running in browser (tests)
 		return await getAddressToMakeRich()
 	}
 
