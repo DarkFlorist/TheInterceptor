@@ -7,7 +7,7 @@ import { Website } from '../../types/websiteAccessTypes.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
-import { ActionableTextProps, MultilineCard, TextAction } from './MultilineCard.js'
+import { ActionableIconProps, ActionableTextProps, MultilineCard } from './MultilineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -40,7 +40,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } }/>
+				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } } />
 			</AddressIconFrame>
 		)
 	}
@@ -58,31 +58,53 @@ type BigAddressParams = {
 }
 
 export function BigAddress(params: BigAddressParams) {
-	const addrString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
-	const title = params.addressBookEntry === undefined ? 'No address found' : params.addressBookEntry.name
-	const subTitle = addrString && title !== addrString ? addrString : '(Not in addressbook)'
+	const addressString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
+	const labelText = params.addressBookEntry?.name || addressString || 'No address found'
+	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
 
-	const renameAddressAction:TextAction = {
+	const renameAddressAction: ActionableTextProps['action'] = {
 		label: 'Edit',
 		icon: () => <EditIcon />,
 		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry)
 	}
 
 	const labelConfig: ActionableTextProps = {
-		displayText: title,
-		action: !params.noEditAddress && title !== addrString ? renameAddressAction : undefined
+		displayText: labelText,
+		...(labelText === addressString && params.noCopying === undefined) ? {
+			action: 'clipboard-copy',
+			copyValue: addressString,
+			copySuccessMessage: 'Address copied!'
+		} : {
+			action: params.noEditAddress === undefined ? renameAddressAction : undefined
+		}
 	}
 
 	const noteConfig: ActionableTextProps = {
-		displayText: subTitle,
-		action: addrString && subTitle !== addrString ? renameAddressAction : undefined
+		displayText: noteText,
+		...(noteText === addressString && !params.noCopying) ? {
+			action: 'clipboard-copy',
+			copyValue: addressString,
+			copySuccessMessage: 'Address copied!'
+		} : {
+			action: params.noEditAddress === undefined ? renameAddressAction : undefined
+		}
+	}
+
+	const iconConfig: ActionableIconProps = {
+		icon: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></>,
+		...(!params.noCopying && addressString) ? {
+			action: 'clipboard-copy',
+			copyValue: addressString
+		} : {
+			action: undefined
+		}
 	}
 
 	return (
 		<MultilineCard
 			label = { labelConfig }
 			note = { noteConfig }
-			icon = { { component: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></> } }
+			icon = { iconConfig }
 			style = { params.style }
 		/>
 	)
@@ -130,13 +152,13 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 		return <></>
 	}
 
-	return <InlineCard label={ addressBookEntry.name } copyValue = { addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
+	return <InlineCard label = { addressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
-export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
+export function WebsiteOriginText({ icon, websiteOrigin, title }: Website) {
 	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
-			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;'/> }
+			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;' /> }
 		</span>
 
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
