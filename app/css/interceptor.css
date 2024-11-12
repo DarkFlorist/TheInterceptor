@@ -1814,8 +1814,8 @@ header:has(form[role='search']) h1 {
 		> data {
 			grid-area: top / left / bottom / right;
 
-			.multiline-card:hover &:not(:has(+:disabled)), .multiline-card:focus-within &:not(:has(+:disabled)) {
-				opacity: 0;
+			&:not(:has(+:disabled)) {
+				.multiline-card:hover &, .multiline-card:focus-within & { visibility: hidden }
 			}
 		}
 
@@ -1825,12 +1825,12 @@ header:has(form[role='search']) h1 {
 			align-items: baseline;
 			grid-template-columns: minmax(0, 1fr) min-content;
 			background-color: var(--bg-color);
-			opacity: 0;
 			outline: none;
 			position: relative;
+			visibility: hidden;
 
-			.multiline-card:hover &, .multiline-card:focus-within & {
-				&:not(:disabled) { opacity: 1 }
+			&:not(:disabled) {
+				.multiline-card:hover &, .multiline-card:focus-within & { visibility: visible }
 			}
 
 			&:hover, &:focus {
