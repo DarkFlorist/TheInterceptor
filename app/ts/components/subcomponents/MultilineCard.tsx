@@ -30,7 +30,7 @@ export type ActionableIconProps = {
 	icon: () => JSX.Element
 	hintText?: string
 	action: 'clipboard-copy'
-	copyValue: string
+	copyValue?: string
 	copySuccessMessage?: string
 } | {
 	icon: () => JSX.Element

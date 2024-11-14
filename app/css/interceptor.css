@@ -1740,7 +1740,7 @@ header:has(form[role='search']) h1 {
 	--bg-color: transparent;
 	--button-color: #77738ccc;
 	--image-size: 2.25rem;
-	--min-text-width: 3ch;
+	--min-text-width: 0;
 	--pad-x: 0;
 	--pad-y: 0;
 	--gap-x: 0.5rem;
@@ -1757,7 +1757,7 @@ header:has(form[role='search']) h1 {
 	padding-inline: var(--pad-x);
 	background-color: var(--bg-color);
 	border-radius: var(--edge-roundness);
-	min-width: calc(var(--min-text-width) + var(--image-size) + (var(-pad-x) * 2) + var(--gap-x));
+	min-width: calc(var(--min-text-width) + var(--image-size) + (var(--pad-x) * 2) + var(--gap-x));
 
 	data {
 		line-height: 1em;

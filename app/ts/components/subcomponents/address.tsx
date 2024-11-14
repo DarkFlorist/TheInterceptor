@@ -68,46 +68,30 @@ export function BigAddress(params: BigAddressParams) {
 		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry)
 	}
 
+	const setupCopyAction = {
+		action: 'clipboard-copy' as const,
+		copyValue: addressString,
+		copySuccessMessage: 'Address copied!'
+	}
+
+	const setupEditAction = { action: !params.noEditAddress ? renameAddressAction : undefined }
+
 	const labelConfig: ActionableTextProps = {
 		displayText: labelText,
-		...(labelText === addressString && params.noCopying === undefined) ? {
-			action: 'clipboard-copy',
-			copyValue: addressString,
-			copySuccessMessage: 'Address copied!'
-		} : {
-			action: params.noEditAddress === undefined ? renameAddressAction : undefined
-		}
+		...(labelText === addressString && !params.noCopying) ? setupCopyAction : setupEditAction
 	}
 
 	const noteConfig: ActionableTextProps = {
 		displayText: noteText,
-		...(noteText === addressString && !params.noCopying) ? {
-			action: 'clipboard-copy',
-			copyValue: addressString,
-			copySuccessMessage: 'Address copied!'
-		} : {
-			action: params.noEditAddress === undefined ? renameAddressAction : undefined
-		}
+		...(noteText === addressString && !params.noCopying) ? setupCopyAction : setupEditAction
 	}
 
 	const iconConfig: ActionableIconProps = {
 		icon: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></>,
-		...(!params.noCopying && addressString) ? {
-			action: 'clipboard-copy',
-			copyValue: addressString
-		} : {
-			action: undefined
-		}
+		...(!params.noCopying && addressString) ? setupCopyAction : { action: undefined }
 	}
 
-	return (
-		<MultilineCard
-			label = { labelConfig }
-			note = { noteConfig }
-			icon = { iconConfig }
-			style = { params.style }
-		/>
-	)
+	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } />
 }
 
 type ActiveAddressParams = {
