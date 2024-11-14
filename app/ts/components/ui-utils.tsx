@@ -9,6 +9,7 @@ import { checksummedAddress } from '../utils/bigint.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { ChainEntry, RpcEntries } from '../types/rpc.js'
+import { CHAIN_NAMES } from '../utils/chainNames.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -177,11 +178,11 @@ export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBo
 }
 
 export const rpcEntriesToChainEntriesWithAllChainsEntry = (rpcEntries: RpcEntries): readonly ChainEntry[] => {
-	const chainsMap = new Map<bigint | string, ChainEntry>()
-	for (const { chainId, name } of rpcEntries) {
-		if (chainsMap.has(chainId)) continue
-		chainsMap.set(chainId, { name, chainId })
-	}
+	const entries = rpcEntries.map(({ chainId }): [string, ChainEntry] => {
+		const chainIdString = String(Number(chainId))
+		return [chainIdString, { chainId, name: CHAIN_NAMES.get(chainIdString) || chainIdString }]
+	})
+	const chainsMap = new Map<string, ChainEntry>(entries)
 	chainsMap.set('AllChains', { name: 'All Chains', chainId: 'AllChains' })
 	return [...chainsMap.values()]
 }
