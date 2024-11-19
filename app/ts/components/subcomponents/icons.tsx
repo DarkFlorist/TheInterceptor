@@ -54,3 +54,5 @@ export const CopyIcon = () => <svg width = '1em' height = '1em' viewBox = '0 0 2
 export const EditIcon = () => <svg width = '1em' height = '1em' viewBox = '0 0 24 24' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'><path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M10 3H7v2H4a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h3v2h3zM7 8v8H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z' fill = 'currentColor' /><path d = 'M19 16h-7v3h8a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-8v3h7a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1' fill = 'currentColor' /></svg>
 
 export const CheckIcon = () => <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M22.08 6.04 8.478 20.163l-6.558-6.81 2.16-2.081 4.398 4.566L19.92 3.959z" fill="currentColor"/></svg>
+
+export const ChevronIcon = () => <svg role='img' aria-label='chevron-icon' width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="m2 5.333 6 6 6-6" stroke="currentColor" strokeWidth={1.5} /></svg>

@@ -18,7 +18,7 @@ import { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
-import { XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
@@ -426,7 +426,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 					{ tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
 				<div class = 'card-header-icon'>
-					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+					<span class = 'icon'><ChevronIcon /></span>
 				</div>
 			</header>
 			{ !showLogs
@@ -461,7 +461,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 					{ nonTokenLogs.length === 0 ? 'No non-token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(nonTokenLogs.length)) } non-token event${ nonTokenLogs.length > 1 ? 's' : '' }` }
 				</p>
 				<div class = 'card-header-icon'>
-					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+					<span class = 'icon'><ChevronIcon /></span>
 				</div>
 			</header>
 			{ !showLogs
@@ -508,7 +508,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 				{ numberOfChanges === 0 ? 'No changes in accounts' : `${  upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(numberOfChanges)) } account${ numberOfChanges > 1 ? 's' : '' } changing` }
 			</p>
 			<div class = 'card-header-icon'>
-				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary
@@ -696,7 +696,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							{ notOwnAddresses.length === 0 ? 'No changes in other accounts' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(notOwnAddresses.length)) } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
 						</p>
 						<div class = 'card-header-icon'>
-							<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+							<span class = 'icon'><ChevronIcon /></span>
 						</div>
 					</header>
 					{ !showOtherAccountChanges
@@ -753,7 +753,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 				Raw transaction information
 			</p>
 			<div class = 'card-header-icon'>
-				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary
