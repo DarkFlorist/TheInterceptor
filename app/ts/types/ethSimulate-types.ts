@@ -13,12 +13,12 @@ const AccountOverride = funtypes.ReadonlyPartial({
 
 type BlockOverride = funtypes.Static<typeof BlockOverride>
 const BlockOverride = funtypes.Partial({
-    number: EthereumQuantity,
-    prevRandao: EthereumQuantity,
-    time: EthereumTimestamp,
-    gasLimit: EthereumQuantitySmall,
-    feeRecipient: EthereumAddress,
-    baseFeePerGas: EthereumQuantity,
+	number: EthereumQuantity,
+	prevRandao: EthereumQuantity,
+	time: EthereumTimestamp,
+	gasLimit: EthereumQuantitySmall,
+	feeRecipient: EthereumAddress,
+	baseFeePerGas: EthereumQuantity,
 }).asReadonly()
 
 type BlockCall = funtypes.Static<typeof BlockCall>
@@ -95,13 +95,13 @@ const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
 
 type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
 const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
-	  status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
-	  returnData: EthereumData,
-	  gasUsed: EthereumQuantitySmall,
-	  error: funtypes.ReadonlyObject({
-		  code: funtypes.Number,
-		  message: funtypes.String
-	  })
+	status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
+	returnData: EthereumData,
+	gasUsed: EthereumQuantitySmall,
+	error: funtypes.ReadonlyObject({
+		code: funtypes.Number,
+		message: funtypes.String
+	})
 })
 
 type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
@@ -120,13 +120,13 @@ export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1Call
 
 type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
 const EthSimulateV1BlockResult = funtypes.ReadonlyObject({
-    number: EthereumQuantity,
-    hash: EthereumBytes32,
-    timestamp: EthereumQuantity,
-    gasLimit: EthereumQuantitySmall,
-    gasUsed: EthereumQuantitySmall,
-    baseFeePerGas: EthereumQuantity,
-    calls: EthSimulateV1CallResults,
+	number: EthereumQuantity,
+	hash: EthereumBytes32,
+	timestamp: EthereumQuantity,
+	gasLimit: EthereumQuantitySmall,
+	gasUsed: EthereumQuantitySmall,
+	baseFeePerGas: EthereumQuantity,
+	calls: EthSimulateV1CallResults,
 })
 
 export type EthSimulateV1Result = funtypes.Static<typeof EthSimulateV1Result>

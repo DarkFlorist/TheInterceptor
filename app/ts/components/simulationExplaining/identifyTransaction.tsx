@@ -259,6 +259,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 		const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
 
+		// eslint-disable-next-line no-inner-declarations
 		function removeDuplicates(entries: AddressBookEntry[]): AddressBookEntry[] {
 			const unique: Map<bigint, AddressBookEntry> = new Map()
 			for (const entry of entries) {

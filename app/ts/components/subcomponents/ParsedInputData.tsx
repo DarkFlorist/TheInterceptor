@@ -31,7 +31,7 @@ export function TransactionInput({ parsedInputData, input, to, addressMetaData, 
 					<div style = 'display: flex;'>
 						{ to !== undefined ? <>
 							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;</p>
-								<SmallAddress addressBookEntry = { to} renameAddressCallBack = { renameAddressCallBack } />
+							<SmallAddress addressBookEntry = { to} renameAddressCallBack = { renameAddressCallBack } />
 						</> : <>
 							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
 						</> }

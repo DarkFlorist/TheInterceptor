@@ -44,7 +44,7 @@ type NameInputParams = {
 
 function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current?.focus() }, [])
+	useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input title is-5 is-spaced'
 		type = 'text'
@@ -103,7 +103,7 @@ type AbiInputParams = {
 
 function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current?.focus() }, [])
+	useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input is-spaced'
 		type = 'text'
@@ -232,7 +232,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 			entrySource: 'User' as const,
 		}
-		
+
 		switch(incompleteAddressBookEntry.type) {
 			case 'ERC721': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined

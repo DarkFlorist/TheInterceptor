@@ -1,7 +1,7 @@
-import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from "ethers"
-import { EthereumAddress } from "../types/wire-types.js"
-import { addressString } from "./bigint.js"
-import { networkPriceSources } from "../background/settings.js"
+import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from 'ethers'
+import { EthereumAddress } from '../types/wire-types.js'
+import { addressString } from './bigint.js'
+import { networkPriceSources } from '../background/settings.js'
 
 interface UniswapPools {
 	token0IsQuote: boolean

@@ -88,9 +88,9 @@ export const getSimulatedStackOld = (simulationState: SimulationState | undefine
 			... ( transaction.ethSimulateV1CallResult.status === 'failure' ? {
 				statusCode: transaction.ethSimulateV1CallResult.status,
 				error: transaction.ethSimulateV1CallResult.error.message } : {
-					statusCode: transaction.ethSimulateV1CallResult.status,
-					events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
-				}
+				statusCode: transaction.ethSimulateV1CallResult.status,
+				events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
+			}
 			),
 			returnValue: transaction.ethSimulateV1CallResult.returnData,
 			maxPriorityFeePerGas,
@@ -908,7 +908,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 			}
 			case 'TransferBatch': {
 				for (const parsedLog of handleERC1155TransferBatch(log)) {
-					if (parsedLog.type !== "ERC1155") continue
+					if (parsedLog.type !== 'ERC1155') continue
 					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
 					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
 				}

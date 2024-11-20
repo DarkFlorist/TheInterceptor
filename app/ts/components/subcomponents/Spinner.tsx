@@ -5,7 +5,7 @@ export function Spinner({ height, color } : { height: string, color?: string }) 
 			class = 'spinner'
 			viewBox = '0 0 100 100'
 			xmlns = 'http://www.w3.org/2000/svg'>
-				<circle cx = '50' cy = '50' r = '45' style = { { ...color !== undefined ? { stroke: color } : {}  } }/>
+			<circle cx = '50' cy = '50' r = '45' style = { { ...color !== undefined ? { stroke: color } : {}  } }/>
 		</svg>
 	)
 }

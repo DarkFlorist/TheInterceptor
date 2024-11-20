@@ -227,9 +227,9 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 					style = { style }
 					fontSize = 'normal'
 				/>
-			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
+				: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
 					<p class = 'ellipsis' style = { `color: ${ style.color }` }><b>ALL</b></p>
-				:
+					:
 					'amount' in params.tokenVisualizerResult ?
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
@@ -237,7 +237,7 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 							style = { style }
 							fontSize = 'normal'
 						/>
-					: <></>
+						: <></>
 				} </>
 			}
 		</div>
@@ -283,7 +283,7 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
-	:
+		:
 		tokenEvents.map((tokenEvent) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenEvent }
@@ -347,7 +347,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } = [` }</p>
 						<StringElement text = { params.nonTokenLog.logInformation.fuses.join(', ') } />
-						<p style = { textStyle } class = 'paragraph'> { `]` }</p>
+						<p style = { textStyle } class = 'paragraph'> { ']' }</p>
 					</>
 				}
 				return <>

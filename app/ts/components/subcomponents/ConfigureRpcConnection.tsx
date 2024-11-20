@@ -66,13 +66,14 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 				params: [ethSimulateV1ParamObject, 'latest']
 			})
 
+			// eslint-disable-next-line no-inner-declarations
 			function resultContainsLog(result: ReturnType<typeof EthSimulateV1Result.safeParse>) {
 				return Boolean(result.success && result.value && result.value[0] && result.value[0].calls[0] && result.value[0].calls[0].status === 'success' && result.value[0].calls[0].logs.length === 1)
 			}
 
 			const parsedResult = EthSimulateV1Result.safeParse(serializedResult)
 
-			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
+			if (!resultContainsLog(parsedResult)) throw new Error('The RPC server does not have a support for eth_simulateV1 (it doesn\'t return ETH logs). The Interceptor requires this feature to function.')
 		} catch (error) {
 			let errorMessage = 'RPC eth_simulateV1 validation error'
 			console.warn(errorMessage, error)
@@ -175,7 +176,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 					if (defaultValues !== undefined) onRemove?.(defaultValues.httpsRpc)
 					return
 
-				case 'save':
+				case 'save': {
 					const formData = new FormData(event.target)
 					const parsedData = parseRpcFormData(formData)
 
@@ -185,6 +186,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 						event.target.reset()
 						return
 					}
+				}
 			}
 		}
 	}

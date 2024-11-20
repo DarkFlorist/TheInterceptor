@@ -19,7 +19,7 @@ async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientSe
 		offerer: await identifyAddress(ethereumClientService, requestAbortController, openSeaOrder.offerer),
 		offer: await Promise.all(openSeaOrder.offer.map( async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token) }))),
 		consideration: await Promise.all(openSeaOrder.consideration.map(async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token), recipient: await identifyAddress(ethereumClientService, requestAbortController, offer.recipient) })))
-	 }
+	}
 }
 
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {

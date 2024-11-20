@@ -2,12 +2,12 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import { ComponentChild } from 'preact'
 import { useRef } from 'preact/hooks'
 
-interface DynamicScrollerProps<T extends {}> {
+interface DynamicScrollerProps<T extends object> {
 	items: Signal<Readonly<T[]>>
 	renderItem: (item: T) => ComponentChild
 }
 
-export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScrollerProps<T>) => {
+export const DynamicScroller = <T extends object>({ items, renderItem, }: DynamicScrollerProps<T>) => {
 	const startIndex = useSignal(0)
 	const maxItems = useSignal(0)
 	const itemHeight = useSignal(0)

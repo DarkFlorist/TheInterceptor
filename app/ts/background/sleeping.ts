@@ -1,10 +1,10 @@
-import { EthereumClientService } from "../simulation/services/EthereumClientService.js"
-import { TIME_BETWEEN_BLOCKS } from "../utils/constants.js"
-import { modifyObject } from "../utils/typescript.js"
-import { sendPopupMessageToOpenWindows } from "./backgroundUtils.js"
-import { updateExtensionBadge } from "./iconHandler.js"
-import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp, setRpcConnectionStatus } from "./storageVariables.js"
-import { isConfirmTransactionFocused } from "./windows/confirmTransaction.js"
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
+import { modifyObject } from '../utils/typescript.js'
+import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { updateExtensionBadge } from './iconHandler.js'
+import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp, setRpcConnectionStatus } from './storageVariables.js'
+import { isConfirmTransactionFocused } from './windows/confirmTransaction.js'
 
 const updateConnectionStatusRetry = async (ethereumClientService: EthereumClientService) => {
 	const status = await getRpcConnectionStatus()

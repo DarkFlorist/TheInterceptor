@@ -77,13 +77,13 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress, refreshActiveAddress }: { renameAddressCallBack: (entry: AddressBookEntry) => void, accessRequest: PendingAccessRequest, changeActiveAddress: () => void, refreshActiveAddress: () => Promise<void> }) {
 	return <>
 		{ accessRequest.requestAccessToAddress === undefined ?
-		<div style = 'margin: 10px'>
-			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
-				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
-				<br/>
-				would like to connect to The Interceptor
-			</p>
-		</div> :
+			<div style = 'margin: 10px'>
+				<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
+					<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
+					<br/>
+					would like to connect to The Interceptor
+				</p>
+			</div> :
 			<>
 				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
 					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>

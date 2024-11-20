@@ -1,8 +1,8 @@
-import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from "../types/interceptor-messages.js"
-import { WebsiteSocket, checkAndPrintRuntimeLastError } from "../utils/requests.js"
-import { WebsiteTabConnections } from "../types/user-interface-types.js"
-import { websiteSocketToString } from "./backgroundUtils.js"
-import { serialize } from "../types/wire-types.js"
+import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
+import { WebsiteSocket, checkAndPrintRuntimeLastError } from '../utils/requests.js'
+import { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { websiteSocketToString } from './backgroundUtils.js'
+import { serialize } from '../types/wire-types.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {

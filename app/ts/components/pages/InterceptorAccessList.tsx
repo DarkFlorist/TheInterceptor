@@ -227,7 +227,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 								</div>
 							</div>
 						</li>
-					: <></> }
+						: <></> }
 					{ editableAccessList === undefined ? <></> : editableAccessList.map((access, accessListIndex) => (
 						<li>
 							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :

@@ -13,7 +13,7 @@ export const StringElement = ({ text }: { text: string }) => <p class = 'paragra
 
 const JsxArray = ( { array }: { array: JSX.Element[] }) => <>
 	<StringElement text = '['/>
-		{ insertBetweenElements(array, <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+	{ insertBetweenElements(array, <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
 	<StringElement text = ']'/>
 </>
 

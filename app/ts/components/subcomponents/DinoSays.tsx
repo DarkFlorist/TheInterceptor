@@ -1,4 +1,4 @@
-import { XMarkIcon } from "./icons.js"
+import { XMarkIcon } from './icons.js'
 
 export function DinoSays( { text } : { text: string }) {
 	return <div class = 'media'>
@@ -19,7 +19,7 @@ export function DinoSaysNotification( { text, close } : { text: string, close?: 
 				<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
 					<XMarkIcon />
 				</button>
-			: <></> }
+				: <></> }
 		</div>
 	</div>
 }
