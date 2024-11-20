@@ -98,7 +98,6 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
-		currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
 		if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode === 'failed') return 'Failing transaction'
 		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
@@ -364,12 +363,12 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 		<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
 			{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
 				<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
-				</> : <>
-					{ currentPendingTransactionOrSignableMessage.simulationMode
-						? `${ identified.simulationAction }!`
-						: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
-					}
-				</>
+			</> : <>
+				{ currentPendingTransactionOrSignableMessage.simulationMode
+					? `${ identified.simulationAction }!`
+					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
+				}
+			</>
 			}
 		</button>
 	</div>
@@ -542,7 +541,7 @@ export function ConfirmTransaction() {
 								close = { () => { setModalState({ page: 'noModal' }) } }
 								editEnsNamedHashWindowState = { modalState.state }
 							/>
-						: <></> }
+							: <></> }
 						{ modalState.page === 'modifyAddress' ?
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { undefined }
@@ -550,7 +549,7 @@ export function ConfirmTransaction() {
 								close = { () => { setModalState({ page: 'noModal' }) } }
 								activeAddress = { currentPendingTransactionOrSignableMessage?.activeAddress }
 							/>
-						: <></> }
+							: <></> }
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
@@ -575,7 +574,7 @@ export function ConfirmTransaction() {
 							close = { () => { setModalState({ page: 'noModal' }) } }
 							editEnsNamedHashWindowState = { modalState.state }
 						/>
-					: <></> }
+						: <></> }
 					{ modalState.page === 'modifyAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
@@ -583,7 +582,7 @@ export function ConfirmTransaction() {
 							close = { () => { setModalState({ page: 'noModal' }) } }
 							activeAddress = { currentPendingTransactionOrSignableMessage?.activeAddress }
 						/>
-					: <></> }
+						: <></> }
 				</div>
 				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 					<div style = 'position: sticky; top: 0; z-index:1'>
@@ -597,8 +596,8 @@ export function ConfirmTransaction() {
 							{ currentPendingTransactionOrSignableMessage.originalRequestParameters.method === 'eth_sendRawTransaction' && currentPendingTransactionOrSignableMessage.type === 'Transaction'
 								? <DinoSaysNotification
 									text = { `This transaction is signed already. No extra signing required to forward it to ${ currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.simulationResults.statusCode === 'failed' ?
-									'network' :
-									currentPendingTransactionOrSignableMessage.simulationResults.data.simulationState.rpcNetwork.name }.` }
+										'network' :
+										currentPendingTransactionOrSignableMessage.simulationResults.data.simulationState.rpcNetwork.name }.` }
 									close = { () => setPendingTransactionAddedNotification(false)}
 								/>
 								: <></>
@@ -623,15 +622,15 @@ export function ConfirmTransaction() {
 									rpcConnectionStatus = { rpcConnectionStatus }
 									numberOfUnderTransactions = { underTransactions.length }
 								/>
-							: <>
-								<SignatureCard
-									visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
-									renameAddressCallBack = { renameAddressCallBack }
-									removeTransactionOrSignedMessage = { undefined }
-									numberOfUnderTransactions = { underTransactions.length }
-									editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-								/>
-							</> }
+								: <>
+									<SignatureCard
+										visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
+										renameAddressCallBack = { renameAddressCallBack }
+										removeTransactionOrSignedMessage = { undefined }
+										numberOfUnderTransactions = { underTransactions.length }
+										editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+									/>
+								</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
 							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>

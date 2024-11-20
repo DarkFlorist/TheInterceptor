@@ -97,12 +97,12 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 				>
 					Simulate execution on a passing vote
 				</button>
-			: <> <MissingAbi
+				: <> <MissingAbi
 					errorMessage = { missingAbiText }
 					addressBookEntry = { simTx.transaction.to }
 					renameAddressCallBack = { renameAddressCallBack }
 				/>
-			</> }
+				</> }
 		</div>
 	}
 	if (simulateExecutionReply.data.success === false) {

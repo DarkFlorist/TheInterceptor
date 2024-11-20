@@ -38,7 +38,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</div>
 				<div class = 'card-header-title'>
 					<p className = 'paragraph'>
-					Change Active Address
+						Change Active Address
 					</p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>

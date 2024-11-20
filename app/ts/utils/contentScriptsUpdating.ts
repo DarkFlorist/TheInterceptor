@@ -1,5 +1,5 @@
-import { getInterceptorDisabledSites, getSettings } from "../background/settings.js"
-import { checkAndThrowRuntimeLastError } from "./requests.js"
+import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
+import { checkAndThrowRuntimeLastError } from './requests.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]

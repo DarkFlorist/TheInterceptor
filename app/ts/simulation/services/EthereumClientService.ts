@@ -21,14 +21,14 @@ export class EthereumClientService {
 	private requestHandler
 	private rpcEntry
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>, rpcEntry: RpcEntry) {
+	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
 		this.rpcEntry = rpcEntry
 
 		if (this.rpcEntry.httpsRpc !== requestHandler.rpcUrl) throw new Error('The URL values for rpcEntry and requestHander must match')
-    }
+	}
 
 	public readonly getRpcEntry = () => this.rpcEntry
 
@@ -194,7 +194,7 @@ export class EthereumClientService {
 				validation: false,
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
-		] } as const
+			] } as const
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
 		/*
 		console.log('ethSimulateV1')

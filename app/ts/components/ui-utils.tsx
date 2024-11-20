@@ -11,25 +11,25 @@ import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfEx
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
-        throw new Error('Node expected')
-    }
+		throw new Error('Node expected')
+	}
 }
 
 export function clickOutsideAlerter(ref: RefObject<HTMLDivElement>, callback: () => void) {
 	useEffect(() => {
 		function handleClickOutside({ target }: MouseEvent) {
-			assertIsNode(target);
+			assertIsNode(target)
 			if (ref.current && !ref.current.contains(target)) {
 				callback()
 			}
 		}
 
-		document.addEventListener('mousedown', handleClickOutside);
+		document.addEventListener('mousedown', handleClickOutside)
 
 		return () => {
-			document.removeEventListener('mousedown', handleClickOutside);
+			document.removeEventListener('mousedown', handleClickOutside)
 		}
-	}, [ref]);
+	}, [ref])
 }
 
 export function getIssueWithAddressString(address: string): string | undefined {
@@ -37,18 +37,18 @@ export function getIssueWithAddressString(address: string): string | undefined {
 	if (address.length > 2 && address.substring(0, 2) !== '0x') { return 'Address does not contain 0x prefix.' }
 	if (address.length < 42) return 'Address is too short.'
 
-    if (address.match(/^(0x)?[0-9a-fA-F]{40}$/)) {
-        const checkSummedAddress = ethers.getAddress(address.toLowerCase());
+	if (address.match(/^(0x)?[0-9a-fA-F]{40}$/)) {
+		const checkSummedAddress = ethers.getAddress(address.toLowerCase())
 
-        // It is a checksummed address with a bad checksum
-        if (checkSummedAddress !== address && address.toLowerCase() !== address) {
-            return `Bad address checksum, did you mean ${ checkSummedAddress } ?`;
-        }
-    } else {
-        return 'Address contains invalid characters.'
-    }
+		// It is a checksummed address with a bad checksum
+		if (checkSummedAddress !== address && address.toLowerCase() !== address) {
+			return `Bad address checksum, did you mean ${ checkSummedAddress } ?`
+		}
+	} else {
+		return 'Address contains invalid characters.'
+	}
 
-    return undefined
+	return undefined
 }
 
 export function upperCaseFirstCharacter(text: string) {
@@ -64,7 +64,7 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 	function convertTens(num: number) {
 		if (num < 10) return ones[num]
 		if (num >= 10 && num < 20) return teens[num - 10]
-		return tens[Math.floor(num / 10)] + " " + ones[num % 10]
+		return tens[Math.floor(num / 10)] + ' ' + ones[num % 10]
 	}
 
 	if (num === 0) return 'zero'

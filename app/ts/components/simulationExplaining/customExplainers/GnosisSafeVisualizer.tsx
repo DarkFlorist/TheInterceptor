@@ -102,7 +102,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
 	if (activeAddress === undefined) return <></>
-		return <>
+	return <>
 		<div class = 'notification transaction-importance-box'>
 			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>	
 				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>

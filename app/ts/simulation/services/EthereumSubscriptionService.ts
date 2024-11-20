@@ -76,9 +76,9 @@ export async function createEthereumSubscription(params: EthSubscribeParams, sub
 			})
 			return subscriptionOrFilterId
 		}
-		case 'logs': throw `Dapp requested for 'logs' subscription but it's not implemented` //TODO: implement
-		case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented` //TODO: implement
-		case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented` //TODO: implement
+		case 'logs': throw 'Dapp requested for \'logs\' subscription but it\'s not implemented' //TODO: implement
+		case 'newPendingTransactions': throw 'Dapp requested for \'newPendingTransactions\' subscription but it\'s not implemented' //TODO: implement
+		case 'syncing': throw 'Dapp requested for \'syncing\' subscription but it\'s not implemented' //TODO: implement
 	}
 }
 

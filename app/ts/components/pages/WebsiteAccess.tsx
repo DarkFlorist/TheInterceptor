@@ -40,7 +40,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		retrieveWebsiteAccess({ query: searchQuery.value })
 	}
 
-  const listenForPopupMessages = () => {
+	const listenForPopupMessages = () => {
 		const popupMessageListener = async (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
@@ -177,8 +177,8 @@ const WebsiteSettingsList = () => {
 		const selectedWebsiteOrigin = formData.get(URL_HASH_KEY)?.toString()
 
 		if (!selectedWebsiteOrigin) {
-				window.location.href = window.location.pathname
-				return
+			window.location.href = window.location.pathname
+			return
 		}
 
 		window.location.href = `${ window.location.pathname }${ URL_HASH_PREFIX }${ selectedWebsiteOrigin }`
@@ -276,7 +276,7 @@ const WebsiteSettingsDetail = () => {
 			<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
 				<header style = { { paddingBlock: '1rem' } }>
 					<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
-          <DetailsHeader websiteAccess = { selectedWebsiteAccess.value } />
+					<DetailsHeader websiteAccess = { selectedWebsiteAccess.value } />
 				</header>
 				<article>
 					<NoAccessPrompt websiteAccess = { selectedWebsiteAccess } />
@@ -289,16 +289,16 @@ const WebsiteSettingsDetail = () => {
 }
 
 const DetailsHeader = ({ websiteAccess }: { websiteAccess: WebsiteAccess | undefined }) => {
-  if (!websiteAccess) return <></>
-  return (
-    <div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
-      <figure><img width = '34' height = '34' src = { websiteAccess.website.icon } /></figure>
-      <div style = { { flex: 1 } }>
-        <h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.website.title }</h2>
-        <p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.website.websiteOrigin }</span></p>
-      </div>
-    </div>
-  )
+	if (!websiteAccess) return <></>
+	return (
+		<div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
+			<figure><img width = '34' height = '34' src = { websiteAccess.website.icon } /></figure>
+			<div style = { { flex: 1 } }>
+				<h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.website.title }</h2>
+				<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.website.websiteOrigin }</span></p>
+			</div>
+		</div>
+	)
 }
 
 const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
@@ -314,21 +314,21 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 
 	return (
 		<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
-				<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
-				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { websiteAccess.value.website } /> for access while this preference is set.</p>
-				<Modal>
-					<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
-					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
-						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
-						<p></p>
-						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { websiteAccess.value.website } /> and will prompt you for permission the next time you try to connect.</p>
-						<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
-							<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
-							<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
-						</div>
-					</Modal.Dialog>
-				</Modal>
-			</div>
+			<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
+			<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { websiteAccess.value.website } /> for access while this preference is set.</p>
+			<Modal>
+				<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
+				<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
+					<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
+					<p></p>
+					<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { websiteAccess.value.website } /> and will prompt you for permission the next time you try to connect.</p>
+					<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
+						<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+						<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
+					</div>
+				</Modal.Dialog>
+			</Modal>
+		</div>
 	)
 }
 
@@ -340,7 +340,7 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcc
 	return (
 		<Collapsible summary = 'Address Access' defaultOpen>
 			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button type = 'button' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
-				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
+			<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
 				{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { access.website } addressAccess = { addressAcces } />) }
 			</div>
 		</Collapsible>
@@ -439,7 +439,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 				</div>
 				<aside>
 					{ requestBlockMode.value === 'block-all' ? (
-						<button type='button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
+						<button type = 'button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
@@ -487,7 +487,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 				</div>
 				<aside>
 					{ isInterceptorDisabled.value ? (
-						<button type='button' class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span></button>
+						<button type = 'button' class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span></button>
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>
