@@ -8,6 +8,7 @@ import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
+import { ChainEntry, RpcEntries } from '../types/rpc.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -175,3 +176,6 @@ export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBo
 	}
 }
 
+export const rpcEntriesToChainEntriesWithAllChainsEntry = (rpcEntries: RpcEntries): readonly ChainEntry[] => {
+	return [ ...rpcEntries.map((rpcEntry) => ({ name: rpcEntry.name, chainId: rpcEntry.chainId })), { name: 'All Chains', chainId: 'AllChains' as const }]
+}
