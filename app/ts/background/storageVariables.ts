@@ -245,6 +245,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 	}
 }
 export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? []
+export const getUserAddressBookEntriesForChainId = async (chainId: bigint) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n))
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
@@ -257,7 +258,7 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address)
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address && (entry.chainId || 1n) === (newEntry.chainId || 1n) )
 		if (existingEntry !== undefined) return
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: entries.concat(newEntry) })
 	})

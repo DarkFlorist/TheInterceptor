@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
@@ -27,6 +27,7 @@ import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
+import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -40,29 +41,29 @@ function ProviderErrors({ tabState } : ProviderErrorsParam) {
 }
 
 type NetworkErrorParams = {
-	rpcConnectionStatus: RpcConnectionStatus
+	rpcConnectionStatus: Signal<RpcConnectionStatus>
 }
 
 export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
-	if (rpcConnectionStatus === undefined) return <></>
-	const nextConnectionAttempt = new Date(rpcConnectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
-	if (rpcConnectionStatus.retrying === false) return <></>
+	if (rpcConnectionStatus.value === undefined) return <></>
+	const nextConnectionAttempt = new Date(rpcConnectionStatus.value.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
+	if (rpcConnectionStatus.value.retrying === false) return <></>
 	return <>
-		{ rpcConnectionStatus.isConnected === false ?
+		{ rpcConnectionStatus.value.isConnected === false ?
 			<ErrorComponent warning = { true } text = {
-				<>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
+				<>Unable to connect to { rpcConnectionStatus.value.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
 			}/>
 		: <></> }
-		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) && rpcConnectionStatus.latestBlock !== null ?
+		{ rpcConnectionStatus.value.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus.value) && rpcConnectionStatus.value.latestBlock !== null ?
 			<ErrorComponent warning = { true } text = {
-				<>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
+				<>The connected RPC ({ rpcConnectionStatus.value.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.value.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.value.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
 			}/>
 		: <></> }
 	</>
 }
 
 export function App() {
-	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
+	const appPage = useSignal<Page>({ page: 'Home' })
 	const [makeMeRich, setMakeMeRich] = useState(false)
 	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>(defaultActiveAddresses)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
@@ -71,15 +72,15 @@ export function App() {
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<AddressBookEntries>([])
-	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>(undefined)
+	const rpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
-	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
+	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
-	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
+	const rpcEntries = useSignal<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
@@ -112,7 +113,7 @@ export function App() {
 	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
 		if(!isSignerConnected()) {
-			setSelectedNetwork(entry)
+			rpcNetwork.value = entry
 		}
 	}
 
@@ -145,7 +146,7 @@ export function App() {
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
 			setIsSettingsLoaded((isSettingsLoaded) => {
-				setRpcEntries(data.rpcEntries)
+				rpcEntries.value = data.rpcEntries
 				setActiveAddresses(data.activeAddresses)
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
@@ -170,14 +171,14 @@ export function App() {
 				setTabState(data.tabState)
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
-				setRpcConnectionStatus(data.rpcConnectionStatus)
+				rpcConnectionStatus.value = data.rpcConnectionStatus
 				return true
 			})
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
-			if (updateQuery) setAppPage(settings.openedPage)
+			if (updateQuery) appPage.value = settings.openedPage
 			setSimulationMode(settings.simulationMode)
-			setSelectedNetwork(settings.currentRpcNetwork)
+			rpcNetwork.value = settings.currentRpcNetwork
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setWebsiteAccess(settings.websiteAccess)
@@ -197,9 +198,13 @@ export function App() {
 				case 'popup_websiteIconChanged': return setTabConnection(parsed.data)
 				case 'popup_new_block_arrived': {
 					await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
-					return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+					return
 				}
-				case 'popup_failed_to_get_block': return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+				case 'popup_failed_to_get_block': {
+					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+					return
+				}
 				case 'popup_update_rpc_list': return
 				case 'popup_simulation_state_changed': return await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 			}
@@ -213,12 +218,12 @@ export function App() {
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' }) }, [])
 
 	function setAndSaveAppPage(page: Page) {
-		setAppPage(page)
+		appPage.value = page
 		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: page })
 	}
 
 	async function addressPaste(address: string) {
-		if (appPage.page === 'AddNewAddress') return
+		if (appPage.value.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
 		if (!ethers.isAddress(trimmed)) return
@@ -247,6 +252,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
+				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
 			}
 		} })
 	}
@@ -264,6 +270,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: false,
 				declarativeNetRequestBlockMode: undefined,
+				chainId: entry.chainId || 1n,
 				...entry,
 				address: checksummedAddress(entry.address),
 			}
@@ -287,6 +294,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
+				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
 			}
 		} })
 	}
@@ -311,12 +319,13 @@ export function App() {
 		setUnexpectedError(undefined)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
+	const modifyAddressSignal: ReadonlySignal<ModifyAddressWindowState | undefined> = useComputed(() => appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ? appPage.value.state : undefined)
 
 	return (
 		<main>
 			<Hint>
-				<PasteCatcher enabled = { appPage.page === 'Home' } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
+				<PasteCatcher enabled = { appPage.value.page === 'Home' } onPaste = { addressPaste } />
+				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
 					{ !isSettingsLoaded ? <></> : <>
 						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 							<div class = 'navbar-brand'>
@@ -360,14 +369,14 @@ export function App() {
 							interceptorDisabled = { interceptorDisabled }
 						/>
 
-						<div class = { `modal ${ appPage.page !== 'Home' ? 'is-active' : ''}` }>
-							{ appPage.page === 'EditEnsNamedHash' ?
+						<div class = { `modal ${ appPage.value.page !== 'Home' ? 'is-active' : ''}` }>
+							{ appPage.value.page === 'EditEnsNamedHash' ?
 								<EditEnsLabelHash
 									close = { () => setAndSaveAppPage({ page: 'Home' }) }
-									editEnsNamedHashWindowState = { appPage.state }
+									editEnsNamedHashWindowState = { appPage.value.state }
 								/>
 							: <></> }
-							{ appPage.page === 'AccessList' ?
+							{ appPage.value.page === 'AccessList' ?
 								<InterceptorAccessList
 									setAndSaveAppPage = { setAndSaveAppPage }
 									setWebsiteAccess = { setWebsiteAccess }
@@ -376,7 +385,7 @@ export function App() {
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 							: <></> }
-							{ appPage.page === 'ChangeActiveAddress' ?
+							{ appPage.value.page === 'ChangeActiveAddress' ?
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									signerAccounts = { tabState?.signerAccounts ?? [] }
@@ -387,12 +396,17 @@ export function App() {
 									addNewAddress = { addNewAddress }
 								/>
 							: <></> }
-							{ appPage.page === 'AddNewAddress' || appPage.page === 'ModifyAddress' ?
+							{ modifyAddressSignal.value !== undefined ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									modifyAddressWindowState = { appPage.state }
+									modifyAddressWindowState = { modifyAddressSignal }
 									close = { () => setAndSaveAppPage({ page: 'Home' }) }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
+									rpcEntries = { rpcEntries }
+									modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
+										if (appPage.value.page !== 'AddNewAddress' && appPage.value.page !== 'ModifyAddress') return
+										appPage.value = { page: appPage.value.page, state: newState }
+									} }
 								/>
 							: <></> }
 						</div>
