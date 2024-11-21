@@ -62,7 +62,7 @@ export function BigAddress(params: BigAddressParams) {
 	const title = params.addressBookEntry === undefined ? 'No address found' : params.addressBookEntry.name
 	const subTitle = addrString && title !== addrString ? addrString : '(Not in addressbook)'
 
-	const renameAddressAction:TextAction = {
+	const renameAddressAction: TextAction = {
 		label: 'Edit',
 		icon: () => <EditIcon />,
 		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry)
