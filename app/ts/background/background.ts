@@ -708,7 +708,7 @@ export async function popupMessageHandler(
 			case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionView(simulator.ethereum)
 			case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
 			case 'popup_refreshHomeData': return await refreshHomeData(simulator)
-			case 'popup_settingsOpened': return await settingsOpened()
+			case 'popup_requestSettings': return await settingsOpened()
 			case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 			case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 			case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
