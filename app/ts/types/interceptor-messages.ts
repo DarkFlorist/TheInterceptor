@@ -776,18 +776,19 @@ const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	})
 })
 
-export type FetchAbiAndNameFromEtherscan = funtypes.Static<typeof FetchAbiAndNameFromEtherscan>
-export const FetchAbiAndNameFromEtherscan = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscan'),
+export type FetchAbiAndNameFromBlockExplorer = funtypes.Static<typeof FetchAbiAndNameFromBlockExplorer>
+export const FetchAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_fetchAbiAndNameFromBlockExplorer'),
 	data: funtypes.ReadonlyObject({
 		windowStateId: funtypes.String,
-		address: EthereumAddress
+		address: EthereumAddress,
+		chainId: ChainIdWithUniversal,
 	})
 }).asReadonly()
 
-type FetchAbiAndNameFromEtherscanReply = funtypes.Static<typeof FetchAbiAndNameFromEtherscanReply>
-const FetchAbiAndNameFromEtherscanReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscanReply'),
+type FetchAbiAndNameFromBlockExplorerReply = funtypes.Static<typeof FetchAbiAndNameFromBlockExplorerReply>
+const FetchAbiAndNameFromBlockExplorerReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_fetchAbiAndNameFromBlockExplorerReply'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
 			windowStateId: funtypes.String,
@@ -890,7 +891,7 @@ export const PopupMessage = funtypes.Union(
 	ChangeSettings,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,
-	FetchAbiAndNameFromEtherscan,
+	FetchAbiAndNameFromBlockExplorer,
 	OpenWebPage,
 	DisableInterceptor,
 	SetEnsNameForHash,
@@ -923,7 +924,7 @@ export const MessageToPopup = funtypes.Union(
 	PartiallyParsedSimulateExecutionReply,
 	SettingsOpenedReply,
 	PopupAddOrModifyAddressWindowStateInfomation,
-	FetchAbiAndNameFromEtherscanReply,
+	FetchAbiAndNameFromBlockExplorerReply,
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,

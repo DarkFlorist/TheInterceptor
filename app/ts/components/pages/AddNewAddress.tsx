@@ -8,7 +8,7 @@ import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, DeclarativeNetRequestBlockMode, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
+import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
@@ -90,7 +90,7 @@ type RenderinCompleteAddressBookParams = {
 	setUseAsActiveAddress: (useAsActiveAddress: boolean) => void
 	setDeclarativeNetRequestBlockMode: (declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) => void
 	setAbi: (abi: string) => void
-	fetchAbiAndNameFromEtherscan: () => Promise<void>
+	fetchAbiAndNameFromBlockExplorer: () => Promise<void>
 	setChain: (chainEntry: ChainEntry) => void
 }
 
@@ -121,7 +121,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode, setChain }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromBlockExplorer, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode, setChain }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
@@ -131,6 +131,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 	const disableDueToSource = incompleteAddressBookEntry.value.entrySource === 'DarkFloristMetadata' || incompleteAddressBookEntry.value.entrySource === 'Interceptor'
 	const logoUri = incompleteAddressBookEntry.value.addingAddress === false && 'logoUri' in incompleteAddressBookEntry ? incompleteAddressBookEntry.value.logoUri : undefined
 	const selectedChainId = useComputed(() => incompleteAddressBookEntry.value?.chainId || 1n)
+	const blockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -158,7 +159,7 @@ function RenderIncompleteAddressBookEntry({ rpcEntries, incompleteAddressBookEnt
 					<CellElement element = { <>
 						<AbiInput abiInput = { incompleteAddressBookEntry.value.abi } setAbiInput = { setAbi } disabled = { false }/>
 						<div style = 'padding-left: 5px'/>
-						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.value.address) === undefined || !canFetchFromEtherScan } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
+						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.value.address) === undefined || !canFetchFromEtherScan || !blockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromBlockExplorer() } }> Fetch from Block Explorer</button>
 					</> }/>
 				</span>
 			</div>
@@ -188,7 +189,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
+			if (parsed.method === 'popup_fetchAbiAndNameFromBlockExplorerReply') {
 				setCanFetchFromEtherScan(true)
 				if (param.modifyAddressWindowState.value === undefined || parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
 				if (!parsed.data.success) {
@@ -350,13 +351,14 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (previous === undefined) return
 		modifyState(modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { askForAddressAccess }) }))
 	}
-	async function fetchAbiAndNameFromEtherscan() {
+	async function fetchAbiAndNameFromBlockExplorer() {
 		const address = stringToAddress(param.modifyAddressWindowState.value?.incompleteAddressBookEntry.address)
 		if (address === undefined || param.modifyAddressWindowState.value === undefined) return
 		setCanFetchFromEtherScan(false)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherscan', data: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromBlockExplorer', data: {
 			address,
 			windowStateId: param.modifyAddressWindowState.value.windowStateId,
+			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
 		} })
 	}
 
@@ -417,7 +419,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setDeclarativeNetRequestBlockMode = { setDeclarativeNetRequestBlockMode }
 							setAskForAddressAccess = { setAskForAddressAccess }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
-							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }
+							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
 						/>
 					</div>
 				</div>
