@@ -11,7 +11,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../t
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
-import { namehash } from 'ethers'
+import { isValidName, namehash } from 'ethers'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
@@ -292,6 +292,7 @@ export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNa
 
 const ensNodeHashesSemaphore = new Semaphore(1)
 export async function addEnsNodeHash(name: string) {
+	if (!isValidName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsNodeHashes() || []
