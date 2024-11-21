@@ -65,7 +65,7 @@ async function migrateAddressInfoAndContactsFromV1ToV2() {
 async function migrateAddressInfoAndContactsFromV2ToV3() {
 	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntriesV2'])).userAddressBookEntriesV2
 	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry): AddressBookEntry => {
-		if ('chainId' in entry && entry.chainId !== undefined) return entry
+		if (entry.chainId !== undefined) return entry
 		if (entry.useAsActiveAddress === true && entry.type === 'contact') return { ...entry, chainId: 'AllChains' }
 		return { ...entry, chainId: 1n }
 	}
