@@ -136,7 +136,7 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 		return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
 	})
 	return {
-		input: transaction.input, 
+		input: transaction.input,
 		type: 'Parsed' as const,
 		name: parsed.name,
 		args: valuesWithTypes,
@@ -208,7 +208,7 @@ export class Simulator {
 	public ethereum: EthereumClientService
 	public tokenPriceService: TokenPriceService
 	private newBlockAttemptCallback: NewBlockCallBack
-	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>, tokenPriceCacheAge = 60000) {
+	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, tokenPriceCacheAge = 60000) {
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.ethereum = new EthereumClientService(
 			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
