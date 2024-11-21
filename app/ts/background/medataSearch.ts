@@ -1,10 +1,10 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { tokenMetadata, contractMetadata, ContractDefinition, TokenDefinition, Erc721Definition, erc721Metadata, erc1155Metadata, Erc1155Definition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
-import { getUserAddressBookEntriesForChainId } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -72,7 +72,7 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 	return [...addTo, ...uniqueItems]
 }
 
-async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, chainId: bigint): Promise<AddressBookEntries> {
+async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, chainId: ChainIdWithUniversal): Promise<AddressBookEntries> {
 	const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim() : undefined
 	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
@@ -149,7 +149,7 @@ export async function getMetadataForAddressBookData(filter: GetAddressBookDataFi
 	}
 }
 
-export async function findEntryWithSymbolOrName(symbol: string | undefined, name: string | undefined, chainId: bigint): Promise<AddressBookEntry | undefined> {
+export async function findEntryWithSymbolOrName(symbol: string | undefined, name: string | undefined, chainId: ChainIdWithUniversal): Promise<AddressBookEntry | undefined> {
 	const lowerCasedName = name?.toLowerCase()
 	const lowerCasedSymbol = symbol?.toLowerCase()
 
@@ -167,7 +167,7 @@ export async function findEntryWithSymbolOrName(symbol: string | undefined, name
 	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
 	if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
 
-	const userEntries = await getUserAddressBookEntriesForChainId(chainId)
+	const userEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
 	const userEntry = userEntries.find((entry) => ('symbol' in entry && lowerCasedEqual(entry.symbol, lowerCasedSymbol)) || lowerCasedEqual(entry.name, lowerCasedName))
 	if (userEntry !== undefined) return userEntry
 	return undefined

@@ -18,6 +18,7 @@ export const defaultActiveAddresses: AddressBookEntries = [
 		address: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 		askForAddressAccess: false,
 		useAsActiveAddress: true,
+		chainId: 'AllChains',
 	},
 	{
 		type: 'contact' as const,
@@ -26,6 +27,7 @@ export const defaultActiveAddresses: AddressBookEntries = [
 		address: MOCK_PRIVATE_KEYS_ADDRESS,
 		askForAddressAccess: false,
 		useAsActiveAddress: true,
+		chainId: 'AllChains',
 	}
 ]
 
