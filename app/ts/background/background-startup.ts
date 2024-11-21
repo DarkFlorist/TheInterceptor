@@ -194,7 +194,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 	}
 }
 
-async function onErrorBlockCallback(ethereumClientService: EthereumClientService) {
+async function onErrorBlockCallback(ethereumClientService: EthereumClientService, error: unknown) {
 	try {
 		const rpcConnectionStatus = {
 			isConnected: false,
@@ -206,6 +206,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
 		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+		await handleUnexpectedError(error)
 	} catch(error) {
 		await handleUnexpectedError(error)
 	}
