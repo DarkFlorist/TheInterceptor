@@ -4,9 +4,10 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
+import { EditIcon } from './icons.js'
+import { ActionableTextProps, MultilineCard, TextAction } from './MultilineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -53,73 +54,38 @@ type BigAddressParams = {
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly style?: JSX.CSSProperties
 }
 
 export function BigAddress(params: BigAddressParams) {
 	const addrString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
 	const title = params.addressBookEntry === undefined ? 'No address found' : params.addressBookEntry.name
-	const subTitle = title !== addrString ? addrString : ''
+	const subTitle = addrString && title !== addrString ? addrString : '(Not in addressbook)'
 
-	return <div class = 'media'>
-		<div class = 'media-left'>
-			{ !params.noCopying && addrString !== undefined ?
-				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<AddressIcon
-						address = { params.addressBookEntry?.address }
-						logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-						isBig = { true }
-						backgroundColor = { 'var(--text-color)' }
-					/>
-				</CopyToClipboard>
-				:
-				<AddressIcon
-					address = { params.addressBookEntry?.address }
-					logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-					isBig = { true }
-					backgroundColor = { 'var(--text-color)' }
-				/>
-			}
-		</div>
+	const renameAddressAction: TextAction = {
+		label: 'Edit',
+		icon: () => <EditIcon />,
+		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry)
+	}
 
-		<div class = { `media-content ${ params.noEditAddress ? 'noselect nopointer' : '' }` } style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
-			<span className = 'big-address-container' data-value = { title }>
-				<span class = 'address-text-holder'>
-					{ !params.noCopying && addrString !== undefined ?
-						<CopyToClipboard content = { addrString } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-							<AddressTitle content = { title } useLegibleFont = { title === addrString } />
-						</CopyToClipboard>
-						: <AddressTitle content = { title } useLegibleFont = { title === addrString } />
-					}
-					<button
-						type = 'button'
-						className = 'button is-primary is-small rename-address-button'
-						onClick = { () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry) }
-						disabled = { params.addressBookEntry === undefined }
-					>
-						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
-						</span>
-					</button>
-				</span>
-			</span>
-			{ !params.noCopying && addrString !== undefined && subTitle !== undefined ?
-				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<AddressSubTitle content = { subTitle } />
-				</CopyToClipboard>
-				: <AddressSubTitle content = { subTitle } />
+	const labelConfig: ActionableTextProps = {
+		displayText: title,
+		action: !params.noEditAddress && title !== addrString ? renameAddressAction : undefined
+	}
 
-			}
-		</div>
-	</div>
-}
+	const noteConfig: ActionableTextProps = {
+		displayText: subTitle,
+		action: addrString && subTitle !== addrString ? renameAddressAction : undefined
+	}
 
-const AddressTitle = ({ content, useLegibleFont  }: { content: string, useLegibleFont?: boolean }) => {
-	return <p class = {  `title is-5 is-spaced address-text noselect nopointer${ useLegibleFont ? ' text-legible' : '' }` }>{ content }</p>
-}
-
-const AddressSubTitle = ({ content }: { content?: string }) => {
-	if (!content) return <></>
-	return <p class = 'subtitle is-7 noselect nopointer text-legible' style = { { textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }>{ content }</p>
+	return (
+		<MultilineCard
+			label = { labelConfig }
+			note = { noteConfig }
+			icon = { { component: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></> } }
+			style = { params.style }
+		/>
+	)
 }
 
 type ActiveAddressParams = {
