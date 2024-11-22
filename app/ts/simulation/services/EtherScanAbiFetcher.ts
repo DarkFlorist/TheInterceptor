@@ -2,8 +2,10 @@ import { ethers } from 'ethers'
 import { EtherscanGetABIResult, EtherscanSourceCodeResult } from '../../types/etherscan.js'
 import { EthereumAddress } from '../../types/wire-types.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
-
-const EtherscanABIKey = 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8'
+import { getDefaultBlockExplorer } from '../../background/settings.js'
+import { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
+import { RpcEntries } from '../../types/rpc.js'
+import { getRpcList } from '../../background/storageVariables.js'
 
 async function fetchJson(url: string): Promise<{ success: true, result: unknown } | { success: false, error: string }> {
 	const response = await fetch(url)
@@ -20,20 +22,32 @@ export function isValidAbi(abi: string) {
 	}
 }
 
-export async function fetchAbiFromEtherscan(contractAddress: EthereumAddress) {
-	const json = await fetchJson(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(contractAddress) }&apiKey=${ EtherscanABIKey }`)
+export function getBlockExplorer(chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) {
+	if (chainId === 'AllChains') return undefined
+	const primaryRpc = rpcEntries.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	if (primaryRpc !== undefined && primaryRpc.blockExplorer !== undefined) return primaryRpc.blockExplorer
+	return getDefaultBlockExplorer(chainId)
+}
+
+export const isBlockExplorerAvailableForChain = (chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) => getBlockExplorer(chainId, rpcEntries) !== undefined
+
+export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress, chainId: ChainIdWithUniversal) {
+	const api = getBlockExplorer(chainId, await getRpcList())
+	if (api === undefined) return { success: false as const, error: `No block explorer available for chain id: ${ chainId }` }
+
+	const json = await fetchJson(`${ api.apiUrl }?module=contract&action=getsourcecode&address=${ addressString(contractAddress) }&apiKey=${ api.apiKey }`)
 	if (!json.success) return json
 	const parsedSourceCode = EtherscanSourceCodeResult.safeParse(json.result)
 
 	// Extract ABI from getSourceCode request if not proxy, otherwise attempt to fetch ABI of implementation
 	if (parsedSourceCode.success === false || parsedSourceCode.value.status !== 'success') return { success: false as const, error: 'Failed to parse Etherscan results.'}
-	
+
 	if (parsedSourceCode.value.result[0].Proxy === 'yes' && parsedSourceCode.value.result[0].Implementation !== '') {
-		const implReq = await fetchJson(`https://api.etherscan.io/api?module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherscanABIKey }`)
+		const implReq = await fetchJson(`${ api.apiUrl }?module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)
 		if (!implReq.success) return implReq
 		const implResult = EtherscanGetABIResult.safeParse(implReq.result)
-		
-		const sourceCodeResult = await fetchJson(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherscanABIKey }`)
+
+		const sourceCodeResult = await fetchJson(`${ api.apiUrl }?module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)
 		if (!sourceCodeResult.success) return sourceCodeResult
 		const implementationName = EtherscanSourceCodeResult.safeParse(sourceCodeResult.result)
 

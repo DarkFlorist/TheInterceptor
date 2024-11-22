@@ -53,6 +53,8 @@ body { font-family: "Inter" !important; }
 	--alpha-005: rgba(255, 255, 255, 0.05);
 	--alpha-015: rgba(255, 255, 255, 0.15);
 
+	--big-font-size: 28px;
+	--normal-font-size: 14px;
 	--modal-background-color: rgba(10, 10, 10, .7)
 }
 
@@ -756,7 +758,7 @@ svg.spinner > circle {
 .swap-grid {
 	grid-template-columns: auto auto;
 	display: grid;
-	place-content: center;
+	place-content: space-between;
 	column-gap: 0.25em;
 }
 
@@ -1586,15 +1588,13 @@ header:has(form[role='search']) h1 {
 }
 
 .inline-card {
-	--bg-color: var(--card-bg-color);
+	--bg-color: transparent;
 	--button-color: #77738ccc;
 	--button-color-hilite: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
 	--min-text-width: 5.5ch;
-	--status-backdrop-color: #303030ed;
-	--status-success-color: #4fb64f;
 
 	font: inherit;
 	display: inline-grid;
@@ -1631,9 +1631,15 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	> [role=img] { grid-area: start / start / end / copy }
+	> [role=img] {
+		grid-area: start / start / end / copy;
+		:focus-within > &, :hover > & { opacity: 0 }
+	}
 
-	> data { grid-area: start / copy / end / end }
+	> data {
+		grid-area: start / copy / end / end;
+		:focus-within > &, :hover > & { opacity: 0 }
+	}
 
 	> [role=menu] {
 		background: var(--bg-status-color, var(--bg-color));
@@ -1641,11 +1647,9 @@ header:has(form[role='search']) h1 {
 		grid-area: start / start / end / end;
 		grid-template-columns: minmax(0, max-content) max-content;
 		align-items: baseline;
-		padding-inline: var(--bg-inline-padding);
-		margin-inline: calc(var(--bg-inline-padding) * -1);
 
 		opacity: 0;
-		&:has(:hover), &:focus-within { opacity: 1 }
+		:hover > &, :focus-within > & { opacity: 1 }
 
 		> button {
 			font: inherit;
@@ -1661,7 +1665,7 @@ header:has(form[role='search']) h1 {
 			cursor: pointer;
 			pointer-events: all;
 
-			button + & { margin-left: 0.25em }
+			&:is(button + *) { margin-left: 0.25em }
 
 			> :has(data) { overflow: hidden }
 
@@ -1692,32 +1696,12 @@ header:has(form[role='search']) h1 {
 					background: var(--button-color-hilite);
 					outline: none;
 
-					svg { display: none }
-					span { display: inline-block }
+					&:is([aria-label="Spell-out actions"] *) {
+						svg { display: none }
+						span { display: inline-block }
+					}
 				}
 			}
-		}
-	}
-
-	[role=status] {
-		grid-area: start / start / end / end;
-		background: var(--status-backdrop-color);
-		text-align: center;
-		border-radius: 0.15em;
-		position: relative;
-		margin-inline: calc(var(--bg-inline-padding) * -1 + 1px);
-		color: var(--status-success-color);
-
-		> svg {
-			display: inline-block;
-			vertical-align: -0.15em;
-		}
-
-		> span {
-			display: inline-block;
-			font-size: 0.8em;
-			margin-left: 0.25em;
-			font-weight: 500;
 		}
 	}
 
@@ -1732,7 +1716,7 @@ header:has(form[role='search']) h1 {
 		cursor: pointer;
 
 		&:has(+ *) { margin-right: 0.25em }
-		* + & { margin-left: 0.25em }
+		&:is(* + [role=alert]) { margin-left: 0.25em }
 	}
 }
 
