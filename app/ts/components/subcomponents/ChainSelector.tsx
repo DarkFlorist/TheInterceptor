@@ -57,7 +57,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 		setIsOpen(false)
 	}
 
-	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` } style = { { justifyContent: 'end', width: '100%' } }>
+	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` } style = { { width: '100%' } }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
 			<button className = { `button is-primary is-reveal ${ chain.value === undefined ? 'is-danger' : '' }` } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) } title = { chain.value === undefined ? 'unknown' : chain.value.name  } style = { { width: '100%', columnGap: '0.5em' } }>
 				<span class = 'truncate' style = { { contain: 'content' } }>{ chain.value === undefined ? 'unknown' : chain.value.name }</span>
