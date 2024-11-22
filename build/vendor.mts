@@ -1,7 +1,7 @@
-import * as path from 'path'
-import * as url from 'url'
-import { promises as fs } from 'fs'
-import { FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
+import * as path from 'node:path'
+import * as url from 'node:url'
+import { promises as fs } from 'node:fs'
+import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 import { createHash } from 'node:crypto'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))

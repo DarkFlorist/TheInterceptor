@@ -1,6 +1,6 @@
-import * as path from 'path'
-import * as url from 'url'
-import { promises as fs } from 'fs'
+import * as path from 'node:path'
+import * as url from 'node:url'
+import { promises as fs } from 'node:fs'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 
@@ -62,12 +62,21 @@ async function* getFiles(topDir: string): AsyncGenerator<string, any, undefined>
 	}
 }
 
+async function ensureDirectoryExists(dir: string) {
+	try {
+		await fs.access(dir)
+	} catch {
+		await fs.mkdir(dir, { recursive: true })
+	}
+}
+
 async function replaceImportsInJSFiles() {
 	const folders = [
 		path.join(directoryOfThisFile, '..', 'app', 'js'),
 		path.join(directoryOfThisFile, '..', 'app', 'vendor')
 	]
 	for (const folder of folders) {
+		await ensureDirectoryExists(folder)
 		for await (const filePath of getFiles(folder)) {
 			if (path.extname(filePath) !== '.js' && path.extname(filePath) !== '.mjs') continue
 			const replaced = replaceImport(filePath, await fs.readFile(filePath, 'utf8'))
