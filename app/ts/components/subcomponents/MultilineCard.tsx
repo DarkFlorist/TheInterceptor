@@ -47,8 +47,8 @@ const ActionableIcon = (props: ActionableIconProps) => {
 	}
 
 	const CardIcon = props.icon
-	const handleClick = props.onClick ? props.onClick === 'clipboard-copy' ? copyTextToClipboard  : props.onClick : undefined
-	const copyValue =  props.onClick === 'clipboard-copy' ? props.copyValue : undefined
+	const handleClick = props.onClick ? props.onClick === 'clipboard-copy' ? copyTextToClipboard : props.onClick : undefined
+	const copyValue = props.onClick === 'clipboard-copy' ? props.copyValue : undefined
 	const hintText = props.onClick ? props.hintText : undefined
 
 	return (
@@ -106,7 +106,7 @@ const ActionableText = (props: ActionableTextProps) => {
 	return (
 		<span>
 			<DisplayText />
-			<TextAction buttonLabel = { actionButtonLabel } textNode = { DisplayText } buttonIcon = { actionIcon } onClick = { actionHandler } copyValue = { copyValue }  />
+			<TextAction buttonLabel = { actionButtonLabel } textNode = { DisplayText } buttonIcon = { actionIcon } onClick = { actionHandler } copyValue = { copyValue } />
 			<Tooltip config = { tooltipConfig } />
 		</span>
 	)
