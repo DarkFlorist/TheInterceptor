@@ -62,33 +62,31 @@ export function BigAddress(params: BigAddressParams) {
 	const labelText = params.addressBookEntry?.name || addressString || 'No address found'
 	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
 
-	const renameAddressAction: ActionableTextProps['action'] = {
-		label: 'Edit',
-		icon: () => <EditIcon />,
-		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry)
+	const configPartialWithEditOnClick  = {
+		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry),
+		buttonLabel: 'Edit',
+		buttonIcon: () => <EditIcon />
 	}
 
-	const setupCopyAction = {
-		action: 'clipboard-copy' as const,
+	const configPartialWithCopyOnClick = {
+		onClick: 'clipboard-copy' as const,
 		copyValue: addressString,
 		copySuccessMessage: 'Address copied!'
 	}
 
-	const setupEditAction = { action: !params.noEditAddress ? renameAddressAction : undefined }
-
 	const labelConfig: ActionableTextProps = {
 		displayText: labelText,
-		...(labelText === addressString && !params.noCopying) ? setupCopyAction : setupEditAction
+		...(labelText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : configPartialWithEditOnClick
 	}
 
 	const noteConfig: ActionableTextProps = {
 		displayText: noteText,
-		...(noteText === addressString && !params.noCopying) ? setupCopyAction : setupEditAction
+		...(noteText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : configPartialWithEditOnClick
 	}
 
 	const iconConfig: ActionableIconProps = {
 		icon: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></>,
-		...(!params.noCopying && addressString) ? setupCopyAction : { action: undefined }
+		...(!params.noCopying && addressString) ? configPartialWithCopyOnClick : { onClick: undefined }
 	}
 
 	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } />

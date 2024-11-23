@@ -21,21 +21,19 @@ export const MultilineCard = ({ icon, label, note, style }: MultilineCardProps) 
 	)
 }
 
-type ActionableIconAction = {
-	onClick: JSX.MouseEventHandler<HTMLButtonElement>
-	hintText?: string
-}
-
 export type ActionableIconProps = {
+	onClick: 'clipboard-copy'
 	icon: () => JSX.Element
-	hintText?: string
-	action: 'clipboard-copy'
 	copyValue?: string
-	copySuccessMessage?: string
+	copySuccessMessage: string
+	hintText?: string
 } | {
+	onClick: JSX.MouseEventHandler<HTMLButtonElement>
 	icon: () => JSX.Element
 	hintText?: string
-	action?: ActionableIconAction
+} | {
+	onClick: undefined
+	icon: () => JSX.Element
 }
 
 const ActionableIcon = (props: ActionableIconProps) => {
@@ -44,18 +42,18 @@ const ActionableIcon = (props: ActionableIconProps) => {
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.currentTarget.blur()
 		await clipboardCopy(event.currentTarget.value)
-		const copySuccessMessage = props.action === 'clipboard-copy' && props.copySuccessMessage ? props.copySuccessMessage : 'Copied!'
+		const copySuccessMessage = props.onClick === 'clipboard-copy' && props.copySuccessMessage ? props.copySuccessMessage : 'Copied!'
 		tooltipConfig.value = { message: copySuccessMessage, x: event.clientX, y: event.clientY }
 	}
 
 	const CardIcon = props.icon
-	const handleClick = props.action ? props.action === 'clipboard-copy' ? copyTextToClipboard  : props.action.onClick : undefined
-	const copyValue =  props.action === 'clipboard-copy' ? props.copyValue : undefined
-	const hintText = props.action !== 'clipboard-copy' ? props.action?.hintText : undefined
+	const handleClick = props.onClick ? props.onClick === 'clipboard-copy' ? copyTextToClipboard  : props.onClick : undefined
+	const copyValue =  props.onClick === 'clipboard-copy' ? props.copyValue : undefined
+	const hintText = props.onClick ? props.hintText : undefined
 
 	return (
 		<span role = 'img'>
-			<button type = 'button' onClick = { handleClick } tabIndex = { -1 } value = { copyValue } title = { hintText } disabled = { !props.action }>
+			<button type = 'button' onClick = { handleClick } tabIndex = { -1 } value = { copyValue } title = { hintText } disabled = { !props.onClick }>
 				<CardIcon />
 				<Tooltip config = { tooltipConfig } />
 			</button>
@@ -71,19 +69,18 @@ type TextNodeProps = {
 const TextNode = ({ displayText, value }: TextNodeProps) => <data class = 'truncate text-legible' value = { value || displayText }>{ displayText }</data>
 
 export type ActionableTextProps = {
+	onClick: 'clipboard-copy'
 	displayText: string
-	action: 'clipboard-copy'
 	copyValue?: string
 	copySuccessMessage?: string
 } | {
+	onClick: JSX.MouseEventHandler<HTMLButtonElement>
 	displayText: string
-	action?: ActionableTextAction
-}
-
-type ActionableTextAction = {
-	label: string
-	icon: () => JSX.Element
-	onClick?: JSX.MouseEventHandler<HTMLButtonElement>
+	buttonLabel: string
+	buttonIcon: () => JSX.Element
+} | {
+	onClick?: undefined
+	displayText: string
 }
 
 const ActionableText = (props: ActionableTextProps) => {
@@ -92,40 +89,50 @@ const ActionableText = (props: ActionableTextProps) => {
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.currentTarget.blur()
 		await clipboardCopy(event.currentTarget.value)
-		tooltipConfig.value = { message: 'Copied!', x: event.clientX, y: event.clientY }
+		tooltipConfig.value = {
+			message: props.onClick === 'clipboard-copy' && props.copySuccessMessage ? props.copySuccessMessage : 'Copied!',
+			x: event.clientX,
+			y: event.clientY
+		}
 	}
 
-	const copyValue = props.action === 'clipboard-copy' && props.copyValue ? props.copyValue : props.displayText
-	const DisplayText = () => <TextNode displayText = { props.displayText } value = { copyValue } />
+	const copyValue = props.onClick === 'clipboard-copy' && props.copyValue ? props.copyValue : props.displayText
+	const actionIcon = props.onClick ? props.onClick === 'clipboard-copy' ? () => <CopyIcon /> : props.buttonIcon : () => <></>
+	const actionHandler = props.onClick ? props.onClick === 'clipboard-copy' ? copyTextToClipboard : props.onClick : undefined
+	const actionButtonLabel = props.onClick ? props.onClick === 'clipboard-copy' ? 'Copy' : props.buttonLabel : ''
 
-	const actionIcon = props.action ? props.action === 'clipboard-copy' ? () => <CopyIcon /> : props.action.icon : () => <></>
-	const actionHandler = props.action ? props.action === 'clipboard-copy' ? copyTextToClipboard : props.action.onClick : undefined
-	const actionButtonLabel = props.action === 'clipboard-copy' ? 'Copy' : props.action?.label || ''
+	const DisplayText = () => <TextNode displayText = { props.displayText } value = { copyValue } />
 
 	return (
 		<span>
 			<DisplayText />
-			<TextAction label = { actionButtonLabel } textNode = { DisplayText } icon = { actionIcon } onClick = { actionHandler } copyValue = { copyValue }  />
+			<TextAction buttonLabel = { actionButtonLabel } textNode = { DisplayText } buttonIcon = { actionIcon } onClick = { actionHandler } copyValue = { copyValue }  />
 			<Tooltip config = { tooltipConfig } />
 		</span>
 	)
 }
 
-type TextActionProps = ActionableTextAction & {
+type TextActionProps = {
+	onClick: undefined
 	textNode: () => JSX.Element
-	copyValue: string
+} | {
+	onClick: JSX.MouseEventHandler<HTMLButtonElement>
+	textNode: () => JSX.Element
+	buttonLabel: string
+	buttonIcon: () => JSX.Element
+	copyValue?: string
 }
 
 const TextAction = (props: TextActionProps) => {
 	const DisplayText = props.textNode
-	const ActionIcon = props.icon
+	const ActionIcon = props.onClick ? props.buttonIcon : () => <></>
 
 	return (
-		<button type = 'button' onClick = { props.onClick } value = { props.copyValue } tabIndex = { 1 } disabled = { !props.onClick }>
+		<button type = 'button' onClick = { props.onClick } value = { props.onClick ? props.copyValue : undefined } tabIndex = { 1 } disabled = { !props.onClick }>
 			<DisplayText />
 			<span>
 				<ActionIcon />
-				<span>{ props.label }</span>
+				<span>{ props.onClick ? props.buttonLabel : '' }</span>
 			</span>
 		</button>
 	)
