@@ -415,6 +415,16 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 .card-header-icon {
 	background-color: transparent;
 	color: var(--text-color);
+
+	.icon:has(svg[aria-label=chevron-icon]) {
+		width: 1rem;
+		height: 1rem;
+		transition: transform 200ms;
+
+		.card-header:has(+ .card-content) & {
+			transform: rotateX(180deg);
+		}
+	}
 }
 
 .card-header-icon:disabled {

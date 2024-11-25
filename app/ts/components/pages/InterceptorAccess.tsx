@@ -17,6 +17,7 @@ import { Page } from '../../types/exportedSettingsTypes.js'
 import { ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import { ChevronIcon } from '../subcomponents/icons.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <span style = 'font-weight: 900; line-height: 48px'>
@@ -52,7 +53,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 					}
 				</p>
 				<div class = 'card-header-icon'>
-					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+					<span class = 'icon'><ChevronIcon /></span>
 				</div>
 			</header>
 			{ !showLogs
