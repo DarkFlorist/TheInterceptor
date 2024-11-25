@@ -13,6 +13,7 @@ import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
+import { ReadonlySignal, Signal } from '@preact/signals'
 
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
@@ -23,10 +24,12 @@ export type InterceptorAccessListParams = {
 }
 
 export type AddAddressParam = {
-	close: () => void,
-	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined,
-	modifyAddressWindowState: ModifyAddressWindowState,
-	activeAddress: bigint | undefined,
+	close: () => void
+	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined
+	modifyAddressWindowState: ReadonlySignal<ModifyAddressWindowState | undefined>
+	modifyStateCallBack: (newState: ModifyAddressWindowState) => void
+	activeAddress: bigint | undefined
+	rpcEntries: Signal<RpcEntries>
 }
 
 export type HomeParams = {
@@ -38,15 +41,15 @@ export type HomeParams = {
 	activeSigningAddress: bigint | undefined,
 	useSignersAddressAsActiveAddress: boolean,
 	simVisResults: SimulationAndVisualisationResults | undefined,
-	rpcNetwork: RpcNetwork | undefined,
+	rpcNetwork: Signal<RpcNetwork | undefined>,
 	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
-	rpcConnectionStatus: RpcConnectionStatus,
-	rpcEntries: RpcEntries,
+	rpcConnectionStatus: Signal<RpcConnectionStatus>,
+	rpcEntries: Signal<RpcEntries>
 	simulationUpdatingState: SimulationUpdatingState | undefined,
 	simulationResultState: SimulationResultState | undefined,
 	interceptorDisabled: boolean,
@@ -68,14 +71,14 @@ export type FirstCardParams = {
 	useSignersAddressAsActiveAddress: boolean,
 	activeAddresses: AddressBookEntries | undefined,
 	changeActiveRpc: (rpcEntry: RpcEntry) => void,
-	rpcNetwork: RpcNetwork,
+	rpcNetwork: Signal<RpcNetwork | undefined>,
 	simulationMode: boolean,
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,
 	tabIconDetails: TabIconDetails,
 	tabState: TabState | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
-	rpcEntries: RpcEntries,
+	rpcEntries: Signal<RpcEntries>,
 }
 
 export type SimulationStateParam = {
@@ -87,7 +90,7 @@ export type SimulationStateParam = {
 	disableReset: boolean
 	resetSimulation: () => void
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
-	rpcConnectionStatus: RpcConnectionStatus
+	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	simulationUpdatingState: SimulationUpdatingState | undefined
 	simulationResultState: SimulationResultState | undefined
 }
