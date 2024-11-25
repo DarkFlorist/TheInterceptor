@@ -1721,13 +1721,14 @@ header:has(form[role='search']) h1 {
 }
 
 .multiline-card {
-	--bg-color: #484848;
+	--bg-color: transparent;
 	--button-color: #77738ccc;
 	--image-size: 2.25rem;
-	--min-text-width: 3ch;
+	--min-text-width: 0;
 	--pad-x: 0;
 	--pad-y: 0;
 	--gap-x: 0.5rem;
+	--gap-y: 0.0625rem;
 	--edge-roundness: 3px;
 
 	font: inherit;
@@ -1735,12 +1736,12 @@ header:has(form[role='search']) h1 {
 	grid-template-columns: [left] minmax(0, min-content) [data] minmax(0, max-content) [right];
 	grid-template-rows: [top] min-content [sub] min-content [bottom];
 	column-gap: var(--gap-x);
-	row-gap: 2px;
+	row-gap: var(--gap-y);
 	padding-block: var(--pad-y);
 	padding-inline: var(--pad-x);
 	background-color: var(--bg-color);
 	border-radius: var(--edge-roundness);
-	min-width: calc(var(--min-text-width) + var(--image-size) + (var(-pad-x) * 2) + var(--gap-x));
+	min-width: calc(var(--min-text-width) + var(--image-size) + (var(--pad-x) * 2) + var(--gap-x));
 
 	data {
 		line-height: 1em;
@@ -1754,8 +1755,8 @@ header:has(form[role='search']) h1 {
 		background: var(--bg-color);
 		border: 0 none;
 		padding: 0;
-		cursor: pointer;
 
+		&:not(:disabled) { cursor: pointer }
 		&:hover, &:focus { background: var(--bg-color) }
 	}
 
@@ -1794,7 +1795,13 @@ header:has(form[role='search']) h1 {
 			}
 		}
 
-		> data { grid-area: top / left / bottom / right }
+		> data {
+			grid-area: top / left / bottom / right;
+
+			&:not(:has(+:disabled)) {
+				.multiline-card:hover &, .multiline-card:focus-within & { visibility: hidden }
+			}
+		}
 
 		> button {
 			grid-area: top / left / bottom / right;
@@ -1802,10 +1809,13 @@ header:has(form[role='search']) h1 {
 			align-items: baseline;
 			grid-template-columns: minmax(0, 1fr) min-content;
 			background-color: var(--bg-color);
-			opacity: 0;
 			outline: none;
+			position: relative;
+			visibility: hidden;
 
-			&:is(.multiline-card:hover *, .multiline-card:focus-within *) { opacity: 1 }
+			&:not(:disabled) {
+				.multiline-card:hover &, .multiline-card:focus-within & { visibility: visible }
+			}
 
 			&:hover, &:focus {
 				> span {
