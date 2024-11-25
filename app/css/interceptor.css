@@ -1040,10 +1040,6 @@ summary:where(details[open] > *) {
 	--s-rule-color: currentColor;
 }
 
-.css-icon {
-&#709;
-}
-
 .svg-icon {
 	--s-rotate: var(--icon-rotate, 0deg);
 	--s-size: var(--icon-size, 1em);
