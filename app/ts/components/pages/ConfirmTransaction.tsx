@@ -25,7 +25,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
-import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
+import { InvalidMessage, SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
@@ -483,14 +483,15 @@ export function ConfirmTransaction() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
 	}
 
-	function isConfirmDisabled() {
-		if (forceSend) return false
+	const isConfirmDisabled = useComputed(() => {
 		if (currentPendingTransactionOrSignableMessage === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (currentPendingTransactionOrSignableMessage.type !== 'Transaction') {
+			if (currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.isValidMessage !== true) return true
 			return !isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.activeAddress) && !forceSend
 			&& currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc === undefined
 		}
+		if (forceSend) return false
 		if (currentPendingTransactionOrSignableMessage.simulationResults === undefined) return false
 		if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return false
 		if (currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner') return true
@@ -499,7 +500,7 @@ export function ConfirmTransaction() {
 		const success = lastTx.statusCode === 'success'
 		const noQuarantines = lastTx.quarantine === false
 		return !success || !noQuarantines
-	}
+	})
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = {
@@ -575,6 +576,7 @@ export function ConfirmTransaction() {
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
 							<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
+							<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }/>
 						</> }
 						<CenterToPageTextSpinner text = { getLoadingText(currentPendingTransactionOrSignableMessage)  }/>
 					</div>
@@ -612,6 +614,7 @@ export function ConfirmTransaction() {
 						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
+						<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }/>
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'padding: 10px'>
@@ -660,7 +663,7 @@ export function ConfirmTransaction() {
 								currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }
 								reject = { reject }
 								approve = { approve }
-								confirmDisabled = { isConfirmDisabled() }
+								confirmDisabled = { isConfirmDisabled.value }
 							/>
 						</nav>
 					</div>

@@ -112,7 +112,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 		case 'SignableMessage': {
 			await updateTransactionStack((prevStack: TransactionStack) => ({...prevStack, signedMessages: [...prevStack.signedMessages, pendingTransactionOrMessage.signedMessageTransaction] }))
 			updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
-			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
+			return reply({ type: 'result', result: simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor).signature })
 		}
 		case 'Transaction': {
 			const signedTransaction = mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction)
@@ -197,7 +197,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	const transactionCount = getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from)
+	const transactionCountPromise = getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from)
 	const parentBlock = await parentBlockPromise
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
@@ -206,7 +206,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		type: '1559' as const,
 		from,
 		chainId: ethereumClientService.getChainId(),
-		nonce: await transactionCount,
+		nonce: await transactionCountPromise,
 		maxFeePerGas: transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null ? transactionDetails.maxFeePerGas : parentBlock.baseFeePerGas * 2n + maxPriorityFeePerGas,
 		maxPriorityFeePerGas,
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,

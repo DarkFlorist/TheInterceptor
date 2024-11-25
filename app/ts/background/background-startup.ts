@@ -13,7 +13,7 @@ import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { handleUnexpectedError, isNewBlockAbort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
@@ -65,7 +65,7 @@ async function migrateAddressInfoAndContactsFromV1ToV2() {
 async function migrateAddressInfoAndContactsFromV2ToV3() {
 	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntriesV2'])).userAddressBookEntriesV2
 	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry): AddressBookEntry => {
-		if ('chainId' in entry && entry.chainId !== undefined) return entry
+		if (entry.chainId !== undefined) return entry
 		if (entry.useAsActiveAddress === true && entry.type === 'contact') return { ...entry, chainId: 'AllChains' }
 		return { ...entry, chainId: 1n }
 	}
@@ -189,11 +189,12 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, undefined, websiteTabConnections)
 		}
 	} catch(error) {
+		if (error instanceof Error && isNewBlockAbort(error)) return
 		await handleUnexpectedError(error)
 	}
 }
 
-async function onErrorBlockCallback(ethereumClientService: EthereumClientService) {
+async function onErrorBlockCallback(ethereumClientService: EthereumClientService, error: unknown) {
 	try {
 		const rpcConnectionStatus = {
 			isConnected: false,
@@ -205,6 +206,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
 		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+		await handleUnexpectedError(error)
 	} catch(error) {
 		await handleUnexpectedError(error)
 	}
