@@ -179,8 +179,8 @@ export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBo
 
 export const rpcEntriesToChainEntriesWithAllChainsEntry = (rpcEntries: RpcEntries): readonly ChainEntry[] => {
 	const entries = rpcEntries.map(({ chainId }): [string, ChainEntry] => {
-		const chainIdString = String(Number(chainId))
-		return [chainIdString, { chainId, name: CHAIN_NAMES.get(chainIdString) || chainIdString }]
+		const chainIdString = chainId.toString()
+		return [chainIdString, { chainId, name: CHAIN_NAMES.get(chainIdString) || `Chain ID: ${ chainIdString }` }]
 	})
 	const chainsMap = new Map<string, ChainEntry>(entries)
 	chainsMap.set('AllChains', { name: 'All Chains', chainId: 'AllChains' })
