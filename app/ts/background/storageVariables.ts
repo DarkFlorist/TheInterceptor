@@ -250,6 +250,8 @@ export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainI
 	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 	// sort more precise entries first (one with accurate chain id)
 	entries.sort((x, y) => {
+		if (x.entrySource === 'OnChain' && y.entrySource !== 'OnChain') return 1
+		if (x.entrySource !== 'OnChain' && y.entrySource === 'OnChain') return -1
 		if (typeof x.chainId === 'bigint' && typeof y.chainId !== 'bigint') return -1
 		if (typeof x.chainId !== 'bigint' && typeof y.chainId === 'bigint') return 1
 		return 0
