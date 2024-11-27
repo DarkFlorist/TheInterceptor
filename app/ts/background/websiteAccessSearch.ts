@@ -2,9 +2,9 @@ import { WebsiteAccessArray, WebsiteAccess, WebsiteAddressAccess } from '../type
 import { addressString } from '../utils/bigint.js'
 import { bestMatch } from './medataSearch.js'
 
-type FuzzyMatchResult = {
-	bestMatchLength: number
-	locationOfBestMatch: number
+type SearchMatch = {
+	length: number
+	location: number
 }
 
 const createSearchPattern = (searchString: string) => {
@@ -13,49 +13,52 @@ const createSearchPattern = (searchString: string) => {
 	return segments.length ? new RegExp(`(?=(${ segments.map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
 }
 
-function fuzzyCompare(searchQuery: string, text: string): FuzzyMatchResult | undefined {
+function computeSearchMatch(searchQuery: string, searchAgainst: string): SearchMatch | undefined {
 	const pattern = createSearchPattern(searchQuery)
 	if (!pattern) return undefined
 
-	const fuzzyMatch = bestMatch(text.match(pattern))
-	if (!fuzzyMatch) return undefined
+	const matchedString = bestMatch(searchAgainst.match(pattern))
+	if (!matchedString) return undefined
 
 	return {
-		bestMatchLength: fuzzyMatch.length,
-		locationOfBestMatch: text.indexOf(fuzzyMatch)
+		length: matchedString.length,
+		location: searchAgainst.indexOf(matchedString)
 	}
 }
 
-function selectBestAddressMatch<T extends FuzzyMatchResult>(a: T | undefined, b: T | undefined): T | undefined {
-	if (!a) return b
+function selectLongerMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined): T | undefined
+function selectLongerMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined, defaultValue: T): T
+function selectLongerMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined, defaultValue?: T): T | undefined {
+	if (!a) return b ?? defaultValue
 	if (!b) return a
-	return a.bestMatchLength > b.bestMatchLength ? a : b
+	return a.length > b.length ? a : b
 }
 
-function selectBestMatchWithDefault<T extends FuzzyMatchResult>(a: T, b: T): T {
-	return a.bestMatchLength > b.bestMatchLength ? a : b
+type SearchScore<T> = {
+	entry: T
+	score: number
 }
 
-function calculateWebsiteAccessScore(entry: WebsiteAccess, query: string): { entry: WebsiteAccess; score: number } {
-	const urlMatch = fuzzyCompare(query, entry.website.websiteOrigin.toLowerCase())
-	const titleMatch = entry.website.title ? fuzzyCompare(query, entry.website.title.toLowerCase()) : undefined
-	const addressMatches = entry.addressAccess?.map((addr: WebsiteAddressAccess) => fuzzyCompare(query, addressString(addr.address).toLowerCase())) || []
+function calculateWebsiteAccessScore(entry: WebsiteAccess, query: string): SearchScore<WebsiteAccess> {
+	const urlMatch = computeSearchMatch(query, entry.website.websiteOrigin.toLowerCase())
+	const titleMatch = entry.website.title ? computeSearchMatch(query, entry.website.title.toLowerCase()) : undefined
+	const addressMatches = entry.addressAccess?.map((addr: WebsiteAddressAccess) => computeSearchMatch(query, addressString(addr.address).toLowerCase())) || []
 
-	const bestAddressMatch = addressMatches.length > 0 ? addressMatches.reduce(selectBestAddressMatch) : undefined
+	const bestAddressMatch = addressMatches.length > 0 ? addressMatches.reduce(selectLongerMatch) : undefined
 
 	const bestResult = [urlMatch, titleMatch, bestAddressMatch]
 		.filter((x): x is NonNullable<typeof x> => x !== undefined)
-		.reduce(selectBestMatchWithDefault, { bestMatchLength: 0, locationOfBestMatch: 0 })
+		.reduce(selectLongerMatch, { length: 0, location: Infinity })
 
 	return {
 		entry,
-		score: bestResult.bestMatchLength
+		score: bestResult.length
 	}
 }
 
 export const searchWebsiteAccess = (query: string, websiteAccess: WebsiteAccessArray): WebsiteAccessArray => {
 	// return everything if query is empty or whitespace
-	if (!query || query.trim() === '') return websiteAccess
+	if (query.trim() === '') return websiteAccess
 
 	return websiteAccess
 		.map(entry => calculateWebsiteAccessScore(entry, query))
