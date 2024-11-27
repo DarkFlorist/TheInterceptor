@@ -1,9 +1,8 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon, TabState } from '../../types/user-interface-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, TabIconDetails, TabIcon, TabState } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
-import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -11,11 +10,11 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon } from '../subcomponents/icons.js'
+import { RpcSelector } from '../subcomponents/ChainSelector.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -65,7 +64,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 			</div>
 			<div>
-				<ChainSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { (entry: RpcEntry) => { param.changeActiveRpc(entry) } }/>
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
 			</div>
 		</header>
 	</>
@@ -201,7 +200,6 @@ export function Home(param: HomeParams) {
 	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressBookEntry | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
-	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>()
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
@@ -211,8 +209,6 @@ export function Home(param: HomeParams) {
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removedTransactionOrSignedMessages, setRemovedTransactionOrSignedMessages] = useState<readonly TransactionOrMessageIdentifier[]>([])
-	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
-	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
@@ -222,7 +218,6 @@ export function Home(param: HomeParams) {
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? getActiveAddressEntry(param.activeSimulationAddress, param.activeAddresses) : undefined)
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? getActiveAddressEntry(param.activeSigningAddress, param.activeAddresses) : undefined)
-		setSelectedNetwork(param.rpcNetwork)
 		setSimulationMode(param.simulationMode)
 		setTabConnection(param.tabIconDetails)
 		setTabState(param.tabState)
@@ -232,8 +227,6 @@ export function Home(param: HomeParams) {
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
 		setRemovedTransactionOrSignedMessages([])
-		setRpcConnectionStatus(param.rpcConnectionStatus)
-		setRPCEntries(param.rpcEntries)
 		setSimulationUpdatingState(param.simulationUpdatingState)
 		setSimulationResultState(param.simulationResultState)
 		setInterceptorDisabled(param.interceptorDisabled)
@@ -242,13 +235,12 @@ export function Home(param: HomeParams) {
 		param.tabState,
 		param.activeAddresses,
 		param.useSignersAddressAsActiveAddress,
-		param.rpcNetwork,
+		param.rpcNetwork.value,
 		param.simulationMode,
 		param.tabIconDetails,
 		param.currentBlockNumber,
 		param.simVisResults,
 		param.rpcConnectionStatus,
-		param.rpcEntries,
 		param.simulationUpdatingState,
 		param.simulationResultState,
 		param.interceptorDisabled,
@@ -279,11 +271,11 @@ export function Home(param: HomeParams) {
 		})
 	}
 
-	if (!isLoaded || rpcNetwork === undefined) return <> </>
+	if (!isLoaded || param.rpcNetwork.value === undefined) return <> </>
 
 	return <>
-		{ rpcNetwork.httpsRpc === undefined ?
-			<ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.name }.` }/>
+		{ param.rpcNetwork.value.httpsRpc === undefined ?
+			<ErrorComponent text = { `${ param.rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ param.rpcNetwork.value.name }.` }/>
 		: <></> }
 
 		<FirstCard
@@ -291,7 +283,7 @@ export function Home(param: HomeParams) {
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }
 			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
-			rpcNetwork = { rpcNetwork }
+			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { simulationMode }
 			changeActiveAddress = { changeActiveAddress }
@@ -299,7 +291,7 @@ export function Home(param: HomeParams) {
 			tabState = { tabState }
 			tabIconDetails = { tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
-			rpcEntries = { rpcEntries }
+			rpcEntries = { param.rpcEntries }
 		/>
 
 		{ simulationMode && activeSimulationAddress !== undefined ? <SimulationResults
@@ -311,7 +303,7 @@ export function Home(param: HomeParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages }
-			rpcConnectionStatus = { rpcConnectionStatus }
+			rpcConnectionStatus = { param.rpcConnectionStatus }
 			simulationUpdatingState = { simulationUpdatingState }
 			simulationResultState = { simulationResultState }
 		/> : <> </> }

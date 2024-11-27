@@ -4,9 +4,10 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
+import { EditIcon } from './icons.js'
+import { ActionableIconProps, ActionableTextProps, MultilineCard } from './MultilineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -39,7 +40,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } }/>
+				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } } />
 			</AddressIconFrame>
 		)
 	}
@@ -53,73 +54,42 @@ type BigAddressParams = {
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly style?: JSX.CSSProperties
 }
 
 export function BigAddress(params: BigAddressParams) {
-	const addrString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
-	const title = params.addressBookEntry === undefined ? 'No address found' : params.addressBookEntry.name
-	const subTitle = title !== addrString ? addrString : ''
+	const addressString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
+	const labelText = params.addressBookEntry?.name || addressString || 'No address found'
+	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
 
-	return <div class = 'media'>
-		<div class = 'media-left'>
-			{ !params.noCopying && addrString !== undefined ?
-				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<AddressIcon
-						address = { params.addressBookEntry?.address }
-						logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-						isBig = { true }
-						backgroundColor = { 'var(--text-color)' }
-					/>
-				</CopyToClipboard>
-				:
-				<AddressIcon
-					address = { params.addressBookEntry?.address }
-					logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-					isBig = { true }
-					backgroundColor = { 'var(--text-color)' }
-				/>
-			}
-		</div>
+	const configPartialWithEditOnClick  = {
+		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry),
+		buttonLabel: 'Edit',
+		buttonIcon: () => <EditIcon />
+	}
 
-		<div class = { `media-content ${ params.noEditAddress ? 'noselect nopointer' : '' }` } style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
-			<span className = 'big-address-container' data-value = { title }>
-				<span class = 'address-text-holder'>
-					{ !params.noCopying && addrString !== undefined ?
-						<CopyToClipboard content = { addrString } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-							<AddressTitle content = { title } useLegibleFont = { title === addrString } />
-						</CopyToClipboard>
-						: <AddressTitle content = { title } useLegibleFont = { title === addrString } />
-					}
-					<button
-						type = 'button'
-						className = 'button is-primary is-small rename-address-button'
-						onClick = { () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry) }
-						disabled = { params.addressBookEntry === undefined }
-					>
-						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
-						</span>
-					</button>
-				</span>
-			</span>
-			{ !params.noCopying && addrString !== undefined && subTitle !== undefined ?
-				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<AddressSubTitle content = { subTitle } />
-				</CopyToClipboard>
-				: <AddressSubTitle content = { subTitle } />
+	const configPartialWithCopyOnClick = {
+		onClick: 'clipboard-copy' as const,
+		copyValue: addressString,
+		copySuccessMessage: 'Address copied!'
+	}
 
-			}
-		</div>
-	</div>
-}
+	const labelConfig: ActionableTextProps = {
+		displayText: labelText,
+		...(labelText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : configPartialWithEditOnClick
+	}
 
-const AddressTitle = ({ content, useLegibleFont  }: { content: string, useLegibleFont?: boolean }) => {
-	return <p class = {  `title is-5 is-spaced address-text noselect nopointer${ useLegibleFont ? ' text-legible' : '' }` }>{ content }</p>
-}
+	const noteConfig: ActionableTextProps = {
+		displayText: noteText,
+		...(noteText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : configPartialWithEditOnClick
+	}
 
-const AddressSubTitle = ({ content }: { content?: string }) => {
-	if (!content) return <></>
-	return <p class = 'subtitle is-7 noselect nopointer text-legible' style = { { textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }>{ content }</p>
+	const iconConfig: ActionableIconProps = {
+		icon: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></>,
+		...(!params.noCopying && addressString) ? configPartialWithCopyOnClick : { onClick: undefined }
+	}
+
+	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } />
 }
 
 type ActiveAddressParams = {
@@ -164,13 +134,13 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 		return <></>
 	}
 
-	return <InlineCard label={ addressBookEntry.name } copyValue = { addressString } icon={ generateIcon } onEditClicked={ () => renameAddressCallBack(addressBookEntry) } style = { style } />
+	return <InlineCard label = { addressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(addressBookEntry) } style = { style } />
 }
 
-export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
+export function WebsiteOriginText({ icon, websiteOrigin, title }: Website) {
 	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
-			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;'/> }
+			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;' /> }
 		</span>
 
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>

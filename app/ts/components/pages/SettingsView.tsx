@@ -11,6 +11,7 @@ import { defaultRpcs } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
+import { serialize } from '../../types/wire-types.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -117,8 +118,8 @@ export function SettingsView() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
-			if (parsed.method !== 'popup_settingsOpenedReply') return
+			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method !== 'popup_requestSettingsReply') return
 			setMetamaskCompatibilityMode(parsed.data.metamaskCompatibilityMode)
 			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
 			return
@@ -127,7 +128,7 @@ export function SettingsView() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' }) }, [])
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
 	async function requestToUseTabsInsteadOfPopup(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
@@ -220,7 +221,7 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 	const networkName = getChainName(info.chainId)
 
 	// rerender form if entry is updated in the background by specifying a unique key
-	const infoKey = Object.values(info).join('|')
+	const infoKey = JSON.stringify(serialize(RpcEntry, info))
 
 	return (
 		<li class = 'grid brief'>
