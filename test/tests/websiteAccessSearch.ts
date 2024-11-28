@@ -15,6 +15,7 @@ export async function main() {
         createWebsiteAccess('Uniswap', 'app.uniswap.org', ['0x789']),
         createWebsiteAccess(undefined, 'etherscan.io', ['0xabc']),
         createWebsiteAccess('OpenSea', 'opensea.io', []),
+        createWebsiteAccess('Lunaria', 'lunaria.dark.florist', []),
     ]
 
     describe('searchWebsiteAccess', () => {
@@ -26,6 +27,11 @@ export async function main() {
         should('return all entries for whitespace-only query', () => {
             const result = searchWebsiteAccess('   ', testData)
             return result.length === testData.length
+        })
+
+        should('match partial word "lu" with Lunaria', () => {
+            const result = searchWebsiteAccess('lu', testData)
+            return result[0] === testData[4] // Lunaria should be first match
         })
 
         should('find website by title', () => {
