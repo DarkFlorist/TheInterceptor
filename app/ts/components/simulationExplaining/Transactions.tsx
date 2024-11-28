@@ -160,7 +160,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<div class = 'log-cell'>
 						<TransactionCreated created = { param.simTx.created } />
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
 						<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
 					</div>
 				</span>

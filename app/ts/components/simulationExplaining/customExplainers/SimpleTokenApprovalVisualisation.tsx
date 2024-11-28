@@ -63,7 +63,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 				</div>
 			</span>
 		</div>
-		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
+		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
 			<GasFee tx = { params.transactionGasses } rpcNetwork = { params.rpcNetwork } />
 		</span>
 	</div>
