@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef } from 'preact/hooks'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { ComponentChildren, createContext } from 'preact'
+import { ComponentChildren, createContext, JSX } from 'preact'
 import { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { Modal } from '../subcomponents/Modal.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
@@ -120,12 +120,10 @@ const SearchForm = (props: SearchFormProps) => {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const { searchQuery } = useWebsiteAccess()
 
-	const updateSearchParameters = (event: Event) => {
-		return event
-		/*
-		 * TODO: Reimplement Search
-		 * https://github.com/DarkFlorist/TheInterceptor/issues/1120
-		*/
+	const updateSearchParameters = (event: JSX.TargetedInputEvent<HTMLFormElement>) => {
+		const formData = new FormData(event.currentTarget)
+		const q = formData.get('search')
+		searchQuery.value = q?.toString() || ''
 	}
 
 	const commitSelectionOrReset = (event: Event) => {

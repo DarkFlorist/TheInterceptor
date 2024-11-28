@@ -22,7 +22,7 @@ function fuzzyCompare(pattern: RegExp, searchQuery: string, lowerCasedName: stri
 	}
 }
 
-function bestMatch(matches: RegExpMatchArray | null) {
+export function bestMatch(matches: RegExpMatchArray | null) {
 	if (matches) return [...matches].sort((a, b) => b.length - a.length )[0]
 	return undefined
 }
