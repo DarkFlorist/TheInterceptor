@@ -69,7 +69,13 @@ type EtherSymbolParams = {
 export function EtherSymbol(param: EtherSymbolParams) {
 	const etherName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
 	const Icon = () => <img class = 'noselect nopointer' src = { ETHEREUM_COIN_ICON }/>
-	return <InlineCard label = { etherName } noCopy icon = { Icon } style = { { '--min-text-width': '4ch', marginLeft: '0.25em' } } />
+	const style: JSX.CSSProperties = {
+		'--min-text-width': '4ch',
+		marginLeft: '0.25em',
+		...(param.style === undefined ? {} : param.style),
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+	}
+	return <InlineCard label = { etherName } noCopy icon = { Icon } style = { style } />
 }
 
 type TokenPriceParams = {
@@ -131,7 +137,10 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const warningMessage = param.tokenEntry.entrySource === 'OnChain' ? 'Untrusted address' : undefined
 	const tokenName = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
 	const tokenAddressString = checksummedAddress(param.tokenEntry.address)
-	const defaultCardStyles:JSX.CSSProperties = { '--min-text-width': '3ch' }
+	const defaultCardStyles: JSX.CSSProperties = {
+		'--min-text-width': '3ch',
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+	}
 
 	const generateIcon = () => {
 		if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
@@ -152,7 +161,7 @@ type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
 
 export function TokenAmount(param: TokenAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
-	const style:JSX.CSSProperties = {
+	const style: JSX.CSSProperties = {
 		color: 'var(--text-color)',
 		display: 'inline-flex',
 		alignItems: 'baseline',
