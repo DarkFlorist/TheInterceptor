@@ -44,7 +44,7 @@ export const defaultRpcs = [
 	{
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
-		httpsRpc: 'https://geth.dark.florist',
+		httpsRpc: 'https://ethereum.dark.florist',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		currencyLogoUri: ETHEREUM_COIN_ICON,

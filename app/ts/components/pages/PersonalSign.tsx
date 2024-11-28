@@ -19,7 +19,7 @@ import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
-import { XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
@@ -358,7 +358,7 @@ function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: 
 				Extra details
 			</p>
 			<div class = 'card-header-icon'>
-				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary
@@ -387,7 +387,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 				Raw message
 			</p>
 			<div class = 'card-header-icon'>
-				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary
