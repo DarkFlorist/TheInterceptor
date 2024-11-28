@@ -11,6 +11,7 @@ import { defaultRpcs } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
+import { serialize } from '../../types/wire-types.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -220,7 +221,7 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 	const networkName = getChainName(info.chainId)
 
 	// rerender form if entry is updated in the background by specifying a unique key
-	const infoKey = Object.values(info).join('|')
+	const infoKey = JSON.stringify(serialize(RpcEntry, info))
 
 	return (
 		<li class = 'grid brief'>
