@@ -161,7 +161,7 @@ function TransactionCard(param: TransactionCardParams) {
 
 				<div class = 'card-content' style = 'padding-bottom: 5px;'>
 					<div class = 'container'>
-						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } />
+						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } containerStyle = { { margin: '0px' } } />
 					</div>
 
 					<div class = 'textbox'>
