@@ -7,11 +7,12 @@ import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { Blockie } from './SVGBlockie.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
 import { InlineCard } from './InlineCard.js'
+import { getNativeTokenErc20 } from '../../background/metadataUtils.js'
 
 type EtherParams = {
 	amount: bigint
@@ -67,15 +68,13 @@ type EtherSymbolParams = {
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
-	const etherName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
-	const Icon = () => <img class = 'noselect nopointer' src = { ETHEREUM_COIN_ICON }/>
-	const style: JSX.CSSProperties = {
-		'--min-text-width': '4ch',
-		marginLeft: '0.25em',
-		...(param.style === undefined ? {} : param.style),
-		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
-	}
-	return <InlineCard label = { etherName } noCopy icon = { Icon } style = { style } />
+	return <TokenSymbol
+		tokenEntry = { getNativeTokenErc20(param.rpcNetwork) }
+		useFullTokenName = { param.useFullTokenName }
+		style = { param.style }
+		renameAddressCallBack = { () => {} }
+		fontSize = { param.fontSize }
+	/>
 }
 
 type TokenPriceParams = {
@@ -143,11 +142,12 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	}
 
 	const generateIcon = () => {
-		if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
 		if (param.tokenEntry.logoUri === undefined) return <Blockie address = { param.tokenEntry.address } />
 		return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
 	}
-
+	if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) {
+		return <InlineCard icon = { generateIcon } label = { tokenName } style = { { ...defaultCardStyles, ...param.style } } noCopy = { true } noExpandButtons />
+	}
 	return <>
 		<TokenIdOrNameOrNothing { ...param } />
 		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } warningMessage = { warningMessage } style = { { ...defaultCardStyles, ...param.style } } noExpandButtons />

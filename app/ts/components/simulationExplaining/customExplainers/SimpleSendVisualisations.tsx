@@ -80,7 +80,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 				tokenOrEtherDefinition = { asset }
 			/>
 		</div>
-		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
+		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 		{ viaProxypath === undefined ? <></> : <div style = 'display: flex;'>
@@ -109,7 +109,7 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
 	const receiverGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.to.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
-	
+
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }

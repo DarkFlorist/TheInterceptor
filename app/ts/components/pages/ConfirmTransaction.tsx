@@ -244,7 +244,7 @@ function TransactionCard(param: TransactionCardParams) {
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
 					<div class = 'log-cell'>
-						<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content'>
+						<span class = 'log-table' style = { { display: 'inline-flex'} }>
 							<GasFee tx = { simTx } rpcNetwork = { simulationAndVisualisationResults.rpcNetwork } />
 						</span>
 					</div>

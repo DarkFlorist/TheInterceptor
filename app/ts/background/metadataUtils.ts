@@ -1,5 +1,5 @@
 import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { NamedTokenId, SimulationState } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -39,8 +39,9 @@ export async function getActiveAddresses() : Promise<AddressBookEntries> {
 	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useAsActiveAddress)
 	return activeAddresses === undefined || activeAddresses.length === 0 ? defaultActiveAddresses : activeAddresses
 }
-async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
-	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return {
+
+export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20TokenEntry {
+	return {
 		address: ETHEREUM_LOGS_LOGGER_ADDRESS,
 		name: rpcEntry?.currencyName ?? 'Ethereum',
 		type: 'ERC20',
@@ -50,6 +51,10 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry ? rpcEntry.currencyLogoUri : ETHEREUM_COIN_ICON,
 		chainId: rpcEntry?.chainId,
 	}
+}
+
+async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
+	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
 	if (useLocalStorage) {
 		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId || 1n)).find((entry) => entry.address === address)

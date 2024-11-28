@@ -41,7 +41,7 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 				<AddressBeforeAfter { ...receiver } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { { ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } }/>
 			</div>
 		</>) }
-		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
+		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 		{ viaProxypath === undefined ? <></> : <span style = 'display: flex;'>
@@ -60,7 +60,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
-	
+
 	if (simTx.transferedTo.length === 1) {
 		// proxy send to a single address
 		const receiver = simTx.transferedTo[0]?.entry
