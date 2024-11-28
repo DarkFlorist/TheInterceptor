@@ -71,20 +71,18 @@ type UnexpectedErrorParams = {
 export const UnexpectedError = ({ unexpectedError, close }: UnexpectedErrorParams) => {
 	if (unexpectedError?.data.message === undefined) return <></>
 	return (
-		<div style = { 'padding: 10px;' }>
-			<div className = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px;' }>
-				<div style = 'display: flex; padding-bottom: 10px;'>
-					<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
-						<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
-					</span>
-					<p className = 'paragraph' style = { 'marging-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }> An unexpected error occured! <SomeTimeAgo priorTimestamp = { unexpectedError.data.timestamp } /> ago </p>
-				</div>
-				<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
-					<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { unexpectedError?.data.message } </p>
-				</div>
-				<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
-					<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>
-				</div>
+		<div className = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
+			<div style = 'display: flex; padding-bottom: 10px;'>
+				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
+					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
+				</span>
+				<p className = 'paragraph' style = { 'marging-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }> An unexpected error occured! <SomeTimeAgo priorTimestamp = { unexpectedError.data.timestamp } /> ago </p>
+			</div>
+			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
+				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { unexpectedError?.data.message } </p>
+			</div>
+			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
+				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>
 			</div>
 		</div>
 	)
