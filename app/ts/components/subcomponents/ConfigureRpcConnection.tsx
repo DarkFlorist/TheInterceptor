@@ -191,17 +191,19 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 	const parseRpcFormData = (formData: FormData) => {
 		const chainIdFromForm = formData.get('chainId')?.toString()
-
+		const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString()
+		const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString()
+		const isBlockExplorerDefined = blockExplorerUrlForm !== undefined && blockExplorerApiKeyForm !== undefined && blockExplorerUrlForm.length > 0 && blockExplorerApiKeyForm.length > 0
 		const newRpcEntry = {
 			name: formData.get('name')?.toString() || '',
 			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
 			httpsRpc: formData.get('httpsRpc')?.toString() || '',
 			currencyName: formData.get('currencyName')?.toString() || '',
 			currencyTicker: formData.get('currencyTicker')?.toString() || '',
+			...isBlockExplorerDefined ? { blockExplorer: { apiUrl: blockExplorerUrlForm || '', apiKey: blockExplorerApiKeyForm } } : {},
 			minimized: true,
 			primary: false,
 		}
-
 		return RpcEntry.safeParse(newRpcEntry)
 	}
 
@@ -225,6 +227,9 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 		return defaultValues?.currencyName || ''
 	})
 
+	const blockExplorerUrlDefault = useComputed(() => defaultValues?.blockExplorer?.apiUrl || '')
+	const blockExplorerApiKeyDefault = useComputed(() => defaultValues?.blockExplorer?.apiKey || '')
+
 	return (
 		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem' onSubmit = { handleFormSubmit }>
 			<header class = 'grid' style = '--grid-cols: 1fr auto'>
@@ -242,6 +247,8 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
 					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault.value } style = '--area: 7 / span 1' required />
+					<TextInput label = 'Block Explorer Url' name = 'blockExplorerUrl' defaultValue = { blockExplorerUrlDefault.value } style = '--area: 8 / span 1' />
+					<TextInput label = 'Block Explorer Api Key' name = 'blockExplorerApiKey' defaultValue = { blockExplorerApiKeyDefault.value } style = '--area: 8 / span 1' />
 				</div>
 			</main>
 
