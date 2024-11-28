@@ -2,18 +2,19 @@ import { should, describe, run, runIfRoot } from '../micro-should.js'
 import { searchWebsiteAccess } from '../../app/ts/background/websiteAccessSearch.js'
 import { WebsiteAccess, WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 
 // Helper function to create test data
 const createWebsiteAccess = (title: string | undefined, origin: string, addresses: string[] = []): WebsiteAccess => ({
     website: { title, websiteOrigin: origin, icon: undefined },
-    addressAccess: addresses.length ? addresses.map(addr => ({ address: BigInt(addr), access: true })) : undefined
+    addressAccess: addresses.length ? addresses.map(addr => ({ address: EthereumAddress.parse(addr), access: true })) : undefined
 })
 
 export async function main() {
     const testData: WebsiteAccessArray = [
-        createWebsiteAccess('Ethereum Foundation', 'ethereum.org', ['0x123']),
-        createWebsiteAccess('Uniswap', 'app.uniswap.org', ['0x789']),
-        createWebsiteAccess(undefined, 'etherscan.io', ['0xabc']),
+        createWebsiteAccess('Ethereum Foundation', 'ethereum.org', ['0x0000000000000000000000000000000000000123']),
+        createWebsiteAccess('Uniswap', 'app.uniswap.org', ['0x0000000000000000000000000000000000000789']),
+        createWebsiteAccess(undefined, 'etherscan.io', ['0x0000000000000000000000000000000000000abc']),
         createWebsiteAccess('OpenSea', 'opensea.io', []),
         createWebsiteAccess('Lunaria', 'lunaria.dark.florist', []),
     ]
