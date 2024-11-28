@@ -67,6 +67,7 @@ async function ensureDirectoryExists(dir: string) {
 		await fs.access(dir)
 	} catch {
 		await fs.mkdir(dir)
+	}
 }
 
 async function replaceImportsInJSFiles() {
