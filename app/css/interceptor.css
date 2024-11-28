@@ -1604,7 +1604,8 @@ header:has(form[role='search']) h1 {
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
-	--min-text-width: 5.5ch;
+	--text-size: 1em;
+	--min-text-width: calc(var(--text-size) * 2.5);
 
 	font: inherit;
 	display: inline-grid;
@@ -1634,6 +1635,7 @@ header:has(form[role='search']) h1 {
 	[role=img] :only-child {
 		display: inline-block;
 		vertical-align: -0.15em;
+		font-size: var(--text-size);
 
 		&:is(img) {
 			aspect-ratio: 1;
@@ -1648,6 +1650,7 @@ header:has(form[role='search']) h1 {
 
 	> data {
 		grid-area: start / copy / end / end;
+		font-size: var(--text-size);
 		:focus-within > &, :hover > & { opacity: 0 }
 	}
 
@@ -1677,7 +1680,10 @@ header:has(form[role='search']) h1 {
 
 			&:is(button + *) { margin-left: 0.25em }
 
-			> :has(data) { overflow: hidden }
+			> :has(data) {
+				overflow: hidden;
+				font-size: var(--text-size);
+			}
 
 			> :has(svg):has(span) {
 				font-size: 0.9em;

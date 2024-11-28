@@ -138,7 +138,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const tokenAddressString = checksummedAddress(param.tokenEntry.address)
 	const defaultCardStyles: JSX.CSSProperties = {
 		'--min-text-width': '3ch',
-		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		'--text-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
 	const generateIcon = () => {
