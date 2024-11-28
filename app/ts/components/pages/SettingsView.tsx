@@ -241,8 +241,9 @@ export function useRpcConnectionsList() {
 	const entries = useSignal<RpcEntries>([])
 
 	const trackRpcListChanges = (message: unknown) => {
-		const parsedMessage = MessageToPopup.parse(message)
-		if (parsedMessage.method === 'popup_update_rpc_list') { entries.value = parsedMessage.data }
+		const parsedMessage = MessageToPopup.safeParse(message)
+		if (parsedMessage.success === false) return
+		if (parsedMessage.value.method === 'popup_update_rpc_list') { entries.value = parsedMessage.value.data }
 	}
 
 	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }
