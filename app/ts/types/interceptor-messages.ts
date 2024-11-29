@@ -525,7 +525,7 @@ const InterceptorAccessDialog = funtypes.ReadonlyObject({
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
-	currentRpcNetwork: RpcNetwork,
+	activeRpcNetwork: RpcNetwork,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
@@ -721,7 +721,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
-		currentRpcNetwork: RpcNetwork,
+		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})
 }).asReadonly()

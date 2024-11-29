@@ -57,7 +57,7 @@ async function updateMetadataForSimulation(
 	const addressBookEntries = await addressBookEntryPromises
 	const ensPromise = retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries)
 	const namedTokenIds = await namedTokenIdPromises
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.currentRpcNetwork))
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))
 	return {
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
@@ -435,7 +435,7 @@ async function handleRPCRequest(
 			}
 		}
 	}
-	if (settings.currentRpcNetwork.httpsRpc === undefined && forwardToSigner) {
+	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner) {
 		// we are using network that is not supported by us
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
@@ -482,7 +482,7 @@ async function handleRPCRequest(
 		case 'eth_sign': return { type: 'result' as const,method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
-			if (forwardToSigner && settings.currentRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
+			if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
 			return await sendTransaction(simulator, activeAddress, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(simulator.ethereum)
@@ -563,10 +563,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
 	// allow switching RPC only if we are in simulation mode, or that chain id would not change
-	if (simulationMode || rpcNetwork.chainId === (await getSettings()).currentRpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
-		simulationMode: simulationMode,
-		rpcNetwork: rpcNetwork
-	})
+	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, { simulationMode, rpcNetwork })
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 	await promoteRpcAsPrimary(rpcNetwork)

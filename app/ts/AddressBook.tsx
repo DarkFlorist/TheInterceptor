@@ -178,8 +178,8 @@ type AddressBookEntriesWithFilter = {
 export function AddressBook() {
 	const addressBookEntriesWithFilter = useSignal<AddressBookEntriesWithFilter>({ addressBookEntries: [], activeFilter: 'My Active Addresses' })
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
-	const currentChain = useSignal<ChainEntry | undefined>(undefined)
-	const currentChainId = useComputed(() => currentChain.value?.chainId || 1n)
+	const activeChain = useSignal<ChainEntry | undefined>(undefined)
+	const activeChainId = useComputed(() => activeChain.value?.chainId || 1n)
 	const rpcEntries = useSignal<RpcEntries>([])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
@@ -201,24 +201,24 @@ export function AddressBook() {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				const chainId = currentChain.peek()?.chainId
+				const chainId = activeChain.peek()?.chainId
 				if (chainId !== undefined) sendQuery()
 				return
 			}
 			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
-				const prevCurrentNetwork = currentChain.peek()
-				if (prevCurrentNetwork === undefined || prevCurrentNetwork.chainId === parsed.data.currentRpcNetwork.chainId) {
-					currentChain.value = parsed.data.currentRpcNetwork
-					if (prevCurrentNetwork === undefined || viewFilter.value.chain === undefined) {
-						viewFilter.value = { ...viewFilter.value, chain: currentChain.value === undefined ? undefined : { name: currentChain.value.name, chainId: currentChain.value.chainId } }
+				const prevActiveNetwork = activeChain.peek()
+				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
+					activeChain.value = parsed.data.activeRpcNetwork
+					if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
+						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
 					}
 				}
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			if (currentChain.peek()?.chainId === reply.data.data.chainId) {
+			if (activeChain.peek()?.chainId === reply.data.data.chainId) {
 				addressBookEntriesWithFilter.value = {
 					addressBookEntries: reply.data.entries,
 					activeFilter: reply.data.data.filter,
@@ -239,9 +239,9 @@ export function AddressBook() {
 		viewFilter.value = { ...viewFilter.peek(), searchString }
 	}
 
-	function changeCurrentChain(entry: ChainEntry) {
-		if (entry.chainId === currentChain.peek()?.chainId) return
-		currentChain.value = entry
+	function changeActiveChain(entry: ChainEntry) {
+		if (entry.chainId === activeChain.peek()?.chainId) return
+		activeChain.value = entry
 		viewFilter.value = { ...viewFilter.peek(), chain: { name: entry.name, chainId: entry.chainId } }
 	}
 
@@ -281,7 +281,7 @@ export function AddressBook() {
 				abi: undefined,
 				useAsActiveAddress: filter === 'My Active Addresses',
 				declarativeNetRequestBlockMode: undefined,
-				chainId: currentChain.peek()?.chainId || 1n,
+				chainId: activeChain.peek()?.chainId || 1n,
 			}
 		} }
 		return
@@ -324,7 +324,7 @@ export function AddressBook() {
 				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
 					<div style = { { padding: '1rem 0'} }>
 						<div style = 'padding: 10px;'>
-							<ChainSelector rpcEntries = { rpcEntries } chainId = { currentChainId } changeChain = { changeCurrentChain }/>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain }/>
 						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>

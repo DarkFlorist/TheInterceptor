@@ -177,7 +177,7 @@ class InterceptorMessageListener {
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
 	private currentAddress = ''
-	private currentChainId = ''
+	private activeChainId = ''
 	private currentSigner: Signer = 'NoSigner'
 
 	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
@@ -451,8 +451,8 @@ class InterceptorMessageListener {
 				}
 				case 'chainChanged': {
 					const reply = replyRequest.result as string
-					if (this.currentChainId === reply) return
-					this.currentChainId = reply
+					if (this.activeChainId === reply) return
+					this.activeChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
 						try { window.ethereum.chainId = reply } catch(error) {}
 						try { window.ethereum.networkVersion = Number(reply).toString(10) } catch(error) {}
@@ -546,7 +546,7 @@ class InterceptorMessageListener {
 							const chainId = forwardRequest.result as string
 							try { window.ethereum.chainId = chainId } catch(e) {}
 							try { window.ethereum.networkVersion = Number(chainId).toString(10) } catch(e) {}
-							this.currentChainId = chainId
+							this.activeChainId = chainId
 							break
 						}
 					}

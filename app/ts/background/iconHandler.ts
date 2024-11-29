@@ -22,7 +22,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)
-	
+
 	const settings = await getSettings()
 	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 	const activeAddress = await getActiveAddress(settings, tabId)
@@ -36,7 +36,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		return setIcon(ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
-	if (settings.currentRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, `The Interceptor is disabled while it's on an unsupported network`)
+	if (settings.activeRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, `The Interceptor is disabled while it's on an unsupported network`)
 	const tabState = await getTabState(tabId)
 	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }

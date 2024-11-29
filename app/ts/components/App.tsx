@@ -178,7 +178,7 @@ export function App() {
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery) appPage.value = settings.openedPage
 			setSimulationMode(settings.simulationMode)
-			rpcNetwork.value = settings.currentRpcNetwork
+			rpcNetwork.value = settings.activeRpcNetwork
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setWebsiteAccess(settings.websiteAccess)

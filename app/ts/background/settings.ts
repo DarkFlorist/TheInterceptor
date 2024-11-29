@@ -114,7 +114,7 @@ export async function getSettings() : Promise<Settings> {
 		'websiteAccess',
 		'simulationMode',
 	])
-	const currentRpcNetwork = await browserStorageLocalSafeParseGet('currentRpcNetwork')
+	const activeRpcNetwork = (await browserStorageLocalSafeParseGet('activeRpcNetwork'))?.activeRpcNetwork
 	const results = await resultsPromise
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	return {
@@ -122,7 +122,7 @@ export async function getSettings() : Promise<Settings> {
 		openedPage: results.openedPageV2 ?? { page: 'Home' },
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
-		currentRpcNetwork: currentRpcNetwork?.currentRpcNetwork !== undefined ? currentRpcNetwork.currentRpcNetwork : defaultRpcs[0],
+		activeRpcNetwork: activeRpcNetwork || defaultRpcs[0],
 		simulationMode: results.simulationMode ?? true,
 	}
 }
@@ -147,7 +147,7 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
 	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { currentRpcNetwork: changes.rpcNetwork }: {},
+		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
 		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress }: {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 	})
@@ -180,7 +180,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
-			rpcNetwork: settings.currentRpcNetwork,
+			rpcNetwork: settings.activeRpcNetwork,
 			simulationMode: settings.simulationMode,
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
