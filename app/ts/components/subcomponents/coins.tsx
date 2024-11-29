@@ -95,7 +95,7 @@ export function TokenPrice(param: TokenPriceParams) {
 		style = { style }
 		fontSize = 'normal'
 		renameAddressCallBack = { param.renameAddressCallBack }
-		showSign = { true }
+		showSign = { false }
 	/>
 }
 
