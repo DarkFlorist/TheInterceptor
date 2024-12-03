@@ -106,31 +106,31 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 	const cancelAndCloseModal = () => modalRef.current?.close()
 
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
-		const { currentRpcNetwork } = await getSettings()
+		const { activeRpcNetwork } = await getSettings()
 
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
 			data: [rpcEntry].concat(rpcEntries.value.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
 		})
 
-		if (currentRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
+		if (activeRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
 		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcEntry })
 	}
 
 	const removeRpcEntryByUrl = async (url: string) => {
-		const { currentRpcNetwork } = await getSettings()
+		const { activeRpcNetwork } = await getSettings()
 
 		const reducedRpcEntries = rpcEntries.value.filter(entry => entry.httpsRpc !== url)
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: reducedRpcEntries })
 
 		// switch rpc when the active one is being removed
-		if (url !== currentRpcNetwork.httpsRpc || reducedRpcEntries[0] === undefined) return
+		if (url !== activeRpcNetwork.httpsRpc || reducedRpcEntries[0] === undefined) return
 		console.warn('Switching RPC as a result of the removal of the currently active connection')
 
 		// at least find a connection of the same chainId
-		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === currentRpcNetwork.chainId) || reducedRpcEntries[0]
+		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === activeRpcNetwork.chainId) || reducedRpcEntries[0]
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcToSwitchTo })
 	}
 
