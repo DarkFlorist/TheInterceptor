@@ -3,7 +3,7 @@
 # The Interceptor
 The Interceptor is a powerful tool for simulating transactions on EVM-based chains, including Ethereum Mainnet, Base, Optimism, Gnosis, and more. It offers clear, intuitive explanations for the transactions you initiate. The Interceptor can seamlessly complement your browser wallet, like MetaMask, or function as a standalone transaction simulation tool.
 
-With MetaMask integration, you can forward transactions for signing and send them effortlessly. What truly sets The Interceptor apart, however, is its Simulation Mode. This feature lets you simulate multiple transactions simultaneously, providing a detailed preview of their outcomes-even enabling you to interact with DApps at no cost!
+With MetaMask integration, you can forward transactions for signing and send them effortlessly. What truly sets The Interceptor apart, however, is its Simulation Mode. This feature lets you simulate multiple transactions sequentially, providing a detailed preview of their outcomes-even enabling you to interact with DApps at no cost!
 
 Install for [Firefox](https://github.com/DarkFlorist/TheInterceptor/releases/download/v0.0.25/TheInterceptor-firefox-v0.0.25.xpi) or [Chrome](https://www.dark.florist/google-chrome-install)
 
