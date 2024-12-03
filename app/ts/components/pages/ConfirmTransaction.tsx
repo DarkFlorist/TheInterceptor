@@ -161,7 +161,7 @@ function TransactionCard(param: TransactionCardParams) {
 
 				<div class = 'card-content' style = 'padding-bottom: 5px;'>
 					<div class = 'container'>
-						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } />
+						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } containerStyle = { { margin: '0px' } } />
 					</div>
 
 					<div class = 'textbox'>
@@ -574,7 +574,7 @@ export function ConfirmTransaction() {
 							/>
 						: <></> }
 					</div>
-					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
+					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
 						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError.value }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						{ currentPendingTransactionOrSignableMessage.value === undefined ? <></> : <>
@@ -613,14 +613,14 @@ export function ConfirmTransaction() {
 					: <></> }
 				</div>
 				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
-					<div style = 'position: sticky; top: 0; z-index:1'>
+					<div style = 'position: sticky; top: 0; z-index: 1;'>
 						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError.value }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.value.website } websiteSocket = { currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.value.simulationMode }/>
 						<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }/>
 					</div>
 					<div class = 'popup-contents'>
-						<div style = 'padding: 10px'>
+						<div style = 'margin: 10px'>
 							{ currentPendingTransactionOrSignableMessage.value.originalRequestParameters.method === 'eth_sendRawTransaction' && currentPendingTransactionOrSignableMessage.value.type === 'Transaction'
 								? <DinoSaysNotification
 									text = { `This transaction is signed already. No extra signing required to forward it to ${ currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.value.simulationResults.statusCode === 'failed' ?
