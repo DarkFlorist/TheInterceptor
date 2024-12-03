@@ -332,7 +332,7 @@ export function App() {
 								<a class = 'navbar-item' style = 'cursor: unset'>
 									<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
 									<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
-										<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { ` alpha ${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
+										<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 									</p>
 								</a>
 								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
