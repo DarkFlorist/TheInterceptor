@@ -481,7 +481,7 @@ function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAdd
 		balanceSummary.summaryFor.useAsActiveAddress || balanceSummary.summaryFor.address === activeAddress
 	)
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.useAsActiveAddress && balanceSummary.summaryFor.address !== activeAddress
+		!(balanceSummary.summaryFor.useAsActiveAddress || balanceSummary.summaryFor.address === activeAddress)
 	)
 	return [ownAddresses, notOwnAddresses]
 }
@@ -660,7 +660,6 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPriceEstimates, param.simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.activeAddress)
-
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
