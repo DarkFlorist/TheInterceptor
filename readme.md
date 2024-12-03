@@ -27,7 +27,7 @@ Your privacy is our priority. The Interceptor is purpose-built to minimize data 
 We are not currently operating nodes for Base, Optimism etc, in order to use these chains you will need to add your own RPC.
 
 ## Good tools to use with The Interceptor
-The Interceptor requires websites to be decentralized and only use users own wallet to access the network. The following tools are tested to work on The Interceptor:
+The Interceptor requires websites to be decentralized and only use users' own wallet to access the network. The following tools are tested to work on The Interceptor:
 - [Lunaria](https://lunaria.dark.florist/)
 - [NFT sender](https://nftsender.dark.florist/)
 - [Horswap 2](https://2.horswap.eth.limo/)
