@@ -32,6 +32,7 @@ The Interceptor requires websites to be decentralized and only use users' own wa
 - [NFT sender](https://nftsender.dark.florist/)
 - [Horswap 2](https://2.horswap.eth.limo/)
 - [Bouquet](https://bouquet.dark.florist/)
+- [PetalLock](https://petal-lock.dark.florist/)
 
 # Development
 
