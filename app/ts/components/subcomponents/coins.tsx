@@ -41,7 +41,8 @@ type EtherAmountParams = {
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const style:JSX.CSSProperties = {
+	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
+	const style: JSX.CSSProperties = {
 		display: 'inline-flex',
 		overflow: 'hidden',
 		alignItems: 'baseline',
@@ -54,7 +55,7 @@ export function EtherAmount(param: EtherAmountParams) {
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
-				<AbbreviatedValue amount = { param.amount } />
+				{ sign }<AbbreviatedValue amount = { abs(param.amount) } />
 			</p>
 		</CopyToClipboard>
 	</>
@@ -94,7 +95,7 @@ export function TokenPrice(param: TokenPriceParams) {
 		style = { style }
 		fontSize = 'normal'
 		renameAddressCallBack = { param.renameAddressCallBack }
-		showSign = { true }
+		showSign = { false }
 	/>
 }
 
@@ -179,7 +180,7 @@ export function TokenAmount(param: TokenAmountParams) {
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenEntry.decimals) } copyMessage = 'Token amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
-				<AbbreviatedValue amount = { param.amount } decimals = { param.tokenEntry.decimals } />
+				{ sign }<AbbreviatedValue amount = { abs(param.amount) } decimals = { param.tokenEntry.decimals } />
 			</p>
 		</CopyToClipboard>
 	</>
