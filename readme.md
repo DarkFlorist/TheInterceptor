@@ -24,7 +24,7 @@ Install for [Firefox](https://github.com/DarkFlorist/TheInterceptor/releases/dow
 Your privacy is our priority. The Interceptor is purpose-built to minimize data leakage: no external queries are made without direct user input except for calls to the configured Ethereum RPC server. By default, it connects to Ethereum RPC nodes operated by [Dark Florist (us)](https://www.dark.florist/) which doesn't log requests, though you can configure it to connect to other RPC nodes if desired. Please note, The Interceptor requires RPC nodes that support the `eth_simulateV1` endpoint, currently available in Geth and Nethermind.
 
 ## Using The Interceptor on various EVM chains
-We are not currently operating nodes for Base, Optimism etc, in order to use these chains, add your own RPC.
+We are not currently operating nodes for Base, Optimism etc, in order to use these chains you will need to add your own RPC.
 
 ## Good tools to use with The Interceptor
 The Interceptor requires websites to be decentralized and only use users own wallet to access the network. The following tools are tested to work on The Interceptor:
