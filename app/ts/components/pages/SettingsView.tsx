@@ -38,7 +38,7 @@ function ImportExport() {
 	const [dismissedNotification, setdDismissedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -114,7 +114,7 @@ export function SettingsView() {
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean>(false)
 
 	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value

@@ -393,17 +393,23 @@ export function ConfirmTransaction() {
 		currentBlockNumber.value = message.data.currentBlockNumber
 	}
 	useEffect(() => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_settingsUpdated') {
+				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return
+			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
 				return
 			}
-			if (parsed.method === 'popup_UnexpectedErrorOccured') return unexpectedError.value = parsed
+			if (parsed.method === 'popup_UnexpectedErrorOccured') {
+				unexpectedError.value = parsed
+				return
+			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (parsed.method === 'popup_new_block_arrived') {
 				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
@@ -416,7 +422,8 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
-				return updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(parsed))
+				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(parsed))
+				return
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				pendingTransactionsAndSignableMessages.value = parsed.data.pendingTransactionAndSignableMessages
@@ -427,6 +434,7 @@ export function ConfirmTransaction() {
 					currentBlockNumber.value = firstMessage.simulationResults.data.simulationState.blockNumber
 				}
 			}
+			return
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

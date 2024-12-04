@@ -228,8 +228,8 @@ async function startup() {
 			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
 		})
 	})
-	browser.runtime.onConnect.addListener(async (port) => await catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
-	browser.runtime.onMessage.addListener(async (message: unknown) => await catchAllErrorsAndCall(async () => popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())))
+	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
+	browser.runtime.onMessage.addListener((message: unknown) => catchAllErrorsAndCall(async () => popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())))
 
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))
