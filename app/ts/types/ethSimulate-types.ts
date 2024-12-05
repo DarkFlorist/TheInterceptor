@@ -81,7 +81,7 @@ const CallResultLog = funtypes.Intersect(
 	EthereumEvent,
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
-		blockHash: EthereumBytes32,
+		blockHash: funtypes.Union(EthereumBytes32, funtypes.Null), // Base returns null for this at times
 		blockNumber: EthereumQuantity,
 	}),
 	funtypes.ReadonlyPartial({ // these are not optional in the eth_simulateV1 spec, but they are not standard for logs
