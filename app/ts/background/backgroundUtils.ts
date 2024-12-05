@@ -3,6 +3,7 @@ import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
+import { handleUnexpectedError } from '../utils/errors.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
@@ -37,13 +38,29 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 			if (error?.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')) {
 				return false
 			}
+			if (error?.message?.includes('The message port closed before a response was received')) {
+				return false
+			}
 		}
-		throw error
+		handleUnexpectedError(error)
+		return false
 	}
 }
 
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
-	await browser.runtime.sendMessage(serialize(PopupMessage, message))
+	try {
+		await browser.runtime.sendMessage(serialize(PopupMessage, message))
+		checkAndThrowRuntimeLastError()
+		return true
+	} catch (error) {
+		if (error instanceof Error) {
+			if (error?.message?.includes('The message port closed before a response was received')) {
+				return false
+			}
+		}
+		handleUnexpectedError(error)
+		return false
+	}
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'

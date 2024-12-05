@@ -37,6 +37,8 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 			// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
 			return
 		}
+		if (error instanceof Error && error.message?.includes('The message port closed before a response was received')) return
+		if (error instanceof Error && error.message?.includes('Could not establish connection. Receiving end does not exist')) return
 		console.error(error)
 		handleUnexpectedError(error)
 	}
