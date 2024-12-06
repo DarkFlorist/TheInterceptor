@@ -184,7 +184,7 @@ export function App() {
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
-		const popupMessageListener = async (msg: unknown) => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -197,7 +197,7 @@ export function App() {
 				}
 				case 'popup_websiteIconChanged': return setTabConnection(parsed.data)
 				case 'popup_new_block_arrived': {
-					await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+					sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 					return
 				}
@@ -206,9 +206,9 @@ export function App() {
 					return
 				}
 				case 'popup_update_rpc_list': return
-				case 'popup_simulation_state_changed': return await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+				case 'popup_simulation_state_changed': return sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 			}
-			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			if (parsed.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)

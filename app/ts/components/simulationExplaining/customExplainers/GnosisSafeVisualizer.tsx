@@ -75,11 +75,11 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [simulateExecutionReply, setSimulateExecutionReply] = useState<SimulateExecutionReply | undefined>(undefined)
-	
+
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 
 	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -104,7 +104,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	if (activeAddress === undefined) return <></>
 		return <>
 		<div class = 'notification transaction-importance-box'>
-			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>	
+			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>
 				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>
 				<div class = 'log-cell'> <SmallAddress addressBookEntry = { param.gnosisSafeMessage.verifyingContract } renameAddressCallBack = { param.renameAddressCallBack } /> </div>
 				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>

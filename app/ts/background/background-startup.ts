@@ -37,6 +37,8 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 			// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
 			return
 		}
+		if (error instanceof Error && error.message?.includes('The message port closed before a response was received')) return
+		if (error instanceof Error && error.message?.includes('Could not establish connection. Receiving end does not exist')) return
 		console.error(error)
 		handleUnexpectedError(error)
 	}
@@ -228,8 +230,8 @@ async function startup() {
 			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
 		})
 	})
-	browser.runtime.onConnect.addListener(async (port) => await catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
-	browser.runtime.onMessage.addListener(async (message: unknown) => await catchAllErrorsAndCall(async () => popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())))
+	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
+	browser.runtime.onMessage.addListener((message: unknown) => catchAllErrorsAndCall(async () => popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())))
 
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))
