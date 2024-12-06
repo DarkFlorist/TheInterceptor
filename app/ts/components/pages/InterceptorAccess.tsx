@@ -175,7 +175,7 @@ export function InterceptorAccess() {
 	const rpcEntries = useSignal<RpcEntries>([])
 
 	useEffect(() => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -194,6 +194,7 @@ export function InterceptorAccess() {
 				setActiveAddresses(parsed.data.activeAddresses)
 				return
 			}
+			return
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

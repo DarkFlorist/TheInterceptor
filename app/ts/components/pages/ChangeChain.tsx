@@ -11,7 +11,7 @@ export function ChangeChain() {
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
 
 	useEffect(() => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value

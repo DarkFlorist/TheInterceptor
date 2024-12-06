@@ -47,21 +47,21 @@ function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters
 				</p>
 			</div>
 		</div>
-		
+
 		{ inputParams.reason !== undefined || inputParams.signature !== undefined || inputParams.voter !== undefined || inputParams.params !== undefined ? <>
 			<div class = 'container'>
 				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
-					{ inputParams.reason !== undefined ? <> 
+					{ inputParams.reason !== undefined ? <>
 						<CellElement text = 'Reason:'/>
 						<CellElement text =  { inputParams.reason }/>
 					</> : <></> }
-					{ inputParams.signature !== undefined ? <> 
+					{ inputParams.signature !== undefined ? <>
 						<CellElement text = 'Signature:'/>
 						<CellElement text = { dataStringWith0xStart(inputParams.signature) } />
 					</> : <></> }
-					{ inputParams.voter !== undefined ? <> 
+					{ inputParams.voter !== undefined ? <>
 						<CellElement text = 'Voter:'/>
-						<CellElement text = { checksummedAddress(inputParams.voter) } /> 
+						<CellElement text = { checksummedAddress(inputParams.voter) } />
 					</> : <></> }
 					{ inputParams.params !== undefined ? <>
 						<CellElement text = 'Additional Data Included With Your Vote: '/>
@@ -152,13 +152,13 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [simulateExecutionReply, setSimulateExecutionReply] = useState<SimulateExecutionReply | undefined>(undefined)
-	
+
 	const [governanceVoteInputParameters, setGovernanceVoteInputParameters] = useState<GovernanceVoteInputParameters | undefined>(undefined)
 	const [simTx, setSimTx] = useState<SimulatedAndVisualizedTransaction | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 
 	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -185,7 +185,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	if (governanceVoteInputParameters === undefined || simTx === undefined || activeAddress === undefined) return <></>
 	return <>
 		<VotePanel inputParams = { governanceVoteInputParameters } />
-		
+
 		<div style = 'display: grid; grid-template-rows: max-content max-content'>
 			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'>
