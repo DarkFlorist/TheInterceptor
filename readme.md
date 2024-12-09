@@ -5,7 +5,7 @@ The Interceptor is a powerful tool for simulating transactions on EVM-based chai
 
 With MetaMask integration, you can forward transactions for signing and send them effortlessly. What truly sets The Interceptor apart, however, is its Simulation Mode. This feature lets you simulate multiple transactions sequentially, providing a detailed preview of their outcomes-even enabling you to interact with DApps at no cost!
 
-Install for [Firefox](https://github.com/DarkFlorist/TheInterceptor/releases/download/v0.0.25/TheInterceptor-firefox-v0.0.25.xpi) or [Chrome](https://www.dark.florist/google-chrome-install)
+Install for [Firefox](https://addons.mozilla.org/en-US/firefox/addon/the-interceptor/) or [Chrome](https://www.dark.florist/google-chrome-install)
 
 <img src = "transaction_outcome.png" alt = "The cutest dino" style = "width: 400px;"/>
 
