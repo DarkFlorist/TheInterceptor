@@ -11,6 +11,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { createPortal } from 'preact/compat'
+import { useOptionalComputed } from '../../utils/OptionalSignal.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -18,7 +19,7 @@ const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
 	websiteAccessList: Signal<WebsiteAccessArray>
-	addressAccessMetadata: Signal<AddressBookEntries | undefined>
+	addressAccessMetadata: Signal<AddressBookEntries>
 	selectedDomain: Signal<string | undefined>
 }
 
@@ -27,7 +28,7 @@ const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(und
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
 	const websiteAccessList = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
-	const addressAccessMetadata = useSignal<AddressBookEntries | undefined>(undefined)
+	const addressAccessMetadata = useSignal<AddressBookEntries>([])
 	const selectedDomain = useSignal<string | undefined>(undefined)
 
 	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
@@ -71,9 +72,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		// initially set selectedDomain when the page loads/reloads
 		handleHashChange()
 		window.addEventListener('hashchange', handleHashChange)
-		return () => {
-			window.removeEventListener('hashchange', handleHashChange)
-		}
+		return () => window.removeEventListener('hashchange', handleHashChange)
 	}
 
 	useSignalEffect(updateListOnSearch)
@@ -166,33 +165,13 @@ const SearchForm = (props: SearchFormProps) => {
 const WebsiteSettingsList = () => {
 	const { websiteAccessList } = useWebsiteAccess()
 
-	const updateSelection = (event: Event) => {
-		event.preventDefault()
-		const formElement = event.currentTarget
-		if (!(event instanceof SubmitEvent) || !(formElement instanceof HTMLFormElement)) return
-
-		const formData = new FormData(formElement)
-		const selectedWebsiteOrigin = formData.get(URL_HASH_KEY)?.toString()
-
-		if (!selectedWebsiteOrigin) {
-				window.location.href = window.location.pathname
-				return
-		}
-
-		window.location.href = `${ window.location.pathname }${ URL_HASH_PREFIX }${ selectedWebsiteOrigin }`
-	}
-
 	return (
 		<section style = { { paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
-			<form onSubmit = { updateSelection }>
-				{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : (
-					<>
-						<ul role = 'listbox'>{ websiteAccessList.value.map((access, index) => <WebsiteAccessOverview websiteAccess = { access } checked = { index === 0 } />) }</ul>
-						<input type = 'submit' style = { { display: 'none' } } />
-					</>
-				)}
-			</form>
+			{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : <>
+				<ul role = 'listbox'>{ websiteAccessList.value.map((access, index) => <WebsiteAccessOverview websiteAccess = { access } checked = { index === 0 } />) }</ul>
+				<input type = 'submit' style = { { display: 'none' } } />
+			</> }
 		</section>
 	)
 }
@@ -214,9 +193,8 @@ type WebsiteAccessOverviewProps = {
 }
 
 const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
-	const handleChange = (event: Event) => {
-		if (!(event.currentTarget instanceof HTMLLabelElement) || !event.currentTarget.form) return
-		event.currentTarget.form.requestSubmit()
+	const handleChange = () => {
+		window.location.href = `${ window.location.pathname }${ URL_HASH_PREFIX }${ websiteAccess.website.websiteOrigin }`
 	}
 
 	const getWebsiteStatus = () => {
@@ -262,12 +240,11 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 
 const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
-
-	const selectedWebsiteAccess = useComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
+	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 
 	const closeDetails = () => { window.location.hash = '' }
 
-	if (!selectedWebsiteAccess.value) return <></>
+	if (selectedWebsiteAccess.value === undefined) return <></>
 
 	return (
 		<FullFrameWindow>
@@ -277,30 +254,33 @@ const WebsiteSettingsDetail = () => {
           <DetailsHeader websiteAccess = { selectedWebsiteAccess.value } />
 				</header>
 				<article>
-					<NoAccessPrompt websiteAccess = { selectedWebsiteAccess } />
-					<AddressAccessList websiteAccess = { selectedWebsiteAccess } />
-					<AdvancedSettings websiteAccess = { selectedWebsiteAccess } />
+					<NoAccessPrompt websiteAccess = { selectedWebsiteAccess.value } />
+					<AddressAccessList websiteAccess = { selectedWebsiteAccess.value } />
+					<AdvancedSettings websiteAccess = { selectedWebsiteAccess.value } />
 				</article>
 			</form>
 		</FullFrameWindow>
 	)
 }
 
-const DetailsHeader = ({ websiteAccess }: { websiteAccess: WebsiteAccess | undefined }) => {
-  if (!websiteAccess) return <></>
-  return (
-    <div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
-      <figure><img width = '34' height = '34' src = { websiteAccess.website.icon } /></figure>
-      <div style = { { flex: 1 } }>
-        <h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.website.title }</h2>
-        <p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.website.websiteOrigin }</span></p>
-      </div>
-    </div>
-  )
+const DetailsHeader = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
+	return (
+		<div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
+			<figure><img width = '34' height = '34' src = { websiteAccess.value.website.icon } /></figure>
+			<div style = { { flex: 1 } }>
+				<h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.value.website.title }</h2>
+				<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.value.website.websiteOrigin }</span></p>
+			</div>
+		</div>
+	)
 }
 
-const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 	const { selectedDomain } = useWebsiteAccess()
+	const website = useComputed(() => websiteAccess.value.website)
+
+	// If the website has been granted access, don't show this message
+	if (websiteAccess.value.access === true) return <></>
 
 	const confirmOrRejectRemoval = async (returnValue: string) => {
 		if (returnValue !== 'confirm' || !websiteAccess.value) return
@@ -308,18 +288,16 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 		selectedDomain.value = undefined
 	}
 
-	if (!websiteAccess.value || websiteAccess.value.access) return <></>
-
 	return (
 		<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
 				<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
-				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { websiteAccess.value.website } /> for access while this preference is set.</p>
+				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { website } /> for access while this preference is set.</p>
 				<Modal>
 					<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
 					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
 						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
 						<p></p>
-						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { websiteAccess.value.website } /> and will prompt you for permission the next time you try to connect.</p>
+						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { website } /> and will prompt you for permission the next time you try to connect.</p>
 						<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 							<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 							<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -330,27 +308,28 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 	)
 }
 
-const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 	const access = websiteAccess.value
+	const website = useComputed(() => websiteAccess.value.website)
 
-	if (!access || access.addressAccess === undefined || access.addressAccess.length < 1) return <></>
+	if (!access || access.addressAccess === undefined || access.addressAccess.length < 1 || website === undefined) return <></>
 
 	return (
 		<Collapsible summary = 'Address Access' defaultOpen>
 			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button type = 'button' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
 				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
-				{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { access.website } addressAccess = { addressAcces } />) }
+				{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { website } addressAccess = { addressAcces } />) }
 			</div>
 		</Collapsible>
 	)
 }
 
-const AddressAccessCard = ({ website, addressAccess }: { website: Website, addressAccess: WebsiteAddressAccess }) => {
+const AddressAccessCard = ({ website, addressAccess }: { website: Signal<Website>, addressAccess: WebsiteAddressAccess }) => {
 	const { addressAccessMetadata } = useWebsiteAccess()
 
 	const setAddressAccess = (event: Event) => {
 		if (!(event.target instanceof HTMLInputElement)) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address: addressAccess.address, allowAccess: event.target.checked } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website: website.value, address: addressAccess.address, allowAccess: event.target.checked } })
 	}
 
 	const renameAddressCallBack = (newAddress: AddressBookEntry) => {
@@ -358,29 +337,28 @@ const AddressAccessCard = ({ website, addressAccess }: { website: Website, addre
 		// TODO: Implement address editing https://github.com/DarkFlorist/TheInterceptor/issues/1131
 	}
 
-	const addressBookEntry = useComputed(() => addressAccessMetadata.value?.find(entry => entry.address === addressAccess.address))
+	const addressBookEntry = useOptionalComputed(() => addressAccessMetadata.value.find(entry => entry.address === addressAccess.address))
 
+	if (addressBookEntry.deepValue === undefined) return <></>
 	return (
 		<div style = { { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) min-content min-content', columnGap: '1rem', alignItems: 'center' } }>
-			<BigAddress addressBookEntry = { addressBookEntry.value } noEditAddress = { true } renameAddressCallBack = { renameAddressCallBack } />
-			<RemoveAddressConfirmation website = { website } addressBookEntry = { addressBookEntry.value } />
+			<BigAddress addressBookEntry = { addressBookEntry.deepValue } noEditAddress = { true } renameAddressCallBack = { renameAddressCallBack } />
+			<RemoveAddressConfirmation website = { website } addressBookEntry = { addressBookEntry.deepValue } />
 			<Switch checked = { addressAccess.access } onChange = { setAddressAccess } />
 		</div>
 	)
 }
 
-const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookEntry: AddressBookEntry | undefined, website: Website }) => {
+const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookEntry: AddressBookEntry, website: Signal<Website> }) => {
 	const removeAddressAccessForWebsite = async () => {
 		if (!addressBookEntry) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.websiteOrigin, address: addressBookEntry.address } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin: website.value.websiteOrigin, address: addressBookEntry.address } })
 	}
 
 	const confirmOrRejectRemoval = (returnValue: 'confirm' | 'reject') => {
 		if (returnValue !== 'confirm') return
 		removeAddressAccessForWebsite()
 	}
-
-	if (!addressBookEntry) return <></>
 
 	return (
 		<Modal>
@@ -400,9 +378,7 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 	)
 }
 
-const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
-	if (!websiteAccess.value || !websiteAccess.value.access) return <></>
-
+const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 	return (
 		<Collapsible summary = 'Advanced Settings' defaultOpen>
 			<BlockRequestSetting websiteAccess = { websiteAccess } />
@@ -412,15 +388,14 @@ const AdvancedSettings = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcce
 	)
 }
 
-const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 	const setWebsiteExternalRequestBlocking = async (shouldBlock: boolean) => {
 		if (!websiteAccess.value) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_blockOrAllowExternalRequests', data: { website: websiteAccess.value.website, shouldBlock } })
 	}
 
-	if (!websiteAccess.value) return <></>
-
-	const requestBlockMode = useComputed(() => websiteAccess.value?.declarativeNetRequestBlockMode)
+	const requestBlockMode = useComputed(() => websiteAccess.value.declarativeNetRequestBlockMode)
+	const website = useComputed(() => websiteAccess.value.website)
 
 	const confirmOrRejectRequestBlocking = (response: 'confirm' | 'reject') => {
 		if (response !== 'confirm') return
@@ -444,7 +419,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRequestBlocking }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Blocking External Requests</h2>
 								<p></p>
-								<p style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { websiteAccess.value.website } /> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
+								<p style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website } /> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
 								<p style = { { marginBlock: '1rem' } }>Are you sure you want to block external requests from this website?</p>
 								<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
@@ -460,7 +435,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 	)
 }
 
-const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 
 	const disableWebsiteProtection = async (shouldDisable: boolean = true) => {
 		if (!websiteAccess.value) return
@@ -472,8 +447,8 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 		disableWebsiteProtection()
 	}
 
-	if (!websiteAccess.value) return <></>
-	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.value?.interceptorDisabled))
+	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.value.interceptorDisabled))
+	const website = useComputed(() => websiteAccess.value.website)
 
 	return (
 		<article class = 'flexy flexy-lg'>
@@ -492,7 +467,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectDialog }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Disable Interceptor Protection</h2>
 								<p></p>
-								<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { websiteAccess.value.website } />, which could potentially lead to loss of assets. Please exercise caution.</p>
+								<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { website } />, which could potentially lead to loss of assets. Please exercise caution.</p>
 								<p style = { { marginBlock: '1rem' } }>Are you sure you want to disable protection for this website?</p>
 								<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
@@ -507,16 +482,15 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<Web
 	)
 }
 
-const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess | undefined> }) => {
+const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 	const { selectedDomain } = useWebsiteAccess()
+	const website = useComputed(() => websiteAccess.value.website)
 
 	const confirmOrRejectUpdate = async (response: 'confirm' | 'reject') => {
 		if (response !== 'confirm' || !websiteAccess.value) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess', data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
 		selectedDomain.value = undefined
 	}
-
-	if (!websiteAccess.value) return <></>
 
 	return (
 		<article class = 'flexy flexy-lg'>
@@ -532,7 +506,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 						<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectUpdate }>
 							<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
 							<p></p>
-							<p style = { { marginBlock: '0.5rem' } }>You are about to remove <WebsiteCard website = { websiteAccess.value.website } /> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
+							<p style = { { marginBlock: '0.5rem' } }>You are about to remove <WebsiteCard website = { website } /> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
 							<p style = { { marginBlock: '1rem' } }>Are you sure you want to remove this website?</p>
 							<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 								<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
@@ -546,11 +520,11 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 	)
 }
 
-const WebsiteCard = ({ website }: { website: Website }) => {
+const WebsiteCard = ({ website }: { website: Signal<Website> }) => {
 	return (
 		<div style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.125rem 0.25rem', borderRadius: '2px', backgroundColor: 'var(--card-bg-color)', verticalAlign: 'bottom' } }>
-			<img style = { { inlineSize: '1rem' } } src = { website.icon } />
-			<div style = { { fontSize: '0.875rem', color: 'var(--text-color)' } }>{ website.websiteOrigin }</div>
+			<img style = { { inlineSize: '1rem' } } src = { website.value.icon } />
+			<div style = { { fontSize: '0.875rem', color: 'var(--text-color)' } }>{ website.value.websiteOrigin }</div>
 		</div>
 	)
 }
