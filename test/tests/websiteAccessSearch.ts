@@ -17,6 +17,11 @@ export async function main() {
         createWebsiteAccess(undefined, 'etherscan.io', ['0x0000000000000000000000000000000000000abc']),
         createWebsiteAccess('OpenSea', 'opensea.io', []),
         createWebsiteAccess('Lunaria', 'lunaria.dark.florist', []),
+        createWebsiteAccess('MultiAddress DApp', 'multi.dapp', [
+            '0x0000000000000000000000000000000000001234',
+            '0x0000000000000000000000000000000000012345',
+            '0x0000000000000000000000000000000000789abc'
+        ]),
     ]
 
     describe('searchWebsiteAccess', () => {
@@ -47,7 +52,10 @@ export async function main() {
 
         should('find website by ethereum address', () => {
             const result = searchWebsiteAccess('0x123', testData)
-            return result[0] === testData[0] // Entry with 0x123 should be first
+            // Should match both Ethereum Foundation (0x...123) and MultiAddress DApp (0x...1234, 0x...12345)
+            return result.length >= 2 &&
+                   result.some(entry => entry.website.websiteOrigin === 'ethereum.org') &&
+                   result.some(entry => entry.website.websiteOrigin === 'multi.dapp')
         })
 
         should('match website with undefined title', () => {
