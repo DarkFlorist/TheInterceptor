@@ -84,34 +84,24 @@ export function getHtmlFile(file: HTMLFile) {
 }
 
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
-	try {
-		const manifest = browser.runtime.getManifest()
-		if (manifest.manifest_version === 2) {
-			await browser.browserAction.setIcon(details)
-		} else {
-			// see https://issues.chromium.org/issues/337214677
-			await (browser.action.setIcon as unknown as ((details: browser.action._SetIconDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
-		}
-		checkAndThrowRuntimeLastError()
-	} catch {
-		console.warn('failed to set extension icon')
-		console.warn(details)
+	const manifest = browser.runtime.getManifest()
+	if (manifest.manifest_version === 2) {
+		await browser.browserAction.setIcon(details)
+	} else {
+		// see https://issues.chromium.org/issues/337214677
+		await (browser.action.setIcon as unknown as ((details: browser.action._SetIconDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
 	}
+	checkAndThrowRuntimeLastError()
 }
 
 export async function setExtensionTitle(details: browser.action._SetTitleDetails) {
-	try {
-		const manifest = browser.runtime.getManifest()
-		if (manifest.manifest_version === 2) {
-			await browser.browserAction.setTitle(details)
-		} else {
-			await browser.action.setTitle(details)
-		}
-		checkAndThrowRuntimeLastError()
-	} catch {
-		console.warn('failed to set extension title')
-		console.warn(details)
+	const manifest = browser.runtime.getManifest()
+	if (manifest.manifest_version === 2) {
+		await browser.browserAction.setTitle(details)
+	} else {
+		await browser.action.setTitle(details)
 	}
+	checkAndThrowRuntimeLastError()
 }
 
 export async function setExtensionBadgeText(details: browser.browserAction._SetBadgeTextDetails) {

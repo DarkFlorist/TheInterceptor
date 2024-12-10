@@ -15,8 +15,13 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	const tabIconDetails = { icon, iconReason }
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { tabIconDetails }))
 	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
-	await setExtensionIcon({ path: { 128: icon }, tabId })
-	await setExtensionTitle({ title: iconReason, tabId })
+	try {
+		await setExtensionIcon({ path: { 128: icon }, tabId })
+		await setExtensionTitle({ title: iconReason, tabId })
+	} catch (error) {
+		console.warn('failed to set interceptor icon and reason')
+		console.warn(error)
+	}
 }
 
 export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
