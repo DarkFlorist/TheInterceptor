@@ -44,9 +44,7 @@ function calculateWebsiteAccessScore(entry: WebsiteAccess, query: string): Searc
 	const titleMatch = entry.website.title ? computeSearchMatch(query, entry.website.title.toLowerCase()) : undefined
 	const addressMatches = entry.addressAccess?.map((addr: WebsiteAddressAccess) => computeSearchMatch(query, addressString(addr.address).toLowerCase())) || []
 
-	const bestAddressMatch = addressMatches.length > 0 ? addressMatches.reduce(selectLongerMatch) : undefined
-
-	const bestResult = [urlMatch, titleMatch, bestAddressMatch]
+	const bestResult = [urlMatch, titleMatch, ...addressMatches]
 		.filter((x): x is NonNullable<typeof x> => x !== undefined)
 		.reduce(selectLongerMatch, { length: 0, location: Infinity })
 
