@@ -14,7 +14,7 @@ import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddr
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, calculateRealizedEffectiveGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, calculateRealizedEffectiveGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
@@ -145,8 +145,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			nonce: 0n,
 			chainId: ethereumClientService.getChainId(),
 		}
-		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? { gas: gnosisSafeMessage.message.message.baseGas } : await simulateEstimateGas(ethereumClientService, undefined, simulationState, transactionWithoutGas)
-		if ('error' in gasLimit) return returnError(gasLimit.error.message)
+		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? { gas: gnosisSafeMessage.message.message.baseGas } : { gas: simulationGasLeft(simulationState, await ethereumClientService.getBlock(undefined)) }
 		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
 		const metaTransaction: WebsiteCreatedEthereumUnsignedTransaction = {
 			website: gnosisSafeMessage.website,
