@@ -1,4 +1,4 @@
-import { ReadonlySignal, Signal, batch } from '@preact/signals'
+import { ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
 import { useMemo } from 'preact/hooks'
 
 export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements ReadonlySignal<Signal<T> | undefined> {
@@ -42,4 +42,10 @@ export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements 
 
 export function useOptionalSignal<T>(value: Signal<T> | T | undefined, startUndefined?: boolean) {
 	return useMemo(() => new OptionalSignal<T>(value, startUndefined), [])
+}
+
+export const useOptionalComputed = <T>(computeFn: () => T | undefined) => {
+	const resultSignal = useOptionalSignal<T>(undefined)
+	useSignalEffect(() => { resultSignal.deepValue = computeFn() })
+	return resultSignal
 }
