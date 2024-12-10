@@ -279,6 +279,9 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.value.website)
 
+	// If the website has been granted access, don't show this message
+	if (websiteAccess.value.access === true) return <></>
+
 	const confirmOrRejectRemoval = async (returnValue: string) => {
 		if (returnValue !== 'confirm' || !websiteAccess.value) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeWebsiteAccess',  data: { websiteOrigin: websiteAccess.value.website.websiteOrigin } })
