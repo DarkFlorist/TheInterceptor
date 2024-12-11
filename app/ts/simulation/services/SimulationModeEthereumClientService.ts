@@ -219,7 +219,7 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 
 export const getAddressToMakeRich = async () => await getMakeMeRich() ? (await getSettings()).activeSimulationAddress : undefined
 
-export const appendTransaction = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transaction: WebsiteCreatedEthereumUnsignedTransactionOrFailed): Promise<SimulationState> => {
+export const appendTransaction = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transaction: WebsiteCreatedEthereumUnsignedTransactionOrFailed, temporaryAccountOverrides: StateOverrides = {}): Promise<SimulationState> => {
 	const getSignedTransactions = () => {
 		if (!transaction.success) return simulationState === undefined ? [] : simulationState.simulatedTransactions.map((x) => x.preSimulationTransaction.signedTransaction)
 		const signed = mockSignTransaction(transaction.transaction)
@@ -238,8 +238,8 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
 	const signedTxs = getSignedTransactions()
 	const addressToMakeRich = await getMakeMeRichAddress()
-	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
-	const ethSimulateV1CallResult = (await ethereumClientService.simulateTransactionsAndSignatures([signedTxs], signedMessages, parentBlock.number, requestAbortController, makeMeRich))[0]
+	const extraAccountOverrides = { ...temporaryAccountOverrides, ...getMakeMeRichStateOverride(addressToMakeRich) }
+	const ethSimulateV1CallResult = (await ethereumClientService.simulateTransactionsAndSignatures([signedTxs], signedMessages, parentBlock.number, requestAbortController, extraAccountOverrides))[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('multicall length does not match in appendTransaction')
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
 	const transactionData = simulationState === undefined ? [transactionWebsiteData] : simulationState.simulatedTransactions.map((x) => ({ website: x.preSimulationTransaction.website, created: x.preSimulationTransaction.created, originalRequestParameters: x.preSimulationTransaction.originalRequestParameters, transactionIdentifier: x.preSimulationTransaction.transactionIdentifier })).concat(transactionWebsiteData)
@@ -251,7 +251,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		parentBlock.number,
 		signedTxs,
 		signedMessages,
-		makeMeRich,
+		extraAccountOverrides,
 	)
 	if (ethSimulateV1CallResult.calls.length !== tokenBalancesAfter.length) throw Error('tokenBalancesAfter length does not match')
 
