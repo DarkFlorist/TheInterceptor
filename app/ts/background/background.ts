@@ -142,11 +142,11 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
 
 		/*
-			If we are doing a normal call, we send a transaction from gnosis safe to the callable address
-			If we are doing a delegate call, we do a following operation:
-				1) move safe (gnosisSafeMessage.verifyingContract.address) -> 0x0000000000000000000000000000000000920515
-				2) replace safe with GnosisSafeProxyProxy (a contract that delegates eveyrything to 0x...920515, except call to `delegateCallExecute`)
-				3) call safe (now proxyproxy) with delegateCallExecute(address target, bytes memory callData)
+		If we are doing a normal call, we send a transaction from gnosis safe to the callable address
+		If we are doing a delegate call, we do a following operation:
+			1) move safe (gnosisSafeMessage.verifyingContract.address) -> 0x0000000000000000000000000000000000920515
+			2) replace safe with GnosisSafeProxyProxy (a contract that delegates everything to 0x0000000000000000000000000000000000920515, except calls to `delegateCallExecute`)
+			3) call safe (which is our proxyproxy) with `delegateCallExecute(address target, bytes memory callData)`
 		*/
 
 		const transactionBase = {
