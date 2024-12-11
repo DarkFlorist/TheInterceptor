@@ -95,12 +95,12 @@ contract GnosisSafeProxyProxy {
 		return returnData;
 	}
 
-	/// @dev Fallback function forwards all transactions and returns all received return data.
+	/// forwards all transactions to 0x0000000000000000000000000000000000920515
 	fallback() external payable {
 		assembly {
-			let _singleton := 0x0000000000000000000000000000000000920515
+			let _originalGnosisSafeProxy := 0x0000000000000000000000000000000000920515
 			calldatacopy(0, 0, calldatasize())
-			let success := delegatecall(gas(), _singleton, 0, calldatasize(), 0, 0)
+			let success := delegatecall(gas(), _originalGnosisSafeProxy, 0, calldatasize(), 0, 0)
 			returndatacopy(0, 0, returndatasize())
 			if iszero(success) {
 				revert(0, returndatasize())

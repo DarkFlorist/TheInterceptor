@@ -140,12 +140,12 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
-
+		const ORIGINAL_GNOSIS_SAFE = 0x0000000000000000000000000000000000920515n
 		/*
 		If we are doing a normal call, we send a transaction from gnosis safe to the callable address
 		If we are doing a delegate call, we do a following operation:
-			1) move safe (gnosisSafeMessage.verifyingContract.address) -> 0x0000000000000000000000000000000000920515
-			2) replace safe with GnosisSafeProxyProxy (a contract that delegates everything to 0x0000000000000000000000000000000000920515, except calls to `delegateCallExecute`)
+			1) move safe (gnosisSafeMessage.verifyingContract.address) -> ORIGINAL_GNOSIS_SAFE
+			2) replace safe with GnosisSafeProxyProxy (a contract that delegates everything to ORIGINAL_GNOSIS_SAFE, except calls to `delegateCallExecute`)
 			3) call safe (which is our proxyproxy) with `delegateCallExecute(address target, bytes memory callData)`
 		*/
 
@@ -182,7 +182,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			if (gnosisSafeCode === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
 			return {
 				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
-				[addressString(0x0000000000000000000000000000000000920515n)]: { code: gnosisSafeCode }
+				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode }
 			}
 		}
 		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
