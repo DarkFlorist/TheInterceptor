@@ -180,7 +180,8 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		accessList: []
 	}
 	try {
-		const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [tmp], block.number)
+		const multiCall = (await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [tmp], block.number))[0]
+		if (multiCall === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '' } }
 		const lastResult = multiCall.calls[multiCall.calls.length - 1]
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
@@ -238,10 +239,11 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	const signedTxs = getSignedTransactions()
 	const addressToMakeRich = await getMakeMeRichAddress()
 	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
-	const ethSimulateV1CallResult = await ethereumClientService.simulateTransactionsAndSignatures(signedTxs, signedMessages, parentBlock.number, requestAbortController, makeMeRich)
+	const ethSimulateV1CallResult = (await ethereumClientService.simulateTransactionsAndSignatures([signedTxs], signedMessages, parentBlock.number, requestAbortController, makeMeRich))[0]
+	if (ethSimulateV1CallResult === undefined) throw new Error('multicall length does not match in appendTransaction')
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
 	const transactionData = simulationState === undefined ? [transactionWebsiteData] : simulationState.simulatedTransactions.map((x) => ({ website: x.preSimulationTransaction.website, created: x.preSimulationTransaction.created, originalRequestParameters: x.preSimulationTransaction.originalRequestParameters, transactionIdentifier: x.preSimulationTransaction.transactionIdentifier })).concat(transactionWebsiteData)
-	if (ethSimulateV1CallResult.calls.length !== signedTxs.length) throw 'multicall length does not match in appendTransaction'
+	if (ethSimulateV1CallResult.calls.length !== signedTxs.length) throw Error('multicall length does not match in appendTransaction')
 	const tokenBalancesAfter = await getTokenBalancesAfter(
 		ethereumClientService,
 		requestAbortController,
@@ -251,7 +253,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		signedMessages,
 		makeMeRich,
 	)
-	if (ethSimulateV1CallResult.calls.length !== tokenBalancesAfter.length) throw 'tokenBalancesAfter length does not match'
+	if (ethSimulateV1CallResult.calls.length !== tokenBalancesAfter.length) throw Error('tokenBalancesAfter length does not match')
 
 	return {
 		addressToMakeRich,
@@ -259,7 +261,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 			const signedTx = signedTxs[index]
 			const tokenBalancesAfterForIndex = tokenBalancesAfter[index]
 			const transactionDataForIndex = transactionData[index]
-			if (signedTx === undefined || tokenBalancesAfterForIndex === undefined || transactionDataForIndex === undefined) throw 'invalid transaction index'
+			if (signedTx === undefined || tokenBalancesAfterForIndex === undefined || transactionDataForIndex === undefined) throw Error('invalid transaction index')
 			return {
 				type: 'transaction',
 				ethSimulateV1CallResult: singleResult,
@@ -298,8 +300,8 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
-	const multicallResult = await ethereumClientService.simulateTransactionsAndSignatures(transactionStack.transactions.map((x) => x.signedTransaction), transactionStack.signedMessages, parentBlock.number, requestAbortController, makeMeRich)
-	if (multicallResult.calls.length !== transactionStack.transactions.length) throw new Error('Multicall length does not match in setSimulationTransactions')
+	const multicallResult = (await ethereumClientService.simulateTransactionsAndSignatures([transactionStack.transactions.map((x) => x.signedTransaction)], transactionStack.signedMessages, parentBlock.number, requestAbortController, makeMeRich))[0]
+	if (multicallResult === undefined || multicallResult.calls.length !== transactionStack.transactions.length) throw new Error('Multicall length does not match in setSimulationTransactions')
 
 	const tokenBalancesAfter: Promise<TokenBalancesAfter>[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.calls.length; resultIndex++) {
@@ -525,14 +527,16 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		nonce: await ethereumClientService.getTransactionCount(MOCK_ADDRESS, 'latest', requestAbortController),
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
-		gas: simulationGasLeft(simulationState, block),
+		gas: block.gasLimit,
 		to: GET_CODE_CONTRACT,
 		value: 0n,
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], block.number, { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
-	const lastResult = multiCall.calls[multiCall.calls.length - 1]
+	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], block.number, { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } }, true)
+	const lastBlock = multiCall[multiCall.length - 1]
+	if (lastBlock === undefined) throw new Error('last block did not exist in multicall')
+	const lastResult = lastBlock.calls[lastBlock.calls.length - 1]
 	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
 	if (lastResult.status === 'failure') return { statusCode: 'failure' } as const
 	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnData)
@@ -694,9 +698,10 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 }
 
 export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest') => {
-	const currentBlock = await ethereumClientService.getBlockNumber(requestAbortController)
-	const blockNumToUse = blockTag === 'latest' || blockTag === 'pending' ? currentBlock : min(blockTag, currentBlock)
-	const simulationStateToUse = blockNumToUse >= currentBlock ? simulationState : undefined
+	const currentBlock = await ethereumClientService.getBlock(requestAbortController)
+	if (currentBlock === null) throw new Error('cannot perform call on top of missing block')
+	const blockNumToUse = blockTag === 'latest' || blockTag === 'pending' ? currentBlock.number : min(blockTag, currentBlock.number)
+	const simulationStateToUse = blockNumToUse >= currentBlock.number ? simulationState : undefined
 	const from = params.from ?? DEFAULT_CALL_ADDRESS
 	const transaction = {
 		...params,
@@ -708,9 +713,11 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	} as const
 
 	//todo, we can optimize this by leaving nonce out
-	const multicallResult = await simulatedMulticall(ethereumClientService, requestAbortController, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock(requestAbortController)) : params.gasLimit }], blockNumToUse)
-	const callResult = multicallResult.calls[multicallResult.calls.length - 1]
-	if (callResult === undefined) throw new Error('failed to eth simulate')
+	const multicallResult = await simulatedMulticall(ethereumClientService, requestAbortController, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? currentBlock.gasLimit : params.gasLimit }], blockNumToUse, {}, true)
+	const lastBlockResult = multicallResult[multicallResult.length - 1]
+	if (lastBlockResult === undefined) throw new Error('failed to get last block in eth simulate')
+	const callResult = lastBlockResult.calls[lastBlockResult.calls.length - 1]
+	if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 	if (callResult?.status === 'failure') return { error: callResult.error }
 	return { result: callResult.returnData }
 }
@@ -719,10 +726,11 @@ const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | unde
 	return simulationState === undefined ? [] : simulationState.signedMessages.map((x) => ({ fakeSignedFor: x.fakeSignedFor, originalRequestParameters: x.originalRequestParameters }))
 }
 
-const simulatedMulticall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
+const simulatedMulticall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}, simulateOnBlockAboveExistingSimulationStack: boolean = false) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
 	const makeMeRich = getMakeMeRichStateOverride(simulationState?.addressToMakeRich)
-	return await ethereumClientService.simulateTransactionsAndSignatures(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber, requestAbortController, { ...extraAccountOverrides, ...makeMeRich })
+	const transactionsInBlocks = simulateOnBlockAboveExistingSimulationStack ? [mergedTxs, transactions] : [mergedTxs.concat(transactions)]
+	return await ethereumClientService.simulateTransactionsAndSignatures(transactionsInBlocks, getSignedMessagesWithFakeSigner(simulationState), blockNumber, requestAbortController, { ...extraAccountOverrides, ...makeMeRich })
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
@@ -818,12 +826,14 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		input: tokenAndEthBalancesInputData,
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
-		gas: 15_000_000n,
+		gas: (await ethereumClientService.getBlock(requestAbortController))?.gasLimit || 15_000_000n,
 		nonce: 0n,
 		chainId: ethereumClientService.getChainId(),
 	} as const
-	const multicallResults = await ethereumClientService.simulateTransactionsAndSignatures(transactionQueue.concat(callTransaction), signedMessages, blockNumber, requestAbortController, extraAccountOverrides)
-	const aggregate3CallResult = multicallResults.calls[multicallResults.calls.length - 1]
+	const multicallResults = await ethereumClientService.simulateTransactionsAndSignatures([transactionQueue, [callTransaction]], signedMessages, blockNumber, requestAbortController, extraAccountOverrides)
+	const lastBlockResults = multicallResults[multicallResults.length - 1]
+	if (lastBlockResults === undefined) throw Error('Failed to get last block in eth simulate in aggregate3')
+	const aggregate3CallResult = lastBlockResults.calls[lastBlockResults.calls.length - 1]
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
 	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')

@@ -207,12 +207,12 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(unvalidatedResult)
 	}
 
-	public readonly simulateTransactionsAndSignatures = async (transactions: readonly OptionalEthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, requestAbortController: AbortController | undefined, extraAccountOverrides: StateOverrides = {}) => {
-		const transactionsWithRemoveZeroPricedOnes = transactions.map((transaction) => {
+	public readonly simulateTransactionsAndSignatures = async (transactionsInBlocks: readonly OptionalEthereumUnsignedTransaction[][], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, requestAbortController: AbortController | undefined, extraAccountOverrides: StateOverrides = {}) => {
+		const transactionsWithRemoveZeroPricedOnes = transactionsInBlocks.map((block) => block.map((transaction) => {
 			if (transaction.type !== '1559') return transaction
 			const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction
 			return { ...transactionWithoutMaxFee, ...maxFeePerGas === 0n ? {} : { maxFeePerGas } }
-		})
+		}))
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
@@ -233,16 +233,22 @@ export class EthereumClientService {
 			return acc
 		}, {} as { [key: string]: bigint } )
 
-		const query = [{
-			calls: transactionsWithRemoveZeroPricedOnes,
-			blockOverride: {
-				number: parentBlock.number + 1n,
-				prevRandao: 0x1n,
-				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
-				gasLimit: parentBlock.gasLimit,
-				feeRecipient: parentBlock.miner,
-				baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
-			},
+		const getBlockOverrides = (index: number) => ({
+			number: parentBlock.number + 1n + BigInt(index),
+			prevRandao: 0x1n,
+			time: new Date(parentBlock.timestamp.getTime() + (index + 1) * 12 * 1000),
+			gasLimit: parentBlock.gasLimit,
+			feeRecipient: parentBlock.miner,
+			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+		})
+
+		const [firstBlocksTransactions, ...restofTheBlocks] = transactionsWithRemoveZeroPricedOnes
+		if (firstBlocksTransactions === undefined) throw new Error('No blocks specified for simulateTransactionsAndSignatures')
+
+		// add stateOverrides only to the first block (ecrecover overrides, make me rich and such)
+		const firstBlocksCalls = {
+			calls: firstBlocksTransactions,
+			blockOverride: getBlockOverrides(0),
 			stateOverrides: {
 				...signatures.length > 0 ? {
 					[addressString(ecRecoverAddress)]: {
@@ -253,12 +259,11 @@ export class EthereumClientService {
 				} : {},
 				...extraAccountOverrides,
 			}
-		}]
-		const ethSimulateResults = await this.ethSimulateV1(query, parentBlock.number, requestAbortController)
-		if (ethSimulateResults.length !== 1) throw new Error('Ran Eth Simulate for one block but did not get one block')
-		const singleMulticalResult = ethSimulateResults[0]
-		if (singleMulticalResult === undefined) throw new Error('Eth Simualte result was undefined')
-		return singleMulticalResult
+		}
+		const blockStateCalls = [firstBlocksCalls, ...restofTheBlocks.map((calls, index) => ({ calls, blockOverride: getBlockOverrides(index + 1) }))]
+		const ethSimulateResults = await this.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
+		if (ethSimulateResults.length !== transactionsWithRemoveZeroPricedOnes.length) throw new Error('Ran Eth Simulate for one block but did not get one block')
+		return ethSimulateResults
 	}
 
 	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {
