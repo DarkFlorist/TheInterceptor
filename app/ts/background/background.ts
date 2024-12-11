@@ -102,7 +102,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 
 		if (tokenBalancesAfter[0] === undefined) return returnError('Could not compute token balances')
 
-		const governanceContractSimulationState: SimulationState =  {
+		const governanceContractSimulationState: SimulationState = {
 			addressToMakeRich: undefined,
 			simulatedTransactions: [{
 				preSimulationTransaction: {

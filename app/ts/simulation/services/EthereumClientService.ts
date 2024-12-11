@@ -262,7 +262,7 @@ export class EthereumClientService {
 		}
 		const blockStateCalls = [firstBlocksCalls, ...restofTheBlocks.map((calls, index) => ({ calls, blockOverride: getBlockOverrides(index + 1) }))]
 		const ethSimulateResults = await this.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
-		if (ethSimulateResults.length !== transactionsWithRemoveZeroPricedOnes.length) throw new Error('Ran Eth Simulate for one block but did not get one block')
+		if (ethSimulateResults.length !== transactionsWithRemoveZeroPricedOnes.length) throw new Error(`Ran Eth Simulate for ${ transactionsWithRemoveZeroPricedOnes.length } blocks but got ${ ethSimulateResults.length } blocks`)
 		return ethSimulateResults
 	}
 
