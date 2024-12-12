@@ -178,11 +178,11 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		}
 		const getTemporaryAccountOverrides = async () => {
 			if (!isDelegateCall) return {}
-			const gnosisSafeCode = (await getSimulatedCode(ethereumClientService, undefined, simulationState, gnosisSafeMessage.verifyingContract.address)).getCodeReturn
-			if (gnosisSafeCode === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
+			const gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, simulationState, gnosisSafeMessage.verifyingContract.address)
+			if (gnosisSafeCode?.getCodeReturn === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
 			return {
 				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
-				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode }
+				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode.getCodeReturn }
 			}
 		}
 		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
