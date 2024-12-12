@@ -231,8 +231,8 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 	tokenIdName: funtypes.String
 })
 
-export type EventsForEachTransaction = funtypes.Static<typeof EventsForEachTransaction>
-export const EventsForEachTransaction = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
+type EventsForEachTransaction = funtypes.Static<typeof EventsForEachTransaction>
+const EventsForEachTransaction = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({

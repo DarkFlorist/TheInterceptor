@@ -325,7 +325,7 @@ export function InterceptorAccess() {
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
 						modifyAddressWindowState = { modifyAddressSignal }
-						close = { () => appPage.value = { page: { page: 'Home' }, accessRequestId: '' } }
+						close = { () => { appPage.value = { page: { page: 'Home' }, accessRequestId: '' } } }
 						activeAddress = { pendingAccessRequest.requestAccessToAddress?.address }
 						rpcEntries = { rpcEntries }
 						modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
@@ -340,7 +340,7 @@ export function InterceptorAccess() {
 					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
 						signerAccounts = { pendingAccessRequest.signerAccounts }
-						close = { () => appPage.value = { page: { page: 'Home' }, accessRequestId: '' } }
+						close = { () => { appPage.value = { page: { page: 'Home' }, accessRequestId: '' } } }
 						activeAddresses = { activeAddresses }
 						signerName = { pendingAccessRequest.signerName }
 						renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }

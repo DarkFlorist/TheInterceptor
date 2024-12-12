@@ -3,7 +3,7 @@ import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, Et
 import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
-import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed, TransactionStack, PreSimulationTransaction } from '../../types/visualizer-types.js'
+import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, WebsiteCreatedEthereumUnsignedTransactionOrFailed, TransactionStack, PreSimulationTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
@@ -356,17 +356,6 @@ const getTransactionQueue = (simulationState: SimulationState | undefined) => {
 	if (simulationState === undefined) return []
 	return simulationState.simulatedTransactions.map((x) => x.preSimulationTransaction.signedTransaction)
 }
-
-export const getEmptySimulationStateWithRichAddress = (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined, oldSimulationState: SimulationState | undefined): SimulationState => ({
-	addressToMakeRich,
-	simulatedTransactions: [],
-	blockNumber: oldSimulationState?.blockNumber || 0n,
-	blockTimestamp: new Date(),
-	rpcNetwork: ethereumClientService.getRpcEntry(),
-	simulationConductedTimestamp: new Date(),
-	signedMessages: [],
-	baseFeePerGas: 0n,
-})
 
 export const getNonceFixedSimulatedTransactions = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulatedTransactions: readonly SimulatedTransaction[]) => {
 	const isFixableNonceError = (transaction: SimulatedTransaction) => {
@@ -726,7 +715,7 @@ const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | unde
 	return simulationState === undefined ? [] : simulationState.signedMessages.map((x) => ({ fakeSignedFor: x.fakeSignedFor, originalRequestParameters: x.originalRequestParameters }))
 }
 
-const simulatedMulticall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}, simulateOnBlockAboveExistingSimulationStack: boolean = false) => {
+const simulatedMulticall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}, simulateOnBlockAboveExistingSimulationStack = false) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
 	const makeMeRich = getMakeMeRichStateOverride(simulationState?.addressToMakeRich)
 	const transactionsInBlocks = simulateOnBlockAboveExistingSimulationStack ? [mergedTxs, transactions] : [mergedTxs.concat(transactions)]
@@ -955,10 +944,6 @@ export const getTokenBalancesAfter = async (
 		tokenBalancesAfter.push(balancesPromises)
 	}
 	return await Promise.all(tokenBalancesAfter)
-}
-
-export const appendSignedMessage = async (simulationState: SimulationState, signedMessage: SignedMessageTransaction): Promise<SimulationState> => {
-	return modifyObject(simulationState, { signedMessages: simulationState.signedMessages.concat(signedMessage) })
 }
 
 // takes the most recent block that the application is querying and does the calculation based on that

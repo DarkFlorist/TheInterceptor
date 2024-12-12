@@ -49,7 +49,7 @@ export interface IUnsignedTransaction1559 {
 	}[]
 }
 
-export interface IOptimismDepositTransaction {
+interface IOptimismDepositTransaction {
 	readonly type: 'optimismDeposit'
 	readonly sourceHash: bigint
 	readonly from: bigint

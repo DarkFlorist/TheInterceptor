@@ -8,7 +8,6 @@ import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
-import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -32,7 +31,6 @@ class MockEthereumJSONRpcRequestHandler {
 				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			}
 			case 'eth_simulateV1': {
-				console.log(JSON.stringify(serialize(EthSimulateV1Params, rpcRequest)))
 				if (areEqualUint8Arrays(rpcRequest.params[0]?.blockStateCalls[1]?.calls[0]?.input, stringToUint8Array('0x82ad56cb0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000100000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000da9dfa130df4de4673b89022ee50ff26f6ea73cf00000000000000000000000000000000000000000000000000000000'))) {
 					// get eth balance query
 					return parseRequest(eth_simulateV1_get_eth_balance_multicall)
@@ -41,7 +39,7 @@ class MockEthereumJSONRpcRequestHandler {
 					// get eth balance query
 					return parseRequest(eth_simulateV1_get_eth_balance_multicall)
 				}
-				if (rpcRequest.params[0]?.blockStateCalls.length == 2) {
+				if (rpcRequest.params[0]?.blockStateCalls.length === 2) {
 					return parseRequest(eth_simulateV1_dummy_call_result_2calls)
 				}
 				return parseRequest(eth_simulateV1_dummy_call_result)

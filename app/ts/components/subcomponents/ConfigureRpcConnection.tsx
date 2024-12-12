@@ -313,7 +313,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
 }
 
-export const StatusIcon = ({ state }: { state: AsyncStates }) => {
+const StatusIcon = ({ state }: { state: AsyncStates }) => {
 	switch (state) {
 		case 'inactive': return <></>
 		case 'pending': return <SpinnerIcon />
@@ -322,19 +322,19 @@ export const StatusIcon = ({ state }: { state: AsyncStates }) => {
 	}
 }
 
-export const SpinnerIcon = () => (
+const SpinnerIcon = () => (
 	<svg class = 'spin' width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
 		<circle cx = '8' cy = '8' r = '6.5' stroke = 'var(--text-color, currentColor)' stroke-opacity = '.5' stroke-width = '3' />
 		<path d = 'M8 0a8 8 0 1 0 8 8h-3a5 5 0 1 1-5-5z' fill = 'var(--text-color, currentColor)' fill-opacity = '.4' />
 	</svg>
 )
 
-export const CheckIcon = () => (
+const CheckIcon = () => (
 	<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg' >
 		<path d = 'M15 3L5.64686 12.5524L1 7.84615' stroke = 'var(--positive-color, currentColor)' strokeWidth = { 2 } />
 	</svg>
 )
 
-export const Trash = () => (
+const Trash = () => (
 	<svg xmlns = 'http://www.w3.org/2000/svg' width = '1em' height = '1em' viewBox = '0 0 32 32'><path fill = 'currentColor' d = 'M15 4c-.522 0-1.06.185-1.438.563S13 5.478 13 6v1H7v2h1v16c0 1.645 1.355 3 3 3h12c1.645 0 3-1.355 3-3V9h1V7h-6V6c0-.522-.185-1.06-.563-1.438C20.06 4.186 19.523 4 19 4zm0 2h4v1h-4zm-5 3h14v16c0 .555-.445 1-1 1H11c-.555 0-1-.445-1-1zm2 3v11h2V12zm4 0v11h2V12zm4 0v11h2V12z' /></svg>
 )

@@ -260,7 +260,7 @@ const addNewEnsNameEntry = async (name: string) => {
 	await addEnsNodeHash(name)
 }
 
-export const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientService, ensNameHash: EthereumBytes32, extraNameHashes: ENSNameHashes) => {
+const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientService, ensNameHash: EthereumBytes32, extraNameHashes: ENSNameHashes) => {
 	const currentHashes = [ENS_ADDR_REVERSE_NODE, ...await getEnsNodeHashes()]
 	const entry = currentHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (entry !== undefined) return entry

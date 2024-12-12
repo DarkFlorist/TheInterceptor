@@ -272,9 +272,8 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 			case 'Transaction': {
 				if (transactionToSimulate.success) {
 					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
-				} else {
-					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 				}
+				return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 			}
 			default: assertNever(transactionOrMessage)
 		}

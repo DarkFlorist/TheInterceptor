@@ -86,7 +86,7 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 	return { imageData, color, bgcolor, spotcolor }
 }
 
-export type SVGBlockieProps = {
+type SVGBlockieProps = {
 	style?: JSX.CSSProperties
 	address: bigint
 }

@@ -38,8 +38,8 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	signerName: SignerName,
 })
 
-export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
-export const ConfirmTransactionDialogState = funtypes.Intersect(
+type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
+const ConfirmTransactionDialogState = funtypes.Intersect(
 	ConfirmTransactionSimulationBaseData,
 	funtypes.ReadonlyObject({
 		eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),

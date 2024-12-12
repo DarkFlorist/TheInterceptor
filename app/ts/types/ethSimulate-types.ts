@@ -56,7 +56,7 @@ export const BlockCalls = funtypes.Intersect(
 	})
 )
 
-export type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
+type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
 const EthSimulateV1ParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,

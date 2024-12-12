@@ -79,8 +79,8 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
-export type EnsFuseName = funtypes.Static<typeof EnsFuseName>
-export const EnsFuseName = funtypes.Union(
+type EnsFuseName = funtypes.Static<typeof EnsFuseName>
+const EnsFuseName = funtypes.Union(
 	funtypes.Literal('Cannot Unwrap Name'),
 	funtypes.Literal('Cannot Burn Fuses'),
 	funtypes.Literal('Cannot Transfer'),
@@ -290,8 +290,8 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
-export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
-export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
+type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
+const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC1155'),
 	from: AddressBookEntry,
@@ -321,13 +321,6 @@ export const TokenVisualizerResultWithMetadata = funtypes.Union(
 	TokenVisualizerErc1155Event,
 	TokenVisualizerNFTAllApprovalEvent,
 )
-
-export type MaybeParsedEvent = funtypes.Static<typeof MaybeParsedEvent>
-export const MaybeParsedEvent = funtypes.Union(ParsedEvent, NonParsedEvent)
-
-export type MaybeParsedEvents = funtypes.Static<typeof MaybeParsedEvents>
-export const MaybeParsedEvents = funtypes.ReadonlyArray(MaybeParsedEvent)
-
 
 export type TokenEvent = funtypes.Static<typeof TokenEvent>
 export const TokenEvent = funtypes.Intersect(

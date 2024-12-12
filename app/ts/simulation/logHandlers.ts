@@ -292,7 +292,7 @@ function decodeENSName(encodedName: Uint8Array): string {
 		const length = encodedName[i]
 		if (length === 0 || length === undefined) break
 		i++
-		let label = new TextDecoder().decode(encodedName.slice(i, i + length))
+		const label = new TextDecoder().decode(encodedName.slice(i, i + length))
 		decodedName += label + '.'
 		i += length
 	}

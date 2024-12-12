@@ -22,7 +22,7 @@ export function isValidAbi(abi: string) {
 	}
 }
 
-export function getBlockExplorer(chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) {
+function getBlockExplorer(chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) {
 	if (chainId === 'AllChains') return undefined
 	const primaryRpc = rpcEntries.find((rpc) => rpc.chainId === chainId && rpc.primary)
 	if (primaryRpc !== undefined && primaryRpc.blockExplorer !== undefined) return primaryRpc.blockExplorer

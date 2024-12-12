@@ -14,7 +14,6 @@ import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event } from '../../types/EnrichedEthereumData.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -145,9 +144,6 @@ function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx 
 	return true
 }
 const getSimpleTokenApprovalOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleApprovalTransaction>((simTx) => isSimpleTokenApproval(simTx) ? simTx : undefined)
-
-export type TokenResult = funtypes.Static<typeof TokenResult>
-export const TokenResult = funtypes.Intersect(funtypes.Union(TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerErc1155Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) }))
 
 export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
 export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(

@@ -347,7 +347,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } = [` }</p>
 						<StringElement text = { params.nonTokenLog.logInformation.fuses.join(', ') } />
-						<p style = { textStyle } class = 'paragraph'> { `]` }</p>
+						<p style = { textStyle } class = 'paragraph'>]</p>
 					</>
 				}
 				return <>
