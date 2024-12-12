@@ -14,7 +14,7 @@ import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddr
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, calculateRealizedEffectiveGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, calculateRealizedEffectiveGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getSimulatedCode, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
@@ -31,9 +31,9 @@ import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
-import { Interface } from 'ethers'
+import { Interface, ethers } from 'ethers'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
-import { dataStringWith0xStart } from '../utils/bigint.js'
+import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
@@ -41,6 +41,7 @@ import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/Enri
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { areEqualArrays } from '../utils/typed-arrays.js'
+import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 
 async function updateMetadataForSimulation(
 	simulationState: SimulationState,
@@ -134,17 +135,37 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationState: SimulationState | undefined, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
-		const transactionWithoutGas = {
+		const delegateCallExecuteInterface = new ethers.Interface(['function delegateCallExecute(address, bytes memory) payable external returns (bytes memory)'])
+
+		// Call: 0x0, DelegateCall: 0x1
+		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
+		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
+		const ORIGINAL_GNOSIS_SAFE = 0x0000000000000000000000000000000000920515n // Gnosis in leetspeak (9=G, 2=N, 0=O, 5=S, 1=I)
+		/*
+		If we are doing a normal call, we send a transaction from gnosis safe to the callable address
+		If we are doing a delegate call, we do a following operation:
+			1) move safe (gnosisSafeMessage.verifyingContract.address) -> ORIGINAL_GNOSIS_SAFE
+			2) replace safe with GnosisSafeProxyProxy (a contract that delegates everything to ORIGINAL_GNOSIS_SAFE, except calls to `delegateCallExecute`)
+			3) call safe (which is our proxyproxy) with `delegateCallExecute(address target, bytes memory callData)`
+		*/
+
+		const transactionBase = {
 			value: gnosisSafeMessage.message.message.value,
-			to: gnosisSafeMessage.to.address,
 			maxPriorityFeePerGas: 0n,
 			maxFeePerGas: 0n,
-			input: gnosisSafeMessage.parsedMessageData.input,
 			type: '1559' as const,
 			from: gnosisSafeMessage.verifyingContract.address,
 			nonce: 0n,
 			chainId: ethereumClientService.getChainId(),
 		}
+
+		const transactionWithoutGas = { ...transactionBase, ...isDelegateCall ? {
+			to: gnosisSafeMessage.verifyingContract.address,
+			input: stringToUint8Array(delegateCallExecuteInterface.encodeFunctionData('delegateCallExecute', [addressString(gnosisSafeMessage.to.address), gnosisSafeMessage.parsedMessageData.input]))
+		} : {
+			to: gnosisSafeMessage.to.address,
+			input: gnosisSafeMessage.parsedMessageData.input
+		} }
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? { gas: gnosisSafeMessage.message.message.baseGas } : { gas: simulationGasLeft(simulationState, await ethereumClientService.getBlock(undefined)) }
 		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
 		const metaTransaction: WebsiteCreatedEthereumUnsignedTransaction = {
@@ -155,7 +176,17 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			success: true,
 			transaction,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransaction(ethereumClientService, undefined, simulationState, metaTransaction)
+		const getTemporaryAccountOverrides = async () => {
+			if (!isDelegateCall) return {}
+			const gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, simulationState, gnosisSafeMessage.verifyingContract.address)
+			if (gnosisSafeCode?.getCodeReturn === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
+			return {
+				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
+				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode.getCodeReturn }
+			}
+		}
+		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransaction(ethereumClientService, undefined, simulationState, metaTransaction, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
