@@ -12,6 +12,11 @@ import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } fr
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { createPortal } from 'preact/compat'
 import { useOptionalComputed } from '../../utils/OptionalSignal.js'
+import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import { AddNewAddress } from './AddNewAddress.js'
+import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import { RpcEntries } from '../../types/rpc.js'
+import { addressString, checksummedAddress } from '../../utils/bigint.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -48,6 +53,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			const parsed = maybeParsed.value
 			switch (parsed.method) {
 				case 'popup_setDisableInterceptorReply':
+				case 'popup_addressBookEntriesChanged':
 				case 'popup_websiteAccess_changed':
 					retrieveWebsiteAccess({ query: selectedDomain.value || '' })
 					break
@@ -238,28 +244,80 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 	return createPortal(<div class = 'access-details'>{children}</div>, document.body)
 }
 
+type Modals = { page: 'noModal' } | { page: 'ModifyAddress', state: Signal<ModifyAddressWindowState> }
+
 const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
-
+	const modalState = useSignal<Modals>({ page: 'noModal' })
+	const rpcEntries = useSignal<RpcEntries>([])
 	const closeDetails = () => { window.location.hash = '' }
+
+	function renameAddressCallBack(entry: AddressBookEntry) {
+		modalState.value = { page: 'ModifyAddress', state: new Signal({
+			windowStateId: addressString(entry.address),
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				askForAddressAccess: true,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				useAsActiveAddress: false,
+				declarativeNetRequestBlockMode: undefined,
+				...entry,
+				abi: 'abi' in entry ? entry.abi : undefined,
+				address: checksummedAddress(entry.address),
+				chainId: entry.chainId || 1n,
+			}
+		}) }
+	}
+
+	useEffect(() => {
+		function popupMessageListener(msg: unknown) {
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_requestSettingsReply') {
+				rpcEntries.value = parsed.data.rpcEntries
+				return
+			}
+			return
+		}
+		browser.runtime.onMessage.addListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	})
+
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
 	if (selectedWebsiteAccess.value === undefined) return <></>
 
 	return (
-		<FullFrameWindow>
-			<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
-				<header style = { { paddingBlock: '1rem' } }>
-					<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
-          <DetailsHeader websiteAccess = { selectedWebsiteAccess.value } />
-				</header>
-				<article>
-					<NoAccessPrompt websiteAccess = { selectedWebsiteAccess.value } />
-					<AddressAccessList websiteAccess = { selectedWebsiteAccess.value } />
-					<AdvancedSettings websiteAccess = { selectedWebsiteAccess.value } />
-				</article>
-			</form>
-		</FullFrameWindow>
+		<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+			<FullFrameWindow>
+				<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
+					<header style = { { paddingBlock: '1rem' } }>
+						<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
+						<DetailsHeader websiteAccess = { selectedWebsiteAccess.value } />
+					</header>
+					<article>
+						<NoAccessPrompt websiteAccess = { selectedWebsiteAccess.value } />
+						<AddressAccessList websiteAccess = { selectedWebsiteAccess.value } renameAddressCallBack = { renameAddressCallBack }/>
+						<AdvancedSettings websiteAccess = { selectedWebsiteAccess.value } />
+					</article>
+				</form>
+			</FullFrameWindow>
+			{ modalState.value.page === 'ModifyAddress' ?
+				<AddNewAddress
+					setActiveAddressAndInformAboutIt = { undefined }
+					modifyAddressWindowState = { modalState.value.state }
+					close = { () => { modalState.value = { page: 'noModal' } } }
+					activeAddress = { undefined }
+					rpcEntries = { rpcEntries }
+				/>
+			: <></> }
+		</div>
 	)
 }
 
@@ -290,25 +348,25 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess
 
 	return (
 		<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
-				<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
-				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { website } /> for access while this preference is set.</p>
-				<Modal>
-					<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
-					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
-						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
-						<p></p>
-						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { website } /> and will prompt you for permission the next time you try to connect.</p>
-						<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
-							<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
-							<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
-						</div>
-					</Modal.Dialog>
-				</Modal>
-			</div>
+			<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
+			<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { website } /> for access while this preference is set.</p>
+			<Modal>
+				<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
+				<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
+					<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
+					<p></p>
+					<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { website } /> and will prompt you for permission the next time you try to connect.</p>
+					<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
+						<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+						<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
+					</div>
+				</Modal.Dialog>
+			</Modal>
+		</div>
 	)
 }
 
-const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
+const AddressAccessList = ({ websiteAccess, renameAddressCallBack }: { websiteAccess: Signal<WebsiteAccess>, renameAddressCallBack: RenameAddressCallBack }) => {
 	const access = websiteAccess.value
 	const website = useComputed(() => websiteAccess.value.website)
 
@@ -318,23 +376,18 @@ const AddressAccessList = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAcc
 		<Collapsible summary = 'Address Access' defaultOpen>
 			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button type = 'button' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
 				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
-				{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { website } addressAccess = { addressAcces } />) }
+				{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { website } addressAccess = { addressAcces } renameAddressCallBack = { renameAddressCallBack }/>) }
 			</div>
 		</Collapsible>
 	)
 }
 
-const AddressAccessCard = ({ website, addressAccess }: { website: Signal<Website>, addressAccess: WebsiteAddressAccess }) => {
+const AddressAccessCard = ({ website, addressAccess, renameAddressCallBack }: { website: Signal<Website>, addressAccess: WebsiteAddressAccess, renameAddressCallBack: RenameAddressCallBack }) => {
 	const { addressAccessMetadata } = useWebsiteAccess()
 
 	const setAddressAccess = (event: Event) => {
 		if (!(event.target instanceof HTMLInputElement)) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website: website.value, address: addressAccess.address, allowAccess: event.target.checked } })
-	}
-
-	const renameAddressCallBack = (newAddress: AddressBookEntry) => {
-		console.log('new address', newAddress)
-		// TODO: Implement address editing https://github.com/DarkFlorist/TheInterceptor/issues/1131
 	}
 
 	const addressBookEntry = useOptionalComputed(() => addressAccessMetadata.value.find(entry => entry.address === addressAccess.address))
@@ -372,7 +425,6 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 					<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 					<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 				</div>
-
 			</Modal.Dialog>
 		</Modal>
 	)

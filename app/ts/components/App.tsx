@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState } from '../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
@@ -18,7 +18,6 @@ import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { Page } from '../types/exportedSettingsTypes.js'
 import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
@@ -27,7 +26,7 @@ import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
-import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
+import { Signal, useSignal } from '@preact/signals'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -62,8 +61,13 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 	</>
 }
 
+type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' | 'Unknown' }
+	| { page: 'EditEnsNamedHash', state: EditEnsNamedHashWindowState }
+	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
+	| { page: 'ChangeActiveAddress' }
+
 export function App() {
-	const appPage = useSignal<Page>({ page: 'Home' })
+	const appPage = useSignal<Page>({ page: 'Unknown' })
 	const [makeMeRich, setMakeMeRich] = useState(false)
 	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>(defaultActiveAddresses)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
@@ -176,7 +180,13 @@ export function App() {
 			})
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
-			if (updateQuery) appPage.value = settings.openedPage
+			if (updateQuery && appPage.value.page === 'Unknown') {
+				if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
+					appPage.value = { ...settings.openedPage, state: new Signal(settings.openedPage.state) }
+				} else {
+					appPage.value = settings.openedPage
+				}
+			}
 			setSimulationMode(settings.simulationMode)
 			rpcNetwork.value = settings.activeRpcNetwork
 			setActiveSimulationAddress(settings.activeSimulationAddress)
@@ -217,13 +227,20 @@ export function App() {
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' }) }, [])
 
-	function setAndSaveAppPage(page: Page) {
-		appPage.value = page
-		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: page })
+	function goHome() {
+		const newPage = { page: 'Home' } as const
+		appPage.value = newPage
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
+	}
+
+	function changeActiveAddress() {
+		const newPage = { page: 'ChangeActiveAddress' } as const
+		appPage.value = newPage
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
 
 	async function addressPaste(address: string) {
-		if (appPage.value.page === 'AddNewAddress') return
+		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
 		if (!ethers.isAddress(trimmed)) return
@@ -236,7 +253,7 @@ export function App() {
 
 		// address not found, let's promt user to create it
 		const addressString = ethers.getAddress(trimmed)
-		setAndSaveAppPage({ page: 'AddNewAddress', state: {
+		const newPage = { page: 'AddNewAddress', state: {
 			windowStateId: 'appAddressPaste',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -254,11 +271,13 @@ export function App() {
 				declarativeNetRequestBlockMode: undefined,
 				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
 			}
-		} })
+		} } as const
+		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAndSaveAppPage({ page: 'ModifyAddress', state: {
+		const newPage = { page: 'ModifyAddress', state: {
 			windowStateId: 'appRename',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -274,11 +293,13 @@ export function App() {
 				...entry,
 				address: checksummedAddress(entry.address),
 			}
-		} })
+		} } as const
+		appPage.value = { page: 'ModifyAddress', state: new Signal(newPage.state) }
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
 
 	function addNewAddress() {
-		setAndSaveAppPage({ page: 'AddNewAddress', state: {
+		const newPage = { page: 'AddNewAddress', state: {
 			windowStateId: 'appNewAddress',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -295,12 +316,16 @@ export function App() {
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
 				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
-			}
-		} })
+			}}
+		} as const
+		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
 
 	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {
-		setAndSaveAppPage({ page: 'EditEnsNamedHash', state: { type, nameHash, name } })
+		const newPage = { page: 'EditEnsNamedHash', state: { type, nameHash, name } } as const
+		appPage.value = newPage
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
 
 	async function openWebsiteAccess() {
@@ -319,13 +344,11 @@ export function App() {
 		setUnexpectedError(undefined)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
-	const modifyAddressSignal: ReadonlySignal<ModifyAddressWindowState | undefined> = useComputed(() => appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ? appPage.value.state : undefined)
-
 	return (
 		<main>
 			<Hint>
-				<PasteCatcher enabled = { appPage.value.page === 'Home' } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
+				<PasteCatcher enabled = { appPage.value.page === 'Unknown' || appPage.value.page === 'Home' } onPaste = { addressPaste } />
+				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
 					{ !isSettingsLoaded ? <></> : <>
 						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 							<div class = 'navbar-brand'>
@@ -353,7 +376,7 @@ export function App() {
 							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 							activeSigningAddress = { activeSigningAddress }
 							activeSimulationAddress = { activeSimulationAddress }
-							setAndSaveAppPage = { setAndSaveAppPage }
+							changeActiveAddress = { changeActiveAddress }
 							makeMeRich = { makeMeRich }
 							activeAddresses = { activeAddresses }
 							simulationMode = { simulationMode }
@@ -369,16 +392,16 @@ export function App() {
 							interceptorDisabled = { interceptorDisabled }
 						/>
 
-						<div class = { `modal ${ appPage.value.page !== 'Home' ? 'is-active' : ''}` }>
+						<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 							{ appPage.value.page === 'EditEnsNamedHash' ?
 								<EditEnsLabelHash
-									close = { () => setAndSaveAppPage({ page: 'Home' }) }
+									close = { goHome }
 									editEnsNamedHashWindowState = { appPage.value.state }
 								/>
 							: <></> }
 							{ appPage.value.page === 'AccessList' ?
 								<InterceptorAccessList
-									setAndSaveAppPage = { setAndSaveAppPage }
+									goHome = { goHome }
 									setWebsiteAccess = { setWebsiteAccess }
 									websiteAccess = { websiteAccess }
 									websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
@@ -389,24 +412,20 @@ export function App() {
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									signerAccounts = { tabState?.signerAccounts ?? [] }
-									close = { () => setAndSaveAppPage({ page: 'Home' }) }
+									close = { goHome }
 									activeAddresses = { activeAddresses }
 									signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 									renameAddressCallBack = { renameAddressCallBack }
 									addNewAddress = { addNewAddress }
 								/>
 							: <></> }
-							{ modifyAddressSignal.value !== undefined ?
+							{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									modifyAddressWindowState = { modifyAddressSignal }
-									close = { () => setAndSaveAppPage({ page: 'Home' }) }
+									modifyAddressWindowState = { appPage.value.state }
+									close = { goHome }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 									rpcEntries = { rpcEntries }
-									modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
-										if (appPage.value.page !== 'AddNewAddress' && appPage.value.page !== 'ModifyAddress') return
-										appPage.value = { page: appPage.value.page, state: newState }
-									} }
 								/>
 							: <></> }
 						</div>

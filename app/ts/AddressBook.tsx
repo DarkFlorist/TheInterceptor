@@ -11,12 +11,12 @@ import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.j
 import { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
-import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 
 type Modals =  { page: 'noModal' }
-	| { page: 'addNewAddress', state: ModifyAddressWindowState }
+	| { page: 'addNewAddress', state: Signal<ModifyAddressWindowState> }
 	| { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry: AddressBookEntry }
 
 const filterDefs = {
@@ -183,7 +183,6 @@ export function AddressBook() {
 	const rpcEntries = useSignal<RpcEntries>([])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
-	const modifyAddressSignal = useComputed(() => modalState.value.page === 'addNewAddress' ? modalState.value.state : undefined)
 	function sendQuery() {
 		const filterValue = viewFilter.value
 		if (filterValue.chain === undefined) return
@@ -265,7 +264,7 @@ export function AddressBook() {
 			}
 		}
 
-		modalState.value = { page: 'addNewAddress', state: {
+		modalState.value = { page: 'addNewAddress', state: new Signal({
 			windowStateId: 'AddressBookAdd',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -283,12 +282,12 @@ export function AddressBook() {
 				declarativeNetRequestBlockMode: undefined,
 				chainId: activeChain.peek()?.chainId || 1n,
 			}
-		} }
+		}) }
 		return
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = { page: 'addNewAddress', state: {
+		modalState.value = { page: 'addNewAddress', state: new Signal({
 			windowStateId: 'AddressBookRename',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -304,7 +303,7 @@ export function AddressBook() {
 				address: checksummedAddress(entry.address),
 				chainId: entry.chainId || 1n,
 			}
-		} }
+		}) }
 		return
 	}
 
@@ -367,17 +366,13 @@ export function AddressBook() {
 				</div>
 
 				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }` }>
-					{ modifyAddressSignal.value !== undefined ?
+					{ modalState.value.page === 'addNewAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { modifyAddressSignal }
+							modifyAddressWindowState = { modalState.value.state }
 							close = { () => { modalState.value = { page: 'noModal' } } }
 							activeAddress = { undefined }
 							rpcEntries = { rpcEntries }
-							modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
-								if (modalState.value.page !== 'addNewAddress') return
-								modalState.value = { page: modalState.value.page, state: newState }
-							} }
 						/>
 						: <></> }
 					{ modalState.value.page === 'confirmaddressBookEntryToBeRemoved' ?

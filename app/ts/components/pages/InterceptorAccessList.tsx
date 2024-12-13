@@ -103,8 +103,6 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		setMetadata(new Map(param.websiteAccessAddressMetadata.map((x) => [addressString(x.address), x])))
 	}, [param.websiteAccessAddressMetadata])
 
-	const goHome = () => param.setAndSaveAppPage({ page: 'Home' })
-
 	function setWebsiteAccess(index: number, changes: AccessChanges) {
 		if (editableAccessList === undefined) return
 		setEditableAccessList(editableAccessList.map((x , i) => {
@@ -169,8 +167,8 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	}
 
 	function saveChanges() {
-		if (!areThereChanges()) return goHome()
-		if (editableAccessList === undefined) return goHome()
+		if (!areThereChanges()) return param.goHome()
+		if (editableAccessList === undefined) return param.goHome()
 		const changedEntry = (editable: EditableAccess) => {
 			return {
 				oldEntry: editable.websiteAccess,
@@ -192,7 +190,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		const newEntries = editableAccessList.filter((state) => !state.removed).map((x) => changedEntry(x).newEntry)
 		updateEditableAccessList(newEntries)
 		param.setWebsiteAccess(newEntries)
-		return goHome()
+		return param.goHome()
 	}
 
 	return ( <>
@@ -209,7 +207,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						Website Access
 					</p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
+				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.goHome }>
 					<XMarkIcon />
 				</button>
 			</header>
@@ -308,7 +306,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 			</section>
 
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { goHome }>Cancel</button>
+				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.goHome }>Cancel</button>
 				<button class = 'button is-success is-primary' onClick = { saveChanges }> { areThereChanges() ? 'Save Changes' : 'Close' } </button>
 			</footer>
 		</div>

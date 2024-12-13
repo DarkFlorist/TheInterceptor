@@ -13,8 +13,7 @@ import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
-import { Page } from '../../types/exportedSettingsTypes.js'
-import { ReadonlySignal, useComputed, useSignal } from '@preact/signals'
+import { Signal, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
@@ -166,10 +165,14 @@ function AccessRequests(param: AccessRequestParam) {
 
 const DISABLED_DELAY_MS = 500
 
+type Page = { page: 'Home', accessRequestId: string }
+	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState>, accessRequestId: string }
+	| { page: 'ChangeActiveAddress', accessRequestId: string }
+
 export function InterceptorAccess() {
 	const [pendingAccessRequests, setAccessRequest] = useState<PendingAccessRequests>([])
 	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>([])
-	const appPage = useSignal<{ page: Page, accessRequestId: string }>({ page: { page: 'Home' }, accessRequestId: '' })
+	const appPage = useSignal<Page>({ page: 'Home', accessRequestId: '' })
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
 	const rpcEntries = useSignal<RpcEntries>([])
@@ -236,7 +239,7 @@ export function InterceptorAccess() {
 	}
 
 	function renameAddressCallBack(accessRequestId: string, entry: AddressBookEntry) {
-		appPage.value = { page: { page: 'ModifyAddress', state: {
+		appPage.value = { page: 'ModifyAddress', state: new Signal({
 			windowStateId: addressString(entry.address),
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -252,10 +255,10 @@ export function InterceptorAccess() {
 				...entry,
 				address: checksummedAddress(entry.address),
 			}
-		} }, accessRequestId }
+		}), accessRequestId }
 	}
 
-	const changeActiveAddress = (accessRequestId: string) => { appPage.value = { accessRequestId, page: { page: 'ChangeActiveAddress' } } }
+	const changeActiveAddress = (accessRequestId: string) => { appPage.value = { accessRequestId, page: 'ChangeActiveAddress' } }
 
 	async function refreshMetadata() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata' })
@@ -292,7 +295,7 @@ export function InterceptorAccess() {
 	}, [])
 
 	function addNewAddress(accessRequestId: string) {
-		appPage.value = { accessRequestId, page: { page: 'AddNewAddress', state: {
+		appPage.value = { accessRequestId, page: 'AddNewAddress', state: new Signal({
 			windowStateId: 'AddNewAddressAccess',
 			errorState: undefined,
 			incompleteAddressBookEntry: {
@@ -310,37 +313,32 @@ export function InterceptorAccess() {
 				declarativeNetRequestBlockMode: undefined,
 				chainId: 1n,
 			}
-		} } }
+		}) }
 	}
 
 	if (pendingAccessRequests.length === 0) return <main></main>
 	const pendingAccessRequest = pendingAccessRequests[0]
 	if (pendingAccessRequest === undefined) throw new Error('pending access request was undefined')
-	const modifyAddressSignal: ReadonlySignal<ModifyAddressWindowState | undefined> = useComputed(() => appPage.value.page.page === 'ModifyAddress' || appPage.value.page.page === 'AddNewAddress' ? appPage.value.page.state : undefined)
 
 	return <main>
 		<Hint>
-			<div class = { `modal ${ appPage.value.page.page !== 'Home' ? 'is-active' : ''}` }>
-				{ modifyAddressSignal !== undefined
+			<div class = { `modal ${ appPage.value.page !== 'Home' ? 'is-active' : ''}` }>
+				{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress'
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
-						modifyAddressWindowState = { modifyAddressSignal }
-						close = { () => { appPage.value = { page: { page: 'Home' }, accessRequestId: '' } } }
+						modifyAddressWindowState = { appPage.value.state }
+						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddress = { pendingAccessRequest.requestAccessToAddress?.address }
 						rpcEntries = { rpcEntries }
-						modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
-							if (appPage.value.page.page !== 'ModifyAddress' && appPage.value.page.page !== 'AddNewAddress') return
-							appPage.value.page = { page: appPage.value.page.page, state: newState }
-						} }
 					/>
 					: <></>
 				}
 
-				{ appPage.value.page.page === 'ChangeActiveAddress'
+				{ appPage.value.page === 'ChangeActiveAddress'
 					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
 						signerAccounts = { pendingAccessRequest.signerAccounts }
-						close = { () => { appPage.value = { page: { page: 'Home' }, accessRequestId: '' } } }
+						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddresses = { activeAddresses }
 						signerName = { pendingAccessRequest.signerName }
 						renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
