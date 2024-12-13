@@ -2324,11 +2324,6 @@ div.icon-text {
   color: currentColor;
 }
 
-.notification code,
-.notification pre {
-  background: white;
-}
-
 .notification pre code {
   background: transparent;
 }
