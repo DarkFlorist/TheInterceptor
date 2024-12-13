@@ -54,7 +54,7 @@ interface IOptimismDepositTransaction {
 	readonly sourceHash: bigint
 	readonly from: bigint
 	readonly to: bigint | null
-	readonly mint: bigint | null
+	readonly mint: bigint | null | undefined
 	readonly value: bigint
 	readonly gas: bigint
 	readonly data: Uint8Array
