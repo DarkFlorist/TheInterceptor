@@ -59,8 +59,11 @@ function ParsedInput<T>(model: ParsedInputModel<T>) {
 }
 
 function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
-	if ('tryParse' in model && model.tryParse) return <ParsedInput { ...model }/>
-	return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
+	if ('tryParse' in model && model.tryParse) {
+		return <ParsedInput { ...model }/>
+	} else {
+		return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
+	}
 }
 
 interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>, Pick<UnparsedInputModel, 'key' | 'type' | 'pattern' | 'placeholder' | 'required' | 'onChange' | 'autocomplete'> {
