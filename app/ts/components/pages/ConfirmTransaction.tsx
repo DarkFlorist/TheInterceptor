@@ -242,7 +242,7 @@ function TransactionCard(param: TransactionCardParams) {
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
 					<div class = 'log-cell'>
 						<span class = 'log-table' style = { { display: 'inline-flex'} }>
 							<GasFee tx = { simTx } rpcNetwork = { simulationAndVisualisationResults.rpcNetwork } />
