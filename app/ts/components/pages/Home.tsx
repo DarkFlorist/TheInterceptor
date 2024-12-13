@@ -246,8 +246,6 @@ export function Home(param: HomeParams) {
 		param.interceptorDisabled,
 	])
 
-	const changeActiveAddress = () => param.setAndSaveAppPage({ page: 'ChangeActiveAddress' })
-
 	function enableSimulationMode(enabled: boolean ) {
 		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
 	}
@@ -286,7 +284,7 @@ export function Home(param: HomeParams) {
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { simulationMode }
-			changeActiveAddress = { changeActiveAddress }
+			changeActiveAddress = { param.changeActiveAddress }
 			makeMeRich = { makeMeRich }
 			tabState = { tabState }
 			tabIconDetails = { tabIconDetails }

@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, Notice } from '../subcomponents/Error.js'
-import { checksummedAddress, stringToAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
@@ -190,23 +190,24 @@ export function AddNewAddress(param: AddAddressParam) {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_fetchAbiAndNameFromBlockExplorerReply') {
-				setCanFetchFromEtherScan(true)
 				if (param.modifyAddressWindowState.value === undefined || parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
+				setCanFetchFromEtherScan(true)
 				if (!parsed.data.success) {
-					modifyState(modifyObject(param.modifyAddressWindowState.value, { errorState: { blockEditing: false, message: parsed.data.error } }))
+					param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: { blockEditing: false, message: parsed.data.error } })
 					return
 				}
 				if (param.modifyAddressWindowState.value.errorState !== undefined) return
-				modifyState(modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: modifyObject(param.modifyAddressWindowState.value.incompleteAddressBookEntry, { abi: parsed.data.abi, name: param.modifyAddressWindowState.value.incompleteAddressBookEntry.name === undefined ? parsed.data.contractName : param.modifyAddressWindowState.value.incompleteAddressBookEntry.name }) } ))
+				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: modifyObject(param.modifyAddressWindowState.value.incompleteAddressBookEntry, { abi: parsed.data.abi, name: param.modifyAddressWindowState.value.incompleteAddressBookEntry.name === undefined ? parsed.data.contractName : param.modifyAddressWindowState.value.incompleteAddressBookEntry.name }) } )
 				return
 			}
 			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
 				if (param.modifyAddressWindowState.value === undefined) return
 				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
 				if (parsed.data.identifiedAddress !== undefined && parsed.data.identifiedAddress.type === 'ERC20' && param.modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20') {
-					modifyState(modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: { ...param.modifyAddressWindowState.value.incompleteAddressBookEntry, decimals: parsed.data.identifiedAddress.decimals }, errorState: parsed.data.errorState }))
+					param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: { ...param.modifyAddressWindowState.value.incompleteAddressBookEntry, decimals: parsed.data.identifiedAddress.decimals }, errorState: parsed.data.errorState })
+				} else {
+					param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: parsed.data.errorState })
 				}
-				modifyState(modifyObject(param.modifyAddressWindowState.value, { errorState: parsed.data.errorState }))
 			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -300,8 +301,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	async function modifyState(newState: ModifyAddressWindowState) {
 		if (newState === undefined) return
-		if (stringifyJSONWithBigInts(newState) === stringifyJSONWithBigInts(param.modifyAddressWindowState)) return
-		param.modifyStateCallBack(newState)
+		param.modifyAddressWindowState.value = newState
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: newState.windowStateId, newState } })
 		} catch(e) {
@@ -387,7 +387,6 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 	const incompleteAddressBookEntry = useComputed(() => param.modifyAddressWindowState.value?.incompleteAddressBookEntry )
 	if (incompleteAddressBookEntry.value === undefined) return <></>
-
 	return ( <>
 		<div class = 'modal-background'> </div>
 		<div class = 'modal-card'>

@@ -323,7 +323,7 @@ const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorP
 }
 
 type ModalState =
-	{ page: 'modifyAddress', state: ModifyAddressWindowState } |
+	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
 	{ page: 'editEns', state: EditEnsNamedHashWindowState } |
 	{ page: 'noModal' }
 
@@ -516,7 +516,7 @@ export function ConfirmTransaction() {
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = {
 			page: 'modifyAddress',
-			state: {
+			state: new Signal({
 				windowStateId: addressString(entry.address),
 				errorState: undefined,
 				incompleteAddressBookEntry: {
@@ -532,7 +532,7 @@ export function ConfirmTransaction() {
 					...entry,
 					address: checksummedAddress(entry.address),
 				}
-			}
+			})
 		}
 	}
 
@@ -556,7 +556,6 @@ export function ConfirmTransaction() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_clearUnexpectedError' } )
 	}
 
-	const modifyAddressSignal: ReadonlySignal<ModifyAddressWindowState | undefined> = useComputed(() => modalState.value.page === 'modifyAddress' ? modalState.value.state : undefined)
 	if (currentPendingTransactionOrSignableMessage.value === undefined || (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <>
 			<main>
@@ -568,17 +567,13 @@ export function ConfirmTransaction() {
 								editEnsNamedHashWindowState = { modalState.value.state }
 							/>
 						: <></> }
-						{ modifyAddressSignal.value !== undefined ?
+						{ modalState.value.page === 'modifyAddress' ?
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { undefined }
-								modifyAddressWindowState = { modifyAddressSignal }
+								modifyAddressWindowState = { modalState.value.state }
 								close = { () => { modalState.value = { page: 'noModal' } } }
 								activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress }
 								rpcEntries = { rpcEntries }
-								modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
-									if (modalState.value.page !== 'modifyAddress') return
-									modalState.value = { page: modalState.value.page, state: newState }
-								} }
 							/>
 						: <></> }
 					</div>
@@ -606,17 +601,13 @@ export function ConfirmTransaction() {
 							editEnsNamedHashWindowState = { modalState.value.state }
 						/>
 					: <></> }
-					{ modifyAddressSignal !== undefined ?
+					{ modalState.value.page === 'modifyAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { modifyAddressSignal }
+							modifyAddressWindowState = { modalState.value.state }
 							close = { () => { modalState.value = { page: 'noModal' } } }
 							activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress }
 							rpcEntries = { rpcEntries }
-							modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
-								if (modalState.value.page !== 'modifyAddress') return
-								modalState.value = { page: modalState.value.page, state: newState }
-							} }
 						/>
 					: <></> }
 				</div>
