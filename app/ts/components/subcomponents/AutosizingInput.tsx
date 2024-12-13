@@ -55,7 +55,7 @@ function ParsedInput<T>(model: ParsedInputModel<T>) {
 	// we want to pass through all model values *except* the rawValue, which may contain a password
 	const inputModel = { ...model }
 	delete inputModel.rawValue
-	return <input { ...inputModel } class = 'autosizing-input' value = { internalValue } onInput = { event => internalValue.value = event.currentTarget.value } onChange = { onChange }/>
+	return <input { ...inputModel } class = 'autosizing-input' value = { internalValue } onInput = { event => { internalValue.value = event.currentTarget.value } } onChange = { onChange }/>
 }
 
 function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
@@ -73,7 +73,7 @@ interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanEleme
 interface UnparsedAutosizingInputModel extends BaseAutosizingInputModel, Pick<UnparsedInputModel, 'value' | 'sanitize' | 'tryParse' | 'serialize'> {}
 interface ParsedAutosizingInputModel<T> extends BaseAutosizingInputModel, Pick<ParsedInputModel<T>, 'value' | 'sanitize' | 'tryParse' | 'serialize'> {}
 
-export function AutosizingInput<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>) {
+function AutosizingInput<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>) {
 	const internalValue = model.rawValue || useSignal(model.serialize ? model.serialize(model.value.deepPeek()) : model.value.peek())
 	const inputModel = {
 		rawValue: internalValue,

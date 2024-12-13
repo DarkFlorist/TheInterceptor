@@ -13,8 +13,9 @@
 				"app/ts/interceptorAccess.ts",
 				"app/ts/popup.ts",
 				"app/ts/settingsView.ts",
+				"app/ts/components/pages/WebsiteAccess.tsx",
 				"test/run-all.ts",
-				"test/tests/*.ts"
+				"test/tests/*.ts",
 			],
 			"project": ["app/ts/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
 			"ignoreDependencies": [

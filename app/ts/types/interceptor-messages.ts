@@ -184,8 +184,8 @@ export const InterceptorMessageToInpage = funtypes.Intersect(
 	funtypes.Union(InterceptedRequestForwardWithRequestId, SubscriptionReplyOrCallBack)
 )
 
-export type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
-export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
+type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
+const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata')
 }).asReadonly()
 
@@ -225,8 +225,8 @@ export const InterceptorAccessRefresh = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export type RefreshInterceptorAccessMetadata = funtypes.Static<typeof RefreshInterceptorAccessMetadata>
-export const RefreshInterceptorAccessMetadata = funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshInterceptorAccessMetadata') }).asReadonly()
+type RefreshInterceptorAccessMetadata = funtypes.Static<typeof RefreshInterceptorAccessMetadata>
+const RefreshInterceptorAccessMetadata = funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshInterceptorAccessMetadata') }).asReadonly()
 
 export type InterceptorAccessChangeAddress = funtypes.Static<typeof InterceptorAccessChangeAddress>
 export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
@@ -482,8 +482,8 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-export type UpdateConfirmTransactionDialogPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPartial>
-export const UpdateConfirmTransactionDialogPartial = funtypes.ReadonlyObject({
+type UpdateConfirmTransactionDialogPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPartial>
+const UpdateConfirmTransactionDialogPartial = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.Unknown
 }).asReadonly()
@@ -707,8 +707,9 @@ export const SimulateGovernanceContractExecution = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateGovernanceContractExecution'),
 	data: funtypes.ReadonlyObject({ transactionIdentifier: EthereumQuantity })
 })
-export type SimulateGnosisSafeTransaction = funtypes.Static<typeof SimulateGnosisSafeTransaction>
-export const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
+
+type SimulateGnosisSafeTransaction = funtypes.Static<typeof SimulateGnosisSafeTransaction>
+const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateGnosisSafeTransaction'),
 	data: funtypes.ReadonlyObject({
 		gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx,
@@ -745,17 +746,6 @@ export const RetrieveWebsiteAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_retrieveWebsiteAccess'),
 	data: RetrieveWebsiteAccessFilter,
 }).asReadonly()
-
-export type SearchProximity = funtypes.Static<typeof SearchProximity>
-export const SearchProximity = funtypes.ReadonlyTuple(funtypes.Number, funtypes.Number)
-
-export type SearchMetadata = funtypes.Static<typeof SearchMetadata>
-export const SearchMetadata = funtypes.Object({
-	_targets: funtypes.MutableArray(funtypes.String),
-	closestProximity: SearchProximity,
-	scores: funtypes.Record(funtypes.String, SearchProximity),
-	targets: funtypes.Array(funtypes.String)
-})
 
 type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
 const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({

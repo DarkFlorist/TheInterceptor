@@ -18,7 +18,6 @@ interface CachedTokenPriceEstimate {
 }
 const IMulticall3 = new Interface(Multicall3ABI)
 
-export type ITokenPriceService = Pick<TokenPriceService, keyof TokenPriceService>
 export class TokenPriceService {
 	private cachedPrices = new Map<string, Map<string, CachedTokenPriceEstimate> > // quoteTokenAddress -> tokenAddress -> TokenPriceEstimate
 	public cacheAge: number
@@ -39,7 +38,7 @@ export class TokenPriceService {
 			if (quoteTokenAddressCache.size === 0) this.cachedPrices.delete(quoteTokenAddressString)
 		})
 	}
-	
+
 	private async getTokenPrice(requestAbortController: AbortController | undefined, token: TokenDecimals, quoteToken: Erc20TokenEntry) {
 		const poolAddresses = calculateUniswapLikePools(token.address, quoteToken.address)
 		if (!poolAddresses) return undefined
@@ -50,7 +49,7 @@ export class TokenPriceService {
 		const callTransaction = { type: '1559', to: MULTICALL3, value: 0n, input: callData, }
 		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereumClientService.call(callTransaction, 'latest', requestAbortController))[0]
 		const prices = calculatePricesFromUniswapLikeReturnData(multicallReturnData, poolAddresses)
-		if (prices.length === 0) return undefined 
+		if (prices.length === 0) return undefined
 		return {
 			token,
 			quoteToken,

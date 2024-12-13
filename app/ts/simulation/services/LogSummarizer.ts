@@ -4,7 +4,7 @@ import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/address
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
-export type BalanceChangeSummary = {
+type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
 	erc20TokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
 

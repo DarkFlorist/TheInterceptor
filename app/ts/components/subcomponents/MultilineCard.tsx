@@ -4,7 +4,7 @@ import { Tooltip, TooltipConfig } from './Tooltip.js'
 import { clipboardCopy } from './clipboardcopy.js'
 import { CopyIcon } from './icons.js'
 
-export type MultilineCardProps = {
+type MultilineCardProps = {
 	icon: ActionableIconProps
 	label: ActionableTextProps
 	note: ActionableTextProps

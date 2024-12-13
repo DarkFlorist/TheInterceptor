@@ -357,7 +357,7 @@ export function AddressBook() {
 								? <DynamicScroller
 									items = { addressBookEntries }
 									renderItem = { addressBookEntry => (
-										<AddressBookEntryCard { ...addressBookEntry } category = { addressBookEntriesWithFilter.value.activeFilter } removeEntry = { () => modalState.value = { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry } } renameAddressCallBack = { renameAddressCallBack } />
+										<AddressBookEntryCard { ...addressBookEntry } category = { addressBookEntriesWithFilter.value.activeFilter } removeEntry = { () => { modalState.value = { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry } } } renameAddressCallBack = { renameAddressCallBack } />
 									) }
 								/>
 								: <GetNoResultsError/>
@@ -371,7 +371,7 @@ export function AddressBook() {
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							modifyAddressWindowState = { modifyAddressSignal }
-							close = { () => modalState.value = { page: 'noModal' } }
+							close = { () => { modalState.value = { page: 'noModal' } } }
 							activeAddress = { undefined }
 							rpcEntries = { rpcEntries }
 							modifyStateCallBack = { (newState: ModifyAddressWindowState) => {
@@ -385,7 +385,7 @@ export function AddressBook() {
 							category = { viewFilter.value.activeFilter }
 							addressBookEntry = { modalState.value.addressBookEntry }
 							removeEntry = { removeAddressBookEntry }
-							close = { () => modalState.value = { page: 'noModal' } }
+							close = { () => { modalState.value = { page: 'noModal' } } }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
 						: <></> }

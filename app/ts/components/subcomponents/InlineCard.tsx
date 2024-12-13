@@ -4,7 +4,7 @@ import { clipboardCopy } from './clipboardcopy.js'
 import { CopyIcon, EditIcon } from './icons.js'
 import { Tooltip, TooltipConfig } from './Tooltip.js'
 
-export type InlineCardProps = {
+type InlineCardProps = {
 	icon: () => JSX.Element
 	label: string
 	copyValue?: string

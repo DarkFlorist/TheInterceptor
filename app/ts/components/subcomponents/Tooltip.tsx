@@ -18,7 +18,7 @@ export function Tooltip({ config }: { config: Signal<TooltipConfig | undefined> 
 		}
 
 		popoverRef.current?.showPopover()
-		setTimeout(() => config.value = undefined, config.value.duration || 1500)
+		setTimeout(() => { config.value = undefined }, config.value.duration || 1500)
 	})
 
 	return (

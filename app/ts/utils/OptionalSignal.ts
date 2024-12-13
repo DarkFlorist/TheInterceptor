@@ -13,7 +13,7 @@ export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements 
 	public get deepValue() {
 		const inner = this.value
 		if (inner === undefined) return undefined
-		else return inner.value
+		return inner.value
 	}
 
 	public set deepValue(newValue: T | undefined) {
@@ -31,10 +31,10 @@ export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements 
 	public readonly deepPeek = () => {
 		const inner = this.peek()
 		if (inner === undefined) return undefined
-		else return inner.peek()
+		return inner.peek()
 	}
 
-	public readonly clear = () => this.value = undefined
+	public readonly clear = () => { this.value = undefined }
 
 	// convenience function for when you want pass a setter to a function; note that this is `this` bound in the constructor
 	public set(newValue: T | undefined) { this.deepValue = newValue }

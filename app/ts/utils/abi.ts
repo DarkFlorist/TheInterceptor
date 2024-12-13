@@ -2,21 +2,6 @@ import { InterfaceAbi } from 'ethers'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from './constants.js'
 
-export const MulticallABI: InterfaceAbi = [
-	'function aggregate(tuple(address target, bytes callData)[] calls) returns (uint256 blockNumber, bytes[] returnData)',
-	'function blockAndAggregate(tuple(address target, bytes callData)[] calls) returns (uint256 blockNumber, bytes32 blockHash, tuple(bool success, bytes returnData)[] returnData)',
-	'function getBlockHash(uint256 blockNumber) view returns (bytes32 blockHash)',
-	'function getBlockNumber() view returns (uint256 blockNumber)',
-	'function getCurrentBlockCoinbase() view returns (address coinbase)',
-	'function getCurrentBlockDifficulty() view returns (uint256 difficulty)',
-	'function getCurrentBlockGasLimit() view returns (uint256 gaslimit)',
-	'function getCurrentBlockTimestamp() view returns (uint256 timestamp)',
-	'function getEthBalance(address addr) view returns (uint256 balance)',
-	'function getLastBlockHash() view returns (bytes32 blockHash)',
-	'function tryAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (tuple(bool success, bytes returnData)[] returnData)',
-	'function tryBlockAndAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (uint256 blockNumber, bytes32 blockHash, tuple(bool success, bytes returnData)[] returnData)'
-]
-
 const TokenMetadataABI: InterfaceAbi = [
 	'function name() external view returns(string memory)',
 	'function symbol() external view returns(string memory)',

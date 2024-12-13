@@ -437,7 +437,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteA
 
 const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: Signal<WebsiteAccess> }) => {
 
-	const disableWebsiteProtection = async (shouldDisable: boolean = true) => {
+	const disableWebsiteProtection = async (shouldDisable = true) => {
 		if (!websiteAccess.value) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor',  data: { website: websiteAccess.value.website, interceptorDisabled: shouldDisable } })
 	}
