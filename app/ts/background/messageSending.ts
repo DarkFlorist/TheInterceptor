@@ -10,12 +10,9 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 	} catch (error) {
 		if (error instanceof Error) {
-			if (error.message?.includes('Attempting to use a disconnected port object')) {
-				return
-			}
-			if (error.message?.includes('Could not establish connection. Receiving end does not exist')) {
-				return
-			}
+			if (error.message?.includes('Attempting to use a disconnected port object')) return
+			if (error.message?.includes('Could not establish connection. Receiving end does not exist')) return
+			if (error.message?.includes('No tab with id')) return
 		}
 		throw error
 	}
