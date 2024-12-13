@@ -621,7 +621,7 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 }
 
 export function TransactionCreated({ created } : { created: EthereumTimestamp }) {
-	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline; text-overflow: ellipsis; overflow: hidden;'>
 		{ 'Created ' }
 		<SomeTimeAgo priorTimestamp = { created } diffToText = { humanReadableDateDeltaLessDetailed }/>
 	</p>
@@ -633,7 +633,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
 		copyMessage = 'Block number copied!'
 	>
-		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline; text-overflow: ellipsis; overflow: hidden;'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
 				simulationBlockNumber === currentBlockNumber && (rpcConnectionStatus.value?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
