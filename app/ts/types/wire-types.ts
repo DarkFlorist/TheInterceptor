@@ -340,7 +340,7 @@ const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject({
 	sourceHash: EthereumBytes32,
 	from: EthereumAddress,
 	to: funtypes.Union(EthereumAddress, funtypes.Null),
-	mint: funtypes.Union(EthereumQuantity, funtypes.Null),
+	mint: funtypes.Union(EthereumQuantity, funtypes.Null, funtypes.Undefined),
 	value: EthereumQuantity,
 	gas: EthereumQuantity,
 	data: EthereumInput,

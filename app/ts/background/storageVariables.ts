@@ -3,7 +3,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, TransactionStack } from '../types/visualizer-types.js'
-import { defaultRpcs } from './settings.js'
+import { defaultActiveAddresses, defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
@@ -244,7 +244,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		minimized: true,
 	}
 }
-export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV3'))?.userAddressBookEntriesV3 ?? []
+export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV3'))?.userAddressBookEntriesV3 ?? defaultActiveAddresses
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => {
 	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
@@ -269,7 +269,7 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
-		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? []
+		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? defaultActiveAddresses
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
 	})
 }
