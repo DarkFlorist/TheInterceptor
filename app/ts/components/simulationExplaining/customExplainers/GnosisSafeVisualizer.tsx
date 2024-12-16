@@ -110,7 +110,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>
 			</span>
 		</div>
-		<fieldset class = 'notification dashed-notification'>
+		<div class = 'notification dashed-notification'>
 			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
 			<ShowSuccessOrFailure
 				gnosisSafeMessage = { param.gnosisSafeMessage }
@@ -121,7 +121,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				activeAddress = { activeAddress }
 			/>
-		</fieldset>
+		</div>
 		{ simulateExecutionReply === undefined ? <></> :
 			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
 				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
