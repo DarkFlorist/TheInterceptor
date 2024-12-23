@@ -400,7 +400,7 @@ export const SignerReply = funtypes.ReadonlyObject({
 			forwardRequest: SignerReplyForwardRequest,
 			error: funtypes.Intersect(
 				CodeMessageError,
-				funtypes.ReadonlyPartial({ data: funtypes.String })
+				funtypes.ReadonlyPartial({ data: funtypes.Unknown })
 			)
 		})
 
