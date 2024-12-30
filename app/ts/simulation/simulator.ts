@@ -121,25 +121,31 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 	const argTypes = extractFunctionArgumentTypes(parsed.signature)
 	if (argTypes === undefined) return nonParsed
 	if (parsed.args.length !== argTypes.length) return nonParsed
-	const valuesWithTypes = parsed.args.map((value, index) => {
-		const solidityType = argTypes[index]
-		const paramName = parsed.fragment.inputs[index]?.name
-		if (paramName === undefined) throw new Error('missing parameter name')
-		if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
-		const isArray = solidityType.includes('[')
-		const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
-		if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
-		if (typeof value === 'object' && value !== null && 'hash' in value) {
-			// this field is stored as a hash instead as an original object
-			return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
+	try {
+		const valuesWithTypes = parsed.args.map((value, index) => {
+			const solidityType = argTypes[index]
+			const paramName = parsed.fragment.inputs[index]?.name
+			if (paramName === undefined) throw new Error('missing parameter name')
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
+			const isArray = solidityType.includes('[')
+			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
+			if (typeof value === 'object' && value !== null && 'hash' in value) {
+				// this field is stored as a hash instead as an original object
+				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
+			}
+			return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
+		})
+		return {
+			input: transaction.input,
+			type: 'Parsed' as const,
+			name: parsed.name,
+			args: valuesWithTypes,
 		}
-		return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
-	})
-	return {
-		input: transaction.input,
-		type: 'Parsed' as const,
-		name: parsed.name,
-		args: valuesWithTypes,
+	} catch(e: unknown) {
+		console.log(transaction)
+		console.error(e)
+		return nonParsed
 	}
 }
 

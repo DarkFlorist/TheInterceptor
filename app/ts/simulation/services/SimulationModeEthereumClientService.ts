@@ -733,6 +733,7 @@ export const isValidMessage = (params: SignMessageParams, signingAddress: Ethere
 		simulatePersonalSign(params, signingAddress)
 		return true
 	} catch(e) {
+		console.error(e)
 		return false
 	}
 }
