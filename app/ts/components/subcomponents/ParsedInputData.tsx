@@ -6,6 +6,21 @@ import { ParsedInputData } from '../simulationExplaining/Transactions.js'
 import { ViewSelector } from './ViewSelector.js'
 import { SmallAddress } from './address.js'
 
+
+
+export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
+	if (to?.abi === undefined) {
+		if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
+		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;
+			<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
+		</p>
+	} // We don't have support for parsing struct atm: https://github.com/DarkFlorist/TheInterceptor/issues/737
+	if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data (it probably contains a struct)</p>
+	return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data (it probably contains a struct) for&nbsp;
+		<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
+	</p>
+}
+
 type TransactionInputParams = {
 	addressMetaData: readonly AddressBookEntry[]
 	parsedInputData: EnrichedEthereumInputData
@@ -27,14 +42,9 @@ export function TransactionInput({ parsedInputData, input, to, addressMetaData, 
 			<ViewSelector.Triggers />
 		</> ) : <>
 			<ViewSelector.List>
-				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { false }> 
+				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { false }>
 					<div style = 'display: flex;'>
-						{ to !== undefined ? <>
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;</p>
-								<SmallAddress addressBookEntry = { to} renameAddressCallBack = { renameAddressCallBack } />
-						</> : <>
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
-						</> }
+						<NoParsedAvailable to = { to } renameAddressCallBack = { renameAddressCallBack } />
 					</div>
 				</ViewSelector.View>
 				<ViewSelector.View title = 'View Raw' value = 'raw' isActive = { true }>
