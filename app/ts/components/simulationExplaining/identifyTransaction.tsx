@@ -14,6 +14,7 @@ import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
+import { removeDuplicates } from '../ui-utils.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -254,15 +255,6 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		const symbol = tokenResult.token.symbol
 		const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 		const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
-
-		function removeDuplicates(entries: AddressBookEntry[]): AddressBookEntry[] {
-			const unique: Map<bigint, AddressBookEntry> = new Map()
-			for (const entry of entries) {
-				if (unique.has(entry.address)) continue
-				unique.set(entry.address, entry)
-			}
-			return Array.from(unique.values())
-		}
 
 		const transferRoute = removeDuplicates(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)))
 		const netSums = getNetSums(edges)

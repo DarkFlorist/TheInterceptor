@@ -186,3 +186,12 @@ export const rpcEntriesToChainEntriesWithAllChainsEntry = (rpcEntries: RpcEntrie
 	chainsMap.set('AllChains', { name: 'All Chains', chainId: 'AllChains' })
 	return [...chainsMap.values()]
 }
+
+export function removeDuplicates(entries: AddressBookEntry[]): AddressBookEntry[] {
+	const unique: Map<bigint, AddressBookEntry> = new Map()
+	for (const entry of entries) {
+		if (unique.has(entry.address)) continue
+		unique.set(entry.address, entry)
+	}
+	return Array.from(unique.values())
+}

@@ -3,13 +3,14 @@ import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc7
 import { Erc721TokenApprovalChange, ERC20TokenApprovalChange } from '../../../types/visualizer-types.js'
 import { TokenSymbol, TokenAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { SmallAddress } from '../../subcomponents/address.js'
+import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
 import { EnsEventsExplainer } from './EnsEventExplainer.js'
 import { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import { removeDuplicates } from '../../ui-utils.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -68,7 +69,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							</p>
 						</div>
 						<div class = 'log-cell'>
-							<SmallAddress 
+							<SmallAddress
 								addressBookEntry = { param.sending ? tokenEvent.to : tokenEvent.from }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -84,25 +85,39 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const msgSender = param.simTx.transaction.from.address
 	const tokenResults = extractTokenEvents(param.simTx.events)
 	const ensEvents = extractEnsEvents(param.simTx.events)
-	const sendingTokenResults = tokenResults.filter((x) => x.from.address === msgSender)
-	const receivingTokenResults = tokenResults.filter((x) => x.to.address === msgSender)
-	const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event => x.isApproval && x.type === 'ERC20').map((entry) => {
-		return { ...entry.token, approvals: [ {...entry.to, change: entry.amount } ] }
-	})
 
-	const operatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[] = sendingTokenResults.filter((x): x is TokenVisualizerNFTAllApprovalEvent => x.type === 'NFT All approval').map((entry) => {
-		return { ...entry.token, operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined }
-	})
+	const tokenSendersAndReceivers = removeDuplicates(tokenResults.flatMap((tokenResult) => [
+		...tokenResult.from.address === msgSender || tokenResult.from.useAsActiveAddress ? [tokenResult.from] : [],
+		...tokenResult.to.address === msgSender || tokenResult.to.useAsActiveAddress ? [tokenResult.to] : []
+	]))
+	const eventTypesForEachAccount = tokenSendersAndReceivers.map((currentAddress) => {
+		const sendingTokenResults = tokenResults.filter((x) => x.from.address === currentAddress.address)
+		const receivingTokenResults = tokenResults.filter((x) => x.to.address === currentAddress.address)
+		const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event => x.isApproval && x.type === 'ERC20').map((entry) => {
+			return { ...entry.token, approvals: [ {...entry.to, change: entry.amount } ] }
+		})
 
-	// token address, tokenId, approved address
-	const tokenIdApprovalChanges: Erc721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721Event => 'tokenId' in x && x.isApproval).map((entry) => {
-		return { tokenEntry: entry.token, tokenId: entry.tokenId, approvedEntry: entry.to }
+		const operatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[] = sendingTokenResults.filter((x): x is TokenVisualizerNFTAllApprovalEvent => x.type === 'NFT All approval').map((entry) => {
+			return { ...entry.token, operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined }
+		})
+
+		// token address, tokenId, approved address
+		const tokenIdApprovalChanges: Erc721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721Event => 'tokenId' in x && x.isApproval).map((entry) => {
+			return { tokenEntry: entry.token, tokenId: entry.tokenId, approvedEntry: entry.to }
+		})
+		return {
+			currentAddress,
+			sendingTokenResults,
+			receivingTokenResults,
+			erc20TokenApprovalChanges,
+			operatorChanges,
+			tokenIdApprovalChanges
+		}
 	})
 
 	if (param.simTx.transaction.to !== undefined
 		&& param.simTx.transaction.value === 0n
-		&& sendingTokenResults.length === 0
-		&& receivingTokenResults.length === 0
+		&& eventTypesForEachAccount.length === 0
 		&& ensEvents.length === 0
 	) {
 		return <div class = 'notification transaction-importance-box'>
@@ -115,60 +130,11 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content' >
 			{ /* contract creation */}
-			{ param.simTx.transaction.to !== undefined ? <></> : <>
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+				{ param.simTx.transaction.to !== undefined ? <></> :
 					<p class = 'paragraph'> { `A contract is deployed to address ${ addressString(getDeployedContractAddress(param.simTx.transaction.from.address, param.simTx.transaction.nonce)) }` }</p>
-				</div>
-			</> }
-
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<SendOrReceiveTokensImportanceBox
-					tokenVisualizerResults = { sendingTokenResults.filter((x) => !x.isApproval) }
-					sending = { true }
-					textColor = { textColor }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
+				}
 			</div>
-
-			{ /* us approving other addresses */ }
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<Erc20ApprovalChanges
-					erc20TokenApprovalChanges = { erc20TokenApprovalChanges }
-					textColor = { textColor }
-					negativeColor = { textColor }
-					isImportant = { true }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-			</div>
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<Erc721or1155OperatorChanges
-					erc721or1155OperatorChanges = { operatorChanges }
-					textColor = { textColor }
-					negativeColor = { textColor }
-					isImportant = { true }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-			</div>
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<Erc721TokenIdApprovalChanges
-					Erc721TokenIdApprovalChanges = { tokenIdApprovalChanges }
-					textColor = { textColor }
-					negativeColor = { textColor }
-					isImportant = { true }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-			</div>
-
-			{ /* receiving tokens */ }
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<SendOrReceiveTokensImportanceBox
-					tokenVisualizerResults = { receivingTokenResults.filter((x) => !x.isApproval) }
-					sending = { false }
-					textColor = { textColor }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-			</div>
-
 			{ /* ENS events */ }
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<EnsEventsExplainer
@@ -180,5 +146,63 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 				/>
 			</div>
 		</div>
+		{ (param.simTx.transaction.to === undefined || ensEvents.length > 0) && eventTypesForEachAccount.length > 0 ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+		{ eventTypesForEachAccount.map((eventsGrouped, index) => <div>
+			<BigAddress
+				addressBookEntry = { eventsGrouped.currentAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				style = { { '--bg-color': '#6d6d6d' } }
+			/>
+			<div style = 'display: grid; grid-template-rows: max-content max-content' >
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<SendOrReceiveTokensImportanceBox
+						tokenVisualizerResults = { eventsGrouped.sendingTokenResults.filter((x) => !x.isApproval) }
+						sending = { true }
+						textColor = { textColor }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</div>
+
+				{ /* us approving other addresses */ }
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<Erc20ApprovalChanges
+						erc20TokenApprovalChanges = { eventsGrouped.erc20TokenApprovalChanges }
+						textColor = { textColor }
+						negativeColor = { textColor }
+						isImportant = { true }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</div>
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<Erc721or1155OperatorChanges
+						erc721or1155OperatorChanges = { eventsGrouped.operatorChanges }
+						textColor = { textColor }
+						negativeColor = { textColor }
+						isImportant = { true }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</div>
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<Erc721TokenIdApprovalChanges
+						Erc721TokenIdApprovalChanges = { eventsGrouped.tokenIdApprovalChanges }
+						textColor = { textColor }
+						negativeColor = { textColor }
+						isImportant = { true }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</div>
+
+				{ /* receiving tokens */ }
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<SendOrReceiveTokensImportanceBox
+						tokenVisualizerResults = { eventsGrouped.receivingTokenResults.filter((x) => !x.isApproval) }
+						sending = { false }
+						textColor = { textColor }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</div>
+			</div>
+			{ index + 1 !== eventTypesForEachAccount.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+		</div> ) }
 	</div>
 }
