@@ -702,13 +702,21 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	} as const
 
 	//todo, we can optimize this by leaving nonce out
-	const multicallResult = await simulatedMulticall(ethereumClientService, requestAbortController, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? currentBlock.gasLimit : params.gasLimit }], blockNumToUse, {}, true)
-	const lastBlockResult = multicallResult[multicallResult.length - 1]
-	if (lastBlockResult === undefined) throw new Error('failed to get last block in eth simulate')
-	const callResult = lastBlockResult.calls[lastBlockResult.calls.length - 1]
-	if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
-	if (callResult?.status === 'failure') return { error: callResult.error }
-	return { result: callResult.returnData }
+	try {
+		const multicallResult = await simulatedMulticall(ethereumClientService, requestAbortController, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? currentBlock.gasLimit : params.gasLimit }], blockNumToUse, {}, true)
+		const lastBlockResult = multicallResult[multicallResult.length - 1]
+		if (lastBlockResult === undefined) throw new Error('failed to get last block in eth simulate')
+		const callResult = lastBlockResult.calls[lastBlockResult.calls.length - 1]
+		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
+		if (callResult?.status === 'failure') return { error: callResult.error }
+		return { result: callResult.returnData }
+	} catch(error: unknown) {
+		if (error instanceof JsonRpcResponseError) {
+			const safeParsedData = EthereumData.safeParse(error.data)
+			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
+		}
+		throw error
+	}
 }
 
 const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | undefined) => {
