@@ -115,16 +115,24 @@ type TokenSymbolParams = (
 }
 
 function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
+	const style: JSX.CSSProperties = {
+		color: 'var(--text-color)',
+		display: 'inline-flex',
+		alignItems: 'baseline',
+		...(param.style === undefined ? {} : param.style),
+		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+	}
+
 	if (!('tokenId' in param) || param.tokenId === undefined) return <></>
 	if ('tokenIdName' in param && param.tokenIdName !== undefined) return <>
 		<CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token name copied!' >
-			<p class = 'noselect nopointer' style = { param.style }>
+			<p class = 'noselect nopointer' style = { style }>
 				{ param.tokenIdName }&nbsp;
 			</p>
 		</CopyToClipboard>
 	</>
 	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token identifier copied!' >
-		<p class = 'noselect nopointer' style = { param.style }>
+		<p class = 'noselect nopointer' style = { style }>
 			{ `#${ truncate(param.tokenId.toString(), 9) }` }&nbsp;
 		</p>
 	</CopyToClipboard>
