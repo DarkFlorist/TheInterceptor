@@ -164,10 +164,6 @@ export const ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR = 8n // Bounds the amount
 
 export const MOCK_PRIVATE_KEYS_ADDRESS = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn // an address represeting 0x1 privatekey
 
-export const KNOWN_CONTRACT_CALLER_ADDRESSES = [
-	0xca11bde05977b3631167028862be2a173976ca11n // curve multicaller
-]
-
 export const WARNING_COLOR = '#FFC107'
 export const PRIMARY_COLOR = '#58a5b3'
 
