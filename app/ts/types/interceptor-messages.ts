@@ -126,7 +126,7 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 )
 
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
-const ForwardToWallet = 	funtypes.Intersect( // forward directly to wallet
+const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
 	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
 )
