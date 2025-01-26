@@ -6,6 +6,7 @@ import { NEW_BLOCK_ABORT } from './constants.js'
 class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
 		super(message)
+		Object.setPrototypeOf(this, ErrorWithData.prototype)
 	}
 }
 
@@ -16,6 +17,7 @@ export class JsonRpcResponseError extends ErrorWithData {
 		super(jsonRpcResponse.error.message, jsonRpcResponse.error.data)
 		this.code = jsonRpcResponse.error.code
 		this.id = jsonRpcResponse.id
+		Object.setPrototypeOf(this, JsonRpcResponseError.prototype)
 	}
 }
 
