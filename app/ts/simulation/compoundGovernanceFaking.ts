@@ -75,7 +75,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	if (eta >= parentBlock.timestamp.getTime()) throw new Error('ETA has passed already')
 	const query = [{
 		calls: [executingTransaction],
-		blockOverride: {
+		blockOverrides: {
 			number: parentBlock.number + 1n,
 			prevRandao: 0x1n,
 			time: new Date(Number(eta) * 1000), // timestamp is set to ETA

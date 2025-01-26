@@ -11,10 +11,10 @@ const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-type BlockOverride = funtypes.Static<typeof BlockOverride>
-const BlockOverride = funtypes.Partial({
+type BlockOverrides = funtypes.Static<typeof BlockOverrides>
+const BlockOverrides = funtypes.Partial({
     number: EthereumQuantity,
-    prevRandao: EthereumQuantity,
+    prevRandao: EthereumBytes32,
     time: EthereumTimestamp,
     gasLimit: EthereumQuantitySmall,
     feeRecipient: EthereumAddress,
@@ -52,7 +52,7 @@ export const BlockCalls = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		stateOverrides: StateOverrides,
-		blockOverrides: BlockOverride,
+		blockOverrides: BlockOverrides,
 	})
 )
 

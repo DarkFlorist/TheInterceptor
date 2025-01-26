@@ -227,7 +227,7 @@ export class EthereumClientService {
 
 		// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
 		const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
-		const signatureStructs = await Promise.all(signatures.map(async (sign) => ({ key: getMappingsMemorySlot(encodePackedHash(simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor))), value: sign.fakeSignedFor })))
+		const signatureStructs = signatures.map((sign) => ({ key: getMappingsMemorySlot(encodePackedHash(simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor))), value: sign.fakeSignedFor }))
 		const stateSets = signatureStructs.reduce((acc, current) => {
 			acc[current.key] = current.value
 			return acc
@@ -248,7 +248,7 @@ export class EthereumClientService {
 		// add stateOverrides only to the first block (ecrecover overrides, make me rich and such)
 		const firstBlocksCalls = {
 			calls: firstBlocksTransactions,
-			blockOverride: getBlockOverrides(0),
+			blockOverrides: getBlockOverrides(0),
 			stateOverrides: {
 				...signatures.length > 0 ? {
 					[addressString(ecRecoverAddress)]: {
@@ -260,7 +260,7 @@ export class EthereumClientService {
 				...extraAccountOverrides,
 			}
 		}
-		const blockStateCalls = [firstBlocksCalls, ...restofTheBlocks.map((calls, index) => ({ calls, blockOverride: getBlockOverrides(index + 1) }))]
+		const blockStateCalls = [firstBlocksCalls, ...restofTheBlocks.map((calls, index) => ({ calls, blockOverrides: getBlockOverrides(index + 1) }))]
 		const ethSimulateResults = await this.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
 		if (ethSimulateResults.length !== transactionsWithRemoveZeroPricedOnes.length) throw new Error(`Ran Eth Simulate for ${ transactionsWithRemoveZeroPricedOnes.length } blocks but got ${ ethSimulateResults.length } blocks`)
 		return ethSimulateResults
