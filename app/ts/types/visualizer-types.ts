@@ -158,7 +158,7 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
-			type: funtypes.Literal('1559'),
+			type: funtypes.Union(funtypes.Literal('1559'), funtypes.Literal('7702')),
 			maxFeePerGas: EthereumQuantity,
 			maxPriorityFeePerGas: EthereumQuantity,
 		}),

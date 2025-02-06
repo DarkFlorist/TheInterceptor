@@ -10,7 +10,7 @@ import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20Tra
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
-import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
+import { getCodeByteCode, getMulticallByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { GetSimulationStackOldReply, GetSimulationStackReply } from '../../types/simulationStackTypes.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
@@ -210,10 +210,16 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 		if (transaction.type !== 'legacy') throw new Error('types do not match')
 		return { ...transaction, ...signatureParams, hash }
 	}
-
+	if (unsignedTransaction.type === '7702') {
+		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+		const authorizationList = unsignedTransaction.authorizationList.map((element) => ({ ...element, ...signatureParams }))
+		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams, authorizationList })))
+		if (transaction.type !== '7702') throw new Error('types do not match')
+		return { ...transaction, ...signatureParams, hash, authorizationList }
+	}
 	const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
 	const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-	if (transaction.type === 'legacy') throw new Error('types do not match')
+	if (transaction.type === 'legacy' || transaction.type === '7702') throw new Error('types do not match')
 	return { ...transaction, ...signatureParams, hash }
 }
 
@@ -436,18 +442,31 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 	let cumGas = 0n
 	let currentLogIndex = 0
 	if (simulationState === undefined) { return await ethereumClientService.getTransactionReceipt(hash, requestAbortController) }
+
+	const getTransactionSpecificFields = (signedTransaction: EthereumSendableSignedTransaction) => {
+		switch(signedTransaction.type) {
+			case 'legacy':
+			case '1559':
+			case '2930': return { type: signedTransaction.type }
+			case '4844': return {
+				type: signedTransaction.type,
+				blobGasUsed: GAS_PER_BLOB * BigInt(signedTransaction.blobVersionedHashes.length),
+				blobGasPrice: signedTransaction.maxFeePerBlobGas,
+			}
+			case '7702': return {
+				type: signedTransaction.type,
+				authorizationList: signedTransaction.authorizationList
+			}
+			default: assertNever(signedTransaction)
+		}
+	}
+
 	for (const [index, simulatedTransaction] of simulationState.simulatedTransactions.entries()) {
 		cumGas += simulatedTransaction.ethSimulateV1CallResult.gasUsed
 		if(hash === simulatedTransaction.preSimulationTransaction.signedTransaction.hash) {
 			const blockNum = await ethereumClientService.getBlockNumber(requestAbortController)
 			return {
-				...simulatedTransaction.preSimulationTransaction.signedTransaction.type === '4844' ? {
-					type: simulatedTransaction.preSimulationTransaction.signedTransaction.type,
-					blobGasUsed: GAS_PER_BLOB * BigInt(simulatedTransaction.preSimulationTransaction.signedTransaction.blobVersionedHashes.length),
-					blobGasPrice: simulatedTransaction.preSimulationTransaction.signedTransaction.maxFeePerBlobGas,
-				} : {
-					type: simulatedTransaction.preSimulationTransaction.signedTransaction.type,
-				},
+				...getTransactionSpecificFields(simulatedTransaction.preSimulationTransaction.signedTransaction),
 				blockHash: getHashOfSimulatedBlock(simulationState),
 				blockNumber: blockNum,
 				transactionHash: simulatedTransaction.preSimulationTransaction.signedTransaction.hash,
@@ -779,7 +798,6 @@ type BalanceQuery = {
 	owner: bigint,
 	tokenId: bigint,
 }
-
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, transactionQueue: EthereumUnsignedTransaction[], signedMessages: readonly SignatureWithFakeSignerAddress[], balanceQueries: BalanceQuery[], blockNumber: bigint, extraAccountOverrides: StateOverrides): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
 	function removeDuplicates(queries: BalanceQuery[]): BalanceQuery[] {
@@ -828,7 +846,9 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		nonce: 0n,
 		chainId: ethereumClientService.getChainId(),
 	} as const
-	const multicallResults = await ethereumClientService.simulateTransactionsAndSignatures([transactionQueue, [callTransaction]], signedMessages, blockNumber, requestAbortController, extraAccountOverrides)
+
+	const overrides = { ... extraAccountOverrides, [addressString(MULTICALL3)]: { code: getMulticallByteCode() } }
+	const multicallResults = await ethereumClientService.simulateTransactionsAndSignatures([transactionQueue, [callTransaction]], signedMessages, blockNumber, requestAbortController, overrides)
 	const lastBlockResults = multicallResults[multicallResults.length - 1]
 	if (lastBlockResults === undefined) throw Error('Failed to get last block in eth simulate in aggregate3')
 	const aggregate3CallResult = lastBlockResults.calls[lastBlockResults.calls.length - 1]
@@ -973,7 +993,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 		...rewardPercentiles === undefined ? {} : {
 			reward: [rewardPercentiles.map((percentile) => {
 				// we are using transaction.gas as a weighting factor while this should be `gasUsed`. Getting `gasUsed` requires getting transaction receipts, which we don't want to be doing
-				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => tx.type === '1559' || tx.type === '4844' ?
+				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => tx.type === '1559' || tx.type === '4844' || tx.type === '7702' ?
 					{ dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
 					: { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas })
 
