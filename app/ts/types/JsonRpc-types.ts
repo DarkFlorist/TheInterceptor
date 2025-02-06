@@ -101,6 +101,17 @@ export const EthTransactionReceiptResponse = funtypes.Union(
 					),
 				}),
 				funtypes.ReadonlyObject({
+					type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+					authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+						chainId: EthereumQuantity,
+						address: EthereumAddress,
+						nonce: EthereumQuantity,
+						yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
+						r: EthereumQuantity,
+						s: EthereumQuantity
+					}))
+				}),
+				funtypes.ReadonlyObject({
 					type: funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
 					blobGasUsed: EthereumQuantity,
 					blobGasPrice: EthereumQuantity,

@@ -29,6 +29,7 @@ const BlockCall = funtypes.Partial({
 		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
 		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
 		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	),
 	from: EthereumAddress,
 	nonce: EthereumQuantity,
@@ -40,6 +41,11 @@ const BlockCall = funtypes.Partial({
 	input: EthereumInput,
 	chainId: EthereumQuantity,
 	accessList: EthereumAccessList,
+	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		chainId: EthereumQuantity,
+		address: EthereumAddress,
+		nonce: EthereumQuantity,
+	}))
 })
 
 export type StateOverrides = funtypes.Static<typeof StateOverrides>
