@@ -207,7 +207,7 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(unvalidatedResult)
 	}
 
-	public readonly simulateTransactionsAndSignatures = async (transactionsInBlocks: readonly OptionalEthereumUnsignedTransaction[][], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, requestAbortController: AbortController | undefined, extraAccountOverrides: StateOverrides = {}) => {
+	public readonly simulateTransactionsAndSignatures = async (transactionsInBlocks: readonly OptionalEthereumUnsignedTransaction[][], signatures: readonly SignatureWithFakeSignerAddress[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined, extraAccountOverrides: StateOverrides = {}) => {
 		const transactionsWithRemoveZeroPricedOnes = transactionsInBlocks.map((block) => block.map((transaction) => {
 			if (transaction.type !== '1559') return transaction
 			const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction
@@ -215,8 +215,8 @@ export class EthereumClientService {
 		}))
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
-		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
-		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
+		const parentBlock = await this.getBlock(requestAbortController, blockTag)
+		if (parentBlock === null) throw new Error(`The block ${ blockTag } is null`)
 		const coder = AbiCoder.defaultAbiCoder()
 
 		const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
