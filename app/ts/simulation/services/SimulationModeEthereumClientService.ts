@@ -416,6 +416,7 @@ const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService
 }
 
 export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
+	if (blockTag === 'finalized') return await ethereumClientService.getTransactionCount(address, 'finalized', requestAbortController)
 	const currentBlock = await ethereumClientService.getBlockNumber(requestAbortController)
 	const blockNumToUse = blockTag === 'latest' || blockTag === 'pending' ? currentBlock : min(blockTag, currentBlock)
 	let addedTransactions = 0n
@@ -642,6 +643,8 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock )) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
+
+	if (toBlock === 'finalized' || fromBlock === 'finalized') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	if ('blockHash' in logFilter && logFilter.blockHash === getHashOfSimulatedBlock(simulationState)) return getLogsOfSimulatedBlock(simulationState, logFilter)
 	if (simulationState && (toBlock === 'latest' || toBlock >= simulationState.blockNumber)) {
 		const logParamsToNode = fromBlock !== 'latest' && fromBlock >= simulationState.blockNumber ? { ...logFilter, fromBlock: simulationState.blockNumber - 1n, toBlock: simulationState.blockNumber - 1n } : { ...logFilter, toBlock: simulationState.blockNumber - 1n }
@@ -687,6 +690,17 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 }
 
 export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest') => {
+	if (blockTag === 'finalized') {
+		try {
+			return { result: EthereumData.parse(ethereumClientService.call(params, 'finalized', requestAbortController)) }
+		} catch(error: unknown) {
+			if (error instanceof JsonRpcResponseError) {
+				const safeParsedData = EthereumData.safeParse(error.data)
+				return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
+			}
+			throw error
+		}
+	}
 	const currentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (currentBlock === null) throw new Error('cannot perform call on top of missing block')
 	const blockNumToUse = blockTag === 'latest' || blockTag === 'pending' ? currentBlock.number : min(blockTag, currentBlock.number)
