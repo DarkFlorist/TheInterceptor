@@ -27,8 +27,8 @@ const OldMulticallLog = funtypes.Object({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 }).asReadonly()
 
-export type GetSimulationStackOldReply = funtypes.Static<typeof GetSimulationStackOldReply>
-export const GetSimulationStackOldReply = funtypes.ReadonlyArray(
+export type GetSimulationStackReplyV1 = funtypes.Static<typeof GetSimulationStackReplyV1>
+export const GetSimulationStackReplyV1 = funtypes.ReadonlyArray(
 	funtypes.Intersect(
 		EthereumUnsignedTransaction,
 		funtypes.Union(
@@ -55,8 +55,8 @@ export const GetSimulationStackOldReply = funtypes.ReadonlyArray(
 	)
 )
 
-export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
-export const GetSimulationStackReply = funtypes.ReadonlyObject({ 
+export type GetSimulationStackReplyV2 = funtypes.Static<typeof GetSimulationStackReplyV2>
+export const GetSimulationStackReplyV2 = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
 	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ simulatedTransaction: SimulatedTransaction, ethBalanceChanges: EthBalanceChanges }).asReadonly())
 })

@@ -14,7 +14,7 @@ import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddr
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, calculateRealizedEffectiveGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getSimulatedCode, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { calculateRealizedEffectiveGasPrice, copySimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
@@ -296,7 +296,8 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 					const makeRichAddress = await getAddressToMakeRich()
 					const transationStack = await transationStackPromise
 					const newState = await setSimulationTransactionsAndSignedMessages(ethereum, undefined, simulationResults.simulationState?.blockNumber ?? 0n, transationStack, makeRichAddress)
-					const nonceFixed = await fixNonceErrorsIfNeeded(ethereum, undefined, newState)
+					const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, newState)
+
 					if (nonceFixed.nonceFixed === false) return newState
 					const fixedStack = modifyObject(transationStack, { transactions: nonceFixed.transactions })
 					const fixedPromise = setSimulationTransactionsAndSignedMessages(ethereum, undefined, simulationResults.simulationState?.blockNumber ?? 0n, fixedStack, makeRichAddress)

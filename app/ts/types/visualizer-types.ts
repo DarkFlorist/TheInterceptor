@@ -10,7 +10,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
-import { EthSimulateV1CallResult } from './ethSimulate-types.js'
+import { EthSimulateV1CallResult, StateOverrides } from './ethSimulate-types.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEvent, EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
@@ -132,16 +132,48 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	messageIdentifier: EthereumQuantity,
 })
 
-export type SimulationState = funtypes.Static<typeof SimulationState>
-export const SimulationState = funtypes.ReadonlyObject({
-	addressToMakeRich: funtypes.Union(funtypes.Undefined, EthereumAddress),
+export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
+export const SimulationStateInputBlock = funtypes.ReadonlyObject({
+	stateOverrides: StateOverrides,
+	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+	timeIncreaseDelta: EthereumQuantity,
+})
+
+export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
+export const SimulationStateInput = funtypes.ReadonlyObject({
+	blocks: funtypes.ReadonlyArray(SimulationStateInputBlock)
+})
+
+export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
+export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
+	stateOverrides: StateOverrides,
+	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction })),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+	timeIncreaseDelta: EthereumQuantity,
+})
+
+export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
+export const SimulationStateInputMinimalData = funtypes.ReadonlyObject({
+	blocks: funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
+})
+
+export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
+export const SimulationStateBlock = funtypes.ReadonlyObject({
+	stateOverrides: StateOverrides,
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+	timeIncreaseDelta: EthereumQuantity
+})
+
+export type SimulationState = funtypes.Static<typeof SimulationState>
+export const SimulationState = funtypes.ReadonlyObject({
+	simulatedBlocks: funtypes.ReadonlyArray(SimulationStateBlock),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
 	baseFeePerGas: EthereumQuantity,
-	rpcNetwork: RpcNetwork,
 	simulationConductedTimestamp: EthereumTimestamp,
+	rpcNetwork: RpcNetwork,
 })
 
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>

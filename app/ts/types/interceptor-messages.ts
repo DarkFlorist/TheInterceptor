@@ -12,7 +12,7 @@ import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
-import { GetSimulationStackOldReply, GetSimulationStackReply } from './simulationStackTypes.js'
+import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedEthereumEvent, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
@@ -96,8 +96,8 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: funtypes.Union(
-		funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1')), payload: GetSimulationStackOldReply }),
-		funtypes.ReadonlyObject({ version: funtypes.Literal('2.0.0'), payload: GetSimulationStackReply })
+		funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1')), payload: GetSimulationStackReplyV1 }),
+		funtypes.ReadonlyObject({ version: funtypes.Literal('2.0.0'), payload: GetSimulationStackReplyV2 })
 	) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getLogs'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendRawTransaction'), result: EthereumBytes32 }),
