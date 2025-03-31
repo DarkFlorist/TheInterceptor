@@ -259,9 +259,15 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (simulationStateInput.blocks.length === 0 || (simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks.length === 1)) {
+		// if there's no blocks, or there's an empty block (that can have state overrides), skip simulation and return empty results
 		return {
 			rpcNetwork: ethereumClientService.getRpcEntry(),
-			simulatedBlocks: [],
+			simulatedBlocks: simulationStateInput.blocks.map(() => ({
+				simulatedTransactions: [],
+				signedMessages: [],
+				stateOverrides: simulationStateInput.blocks[0]?.stateOverrides || {},
+				timeIncreaseDelta: simulationStateInput.blocks[0]?.timeIncreaseDelta || 12n
+			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: new Date(),
 			simulationConductedTimestamp: new Date(),
