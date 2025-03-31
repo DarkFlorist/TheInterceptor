@@ -56,7 +56,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		stateOverrides: {},
 		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
 		signedMessages: [],
-		timeIncreaseDelta: 0n
+		timeIncreaseDelta: 1n
 	} ] }
 
 	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
@@ -84,7 +84,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const query = [{
 		calls: [executingTransaction],
 		blockOverrides: {
-			number: parentBlock.number + 1n,
 			prevRandao: 0x1n,
 			time: new Date(Number(eta) * 1000), // timestamp is set to ETA
 			gasLimit: parentBlock.gasLimit,

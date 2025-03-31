@@ -81,15 +81,14 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			undefined,
 			{ blocks: [] }, // we are simulating on top of mainnet, not top of our stack. Fix to simulate on right place of the stack
 			contractExecutionResult.ethSimulateV1CallResult,
-			contractExecutionResult.executingTransaction.from,
-			parentBlock.number
+			contractExecutionResult.executingTransaction.from
 		)
 
 		const governanceContractSimulationState: SimulationState = {
 			simulatedBlocks: [{
 				signedMessages: [],
 				stateOverrides: {},
-				timeIncreaseDelta: 0n,
+				timeIncreaseDelta: 1n,
 				simulatedTransactions: [{
 					preSimulationTransaction: {
 						signedTransaction: signedExecutionTransaction,

@@ -184,25 +184,22 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
 			<li>
-				{ 'activeAddress' in simTx ? <>
-					<SignatureCard
-						visualizedPersonalSignRequest = { simTx }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-						numberOfUnderTransactions = { 0 }
-					/>
-				</> : <>
-					<Transaction
-						simTx = { simTx }
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.activeAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { param.addressMetaData }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					/>
-				</> }
+				{ 'activeAddress' in simTx ? <SignatureCard
+					visualizedPersonalSignRequest = { simTx }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					numberOfUnderTransactions = { 0 }
+				/> : <Transaction
+					simTx = { simTx }
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+					activeAddress = { param.activeAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					addressMetaData = { param.addressMetaData }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+				/>
+				}
 			</li>
 		)) }
 	</ul>

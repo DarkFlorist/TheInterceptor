@@ -246,7 +246,6 @@ export class EthereumClientService {
 			const cumulativeDeltas = calculateCumulativeIncrements(simulationStateInput.blocks.map((block) => block.timeIncreaseDelta))
 
 			const getBlockOverrides = (index: number) => ({
-				number: parentBlock.number + 1n + BigInt(index),
 				prevRandao: 0x1n,
 				time: new Date(parentBlock.timestamp.getTime() + Number(cumulativeDeltas[index]) * 1000),
 				gasLimit: parentBlock.gasLimit,

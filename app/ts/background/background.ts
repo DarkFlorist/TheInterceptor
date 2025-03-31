@@ -1,11 +1,11 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateTransactionStack } from './storageVariables.js'
+import { getSimulationResults, getTabState, getTransactionStack, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateTransactionStack } from './storageVariables.js'
 import { changeSimulationMode, getSettings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, PreSimulationTransaction, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, PreSimulationTransaction, SimulationState, SimulationStateInput, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
@@ -47,7 +47,6 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 	try {
 		return await updateSimulationStateSemaphore.execute(async () => {
 			if (thisSimulationsController.signal.aborted) return undefined
-
 			const simulationResults = await getSimulationResults()
 			const simulationId = simulationResults.simulationId + 1
 			if (invalidateOldState) {
@@ -76,18 +75,18 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 			try {
 				//TODO change makeRichAddress
 				const makeRichAddress = await getAddressToMakeRich()
-				// TODO, fix make me rich updation!
-				const oldSimulationStateInput = convertSimulationStateToSimulationInput(simulationResults.simulationState)
-				const replaceOldInputsFirstBlockOverrideWithMakeMeRich = () => {
-					if (oldSimulationStateInput.blocks.length === 0 || makeRichAddress === undefined) return oldSimulationStateInput
-					const makeMeRichOverride = getMakeMeRichStateOverride(makeRichAddress)
-					const [firstBlock, ...rest] = oldSimulationStateInput.blocks
-					return { blocks: [modifyObject(firstBlock, { stateOverrides: makeMeRichOverride }), ...rest] }
+				const stack = await getTransactionStack()
+				const oldSimulationStateInput: SimulationStateInput = {
+					blocks: [{
+						stateOverrides: getMakeMeRichStateOverride(makeRichAddress),
+						transactions: stack.transactions,
+						signedMessages: stack.signedMessages,
+						timeIncreaseDelta: 12n
+					}]
 				}
-				const withMakeMeRich = replaceOldInputsFirstBlockOverrideWithMakeMeRich()
-				const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(withMakeMeRich, ethereum)
+				const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(oldSimulationStateInput, ethereum)
 
-				if (simulationResults.simulationState !== undefined && ethereum.getChainId() === simulationResults.simulationState.rpcNetwork.chainId) {
+				if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState.rpcNetwork.chainId) {
 					await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisSimulationsController), ...doneState })
 				} else {
 					await updateSimulationResults(modifyObject(emptyDoneResults, { simulationResultState: 'corrupted' as const }))
