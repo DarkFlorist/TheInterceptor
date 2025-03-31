@@ -1,5 +1,5 @@
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { appendTransaction, getSimulatedBlock, getSimulatedTransactionByHash } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, getSimulatedBlock, getSimulatedTransactionByHash, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
 import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../RPCResponses.js'
@@ -8,6 +8,7 @@ import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
+import { SimulationState } from '../../app/ts/types/visualizer-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -71,15 +72,13 @@ export async function main() {
 
 	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
 
-	const simulationState = {
-		addressToMakeRich: undefined,
-		simulatedTransactions: [],
+	const simulationState: SimulationState = {
 		blockNumber: blockNumber,
 		blockTimestamp: new Date(0),
 		rpcNetwork: rpcNetwork,
 		baseFeePerGas: 0n,
 		simulationConductedTimestamp: new Date(0),
-		signedMessages: [],
+		simulatedBlocks: []
 	}
 
 	const exampleTransaction = {
@@ -118,15 +117,14 @@ export async function main() {
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
 			if (block === null) throw new Error('Block was null')
-			const newState = await appendTransaction(ethereum, undefined, simulationState, {
-				transaction: exampleTransaction,
+			const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState, [{
+				signedTransaction: mockSignTransaction(exampleTransaction),
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 				created: new Date(),
 				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
-				success: true,
 				transactionIdentifier: 1n,
-			})
-			const nextBlock = await getSimulatedBlock(ethereum, undefined, newState, blockNumber + 1n, true)
+			}])
+			const nextBlock = await getSimulatedBlock(ethereum, undefined, newState, blockNumber + 2n, true)
 			if (nextBlock === null) throw new Error('Block was null')
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
 
