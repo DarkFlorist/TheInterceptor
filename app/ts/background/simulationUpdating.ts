@@ -1,6 +1,6 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -218,8 +218,6 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			const events = (await eventsForEachBlockAndTransactionPromise).flat()
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-			//TODO, we should update signed messages here as well?
-
 			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, events, inputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
@@ -268,12 +266,12 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		)
 	)
 	const protectorsForEachBlockAndTransactionPromise = Promise.all(
-		simulationState.simulatedBlocks.map((block) => {
+		simulationState.simulatedBlocks.map((block, blockIndex) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-			return Promise.all(transactions.map((transaction) =>
-				// TODO, we need to slice the simulation here!
-				runProtectorsForTransaction(simulationState, transaction, ethereum, requestAbortController)
-			))
+			return Promise.all(transactions.map((transaction, transactionIndex) => {
+				const slicedSimulationState = sliceSimulationState(simulationState, blockIndex, transactionIndex)
+				return runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController)
+			}))
 		})
 	)
 

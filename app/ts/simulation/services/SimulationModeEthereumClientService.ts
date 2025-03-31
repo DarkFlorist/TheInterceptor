@@ -976,6 +976,35 @@ export const getTokenBalancesAfterForTransaction = async (
 	return getSimulatedTokenBalances(ethereumClientService, requestAbortController, simulationStateInput, [...erc20sAddresses, ...erc1155AddressIds])
 }
 
+export const sliceSimulationStateInput = (simulationStateInput: SimulationStateInput, blockIndex: number, transactionIndex: number) => {
+	const slicedBlock = simulationStateInput.blocks[blockIndex]
+	if (slicedBlock === undefined) return simulationStateInput
+	return {
+		blocks: [
+			...simulationStateInput.blocks.slice(0, blockIndex),
+			{
+				...slicedBlock,
+				transactions: slicedBlock.transactions.slice(0, transactionIndex)
+			}
+		]
+	}
+}
+
+export const sliceSimulationState = (simulationState: SimulationState, blockIndex: number, transactionIndex: number) => {
+	const slicedBlock = simulationState.simulatedBlocks[blockIndex]
+	if (slicedBlock === undefined) return simulationState
+	return {
+		...simulationState,
+		simulatedBlocks: [
+			...simulationState.simulatedBlocks.slice(0, blockIndex),
+			{
+				...slicedBlock,
+				transactions: slicedBlock.simulatedTransactions.slice(0, transactionIndex)
+			}
+		]
+	}
+}
+
 export const getTokenBalancesAfter = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -989,15 +1018,7 @@ export const getTokenBalancesAfter = async (
 			const simulateResultTransaction = simulateResultBlock.calls[inputTransactionIndex]
 			if (simulateResultTransaction === undefined) throw new Error('singleResult transaction was undefined')
 			const sender = inputTransaction.signedTransaction.from
-			const inputStateJustAfterTransaction: SimulationStateInput = {
-				blocks: [
-					...simulationStateInput.blocks.slice(0, inputBlockIndex),
-					{
-						...inputBlock,
-						transactions: inputBlock.transactions.slice(0, inputTransactionIndex + 1)
-					}
-				]
-			}
+			const inputStateJustAfterTransaction = sliceSimulationStateInput(simulationStateInput, inputBlockIndex, inputTransactionIndex + 1)
 			return getTokenBalancesAfterForTransaction(
 				ethereumClientService,
 				requestAbortController,

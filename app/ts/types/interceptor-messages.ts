@@ -686,9 +686,6 @@ export const SimulateExecutionReplyData = funtypes.Union(
 			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 			visualizedSimulationState: VisualizedSimulationState,
 			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
-			//eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-			//parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-			//protectors: funtypes.ReadonlyArray(ProtectorResults),
 			simulationState: funtypes.Union(SimulationState),
 		})
 	})

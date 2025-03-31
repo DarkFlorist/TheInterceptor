@@ -76,18 +76,13 @@ export async function getSimulationResults() {
 		simulationResultState: 'corrupted' as const,
 		simulationId: 0,
 		simulationState: undefined,
-		//eventsForEachTransaction: [],
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
 		activeAddress: undefined,
 		namedTokenIds: [],
-		//protectors: [],
-		//simulatedAndVisualizedTransactions: [],
-		//visualizedPersonalSignRequests: [],
 		visualizedSimulationState: { visualizedBlocks: [] },
 		makeMeRich: false,
-		//parsedInputData: [],
 	}
 	try {
 		return (await browserStorageLocalGet('simulationResults'))?.simulationResults ?? emptyResults

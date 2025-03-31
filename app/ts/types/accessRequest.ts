@@ -41,8 +41,6 @@ type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDi
 const ConfirmTransactionDialogState = funtypes.Intersect(
 	ConfirmTransactionSimulationBaseData,
 	funtypes.ReadonlyObject({
-		//eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-		//protectors: funtypes.ReadonlyArray(ProtectorResults),
 		addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 		tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 		namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
