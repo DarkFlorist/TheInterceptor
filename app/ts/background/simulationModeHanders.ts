@@ -1,6 +1,6 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStackV2, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedStackOld, getSimulatedTransactionCountOverStack } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStackV2, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedStackOld, getSimulatedTransactionCount } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
@@ -57,7 +57,7 @@ async function singleCallWithFromOverride(ethereumClientService: EthereumClientS
 		type: '1559' as const,
 		from,
 		chainId: ethereumClientService.getChainId(),
-		nonce: await getSimulatedTransactionCountOverStack(ethereumClientService, undefined, simulationState, from),
+		nonce: await getSimulatedTransactionCount(ethereumClientService, undefined, simulationState, from),
 		maxFeePerGas: gasPrice,
 		maxPriorityFeePerGas: 0n,
 		to: callParams.to === undefined ? null : callParams.to,
@@ -81,7 +81,7 @@ export async function blockNumber(ethereumClientService: EthereumClientService, 
 }
 
 export async function estimateGas(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EstimateGasParams){
-	const estimatedGas = await simulateEstimateGas(ethereumClientService, undefined, simulationState, request.params[0], simulationState?.simulatedBlocks.length || 0)
+	const estimatedGas = await simulateEstimateGas(ethereumClientService, undefined, simulationState, request.params[0])
 	if ('error' in estimatedGas) return { type: 'result' as const, method: request.method, ...estimatedGas }
 	return { type: 'result' as const, method: request.method, result: estimatedGas.gas }
 }
@@ -146,7 +146,7 @@ export async function getPermissions() {
 }
 
 export async function getTransactionCount(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: GetTransactionCount) {
-	return { type: 'result' as const, method: request.method, result: await getSimulatedTransactionCountOverStack(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
+	return { type: 'result' as const, method: request.method, result: await getSimulatedTransactionCount(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
 }
 
 export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {

@@ -1,257 +1,43 @@
-import { InpageScriptRequest, PopupMessage, RPCReply, Settings, SimulateExecutionReplyData } from '../types/interceptor-messages.js'
+import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { Simulator, parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
-import { getSimulationResults, getTabState, getTransactionStack, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack, updateTransactionStack } from './storageVariables.js'
-import { changeSimulationMode, getSettings, getWethForChainId } from './settings.js'
+import { Simulator } from '../simulation/simulator.js'
+import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateTransactionStack } from './storageVariables.js'
+import { changeSimulationMode, getSettings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, PreSimulationTransaction, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
-import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
+import { assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { calculateRealizedEffectiveGasPrice, copySimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionsToInput, convertSimulationStateToSimulationInput, copySimulationState, getAddressToMakeRich, mockSignTransaction } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
-import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
-import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { Website } from '../types/websiteAccessTypes.js'
-import { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
+import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
-import { get4Byte, get4ByteString } from '../utils/calldata.js'
-import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
-import { Interface, ethers } from 'ethers'
-import { CompoundGovernanceAbi } from '../utils/abi.js'
-import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { Interface } from 'ethers'
+import { addressString } from '../utils/bigint.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { areEqualArrays } from '../utils/typed-arrays.js'
-import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-
-async function updateMetadataForSimulation(
-	simulationState: SimulationState,
-	ethereum: EthereumClientService,
-	requestAbortController: AbortController | undefined,
-	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
-	inputData: readonly EnrichedEthereumInputData[],
-) {
-	const settingsPromise = getSettings()
-	const settings = await settingsPromise
-	const allEvents = eventsForEachTransaction.flat()
-	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, requestAbortController, allEvents, inputData, simulationState)
-	const namedTokenIdPromises = nameTokenIds(ethereum, allEvents)
-	const addressBookEntries = await addressBookEntryPromises
-	const ensPromise = retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries)
-	const namedTokenIds = await namedTokenIdPromises
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))
-	return {
-		namedTokenIds,
-		addressBookEntries: addressBookEntries,
-		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
-		ens: await ensPromise
-	}
-}
-
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
-	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
-	try {
-		// identifies compound governane call and performs simulation if the vote passes
-		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
-		const pendingResults = pendingTransaction.simulationResults
-		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
-		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
-		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
-		if (fourByte === undefined || fourByteString === undefined) return returnError('Could not identify the 4byte signature')
-		const explanation = FourByteExplanations[fourByte]
-		if ((explanation !== 'Cast Vote'
-			&& explanation !== 'Submit Vote'
-			&& explanation !== 'Cast Vote by Signature'
-			&& explanation !== 'Cast Vote with Reason'
-			&& explanation !== 'Cast Vote with Reason and Additional Info'
-			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
-			|| pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
-
-		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
-		const voteFunction = governanceContractInterface.getFunction(fourByteString)
-		if (voteFunction === null) return returnError('Could not find the voting function')
-		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
-		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
-		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
-		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
-		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
-		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
-		const parentBlock = await ethereum.getBlock(undefined)
-		if (parentBlock === null) throw new Error('The latest block is null')
-		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
-		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, undefined, [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number, [signedExecutionTransaction], [], {})
-
-		if (tokenBalancesAfter[0] === undefined) return returnError('Could not compute token balances')
-
-		const governanceContractSimulationState: SimulationState = {
-			addressToMakeRich: undefined,
-			simulatedTransactions: [{
-				preSimulationTransaction: {
-					signedTransaction: signedExecutionTransaction,
-					website: pendingTransaction.transactionToSimulate.website,
-					created: new Date(),
-					originalRequestParameters: pendingTransaction.originalRequestParameters,
-					transactionIdentifier: pendingTransaction.transactionIdentifier,
-				},
-				realizedGasPrice: calculateRealizedEffectiveGasPrice(signedExecutionTransaction, parentBlock.baseFeePerGas),
-				ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
-				tokenBalancesAfter: tokenBalancesAfter[0],
-			}],
-			blockNumber: parentBlock.number,
-			blockTimestamp: parentBlock.timestamp,
-			baseFeePerGas: parentBlock.baseFeePerGas,
-			rpcNetwork: ethereum.getRpcEntry(),
-			simulationConductedTimestamp: new Date(),
-			signedMessages: [],
-		}
-		return { success: true as const, result: await visualizeSimulatorState(governanceContractSimulationState, ethereum, tokenPriceService, undefined) }
-	} catch(error) {
-		console.warn(error)
-		if (error instanceof Error) return returnError(error.message)
-		return returnError('Unknown error occured')
-	}
-}
-
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationState: SimulationState | undefined, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
-	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
-	try {
-		const delegateCallExecuteInterface = new ethers.Interface(['function delegateCallExecute(address, bytes memory) payable external returns (bytes memory)'])
-
-		// Call: 0x0, DelegateCall: 0x1
-		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
-		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
-		const ORIGINAL_GNOSIS_SAFE = 0x0000000000000000000000000000000000920515n // Gnosis in leetspeak (9=G, 2=N, 0=O, 5=S, 1=I)
-		/*
-		If we are doing a normal call, we send a transaction from gnosis safe to the callable address
-		If we are doing a delegate call, we do a following operation:
-			1) move safe (gnosisSafeMessage.verifyingContract.address) -> ORIGINAL_GNOSIS_SAFE
-			2) replace safe with GnosisSafeProxyProxy (a contract that delegates everything to ORIGINAL_GNOSIS_SAFE, except calls to `delegateCallExecute`)
-			3) call safe (which is our proxyproxy) with `delegateCallExecute(address target, bytes memory callData)`
-		*/
-
-		const transactionBase = {
-			value: gnosisSafeMessage.message.message.value,
-			maxPriorityFeePerGas: 0n,
-			maxFeePerGas: 0n,
-			type: '1559' as const,
-			from: gnosisSafeMessage.verifyingContract.address,
-			nonce: 0n,
-			chainId: ethereumClientService.getChainId(),
-		}
-
-		const transactionWithoutGas = { ...transactionBase, ...isDelegateCall ? {
-			to: gnosisSafeMessage.verifyingContract.address,
-			input: stringToUint8Array(delegateCallExecuteInterface.encodeFunctionData('delegateCallExecute', [addressString(gnosisSafeMessage.to.address), gnosisSafeMessage.parsedMessageData.input]))
-		} : {
-			to: gnosisSafeMessage.to.address,
-			input: gnosisSafeMessage.parsedMessageData.input
-		} }
-		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? { gas: gnosisSafeMessage.message.message.baseGas } : { gas: simulationGasLeft(simulationState, await ethereumClientService.getBlock(undefined)) }
-		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
-		const metaTransaction: WebsiteCreatedEthereumUnsignedTransaction = {
-			website: gnosisSafeMessage.website,
-			created: new Date(),
-			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
-			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
-			success: true,
-			transaction,
-		}
-		const getTemporaryAccountOverrides = async () => {
-			if (!isDelegateCall) return {}
-			const gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, simulationState, gnosisSafeMessage.verifyingContract.address)
-			if (gnosisSafeCode?.getCodeReturn === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
-			return {
-				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
-				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode.getCodeReturn }
-			}
-		}
-		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransaction(ethereumClientService, undefined, simulationState, metaTransaction, temporaryAccountOverrides)
-		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
-	} catch(error) {
-		console.warn(error)
-		if (error instanceof Error) return returnError(error.message)
-		return returnError('Unknown error occured')
-	}
-}
-
-async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
-	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
-	const eventsForEachTransactionPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)))
-	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum, requestAbortController)))
-
-	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
-		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
-		if (wethAddr === undefined) return undefined
-		const entry = await identifyAddress(ethereum, requestAbortController, wethAddr)
-		if (entry.type !== 'ERC20') return undefined
-		return entry
-	}
-	const weth = await getWeth()
-	const parsedInputData = await Promise.all(transactions.map((transaction) => parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)))
-	const eventsForEachTransaction = await eventsForEachTransactionPromise
-
-	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
-
-	const updatedMetadata = await updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, parsedInputData)
-
-	const tokenPriceEstimates = weth === undefined ? [] : await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
-	const protectors = await protectorPromises
-
-	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, parsedInputData, protectors, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth)
-
-	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
-		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
-	}
-	return {
-		...updatedMetadata,
-		simulatedAndVisualizedTransactions,
-		tokenPriceEstimates,
-		tokenPriceQuoteToken: weth,
-		eventsForEachTransaction,
-		parsedInputData,
-		protectors,
-		simulationState,
-	}
-}
-
-export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
-	return await updateSimulationResultsWithCallBack(async (prevState) => {
-		if (prevState?.simulationState === undefined) return prevState
-		try {
-			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.parsedInputData)
-			return { ...prevState, ...metadata }
-		} catch (error) {
-			if (error instanceof Error && isNewBlockAbort(error)) return prevState
-			if (error instanceof Error && isFailedToFetchError(error)) return prevState
-			handleUnexpectedError(error)
-			return prevState
-		}
-	})
-}
+import { createSimulationStateWithNonceAndBaseFeeFixing, visualizeSimulatorState } from './simulationUpdating.js'
 
 const updateSimulationStateSemaphore = new Semaphore(1)
 let simulationAbortController = new AbortController()
+
+const getMakeMeRichStateOverride = (addressToMakeRich: bigint | undefined) => addressToMakeRich !== undefined ? { [addressString(addressToMakeRich)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } } : {}
 
 export async function updateSimulationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, activeAddress: bigint | undefined, invalidateOldState: boolean, onlyIfNotAlreadyUpdating = false) {
 	if (onlyIfNotAlreadyUpdating && updateSimulationStateSemaphore.getPermits() === 0) return
@@ -261,13 +47,6 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 	try {
 		return await updateSimulationStateSemaphore.execute(async () => {
 			if (thisSimulationsController.signal.aborted) return undefined
-			const adjustedTransactionStack = async () => {
-				const stack = await getTransactionStack()
-				const parentBlock = ethereum.getCachedBlock() // to adjust base fee, we just need the most recent block that we know
-				if (parentBlock === undefined) return stack
-				return modifyObject(stack, { transactions: getBaseFeeAdjustedTransactions(parentBlock, stack.transactions) })
-			}
-			const transationStackPromise = adjustedTransactionStack()
 
 			const simulationResults = await getSimulationResults()
 			const simulationId = simulationResults.simulationId + 1
@@ -283,40 +62,32 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
 				tokenPriceQuoteToken: undefined,
-				eventsForEachTransaction: [],
-				protectors: [],
+				//eventsForEachTransaction: [],
+				//protectors: [],
 				namedTokenIds: [],
 				simulationState: undefined,
-				simulatedAndVisualizedTransactions: [],
-				visualizedPersonalSignRequests: [],
-				parsedInputData: [],
+				//simulatedAndVisualizedTransactions: [],
+				//visualizedPersonalSignRequests: [],
+				//parsedInputData: [],
+				visualizedSimulationState: {
+					visualizedBlocks: []
+				}
 			}
 			try {
-				const updateSimulationState = async () => {
-					const makeRichAddress = await getAddressToMakeRich()
-					const transationStack = await transationStackPromise
-					const newState = await setSimulationTransactionsAndSignedMessages(ethereum, undefined, simulationResults.simulationState?.blockNumber ?? 0n, transationStack, makeRichAddress)
-					const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, newState)
-
-					if (nonceFixed.nonceFixed === false) return newState
-					const fixedStack = modifyObject(transationStack, { transactions: nonceFixed.transactions })
-					const fixedPromise = setSimulationTransactionsAndSignedMessages(ethereum, undefined, simulationResults.simulationState?.blockNumber ?? 0n, fixedStack, makeRichAddress)
-					updateTransactionStack((previous) => {
-						const stillTheSameTransactions = areEqualArrays(previous.transactions.map((transaction) => transaction.transactionIdentifier), nonceFixed.transactions.map((transaction) => transaction.transactionIdentifier))
-						if (stillTheSameTransactions === false) return previous // we got race conditioned, don't fix the stack now
-						return modifyObject(previous, {
-							transactions: previous.transactions.map((transaction, index) => {
-								const newNonce = nonceFixed.transactions[index]?.signedTransaction.nonce
-								if (newNonce === undefined) throw new Error('Array index overflow')
-								return modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { nonce: newNonce }) })
-							})
-						})
-					})
-					return await fixedPromise
+				//TODO change makeRichAddress
+				const makeRichAddress = await getAddressToMakeRich()
+				// TODO, fix make me rich updation!
+				const oldSimulationStateInput = convertSimulationStateToSimulationInput(simulationResults.simulationState)
+				const replaceOldInputsFirstBlockOverrideWithMakeMeRich = () => {
+					if (oldSimulationStateInput.blocks.length === 0 || makeRichAddress === undefined) return oldSimulationStateInput
+					const makeMeRichOverride = getMakeMeRichStateOverride(makeRichAddress)
+					const [firstBlock, ...rest] = oldSimulationStateInput.blocks
+					return { blocks: [modifyObject(firstBlock, { stateOverrides: makeMeRichOverride }), ...rest] }
 				}
-				const updatedSimulationState = await updateSimulationState()
+				const withMakeMeRich = replaceOldInputsFirstBlockOverrideWithMakeMeRich()
+				const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(withMakeMeRich, ethereum)
 
-				if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) {
+				if (simulationResults.simulationState !== undefined && ethereum.getChainId() === simulationResults.simulationState.rpcNetwork.chainId) {
 					await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisSimulationsController), ...doneState })
 				} else {
 					await updateSimulationResults(modifyObject(emptyDoneResults, { simulationResultState: 'corrupted' as const }))
@@ -373,17 +144,26 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController.abort(new Error(NEW_BLOCK_ABORT))
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
-	const simState = await getCopiedSimulationState(simulationMode)
+	const simulatorState = await getCopiedSimulationState(simulationMode)
 	try {
-		const simulationStateWithNewTransaction = await appendTransaction(simulator.ethereum, undefined, simState, transactionToSimulate)
-		const noncefixed = await getNonceFixedSimulatedTransactions(simulator.ethereum, undefined, simulationStateWithNewTransaction.simulatedTransactions)
-		if (noncefixed === 'NoNonceErrors') return { statusCode: 'success' as const, data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum, simulator.tokenPriceService, undefined) } }
-		const noncefixedNotPrepended = noncefixed.map((transaction) => transaction.preSimulationTransaction)
-		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(simulator.ethereum, undefined, simulationStateWithNewTransaction.blockNumber, { transactions: noncefixedNotPrepended, signedMessages: simulationStateWithNewTransaction.signedMessages }, simulationStateWithNewTransaction.blockNumber)
-		const lastNonceFixed = noncefixed[noncefixed.length - 1]
-		if (lastNonceFixed === undefined) throw new Error('last nonce fixed was undefined')
-		const visualizedSimulatorState = await visualizeSimulatorState(nonceFixedState, simulator.ethereum, simulator.tokenPriceService, thisConfirmTransactionAbortController)
+		const getNewVisualizedSimulationState = async () => {
+			if (!transactionToSimulate.success) return undefined
+			const preSimulatedTransaction: PreSimulationTransaction = {
+				signedTransaction: mockSignTransaction(transactionToSimulate.transaction),
+				website: transactionToSimulate.website,
+				created: transactionToSimulate.created,
+				originalRequestParameters: transactionToSimulate.originalRequestParameters,
+				transactionIdentifier: transactionToSimulate.transactionIdentifier
+			}
+			const simulationStateWithNewTransaction = appendTransactionsToInput(convertSimulationStateToSimulationInput(simulatorState), [preSimulatedTransaction])
+			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, simulator.ethereum)
+			return await visualizeSimulatorState(updatedSimulationState, simulator.ethereum, simulator.tokenPriceService, thisConfirmTransactionAbortController)
+		}
+		const visualizedSimulatorState = await getNewVisualizedSimulationState()
+		if (visualizedSimulatorState === undefined) return // nothing to update, the transaction is failing
 		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined === undefined)
+		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
+		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 		return {
 			statusCode: 'success' as const,
 			data: {
@@ -394,7 +174,7 @@ export async function refreshConfirmTransactionSimulation(
 					...transactionToSimulate.success ? {
 						transaction: {
 							...transactionToSimulate.transaction,
-							nonce: lastNonceFixed.preSimulationTransaction.signedTransaction.nonce,
+							nonce: lastTransaction ? lastTransaction.transaction.nonce : transactionToSimulate.transaction.nonce,
 						} }
 					: { error: {
 						...transactionToSimulate.error,
@@ -425,7 +205,7 @@ export async function refreshConfirmTransactionSimulation(
 			...info,
 			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
 			simulationState: {
-				blockNumber: simState?.blockNumber || 0n,
+				blockNumber: simulatorState?.blockNumber || 0n,
 				simulationConductedTimestamp: new Date()
 			}
 		} }
@@ -721,7 +501,7 @@ export async function popupMessageHandler(
 			case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, parsedRequest, settings)
 			case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
 			case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator)
-			case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController)
+			case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController, simulator.tokenPriceService)
 			case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)

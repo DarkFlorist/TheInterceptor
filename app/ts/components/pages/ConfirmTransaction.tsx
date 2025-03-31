@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UnexpectedErrorOccured, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
-import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, VisualizedSimulationState } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
@@ -26,7 +26,6 @@ import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../../utils/reques
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { InvalidMessage, SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
-import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -36,8 +35,13 @@ type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
 }
 
-const getResultsForTransaction = (results: readonly SimulatedAndVisualizedTransaction[], transactionIdentifier: bigint) => {
-	return results.find((result) => result.transactionIdentifier === transactionIdentifier)
+const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
+	for (const block of visualizedSimulationState.visualizedBlocks) {
+		for (const transaction of block.simulatedAndVisualizedTransactions) {
+			if (transaction.transactionIdentifier === transactionIdentifier) return transaction
+		}
+	}
+	return undefined
 }
 
 const HALF_HEADER_HEIGHT = 48 / 2
@@ -66,7 +70,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 			</div>
 			if (pendingTransaction.type === 'Transaction') {
 				if (pendingTransaction.simulationResults.statusCode === 'success') {
-					const simTx = getResultsForTransaction(pendingTransaction.simulationResults.data.simulatedAndVisualizedTransactions, pendingTransaction.transactionIdentifier)
+					const simTx = getResultsForTransaction(pendingTransaction.simulationResults.data.visualizedSimulationState, pendingTransaction.transactionIdentifier)
 					if (simTx === undefined) throw new Error('No simulated and visualized transactions')
 					return <div class = 'card' style = { style }>
 						<TransactionHeader simTx = { simTx } />
@@ -92,9 +96,11 @@ type TransactionNamesParams = {
 }
 const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
-	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
+
+	const visualizedBlocks = param.completeVisualizedSimulation.visualizedSimulationState.visualizedBlocks
+	const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
-	const makingRich = param.completeVisualizedSimulation.simulationState?.addressToMakeRich !== undefined
+	const makingRich = param.completeVisualizedSimulation.simulationState?.simulatedBlocks.at(0)?.stateOverrides.lenght
 	const titleOfCurrentPendingTransaction = () => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
@@ -102,7 +108,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
 		if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode === 'failed') return 'Failing transaction'
-		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
 		return identifyTransaction(lastTx).title
 	}
@@ -194,12 +200,11 @@ function TransactionCard(param: TransactionCardParams) {
 		rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
 		tokenPriceEstimates: simulationResults.data.tokenPriceEstimates,
 		activeAddress: simulationResults.data.activeAddress,
-		simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
-		visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
+		visualizedSimulationState: simulationResults.data.visualizedSimulationState,
 		namedTokenIds: simulationResults.data.namedTokenIds,
 	}
 
-	const simTx = getResultsForTransaction(simulationResults.data.simulatedAndVisualizedTransactions, param.currentPendingTransaction.transactionIdentifier)
+	const simTx = getResultsForTransaction(simulationResults.data.visualizedSimulationState, param.currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -286,8 +291,7 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 		</>
 	}
 	if (params.currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success') return <></>
-	const simulatedAndVisualizedTransactions = params.currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions
-	const currentResults = getResultsForTransaction(simulatedAndVisualizedTransactions, params.currentPendingTransactionOrSignableMessage.transactionIdentifier)
+	const currentResults = getResultsForTransaction(params.currentPendingTransactionOrSignableMessage.simulationResults.data.visualizedSimulationState, params.currentPendingTransactionOrSignableMessage.transactionIdentifier)
 
 	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
 	if (currentResults === undefined) return <></>
@@ -351,7 +355,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.simulationResults.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
-		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return undefined
 		return identifyTransaction(lastTx)
 	}
@@ -474,7 +478,7 @@ export function ConfirmTransaction() {
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
 			if (pending.simulationResults.statusCode !== 'success' ) return undefined
-			const results = pending.simulationResults.data.simulatedAndVisualizedTransactions.find((tx) => tx.transactionIdentifier === pending.transactionIdentifier)
+			const results = getResultsForTransaction(pending.simulationResults.data.visualizedSimulationState, pending.transactionIdentifier)
 			if (results === undefined) return undefined
 			return results.statusCode === 'failure' ? results.error.message : undefined
 		}
@@ -506,7 +510,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value.simulationResults === undefined) return false
 		if (currentPendingTransactionOrSignableMessage.value.simulationResults.statusCode !== 'success' ) return false
 		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status === 'WaitingForSigner') return true
-		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
+		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.simulationResults.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined ) return false
 		const success = lastTx.statusCode === 'success'
 		const noQuarantines = lastTx.quarantine === false

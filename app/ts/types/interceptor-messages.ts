@@ -1,8 +1,8 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
-import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState } from './visualizer-types.js'
+import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
@@ -13,7 +13,6 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './ac
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { EnrichedEthereumEvent, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -685,12 +684,11 @@ export const SimulateExecutionReplyData = funtypes.Union(
 		result: funtypes.ReadonlyObject({
 			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+			visualizedSimulationState: VisualizedSimulationState,
 			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
-			eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-			parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-			protectors: funtypes.ReadonlyArray(ProtectorResults),
+			//eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
+			//parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
+			//protectors: funtypes.ReadonlyArray(ProtectorResults),
 			simulationState: funtypes.Union(SimulationState),
 		})
 	})

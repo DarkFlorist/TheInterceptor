@@ -167,7 +167,7 @@ function SimulationResults(param: SimulationStateParam) {
 				</button>
 			</div>
 		</div>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ?
+		{ param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length === 0 ?
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		: <>
 			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>

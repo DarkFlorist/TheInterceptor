@@ -38,7 +38,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 			<ErrorComponent text = { simulateExecutionReply.data.errorMessage }/>
 		</div>
 	}
-	const simTx = simulateExecutionReply.data.result.simulatedAndVisualizedTransactions.at(-1)
+	const simTx = simulateExecutionReply.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	if (simTx === undefined) return <></>
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
@@ -51,8 +51,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 				rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
 				tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
 				activeAddress: activeAddress,
-				simulatedAndVisualizedTransactions: simulateExecutionReply.data.result.simulatedAndVisualizedTransactions,
-				visualizedPersonalSignRequests: simulateExecutionReply.data.result.visualizedPersonalSignRequests,
+				visualizedSimulationState: simulateExecutionReply.data.result.visualizedSimulationState,
 				namedTokenIds: simulateExecutionReply.data.result.namedTokenIds,
 			} }
 			removeTransactionOrSignedMessage = { undefined }

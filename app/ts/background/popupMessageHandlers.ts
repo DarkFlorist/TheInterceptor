@@ -1,7 +1,7 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution, resetSimulatorStateFromConfig, simulateGnosisSafeMetaTransaction } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, resetSimulatorStateFromConfig } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateTransactionStack } from './storageVariables.js'
-import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
+import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -9,10 +9,9 @@ import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
-import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { CompleteVisualizedSimulation, ModifyAddressWindowState, PreSimulationTransaction, TransactionStack } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
@@ -31,6 +30,7 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
+import { simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -178,7 +178,7 @@ export async function refreshSimulation(simulator: Simulator, settings: Settings
 	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
 }
 
-export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
+export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenPriceService: TokenPriceService) {
 	const currentBlockNumberPromise = ethereumClientService.getBlockNumber(requestAbortController)
 	const promises = await getPendingTransactionsAndMessages()
 	const visualizedSimulatorStatePromise = getSimulationResults()
@@ -212,19 +212,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 		}
 		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults.statusCode === 'failed') return
-			const oldEventsForEachTransaction = first.simulationResults.data.eventsForEachTransaction
-			const oldSimulatedAndVisualizedTransactions = first.simulationResults.data.simulatedAndVisualizedTransactions
-			const simulationState = first.simulationResults.data.simulationState
-
-			const eventsForEachTransaction = await Promise.all(oldEventsForEachTransaction.map(async (transactionsEvents) => await parseEvents(transactionsEvents.map((event) => event), ethereumClientService, requestAbortController)))
-			const parsedInputData = await Promise.all(oldSimulatedAndVisualizedTransactions.map((transaction) => parseInputData({ to: transaction.transaction.to?.address, input: transaction.transaction.input, value: transaction.transaction.value }, ethereumClientService, requestAbortController)))
-			const allEvents = eventsForEachTransaction.flat()
-			const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, requestAbortController, allEvents, parsedInputData, simulationState)
-			const namedTokenIdsPromise = nameTokenIds(ethereumClientService, allEvents)
-			const addressBookEntries = await addressBookEntriesPromise
-			const ensPromise = retrieveEnsNodeAndLabelHashes(ethereumClientService, allEvents, addressBookEntries)
-			const namedTokenIds = await namedTokenIdsPromise
-			const visualizedSimulatorState = await visualizedSimulatorStatePromise
+			const visualizedSimulationState = await visualizeSimulatorState(first.simulationResults.data.simulationState, ethereumClientService, tokenPriceService, requestAbortController)
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
@@ -233,11 +221,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 							{
 								simulationResults: {
 									statusCode: 'success',
-									data: modifyObject(first.simulationResults.data, {
-										simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, await ensPromise, visualizedSimulatorState.tokenPriceEstimates, visualizedSimulatorState.tokenPriceQuoteToken),
-										addressBookEntries,
-										eventsForEachTransaction,
-									})
+									data: modifyObject(first.simulationResults.data, { ...visualizedSimulationState })
 								}
 							})
 						, ...promises.slice(1)],

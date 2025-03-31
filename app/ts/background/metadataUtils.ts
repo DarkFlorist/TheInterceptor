@@ -184,14 +184,16 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	}).filter((address): address is bigint => address !== undefined)
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationState: SimulationState): Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationState: SimulationState): Promise<AddressBookEntry[]> {
 	const eventAndTransactionArguments = [...events.flatMap((event) => event.type !== 'NonParsed' ? event.args : []), ...inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])]
 	const addressesInEventsAndInputData = getAddressesForSolidityTypes(eventAndTransactionArguments)
 	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
 
-	for (const tx of simulationState.simulatedTransactions) {
-		addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
-		if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
+	for (const block of simulationState.simulatedBlocks) {
+		for (const tx of block.simulatedTransactions) {
+			addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
+			if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
+		}
 	}
 
 	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])

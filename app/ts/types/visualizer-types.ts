@@ -12,7 +12,7 @@ import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EthSimulateV1CallResult, StateOverrides } from './ethSimulate-types.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
-import { EnrichedEthereumEvent, EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -216,8 +216,7 @@ export type SimulationAndVisualisationResults = {
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
 	addressBookEntries: readonly AddressBookEntry[],
-	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
-	visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[],
+	visualizedSimulationState: VisualizedSimulationState,
 	rpcNetwork: RpcNetwork,
 	tokenPriceEstimates: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
@@ -263,14 +262,19 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 	tokenIdName: funtypes.String
 })
 
-type EventsForEachTransaction = funtypes.Static<typeof EventsForEachTransaction>
-const EventsForEachTransaction = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
+export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulationState>
+export const VisualizedSimulationState = funtypes.ReadonlyObject({
+	visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest)
+	}))
+})
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
-	eventsForEachTransaction: EventsForEachTransaction,
-	parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-	protectors: funtypes.ReadonlyArray(ProtectorResults),
+	//eventsForEachTransaction: EventsForEachTransaction,
+	//parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
+	//protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
@@ -280,8 +284,7 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	simulationUpdatingState: SimulationUpdatingState,
 	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
-	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+	visualizedSimulationState: VisualizedSimulationState
 })
 
 type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
@@ -306,16 +309,15 @@ export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.U
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
-	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-	parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-	protectors: funtypes.ReadonlyArray(ProtectorResults),
+	//eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
+	//parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
+	//protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(Erc20TokenEntry, funtypes.Undefined),
 	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 	simulationState: funtypes.Union(SimulationState),
-	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+	visualizedSimulationState: VisualizedSimulationState,
 })
 
 type ModifyAddressWindowStateError = funtypes.Static<typeof ModifyAddressWindowStateError>
