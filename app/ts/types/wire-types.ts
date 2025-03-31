@@ -165,7 +165,7 @@ type EthereumBytes16 = funtypes.Static<typeof EthereumBytes16>
 export const EthereumTimestamp = funtypes.String.withParser(TimestampParser)
 export type EthereumTimestamp = funtypes.Static<typeof EthereumTimestamp>
 
-export const EthereumBlockTag = funtypes.Union(EthereumQuantitySmall, EthereumBytes32, funtypes.Literal('latest'), funtypes.Literal('pending'))
+export const EthereumBlockTag = funtypes.Union(EthereumQuantitySmall, EthereumBytes32, funtypes.Literal('latest'), funtypes.Literal('pending'), funtypes.Literal('finalized'))
 export type EthereumBlockTag = funtypes.Static<typeof EthereumBlockTag>
 
 export const EthereumInput = funtypes.Union(funtypes.String, funtypes.Undefined).withParser(OptionalBytesParser)
