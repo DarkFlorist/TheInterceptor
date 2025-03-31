@@ -11,7 +11,7 @@ import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, MutableStateOverrides, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
-import { promiseAll2DArray, stripLeadingZeros } from '../../utils/typed-arrays.js'
+import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../../types/simulationStackTypes.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
@@ -64,16 +64,11 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 	})
 }
 
-/*
-export const getSimulatedStackV3 = (simulationState: SimulationState | undefined): GetSimulationStackReplyV3 => {
-
-}*/
-
 const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
 	let mergedStateOverrides: MutableStateOverrides = {}
 	for (const stateOverrides of stateOverridesArray) {
 		for (var key in stateOverrides){
-			if(stateOverrides.hasOwnProperty(key)){
+			if (stateOverrides.hasOwnProperty(key)){
 				mergedStateOverrides[key] = stateOverrides[key]
 			}
 		}
@@ -132,7 +127,7 @@ export const getSimulatedStackOld = (simulationState: SimulationState | undefine
 		const firstBlockStateOverrides = simulationState.simulatedBlocks[0]?.stateOverrides
 		if (firstBlockStateOverrides === undefined) return undefined
 		const overrides = Object.entries(firstBlockStateOverrides)
-		const override = overrides.find(([_address, override]) => override === MAKE_YOU_RICH_TRANSACTION.transaction.value)
+		const override = overrides.find(([_address, override]) => override?.balance === MAKE_YOU_RICH_TRANSACTION.transaction.value)
 		return override === undefined ? undefined : BigInt(override[0])
 	}
 	const addressToMakeRich = guessWhatIsAddressToMakeRich(simulationState)
@@ -987,10 +982,10 @@ export const getTokenBalancesAfter = async (
 	ethSimulateV1Result: EthSimulateV1Result,
 	simulationStateInput: SimulationStateInput,
 ): Promise<TokenBalancesBlocksAfter> => {
-	const tokenBalancesAfterPromisesArray = await Promise.all(Array.from(simulationStateInput.blocks.entries()).map(([inputBlockIndex, inputBlock]) => {
+	const tokenBalancesAfterArray = await Promise.all(Array.from(simulationStateInput.blocks.entries()).map(([inputBlockIndex, inputBlock]) => {
 		const simulateResultBlock = ethSimulateV1Result[inputBlockIndex]
 		if (simulateResultBlock === undefined) throw new Error('singleResult block was undefined')
-		return Array.from(inputBlock.transactions.entries()).map(([inputTransactionIndex, inputTransaction]) => {
+		return Promise.all(Array.from(inputBlock.transactions.entries()).map(([inputTransactionIndex, inputTransaction]) => {
 			const simulateResultTransaction = simulateResultBlock.calls[inputTransactionIndex]
 			if (simulateResultTransaction === undefined) throw new Error('singleResult transaction was undefined')
 			const sender = inputTransaction.signedTransaction.from
@@ -1010,10 +1005,9 @@ export const getTokenBalancesAfter = async (
 				simulateResultTransaction,
 				sender,
 			)
-		})
+		}))
 	}))
 
-	const tokenBalancesAfterArray = await promiseAll2DArray(tokenBalancesAfterPromisesArray)
 	return {
 		blocks: tokenBalancesAfterArray.map((block) => ({
 			transactions: block.map((tokenBalancesAfter) => ({ tokenBalancesAfter }))

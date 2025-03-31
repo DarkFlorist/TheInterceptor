@@ -44,5 +44,3 @@ export function interleave<T>(arr: readonly T[], addBetween: T): T[] {
 		return acc
 	}, [])
 }
-
-export const promiseAll2DArray = async <T>(array: Promise<T>[][]): Promise<T[][]> => Promise.all(array.map(row => Promise.all(row)))

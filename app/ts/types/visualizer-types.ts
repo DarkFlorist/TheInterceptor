@@ -272,9 +272,6 @@ export const VisualizedSimulationState = funtypes.ReadonlyObject({
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
-	//eventsForEachTransaction: EventsForEachTransaction,
-	//parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-	//protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
@@ -310,9 +307,6 @@ export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.U
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
-	//eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-	//parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-	//protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(Erc20TokenEntry, funtypes.Undefined),

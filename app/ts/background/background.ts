@@ -58,13 +58,8 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
 				tokenPriceQuoteToken: undefined,
-				//eventsForEachTransaction: [],
-				//protectors: [],
 				namedTokenIds: [],
 				simulationState: undefined,
-				//simulatedAndVisualizedTransactions: [],
-				//visualizedPersonalSignRequests: [],
-				//parsedInputData: [],
 				visualizedSimulationState: {
 					visualizedBlocks: []
 				},
