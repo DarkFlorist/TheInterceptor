@@ -1,6 +1,6 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -9,7 +9,7 @@ import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
 import { PreSimulationTransaction, SimulationState, SimulationStateInput, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getSettings, getWethForChainId } from './settings.js'
@@ -18,11 +18,25 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-import { updateSimulationResultsWithCallBack } from './storageVariables.js'
+import { getTransactionStack, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
 
+const getMakeMeRichStateOverride = (addressToMakeRich: bigint | undefined) => addressToMakeRich !== undefined ? { [addressString(addressToMakeRich)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } } : {}
+
+export const getCurrentSimulationInput = async () => {
+	const makeRichAddress = await getAddressToMakeRich()
+	const stack = await getTransactionStack()
+	return {
+		blocks: [{
+			stateOverrides: getMakeMeRichStateOverride(makeRichAddress),
+			transactions: stack.transactions,
+			signedMessages: stack.signedMessages,
+			timeIncreaseDelta: 12n
+		}]
+	}
+}
 
 async function updateMetadataForSimulation(
 	simulationState: SimulationState,
@@ -217,9 +231,9 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (oldSimulationStateInput: SimulationStateInput, ethereum: EthereumClientService) => {
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = ethereum.getCachedBlock()
-	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? oldSimulationStateInput : { blocks: oldSimulationStateInput.blocks.map((block) => (
+	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : { blocks: simulationInput.blocks.map((block) => (
 		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
 	))}
 	const newSimulationState = await createSimulationState(ethereum, undefined, baseFeeFixedInputStateBlocks)
@@ -301,6 +315,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		//parsedInputData,
 		//protectors,
 		simulationState,
-		visualizedSimulationState: { visualizedBlocks }
+		visualizedSimulationState: { visualizedBlocks },
 	}
 }

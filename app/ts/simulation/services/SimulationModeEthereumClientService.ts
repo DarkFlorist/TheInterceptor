@@ -263,7 +263,7 @@ export const getAddressToMakeRich = async () => await getMakeMeRich() ? (await g
 export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput): Promise<SimulationState> => {
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	if (simulationStateInput.blocks.length === 0) {
+	if (simulationStateInput.blocks.length === 0 || (simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks.length === 1)) {
 		return {
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulatedBlocks: [],
@@ -331,9 +331,7 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 		return copy
 	}
 	const newTransactions = [...transactions]
-	if (simulationStateInput === undefined) {
-		return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], timeIncreaseDelta: 12n }] } as const
-	}
+	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], timeIncreaseDelta: 12n }] } as const
 	if (simulationStateInput.blocks[nonUndefinedBlockDelta] !== undefined) {
 		return { blocks: simulationStateInput.blocks.map((block, index) => ({
 			stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),

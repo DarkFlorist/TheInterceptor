@@ -86,6 +86,7 @@ export async function getSimulationResults() {
 		//simulatedAndVisualizedTransactions: [],
 		//visualizedPersonalSignRequests: [],
 		visualizedSimulationState: { visualizedBlocks: [] },
+		makeMeRich: false,
 		//parsedInputData: [],
 	}
 	try {

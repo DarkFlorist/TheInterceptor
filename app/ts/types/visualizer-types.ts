@@ -284,7 +284,8 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	simulationUpdatingState: SimulationUpdatingState,
 	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
-	visualizedSimulationState: VisualizedSimulationState
+	visualizedSimulationState: VisualizedSimulationState,
+	makeMeRich: funtypes.Boolean,
 })
 
 type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>

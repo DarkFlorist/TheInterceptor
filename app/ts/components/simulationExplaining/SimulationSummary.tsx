@@ -127,7 +127,7 @@ type Erc20ApprovalChangesParams = {
 }
 
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
-	if ( param.erc20TokenApprovalChanges.length === 0 ) return <></>
+	if (param.erc20TokenApprovalChanges.length === 0) return <></>
 	return <>
 		{ param.erc20TokenApprovalChanges.map((token) => (
 			token.approvals.map((entryToApprove) => (
@@ -654,8 +654,7 @@ type SimulationSummaryParams = {
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults === undefined) return <></>
-
+	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
 	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
