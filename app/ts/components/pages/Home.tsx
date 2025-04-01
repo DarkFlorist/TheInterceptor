@@ -152,10 +152,8 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	const firstBlock = simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks[0]
-	if (firstBlock === undefined) return true
-	if (simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length > 1) return false
-	return firstBlock.simulatedAndVisualizedTransactions.length === 0 && firstBlock.visualizedPersonalSignRequests.length === 0
+	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
+		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
 }
 
 function SimulationResults(param: SimulationStateParam) {
