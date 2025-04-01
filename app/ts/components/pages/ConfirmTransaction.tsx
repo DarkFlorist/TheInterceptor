@@ -36,12 +36,7 @@ type UnderTransactionsParams = {
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
-	for (const block of visualizedSimulationState.visualizedBlocks) {
-		for (const transaction of block.simulatedAndVisualizedTransactions) {
-			if (transaction.transactionIdentifier === transactionIdentifier) return transaction
-		}
-	}
-	return undefined
+	return visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions).find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 }
 
 const HALF_HEADER_HEIGHT = 48 / 2

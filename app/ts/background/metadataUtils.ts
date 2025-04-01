@@ -189,11 +189,10 @@ export async function getAddressBookEntriesForVisualiserFromTransactions(ethereu
 	const addressesInEventsAndInputData = getAddressesForSolidityTypes(eventAndTransactionArguments)
 	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
 
-	for (const block of simulationState.simulatedBlocks) {
-		for (const tx of block.simulatedTransactions) {
-			addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
-			if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
-		}
+	const simulatedTransactions = simulationState.simulatedBlocks.flatMap((block) => block.simulatedTransactions)
+	for (const tx of simulatedTransactions) {
+		addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
+		if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
 	}
 
 	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
