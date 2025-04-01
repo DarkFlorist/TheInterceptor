@@ -7,13 +7,7 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../util
 
 const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
 	let mergedStateOverrides: MutableStateOverrides = {}
-	for (const stateOverrides of stateOverridesArray) {
-		for (var key in stateOverrides){
-			if (stateOverrides.hasOwnProperty(key)){
-				mergedStateOverrides[key] = stateOverrides[key]
-			}
-		}
-	}
+	stateOverridesArray.flatMap(stateOverrides => Object.entries(stateOverrides)).forEach(([key, value]) => { mergedStateOverrides[key] = value })
 	return mergedStateOverrides
 }
 
