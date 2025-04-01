@@ -1,16 +1,17 @@
 import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
-import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate } from '../types/visualizer-types.js'
+import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { Interface } from 'ethers'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, ParsedEnsEvent } from '../types/EnrichedEthereumData.js'
+import { RpcNetwork } from '../types/rpc.js'
 
 const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, addressMetaData: Map<string, AddressBookEntry>) => {
 	const getNameHash = (node: bigint) => ens.ensNameHashes.find((nameHash) => nameHash.nameHash === node) ?? { nameHash: node, name: undefined }
 	const getLabelHash = (labelHash: bigint) => ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === labelHash) ?? { labelHash: labelHash, label: undefined }
-	
+
 	switch (event.subType) {
 		case 'ENSNameWrapped': {
 			const owner = addressMetaData.get(addressString(event.logInformation.owner))
@@ -71,9 +72,9 @@ const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNam
 	}
 }
 
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransactions(simulatedTransactions: readonly SimulatedTransaction[], eventsForEachTransaction: readonly EnrichedEthereumEvents[], rpcNetwork: RpcNetwork, parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
-	return simState.simulatedTransactions.map((simulatedTx, index) => {
+	return simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.preSimulationTransaction.signedTransaction.from))
 		if (from === undefined) throw new Error('missing metadata')
 
@@ -118,7 +119,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				default: assertNever(event)
 			}
 		})
-		
+
 		const removeFromAndToFromSignedTransaction = () => {
 			const { from, to, ...otherFields } = simulatedTx.preSimulationTransaction.signedTransaction
 			return otherFields
@@ -126,7 +127,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		const otherFields = removeFromAndToFromSignedTransaction()
 		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ?  new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
 		return {
-			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
+			transaction: { from, to, rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			events: modifiedTransactionEvents,

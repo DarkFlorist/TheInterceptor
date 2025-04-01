@@ -13,7 +13,6 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
-import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
@@ -180,31 +179,27 @@ type TransactionsAndSignedMessagesParams = {
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => param.removedTransactionOrSignedMessages.find((x) => x.type === 'Transaction' && x.transactionIdentifier === tx.transactionIdentifier) === undefined)
-	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !param.removedTransactionOrSignedMessages.map((x) => x.type === 'SignedMessage' ? x.messageIdentifier : undefined).includes(message.messageIdentifier))
-	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
+	const visualizedBlocks = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
+	const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
 			<li>
-				{ 'activeAddress' in simTx ? <>
-					<SignatureCard
-						visualizedPersonalSignRequest = { simTx }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-						numberOfUnderTransactions = { 0 }
-					/>
-				</> : <>
-					<Transaction
-						simTx = { simTx }
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.activeAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { param.addressMetaData }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					/>
-				</> }
+				{ 'activeAddress' in simTx ? <SignatureCard
+					visualizedPersonalSignRequest = { simTx }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					numberOfUnderTransactions = { 0 }
+				/> : <Transaction
+					simTx = { simTx }
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+					activeAddress = { param.activeAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					addressMetaData = { param.addressMetaData }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+				/>
+				}
 			</li>
 		)) }
 	</ul>

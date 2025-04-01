@@ -59,8 +59,8 @@ export const EthBalanceChanges = funtypes.ReadonlyArray(
 	}).asReadonly()
 )
 
-export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = funtypes.ReadonlyPartial({
+export type PartialEthereumTransaction = funtypes.Static<typeof PartialEthereumTransaction>
+export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	from: EthereumAddress,
 	gas: EthereumQuantity,
 	value: EthereumQuantity,
@@ -70,9 +70,9 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
-}).withConstraint((dappRequestTransaction) => {
-	if (dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined) {
-		return areEqualUint8Arrays(dappRequestTransaction.input, dappRequestTransaction.data)
+}).withConstraint((PartialEthereumTransaction) => {
+	if (PartialEthereumTransaction.input !== undefined && PartialEthereumTransaction.data !== undefined) {
+		return areEqualUint8Arrays(PartialEthereumTransaction.input, PartialEthereumTransaction.data)
 	}
 	return true
 })
@@ -161,7 +161,7 @@ export const TransactionByHashParams = funtypes.ReadonlyObject({
 export type SendTransactionParams = funtypes.Static<typeof SendTransactionParams>
 export const SendTransactionParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendTransaction'),
-	params: funtypes.ReadonlyTuple(DappRequestTransaction)
+	params: funtypes.ReadonlyTuple(PartialEthereumTransaction)
 })
 
 export type SendRawTransactionParams = funtypes.Static<typeof SendRawTransactionParams>
@@ -198,14 +198,14 @@ export const TransactionReceiptParams = funtypes.ReadonlyObject({
 export type EstimateGasParams = funtypes.Static<typeof EstimateGasParams>
 export const EstimateGasParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_estimateGas'),
-	params: funtypes.Union(funtypes.ReadonlyTuple(DappRequestTransaction), funtypes.ReadonlyTuple(DappRequestTransaction, EthereumBlockTag))
+	params: funtypes.Union(funtypes.ReadonlyTuple(PartialEthereumTransaction), funtypes.ReadonlyTuple(PartialEthereumTransaction, EthereumBlockTag))
 })
 
 export type EthCallParams = funtypes.Static<typeof EthCallParams>
 export const EthCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_call'),
 	params: funtypes.ReadonlyTuple(
-		DappRequestTransaction,
+		PartialEthereumTransaction,
 		EthereumBlockTag
 	)
 }).asReadonly()

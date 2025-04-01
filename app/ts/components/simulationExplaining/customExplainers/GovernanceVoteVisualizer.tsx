@@ -114,7 +114,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 			/> : <ErrorComponent text = { simulateExecutionReply.data.errorMessage }/> }
 		</div>
 	}
-	const govSimTx = simulateExecutionReply.data.result.simulatedAndVisualizedTransactions.at(-1)
+	const govSimTx = simulateExecutionReply.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	if (govSimTx === undefined) return <></>
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
@@ -127,8 +127,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 				rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
 				tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
 				activeAddress: activeAddress,
-				simulatedAndVisualizedTransactions: simulateExecutionReply.data.result.simulatedAndVisualizedTransactions,
-				visualizedPersonalSignRequests: simulateExecutionReply.data.result.visualizedPersonalSignRequests,
+				visualizedSimulationState: simulateExecutionReply.data.result.visualizedSimulationState,
 				namedTokenIds: simulateExecutionReply.data.result.namedTokenIds,
 			} }
 			removeTransactionOrSignedMessage = { undefined }

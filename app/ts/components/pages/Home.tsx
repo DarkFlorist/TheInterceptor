@@ -15,6 +15,7 @@ import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
+import { useComputed } from '@preact/signals'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -150,9 +151,19 @@ function FirstCard(param: FirstCardParams) {
 	</>
 }
 
+export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
+	const firstBlock = simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks[0]
+	if (firstBlock === undefined) return true
+	if (simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length > 1) return false
+	return firstBlock.simulatedAndVisualizedTransactions.length === 0 && firstBlock.visualizedPersonalSignRequests.length === 0
+}
+
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
-
+	const isEmpty = useComputed(() => {
+		if (param.simulationAndVisualisationResults === undefined) return true
+		return isEmptySimulation(param.simulationAndVisualisationResults)
+	})
 	return <div>
 		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 			<div class = 'log-cell' style = 'justify-content: left;'>
@@ -167,7 +178,7 @@ function SimulationResults(param: SimulationStateParam) {
 				</button>
 			</div>
 		</div>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ?
+		{ isEmpty.value ?
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		: <>
 			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>

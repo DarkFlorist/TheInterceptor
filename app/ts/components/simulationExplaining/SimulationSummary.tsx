@@ -23,7 +23,7 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
-import { Signal } from '@preact/signals'
+import { Signal, useComputed } from '@preact/signals'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -127,7 +127,7 @@ type Erc20ApprovalChangesParams = {
 }
 
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
-	if ( param.erc20TokenApprovalChanges.length === 0 ) return <></>
+	if (param.erc20TokenApprovalChanges.length === 0) return <></>
 	return <>
 		{ param.erc20TokenApprovalChanges.map((token) => (
 			token.approvals.map((entryToApprove) => (
@@ -654,9 +654,9 @@ type SimulationSummaryParams = {
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults === undefined) return <></>
-
-	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
+	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
+	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
+	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPriceEstimates, param.simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.activeAddress)
@@ -664,12 +664,22 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
+	const icon = useComputed(() => {
+		for (const block of param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks) {
+			const failure = block.simulatedAndVisualizedTransactions.find((transaction) => transaction.statusCode !== 'success')
+			if (failure) return '../img/error-icon.svg'
+			const quarantine = block.simulatedAndVisualizedTransactions.find((transaction) => transaction.quarantine)
+			if (quarantine) return '../img/warning-sign.svg'
+		}
+		return '../img/success-icon.svg'
+	})
+
 	return (
 		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find((x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+						<img src = { icon } />
 					</span>
 				</div>
 				<div class = 'card-header-title'>

@@ -80,7 +80,6 @@ export const setGasLimitForTransaction = async (transactionIdentifier: BigInt, g
 export async function resolvePendingTransactionOrMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
-
 	const reply = (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
@@ -111,15 +110,15 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 	switch (pendingTransactionOrMessage.type) {
 		case 'SignableMessage': {
 			await updateTransactionStack((prevStack: TransactionStack) => ({...prevStack, signedMessages: [...prevStack.signedMessages, pendingTransactionOrMessage.signedMessageTransaction] }))
-			updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
+			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
 			return reply({ type: 'result', result: simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor).signature })
 		}
 		case 'Transaction': {
 			const signedTransaction = mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
 			await updateTransactionStack((prevStack: TransactionStack) => ({ ...prevStack, transactions: [...prevStack.transactions, transaction] }))
-			updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
-			return reply({ type: 'result', result: EthereumBytes32.serialize(mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction).hash) })
+			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
+			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
 	}
