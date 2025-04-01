@@ -1877,3 +1877,25 @@ header:has(form[role='search']) h1 {
 	pointer-events: none;
 	margin: 0;
 }
+
+.timepicker:after {
+	content: '';
+	border-style: solid;
+	border-width: 2px 2px 0 0;
+	display: inline-block;
+	height: 0.6em;
+	width: 0.6em;
+	position: relative;
+	top: 6%;
+	transform: rotate(135deg);
+	transform-origin: 66% 33%;
+	transition: transform 150ms;
+	flex-shrink: 0;
+}
+
+.datetime {
+	background: unset;
+    color: var(--text-color);
+	border: 1px solid #ffffff20;
+	border-radius: 2px;
+}

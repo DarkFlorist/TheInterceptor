@@ -15,7 +15,8 @@ import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
-import { useComputed } from '@preact/signals'
+import { useComputed, useSignal } from '@preact/signals'
+import { DeltaUnit, TimePicker, TimePickerMode } from '../subcomponents/TimePicker.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -90,6 +91,15 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 }
 
 function FirstCard(param: FirstCardParams) {
+
+	const timeSelectorMode = useSignal<TimePickerMode>('Increment')
+	const timeSelectorAbsoluteTime = useSignal<string>('')
+	const timeSelectorDeltaValue = useSignal<number>(12)
+	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+	const timeSelectorOnChange = () => {
+		console.log('change!')
+	}
+
 	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode === false) {
 		return <>
 			<section class = 'card' style = 'margin: 10px;'>
@@ -132,11 +142,19 @@ function FirstCard(param: FirstCardParams) {
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
-				</> : <div style = 'display: flex; justify-content: space-between; padding-top: 10px'>
+				</> : <div style = 'justify-content: space-between; padding-top: 10px'>
 					<label class = 'form-control'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
 						<p class = 'paragraph checkbox-text'>Make me rich</p>
 					</label>
+					<TimePicker
+						startText = 'Start simulation from time:'
+						mode = { timeSelectorMode }
+						absoluteTime = { timeSelectorAbsoluteTime }
+						deltaValue = { timeSelectorDeltaValue }
+						deltaUnit = { timeSelectorDeltaUnit }
+						onChange = { timeSelectorOnChange }
+					/>
 				</div> }
 			</div>
 		</section>
@@ -158,6 +176,7 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
+
 	const isEmpty = useComputed(() => {
 		if (param.simulationAndVisualisationResults === undefined) return true
 		return isEmptySimulation(param.simulationAndVisualisationResults)
