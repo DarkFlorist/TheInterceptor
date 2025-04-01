@@ -132,7 +132,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			simulatedBlocks: [{
 				signedMessages: [],
 				stateOverrides: {},
-				blockTimestamp: new Date(parentBlock.timestamp.toTimeString() + 1000),
+				blockTimestamp: new Date(parentBlock.timestamp.toTimeString() + 12 * 1000),
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n },
 				simulatedTransactions: [{
 					preSimulationTransaction: {
