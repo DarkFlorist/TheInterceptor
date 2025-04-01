@@ -2,7 +2,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, TransactionStack } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
@@ -312,13 +312,13 @@ export async function addEnsLabelHash(label: string) {
 	})
 }
 
-const transactionStackSemaphore = new Semaphore(1)
-export const getTransactionStack = async () => (await browserStorageLocalGet('transactionStack'))?.transactionStack ?? { transactions: [], signedMessages: [] }
-export async function updateTransactionStack(updateFunc: (prevStack: TransactionStack) => TransactionStack): Promise<TransactionStack> {
-	return await transactionStackSemaphore.execute(async () => {
-		const prevStack = await getTransactionStack()
-		const transactionStack = updateFunc(prevStack)
-		await browserStorageLocalSet({ transactionStack })
-		return transactionStack
+const interceptorTransactionStackSemaphore = new Semaphore(1)
+export const getInterceptorTransactionStack = async () => (await browserStorageLocalGet('interceptorTransactionStack'))?.interceptorTransactionStack ?? { operations: [] }
+export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+	return await interceptorTransactionStackSemaphore.execute(async () => {
+		const prevStack = await getInterceptorTransactionStack()
+		const interceptorTransactionStack = updateFunc(prevStack)
+		await browserStorageLocalSet({ interceptorTransactionStack })
+		return interceptorTransactionStack
 	})
 }

@@ -56,8 +56,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		stateOverrides: {},
 		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
 		signedMessages: [],
-		timeIncreaseDelta: 1n
-	} ] }
+		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n }
+	} ] } as const
 
 	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
 	if (governanceContractCalls === undefined) throw new Error('simulateTransactionsAndSignatures returned zero length aray')

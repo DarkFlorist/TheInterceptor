@@ -132,12 +132,24 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	messageIdentifier: EthereumQuantity,
 })
 
+export type BlockTimeManipulation = funtypes.Static<typeof BlockTimeManipulation>
+export const BlockTimeManipulation = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('AddToTimestamp'),
+		deltaToAdd: funtypes.BigInt,
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('SetTimetamp'),
+		timeToSet: funtypes.BigInt,
+	}),
+)
+
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
 	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
-	timeIncreaseDelta: EthereumQuantity,
+	blockTimeManipulation: BlockTimeManipulation,
 })
 
 export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
@@ -150,7 +162,7 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
 	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction })),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
-	timeIncreaseDelta: EthereumQuantity,
+	blockTimeManipulation: BlockTimeManipulation,
 })
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
@@ -163,7 +175,8 @@ export const SimulationStateBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
-	timeIncreaseDelta: EthereumQuantity
+	blockTimestamp: EthereumTimestamp,
+	blockTimeManipulation: BlockTimeManipulation,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
@@ -332,8 +345,22 @@ export const EditEnsNamedHashWindowState = funtypes.ReadonlyObject({
 	name: funtypes.Union(funtypes.Undefined, funtypes.String)
 })
 
-export type TransactionStack = funtypes.Static<typeof TransactionStack>
-export const TransactionStack = funtypes.ReadonlyObject({
-	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
-	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction)
+export type InterceptorStackOperation = funtypes.Static<typeof InterceptorStackOperation>
+export const InterceptorStackOperation = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('Transaction'),
+		preSimulationTransaction: PreSimulationTransaction
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('Message'),
+		signedMessageTransaction: SignedMessageTransaction
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('TimeManipulation'),
+		blockTimeManipulation: BlockTimeManipulation
+}))
+
+export type InterceptorTransactionStack = funtypes.Static<typeof InterceptorTransactionStack>
+export const InterceptorTransactionStack = funtypes.ReadonlyObject({
+	operations: funtypes.ReadonlyArray(InterceptorStackOperation),
 })

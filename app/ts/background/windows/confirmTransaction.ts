@@ -5,11 +5,11 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { TransactionStack, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
+import { InterceptorTransactionStack, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, getSimulationResults, removePendingTransactionOrMessage, updatePendingTransactionOrMessage, updateTransactionStack } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, getSimulationResults, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
@@ -109,14 +109,20 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 
 	switch (pendingTransactionOrMessage.type) {
 		case 'SignableMessage': {
-			await updateTransactionStack((prevStack: TransactionStack) => ({...prevStack, signedMessages: [...prevStack.signedMessages, pendingTransactionOrMessage.signedMessageTransaction] }))
+			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
+				...prevStack.operations,
+				{ type: 'Message' as const, signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }
+			] }))
 			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
 			return reply({ type: 'result', result: simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor).signature })
 		}
 		case 'Transaction': {
 			const signedTransaction = mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
-			await updateTransactionStack((prevStack: TransactionStack) => ({ ...prevStack, transactions: [...prevStack.transactions, transaction] }))
+			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
+				...prevStack.operations,
+				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
+			] }))
 			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}
