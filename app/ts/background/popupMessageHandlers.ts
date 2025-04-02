@@ -133,6 +133,9 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 }
 
 export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
+	const removeConsequtiveTimeManipulations = (operations: readonly InterceptorStackOperation[]) => {
+		return operations.filter((operation, operationIndex) => !(operationIndex > 0 && operation.type === 'TimeManipulation' && operations[operationIndex - 1]?.type === 'TimeManipulation'))
+	}
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		switch (params.data.type) {
 			case 'Transaction': {
@@ -163,22 +166,16 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 						})
 						continue
 					}
-					if (operation.type === 'TimeManipulation' && newOperations.at(-1)?.type === 'TimeManipulation') continue // do not allow two timemanipulations to be right after another, remove another
 					newOperations.push(operation)
 				}
-				return { operations: newOperations }
+				return { operations: removeConsequtiveTimeManipulations(newOperations) }
 			}
 			case 'SignedMessage': {
 				const messageIdentifier = params.data.messageIdentifier
-				const newOperations: InterceptorStackOperation[] = []
-				for (const operation of prevStack.operations) {
-					if (operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier) {
-						continue
-					}
-					if (operation.type === 'TimeManipulation' && newOperations.at(-1)?.type === 'TimeManipulation') continue // do not allow two timemanipulations to be right after another, remove another
-					newOperations.push(operation)
+				return {
+					operations: removeConsequtiveTimeManipulations(prevStack.operations)
+						.filter((operation) => !(operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier))
 				}
-				return { operations: newOperations }
 			}
 			default: assertNever(params.data)
 		}
