@@ -1,7 +1,7 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateTransactionStack } from './storageVariables.js'
+import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack, updateSimulationResults } from './storageVariables.js'
 import { changeSimulationMode, getMakeMeRich, getSettings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction } from './popupMessageHandlers.js'
@@ -303,12 +303,7 @@ async function handleRPCRequest(
 
 export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService) {
 	const settings = await getSettings()
-	await updateTransactionStack(() => {
-		return {
-			transactions: [],
-			signedMessages: [],
-		}
-	})
+	await updateInterceptorTransactionStack(() => ({ operations: [] }))
 	return await updateSimulationState(ethereumClientService, tokenPriceService, settings.activeSimulationAddress, true)
 }
 

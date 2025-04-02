@@ -3,14 +3,14 @@ import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
-import { addressString, bytes32String } from '../../utils/bigint.js'
-import { BlockCalls, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { addressString, bytes32String, max } from '../../utils/bigint.js'
+import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { MessageHashAndSignature, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { RpcEntry } from '../../types/rpc.js'
-import { SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -212,7 +212,25 @@ export class EthereumClientService {
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockdelta: number) => {
+		const blockOverrides: BlockOverrides[] = []
+		let previousBlockOverride = {
+			time: parentBlock.timestamp,
+			gasLimit: parentBlock.gasLimit,
+			feeRecipient: parentBlock.miner,
+			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+		}
+		for (const inputBlock of simulationStateInput.blocks) {
+			const getNewBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
+				const prevTime = BigInt(previousBlockTimeStamp.getTime()) / 1000n
+				if (blockTimeManipulation.type === 'AddToTimestamp') return new Date(Number(prevTime + blockTimeManipulation.deltaToAdd) * 1000)
+				return new Date(Number(max(prevTime, blockTimeManipulation.timeToSet)) * 1000)
+			}
+			const newBlockOverride = { ...previousBlockOverride, time: getNewBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation) }
+			blockOverrides.push(newBlockOverride)
+			previousBlockOverride = newBlockOverride
+		}
+
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
 			const transactionsWithRemoveZeroPricedOnes = block.transactions.map((transaction) => {
 				if (transaction.signedTransaction.type !== '1559') return transaction.signedTransaction
 				const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction.signedTransaction
@@ -237,24 +255,9 @@ export class EthereumClientService {
 				return acc
 			}, {} as { [key: string]: bigint } )
 
-			const calculateCumulativeIncrements = (arr: EthereumQuantity[]): EthereumQuantity[] => {
-				return arr.reduce((result, current, index) => {
-					result.push(current + (result[index - 1] || 0n))
-					return result
-				}, [] as EthereumQuantity[])
-			}
-			const cumulativeDeltas = calculateCumulativeIncrements(simulationStateInput.blocks.map((block) => block.timeIncreaseDelta))
-
-			const getBlockOverrides = (index: number) => ({
-				prevRandao: 0x1n,
-				time: new Date(parentBlock.timestamp.getTime() + Number(cumulativeDeltas[index]) * 1000),
-				gasLimit: parentBlock.gasLimit,
-				feeRecipient: parentBlock.miner,
-				baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
-			})
 			return {
 				calls: transactionsWithRemoveZeroPricedOnes,
-				blockOverrides: getBlockOverrides(blockdelta),
+				blockOverrides,
 				stateOverrides: {
 					...block.signedMessages.length > 0 ? {
 						[addressString(ecRecoverAddress)]: {
@@ -268,7 +271,11 @@ export class EthereumClientService {
 			}
 		}
 
-		const blockStateCalls = await Promise.all(simulationStateInput.blocks.map(async (block, index) => await getBlockStateCall(block, index)))
+		const blockStateCalls = await Promise.all(simulationStateInput.blocks.map(async (block, index) => {
+			const blockOverrideForBlock = blockOverrides[index]
+			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
+			return await getBlockStateCall(block, blockOverrideForBlock)
+		}))
 		const ethSimulateResults = await this.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
 		if (ethSimulateResults.length !== blockStateCalls.length) throw new Error(`Ran Eth Simulate for ${ blockStateCalls.length } blocks but got ${ ethSimulateResults.length } blocks`)
 		return ethSimulateResults

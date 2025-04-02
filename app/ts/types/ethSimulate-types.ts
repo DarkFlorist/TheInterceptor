@@ -11,8 +11,8 @@ const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-type BlockOverrides = funtypes.Static<typeof BlockOverrides>
-const BlockOverrides = funtypes.Partial({
+export type BlockOverrides = funtypes.Static<typeof BlockOverrides>
+export const BlockOverrides = funtypes.Partial({
     number: EthereumQuantity,
     prevRandao: EthereumBytes32,
     time: EthereumTimestamp,

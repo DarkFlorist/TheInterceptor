@@ -257,6 +257,7 @@ export const getAddressToMakeRich = async () => await getMakeMeRich() ? (await g
 
 export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput): Promise<SimulationState> => {
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
+	const deltaToAdd = 12n
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (simulationStateInput.blocks.length === 0 || (simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks.length === 1)) {
 		// if there's no blocks, or there's an empty block (that can have state overrides), skip simulation and return empty results
@@ -266,7 +267,8 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 				simulatedTransactions: [],
 				signedMessages: [],
 				stateOverrides: simulationStateInput.blocks[0]?.stateOverrides || {},
-				timeIncreaseDelta: simulationStateInput.blocks[0]?.timeIncreaseDelta || 12n
+				blockTimestamp: new Date(new Date().getTime() + Number(deltaToAdd) * 1000),
+				blockTimeManipulation: simulationStateInput.blocks[0]?.blockTimeManipulation || { type: 'AddToTimestamp', deltaToAdd }
 			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: new Date(),
@@ -302,7 +304,9 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 			}),
 			signedMessages: simulationStateInput.blocks[blockIndex]?.signedMessages || [],
 			stateOverrides: simulationStateInput.blocks[blockIndex]?.stateOverrides || {},
-			timeIncreaseDelta: simulationStateInput.blocks[blockIndex]?.timeIncreaseDelta || 12n,
+			blockTimestamp: new Date(Number(callResult.timestamp) * 1000),
+			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || { type: 'AddToTimestamp', deltaToAdd }
+
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
@@ -315,12 +319,12 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 export const getPreSimulated = (simulatedTransactions: readonly SimulatedTransaction[]) => simulatedTransactions.map((transaction) => transaction.preSimulationTransaction)
 
 export const convertSimulationStateToSimulationInput = (simulationState: SimulationState | undefined) => {
-	if (simulationState === undefined) return { blocks: [{ stateOverrides: {}, transactions: [], signedMessages: [], timeIncreaseDelta: 12n }] } as const
+	if (simulationState === undefined) return { blocks: [{ stateOverrides: {}, transactions: [], signedMessages: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n } }] } as const
 	return { blocks: simulationState.simulatedBlocks.map((block) => ({
 		stateOverrides: block.stateOverrides,
 		transactions: getPreSimulated(block.simulatedTransactions),
 		signedMessages: block.signedMessages,
-		timeIncreaseDelta: block.timeIncreaseDelta
+		blockTimeManipulation: block.blockTimeManipulation
 	})) }
 }
 
@@ -332,25 +336,25 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 		return copy
 	}
 	const newTransactions = [...transactions]
-	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], timeIncreaseDelta: 12n }] } as const
+	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n } }] } as const
 	if (simulationStateInput.blocks[nonUndefinedBlockDelta] !== undefined) {
 		return { blocks: simulationStateInput.blocks.map((block, index) => ({
 			stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
 			transactions: index === blockDelta ? [...block.transactions, ...newTransactions] : block.transactions,
 			signedMessages: block.signedMessages,
-			timeIncreaseDelta: block.timeIncreaseDelta,
+			blockTimeManipulation: block.blockTimeManipulation,
 		})) } as const
 	}
 	const oldBlocks = simulationStateInput.blocks.map((block) => ({
 		stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
 		transactions: block.transactions,
 		signedMessages: block.signedMessages,
-		timeIncreaseDelta: block.timeIncreaseDelta
+		blockTimeManipulation: block.blockTimeManipulation
 	}))
 	return {
 		blocks: [
 			...oldBlocks,
-			{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], timeIncreaseDelta: 12n }
+			{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n } }
 		]
 	}
 }
@@ -561,7 +565,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		receiptsRoot: parentBlock.receiptsRoot, // TODO: this is wrong
 		sha3Uncles: parentBlock.sha3Uncles, // TODO: this is wrong
 		stateRoot: parentBlock.stateRoot, // TODO: this is wrong
-		timestamp: new Date((simulationState.blockTimestamp.getUTCSeconds() + Number(simulationState.simulatedBlocks.filter((_, index) => index <= blockDelta).map((x) => x.timeIncreaseDelta).reduce((a, b) => a + b, 0n))) * 1000), // estimate that the next block is after 12 secs
+		timestamp: simulationState.simulatedBlocks[blockDelta]?.blockTimestamp || new Date(simulationState.blockTimestamp.getUTCSeconds() * 12 + 1000),
 		size: parentBlock.size, // TODO: this is wrong
 		totalDifficulty: (parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
@@ -750,8 +754,8 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 		transactions: [...signedTransactions.map((signedTransaction) => ({ signedTransaction: signedTransaction }) )],
 		stateOverrides: extraOverrides,
 		signedMessages: [],
-		timeIncreaseDelta: 1n, //TODO, change to 0 when geth supports same timestamp simulaions
-	}] }
+		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n },
+	}] } as const
 	const ethSimulateV1CallResult = await ethereumClientService.simulate(simulationStateInputWithNewTransactions, await ethereumClientService.getBlockNumber(requestAbortController), requestAbortController)
 	return ethSimulateV1CallResult.at(-1)?.calls || []
 }
