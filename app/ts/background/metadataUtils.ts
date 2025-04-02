@@ -189,8 +189,7 @@ export async function getAddressBookEntriesForVisualiserFromTransactions(ethereu
 	const addressesInEventsAndInputData = getAddressesForSolidityTypes(eventAndTransactionArguments)
 	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
 
-	const simulatedTransactions = simulationState.simulatedBlocks.flatMap((block) => block.simulatedTransactions)
-	for (const tx of simulatedTransactions) {
+	for (const tx of simulationState.simulatedBlocks.flatMap((block) => block.simulatedTransactions)) {
 		addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
 		if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
 	}

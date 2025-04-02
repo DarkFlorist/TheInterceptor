@@ -666,8 +666,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	const icon = useComputed(() => {
 		const transactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
-		const failure = transactions.find((transaction) => transaction.statusCode !== 'success')
-		if (failure) return '../img/error-icon.svg'
+		if (transactions.some((transaction) => transaction.statusCode !== 'success') '../img/error-icon.svg'
 		const quarantine = transactions.find((transaction) => transaction.quarantine)
 		if (quarantine) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
