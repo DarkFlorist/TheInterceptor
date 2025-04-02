@@ -58,6 +58,10 @@ body { font-family: "Inter" !important; }
 	--modal-background-color: rgba(10, 10, 10, .7)
 }
 
+* {
+    color-scheme: dark;
+}
+
 :where(svg[role=img], figure > svg, figure > img) { display: block }
 
 data {
@@ -399,6 +403,8 @@ li {
 .dropdown-content {
 	background-color: var(--card-content-bg-color);
 	box-shadow: 0px 8px 16px 0px rgb(0 0 0 / 20%);
+	position: absolute;
+	z-index: 20;
 }
 
 .dropdown-item {
@@ -1898,4 +1904,10 @@ header:has(form[role='search']) h1 {
     color: var(--text-color);
 	border: 1px solid #ffffff20;
 	border-radius: 2px;
+	width: 135px;
+}
+
+.chainSelector {
+	padding-left: 0.5em;
+	padding-right: 0.5em;
 }

@@ -92,12 +92,12 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 
 function FirstCard(param: FirstCardParams) {
 
-	const timeSelectorMode = useSignal<TimePickerMode>('Increment')
+	const timeSelectorMode = useSignal<TimePickerMode>('For')
 	const timeSelectorAbsoluteTime = useSignal<string>('')
 	const timeSelectorDeltaValue = useSignal<number>(12)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const timeSelectorOnChange = () => {
-		console.log('change!')
+		console.log('TODO!')
 	}
 
 	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode === false) {
@@ -143,17 +143,18 @@ function FirstCard(param: FirstCardParams) {
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px'>
-					<label class = 'form-control'>
+					<label class = 'form-control' style = 'width: 120px;'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
 						<p class = 'paragraph checkbox-text'>Make me rich</p>
 					</label>
 					<TimePicker
-						startText = 'Start simulation from time:'
+						startText = 'Simulate delay before first transaction'
 						mode = { timeSelectorMode }
 						absoluteTime = { timeSelectorAbsoluteTime }
 						deltaValue = { timeSelectorDeltaValue }
 						deltaUnit = { timeSelectorDeltaUnit }
-						onChange = { timeSelectorOnChange }
+						onChangedCallBack = { timeSelectorOnChange }
+						removeNoDelayOption = { true }
 					/>
 				</div> }
 			</div>

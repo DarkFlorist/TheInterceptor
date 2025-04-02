@@ -184,12 +184,12 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 	const visualizedBlocks = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
 	const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 
-	const timeSelectorMode = useSignal<TimePickerMode>('Increment')
+	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
 	const timeSelectorAbsoluteTime = useSignal<string>('')
 	const timeSelectorDeltaValue = useSignal<number>(12)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const timeSelectorOnChange = () => {
-		console.log('change!')
+		console.log('TODO!')
 	}
 
 	return <ul>
@@ -213,12 +213,13 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 				}
 				<div style = 'display: flex; justify-content: center; padding-top: 10px;'>
 					<TimePicker
-						startText = { undefined }
+						startText = { 'Simulate delay' }
 						mode = { timeSelectorMode }
 						absoluteTime = { timeSelectorAbsoluteTime }
 						deltaValue = { timeSelectorDeltaValue }
 						deltaUnit = { timeSelectorDeltaUnit }
-						onChange = { timeSelectorOnChange }
+						onChangedCallBack = { timeSelectorOnChange }
+						removeNoDelayOption = { false }
 					/>
 				</div>
 			</li>
