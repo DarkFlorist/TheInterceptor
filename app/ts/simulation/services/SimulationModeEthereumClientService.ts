@@ -9,7 +9,7 @@ import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, P
 import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, MutableStateOverrides, StateOverrides } from '../../types/ethSimulate-types.js'
+import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
@@ -44,9 +44,7 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 }
 
 const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
-	let mergedStateOverrides: MutableStateOverrides = {}
-	stateOverridesArray.flatMap(stateOverrides => Object.entries(stateOverrides)).forEach(([key, value]) => { mergedStateOverrides[key] = value })
-	return mergedStateOverrides
+	return stateOverridesArray.reduce((accumulator, next) => ({ ...accumulator, ...next }), {})
 }
 
 const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction) => {
