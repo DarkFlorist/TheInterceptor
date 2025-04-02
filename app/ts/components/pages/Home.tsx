@@ -143,9 +143,9 @@ function FirstCard(param: FirstCardParams) {
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px'>
-					<label class = 'form-control' style = 'width: 120px;'>
+					<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
-						<p class = 'paragraph checkbox-text'>Make me rich</p>
+						<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Make me rich</p>
 					</label>
 					<TimePicker
 						startText = 'Simulate delay before first transaction'
