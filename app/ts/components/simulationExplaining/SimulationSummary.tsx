@@ -665,12 +665,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
 	const icon = useComputed(() => {
-		for (const block of param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks) {
-			const failure = block.simulatedAndVisualizedTransactions.find((transaction) => transaction.statusCode !== 'success')
-			if (failure) return '../img/error-icon.svg'
-			const quarantine = block.simulatedAndVisualizedTransactions.find((transaction) => transaction.quarantine)
-			if (quarantine) return '../img/warning-sign.svg'
-		}
+		const transactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
+		if (transactions.some((transaction) => transaction.statusCode !== 'success')) return '../img/error-icon.svg'
+		if (transactions.some((transaction) => transaction.quarantine)) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
 
