@@ -9,12 +9,12 @@ import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, P
 import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, MutableStateOverrides, StateOverrides } from '../../types/ethSimulate-types.js'
+import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
-import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../../types/simulationStackTypes.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
+import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../../types/simulationStackTypes.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -43,6 +43,10 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 	}
 }
 
+const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
+	return stateOverridesArray.reduce((accumulator, next) => ({ ...accumulator, ...next }), {})
+}
+
 const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction) => {
 	if (transaction.ethSimulateV1CallResult.status === 'failure') return []
 	const ethLogs = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
@@ -64,18 +68,6 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 	})
 }
 
-const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
-	let mergedStateOverrides: MutableStateOverrides = {}
-	for (const stateOverrides of stateOverridesArray) {
-		for (var key in stateOverrides){
-			if (stateOverrides.hasOwnProperty(key)){
-				mergedStateOverrides[key] = stateOverrides[key]
-			}
-		}
-	}
-	return mergedStateOverrides
-}
-
 export const getSimulatedStackV2 = (simulationState: SimulationState | undefined): GetSimulationStackReplyV2 => {
 	if (simulationState === undefined) return { stateOverrides: {}, transactions: [] }
 	return {
@@ -84,7 +76,7 @@ export const getSimulatedStackV2 = (simulationState: SimulationState | undefined
 	}
 }
 
-export const getSimulatedStackOld = (simulationState: SimulationState | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
+export const getSimulatedStackV1 = (simulationState: SimulationState | undefined, addressToMakeRich: EthereumAddress | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
 	if (simulationState === undefined) return []
 	const simulatedTransactions = simulationState.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
@@ -123,14 +115,6 @@ export const getSimulatedStackOld = (simulationState: SimulationState | undefine
 			gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
 		}
 	})
-	const guessWhatIsAddressToMakeRich = (simulationState: SimulationState) => {
-		const firstBlockStateOverrides = simulationState.simulatedBlocks[0]?.stateOverrides
-		if (firstBlockStateOverrides === undefined) return undefined
-		const overrides = Object.entries(firstBlockStateOverrides)
-		const override = overrides.find(([_address, override]) => override?.balance === MAKE_YOU_RICH_TRANSACTION.transaction.value)
-		return override === undefined ? undefined : BigInt(override[0])
-	}
-	const addressToMakeRich = guessWhatIsAddressToMakeRich(simulationState)
 	if (addressToMakeRich === undefined) return simulatedTransactions
 	return [
 		{
