@@ -171,7 +171,8 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
+	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
+		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
 		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
 }
 
