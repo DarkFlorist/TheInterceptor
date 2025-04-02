@@ -65,7 +65,7 @@ function FirstCardHeader(param: FirstCardParams) {
 					</button>
 				</div>
 			</div>
-			<div>
+			<div style = 'display: flex; justify-content: right'>
 				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
 			</div>
 		</header>
