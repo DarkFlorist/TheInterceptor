@@ -185,8 +185,8 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 	const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 
 	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
-	const timeSelectorAbsoluteTime = useSignal<string>('')
-	const timeSelectorDeltaValue = useSignal<number>(12)
+	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
+	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const timeSelectorOnChange = () => {
 		console.log('TODO!')

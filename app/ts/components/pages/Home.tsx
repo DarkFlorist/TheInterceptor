@@ -17,6 +17,7 @@ import { BroomIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { DeltaUnit, TimePicker, TimePickerMode } from '../subcomponents/TimePicker.js'
+import { assertNever } from '../../utils/typescript.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -91,14 +92,56 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 }
 
 function FirstCard(param: FirstCardParams) {
-
 	const timeSelectorMode = useSignal<TimePickerMode>('For')
-	const timeSelectorAbsoluteTime = useSignal<string>('')
-	const timeSelectorDeltaValue = useSignal<number>(12)
+	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
+	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+
 	const timeSelectorOnChange = () => {
-		console.log('TODO!')
+		const getTimeManipulator = () => {
+			switch(timeSelectorMode.value) {
+				case 'No Delay': throw new Error('Cannot change pre-simulation delay to No Delay')
+				case 'For': {
+					return {
+						type: 'AddToTimestamp',
+						deltaToAdd: timeSelectorDeltaValue.value,
+						deltaUnit: timeSelectorDeltaUnit.value,
+					} as const
+				}
+				case 'Until': {
+					if (timeSelectorAbsoluteTime.value === undefined) return undefined
+					return {
+						type: 'SetTimetamp',
+						timeToSet: BigInt(Math.floor(timeSelectorAbsoluteTime.value.getTime() / 1000))
+					} as const
+				}
+				default: assertNever(timeSelectorMode.value)
+			}
+		}
+		const blockTimeManipulation = getTimeManipulator()
+		if (blockTimeManipulation === undefined) return
+
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
 	}
+
+	useEffect(() => {
+		const value = param.preSimulationBlockTimeManipulation.value
+		switch(value?.type) {
+			case 'AddToTimestamp': {
+				timeSelectorMode.value = 'For'
+				timeSelectorDeltaValue.value = value.deltaToAdd
+				timeSelectorDeltaUnit.value = value.deltaUnit
+				break
+			}
+			case 'SetTimetamp': {
+				timeSelectorMode.value = 'Until'
+				timeSelectorAbsoluteTime.value = new Date(Number(value.timeToSet) * 1000)
+				break
+			}
+			case undefined: break
+			default: assertNever(value)
+		}
+	}, [param.preSimulationBlockTimeManipulation])
 
 	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode === false) {
 		return <>
@@ -307,6 +350,7 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		<FirstCard
+			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { activeAddresses }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }

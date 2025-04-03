@@ -6,11 +6,17 @@ import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String, max } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { MessageHashAndSignature, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
+import { MessageHashAndSignature, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { RpcEntry } from '../../types/rpc.js'
 import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+
+export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
+	const prevTime = BigInt(previousBlockTimeStamp.getTime()) / 1000n
+	if (blockTimeManipulation.type === 'AddToTimestamp') return new Date(Number(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit)) * 1000)
+	return new Date(Number(max(prevTime, blockTimeManipulation.timeToSet)) * 1000)
+}
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -220,12 +226,7 @@ export class EthereumClientService {
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		}
 		for (const inputBlock of simulationStateInput.blocks) {
-			const getNewBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
-				const prevTime = BigInt(previousBlockTimeStamp.getTime()) / 1000n
-				if (blockTimeManipulation.type === 'AddToTimestamp') return new Date(Number(prevTime + blockTimeManipulation.deltaToAdd) * 1000)
-				return new Date(Number(max(prevTime, blockTimeManipulation.timeToSet)) * 1000)
-			}
-			const newBlockOverride = { ...previousBlockOverride, time: getNewBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation) }
+			const newBlockOverride = { ...previousBlockOverride, time: getNextBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation) }
 			blockOverrides.push(newBlockOverride)
 			previousBlockOverride = newBlockOverride
 		}
