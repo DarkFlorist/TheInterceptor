@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import { isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
+import { bigintSecondsToDate, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -269,10 +269,10 @@ function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignReque
 		<CellElement text = 'Nonce: '/>
 		<CellElement text = { permit2.message.message.details.nonce.toString(10) }/>
 		<CellElement text = 'Signature expires  in:'/>
-		<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.sigDeadline) * 1000) } countBackwards = { true }/> }/>
+		<CellElement text = { <SomeTimeAgo priorTimestamp = { bigintSecondsToDate(permit2.message.message.sigDeadline) } countBackwards = { true }/> }/>
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
-			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
+			<SomeTimeAgo priorTimestamp = { bigintSecondsToDate(permit2.message.message.details.expiration) } countBackwards = { true }/>
 			{ ` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })` }
 		</> }/>
 	</>
@@ -285,7 +285,7 @@ function PermitExtraDetails({ permit }: { permit: VisualizedPersonalSignRequestP
 		<CellElement text = 'Nonce: '/>
 		<CellElement text = { permit.message.message.nonce.toString(10) }/>
 		<CellElement text = 'Signature expires in:'/>
-		<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(permit.message.message.deadline) * 1000) } countBackwards = { true }/> }/>
+		<CellElement text = { <SomeTimeAgo priorTimestamp = { bigintSecondsToDate(BigInt(permit.message.message.deadline)) } countBackwards = { true }/> }/>
 	</>
 }
 

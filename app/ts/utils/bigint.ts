@@ -139,3 +139,11 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	const interpolation = (targetIndex - lowerWeight) / (upperWeight - lowerWeight)
 	return lowerValue.dataPoint + (upperValue.dataPoint - lowerValue.dataPoint) * interpolation
 }
+
+export const bigintSecondsToDate = (seconds: bigint) => {
+	if (seconds > Number.MAX_SAFE_INTEGER) throw new Error(`Too big seconds value: ${ seconds }`)
+	if (seconds < 0) throw new Error(`Got negative seconds: ${ seconds }`)
+	return new Date(Number(seconds) * 1000)
+}
+
+export const dateToBigintSeconds = (date: Date) => BigInt(date.getTime()) / 1000n
