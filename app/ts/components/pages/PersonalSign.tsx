@@ -105,7 +105,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 			<WebsiteOriginText { ...params.visualizedPersonalSignRequest.website } />
 		</p>
 		{ removeSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'SignedMessage', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
 				<XMarkIcon />
 			</button>
 			: <></>
