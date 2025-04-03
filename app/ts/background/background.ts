@@ -5,7 +5,7 @@ import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpe
 import { changeSimulationMode, getMakeMeRich, getSettings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, PreSimulationTransaction, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
@@ -122,21 +122,18 @@ export async function refreshConfirmTransactionSimulation(
 	const simulationInput = await getCurrentSimulationInput()
 	try {
 		const getNewVisualizedSimulationState = async () => {
-			if (!transactionToSimulate.success) return undefined
-			const preSimulatedTransaction: PreSimulationTransaction = {
+			const simulationStateWithNewTransaction = transactionToSimulate.success ? appendTransactionsToInput(simulationInput, [{
 				signedTransaction: mockSignTransaction(transactionToSimulate.transaction),
 				website: transactionToSimulate.website,
 				created: transactionToSimulate.created,
 				originalRequestParameters: transactionToSimulate.originalRequestParameters,
 				transactionIdentifier: transactionToSimulate.transactionIdentifier
-			}
-			const simulationStateWithNewTransaction = appendTransactionsToInput(simulationInput, [preSimulatedTransaction])
+			}]) : simulationInput
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, simulator.ethereum)
 			return await visualizeSimulatorState(updatedSimulationState, simulator.ethereum, simulator.tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
-		if (visualizedSimulatorState === undefined) return // nothing to update, the transaction is failing
-		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined === undefined)
+		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 		return {
