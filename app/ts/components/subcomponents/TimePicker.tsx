@@ -2,6 +2,7 @@ import { Signal, useSignal } from '@preact/signals'
 import { DropDownMenu } from './DropDownMenu.js'
 import { JSX } from 'preact/jsx-runtime'
 import { assertNever } from '../../utils/typescript.js'
+import { dateToBigintSeconds } from '../../utils/bigint.js'
 
 const timePickerModeDownOptions = ['Until', 'For', 'No Delay'] as const
 const timePickerModeDownOptionsWithoutNoDelay = ['Until', 'For'] as const
@@ -9,6 +10,18 @@ const timePickerDeltaOptions = ['Seconds', 'Minutes', 'Hours', 'Days', 'Weeks', 
 
 export type DeltaUnit = typeof timePickerDeltaOptions[number]
 export type TimePickerMode = typeof timePickerModeDownOptions[number]
+
+export const getTimeManipulatorFromSignals = (timeSelectorMode: TimePickerMode, timeSelectorAbsoluteTime: Date | undefined, timeSelectorDeltaValue: bigint, timeSelectorDeltaUnit: DeltaUnit) => {
+	switch(timeSelectorMode) {
+		case 'No Delay': return { type: 'No Delay' } as const
+		case 'For': return { type: 'AddToTimestamp', deltaToAdd: timeSelectorDeltaValue, deltaUnit: timeSelectorDeltaUnit } as const
+		case 'Until': {
+			if (timeSelectorAbsoluteTime === undefined) return { type: 'No Delay'} as const
+			return { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(timeSelectorAbsoluteTime) } as const
+		}
+		default: assertNever(timeSelectorMode)
+	}
+}
 
 type TimePickerModeViewsParams = {
 	mode: Signal<TimePickerMode>

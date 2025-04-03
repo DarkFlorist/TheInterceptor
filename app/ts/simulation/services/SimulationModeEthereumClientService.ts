@@ -211,7 +211,6 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 			stateOverrides: simulationStateInput.blocks[blockIndex]?.stateOverrides || {},
 			blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION
-
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,

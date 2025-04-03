@@ -16,9 +16,10 @@ import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTyp
 import { BroomIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { useComputed, useSignal } from '@preact/signals'
-import { DeltaUnit, TimePicker, TimePickerMode } from '../subcomponents/TimePicker.js'
+import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
-import { bigintSecondsToDate, dateToBigintSeconds } from '../../utils/bigint.js'
+import { bigintSecondsToDate } from '../../utils/bigint.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -99,30 +100,9 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 
 	const timeSelectorOnChange = () => {
-		const getTimeManipulator = () => {
-			switch(timeSelectorMode.value) {
-				case 'No Delay': throw new Error('Cannot change pre-simulation delay to No Delay')
-				case 'For': {
-					return {
-						type: 'AddToTimestamp',
-						deltaToAdd: timeSelectorDeltaValue.value,
-						deltaUnit: timeSelectorDeltaUnit.value,
-					} as const
-				}
-				case 'Until': {
-					if (timeSelectorAbsoluteTime.value === undefined) return undefined
-					return {
-						type: 'SetTimetamp',
-						timeToSet: dateToBigintSeconds(timeSelectorAbsoluteTime.value)
-					} as const
-				}
-				default: assertNever(timeSelectorMode.value)
-			}
-		}
-		const blockTimeManipulation = getTimeManipulator()
-		if (blockTimeManipulation === undefined) return
-
-		sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
+		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
+		if (blockTimeManipulation.type === 'No Delay') return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION } })
+		return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
 	}
 
 	useEffect(() => {

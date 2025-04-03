@@ -60,14 +60,12 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 			default: assertNever(operation)
 		}
 	}
-	if (currentBlockTransactions.length > 0 || currentBlockSignedMessages.length > 0 || Object.values(currentBlockStateOverrides).length > 0) {
-		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
-			transactions: currentBlockTransactions,
-			signedMessages: currentBlockSignedMessages,
-			blockTimeManipulation: previousBlockTimeManipulation
-		})
-	}
+	inputBlocks.push({
+		stateOverrides: currentBlockStateOverrides,
+		transactions: currentBlockTransactions,
+		signedMessages: currentBlockSignedMessages,
+		blockTimeManipulation: previousBlockTimeManipulation
+	})
 	return { blocks: inputBlocks }
 }
 
@@ -334,7 +332,8 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined) throw new Error('Block index overflow')
 		return {
 			visualizedPersonalSignRequests: await Promise.all(block.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
-			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth)
+			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth),
+			blockTimeManipulation: block.blockTimeManipulation,
 		}
 	}))
 
