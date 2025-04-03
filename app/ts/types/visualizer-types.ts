@@ -132,11 +132,21 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	messageIdentifier: EthereumQuantity,
 })
 
+export type BlockTimeManipulationDeltaUnit = funtypes.Static<typeof BlockTimeManipulationDeltaUnit>
+export const BlockTimeManipulationDeltaUnit = funtypes.Union(
+	funtypes.Literal('Seconds'),
+	funtypes.Literal('Minutes'),
+	funtypes.Literal('Hours'),
+	funtypes.Literal('Days'),
+	funtypes.Literal('Weeks'),
+	funtypes.Literal('Years')
+)
 export type BlockTimeManipulation = funtypes.Static<typeof BlockTimeManipulation>
 export const BlockTimeManipulation = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('AddToTimestamp'),
 		deltaToAdd: EthereumQuantity,
+		deltaUnit: BlockTimeManipulationDeltaUnit,
 	}),
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('SetTimetamp'),
@@ -279,7 +289,7 @@ export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulat
 export const VisualizedSimulationState = funtypes.ReadonlyObject({
 	visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest)
+		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 	}))
 })
 

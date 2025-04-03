@@ -1,9 +1,9 @@
-import { EthereumClientService } from './EthereumClientService.js'
+import { EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
-import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput } from '../../types/visualizer-types.js'
+import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -19,6 +19,8 @@ const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+
+export const DEFAULT_BLOCK_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const
 
 export const getWebsiteCreatedEthereumUnsignedTransactions = (simulatedTransactions: readonly SimulatedTransaction[]) => {
 	return simulatedTransactions.map((simulatedTransaction) => ({
@@ -147,9 +149,20 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 
 export const getAddressToMakeRich = async () => await getMakeMeRich() ? (await getSettings()).activeSimulationAddress : undefined
 
+export const getBlockTimeManipulationSeconds = (deltaToAdd: EthereumQuantity, deltaUnit: BlockTimeManipulationDeltaUnit) => {
+	switch(deltaUnit) {
+		case 'Seconds': return deltaToAdd
+		case 'Minutes': return deltaToAdd * 60n
+		case 'Hours': return deltaToAdd * 60n * 60n
+		case 'Days': return deltaToAdd * 60n * 60n * 24n
+		case 'Weeks': return deltaToAdd * 60n * 60n * 24n * 7n
+		case 'Years': return deltaToAdd * 60n * 60n * 24n * 365n
+		default: assertNever(deltaUnit)
+	}
+}
+
 export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput): Promise<SimulationState> => {
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
-	const deltaToAdd = 12n
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (simulationStateInput.blocks.length === 0 || (simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks[0]?.transactions.length === 0 && simulationStateInput.blocks.length === 1)) {
 		// if there's no blocks, or there's an empty block (that can have state overrides), skip simulation and return empty results
@@ -159,8 +172,8 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 				simulatedTransactions: [],
 				signedMessages: [],
 				stateOverrides: simulationStateInput.blocks[0]?.stateOverrides || {},
-				blockTimestamp: new Date(new Date().getTime() + Number(deltaToAdd) * 1000),
-				blockTimeManipulation: simulationStateInput.blocks[0]?.blockTimeManipulation || { type: 'AddToTimestamp', deltaToAdd }
+				blockTimestamp: new Date(getNextBlockTimeStampOverride(new Date(), simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION)),
+				blockTimeManipulation: simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION
 			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: new Date(),
@@ -197,7 +210,7 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 			signedMessages: simulationStateInput.blocks[blockIndex]?.signedMessages || [],
 			stateOverrides: simulationStateInput.blocks[blockIndex]?.stateOverrides || {},
 			blockTimestamp: new Date(Number(callResult.timestamp) * 1000),
-			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || { type: 'AddToTimestamp', deltaToAdd }
+			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION
 
 		})),
 		blockNumber: parentBlock.number,
@@ -211,7 +224,7 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 export const getPreSimulated = (simulatedTransactions: readonly SimulatedTransaction[]) => simulatedTransactions.map((transaction) => transaction.preSimulationTransaction)
 
 export const convertSimulationStateToSimulationInput = (simulationState: SimulationState | undefined) => {
-	if (simulationState === undefined) return { blocks: [{ stateOverrides: {}, transactions: [], signedMessages: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n } }] } as const
+	if (simulationState === undefined) return { blocks: [{ stateOverrides: {}, transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] } as const
 	return { blocks: simulationState.simulatedBlocks.map((block) => ({
 		stateOverrides: block.stateOverrides,
 		transactions: getPreSimulated(block.simulatedTransactions),
@@ -228,7 +241,7 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 		return copy
 	}
 	const newTransactions = [...transactions]
-	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n } }] } as const
+	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] } as const
 	if (simulationStateInput.blocks[nonUndefinedBlockDelta] !== undefined) {
 		return { blocks: simulationStateInput.blocks.map((block, index) => ({
 			stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
@@ -246,7 +259,7 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	return {
 		blocks: [
 			...oldBlocks,
-			{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n } }
+			{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }
 		]
 	}
 }
@@ -646,7 +659,7 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 		transactions: [...signedTransactions.map((signedTransaction) => ({ signedTransaction: signedTransaction }) )],
 		stateOverrides: extraOverrides,
 		signedMessages: [],
-		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n },
+		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 	}] } as const
 	const ethSimulateV1CallResult = await ethereumClientService.simulate(simulationStateInputWithNewTransactions, await ethereumClientService.getBlockNumber(requestAbortController), requestAbortController)
 	return ethSimulateV1CallResult.at(-1)?.calls || []

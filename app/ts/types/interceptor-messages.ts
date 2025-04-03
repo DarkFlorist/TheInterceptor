@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState } from './visualizer-types.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation } from './visualizer-types.js'
 import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -560,6 +560,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
+		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	})
 })
 
@@ -837,6 +838,14 @@ export const ForceSetGasLimitForTransaction = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type ChangePreSimulationBlockTimeManipulation = funtypes.Static<typeof ChangePreSimulationBlockTimeManipulation>
+export const ChangePreSimulationBlockTimeManipulation = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_changePreSimulationBlockTimeManipulation'),
+	data: funtypes.ReadonlyObject({
+		blockTimeManipulation: BlockTimeManipulation
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -887,6 +896,7 @@ export const PopupMessage = funtypes.Union(
 	RemoveWebsiteAddressAccess,
 	RemoveWebsiteAccess,
 	ForceSetGasLimitForTransaction,
+	ChangePreSimulationBlockTimeManipulation,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>

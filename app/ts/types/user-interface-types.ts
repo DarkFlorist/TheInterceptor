@@ -1,7 +1,7 @@
 import { Dispatch, StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
@@ -51,6 +51,7 @@ export type HomeParams = {
 	simulationUpdatingState: SimulationUpdatingState | undefined,
 	simulationResultState: SimulationResultState | undefined,
 	interceptorDisabled: boolean,
+	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 }
 
 export type ChangeActiveAddressParam = {
@@ -77,6 +78,7 @@ export type FirstCardParams = {
 	tabState: TabState | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcEntries: Signal<RpcEntries>,
+	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 }
 
 export type SimulationStateParam = {

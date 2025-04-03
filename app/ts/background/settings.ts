@@ -9,6 +9,8 @@ import { browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorage
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { BlockTimeManipulation } from '../types/visualizer-types.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -222,3 +224,6 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		})
 	}
 }
+
+export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
+export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION

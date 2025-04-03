@@ -7,7 +7,7 @@ import { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
-import { mockSignTransaction } from './services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from './services/SimulationModeEthereumClientService.js'
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
 	const compoundTimeLockAbi = new Interface(CompoundTimeLock)
@@ -56,7 +56,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		stateOverrides: {},
 		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
 		signedMessages: [],
-		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n }
+		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION
 	} ] } as const
 
 	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
