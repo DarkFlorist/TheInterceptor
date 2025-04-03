@@ -1,7 +1,7 @@
 import { EnsEvent } from '../../../types/EnrichedEthereumData.js'
 import { RpcNetwork } from '../../../types/rpc.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { dataStringWith0xStart } from '../../../utils/bigint.js'
+import { bigintSecondsToDate, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { Ether } from '../../subcomponents/coins.js'
@@ -15,7 +15,7 @@ type EnsEvenExplainerParam = {
 	rpcNetwork: RpcNetwork,
 }
 
-const expiresToDateString = (expires: bigint) => (new Date(Number(expires) * 1000)).toISOString()
+const expiresToDateString = (expires: bigint) => bigintSecondsToDate(expires).toISOString()
 
 const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, renameAddressCallBack, rpcNetwork }: EnsEvenExplainerParam) => {
 	const textStyle = `color: ${ textColor }; margin-bottom: 0px; display: inline-block`

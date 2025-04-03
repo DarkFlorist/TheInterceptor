@@ -3,7 +3,7 @@ import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
-import { addressString, bytes32String, max } from '../../utils/bigint.js'
+import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { MessageHashAndSignature, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
@@ -13,9 +13,9 @@ import { RpcEntry } from '../../types/rpc.js'
 import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 
 export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
-	const prevTime = BigInt(previousBlockTimeStamp.getTime()) / 1000n
-	if (blockTimeManipulation.type === 'AddToTimestamp') return new Date(Number(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit)) * 1000)
-	return new Date(Number(max(prevTime, blockTimeManipulation.timeToSet)) * 1000)
+	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
+	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit))
+	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
 }
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>

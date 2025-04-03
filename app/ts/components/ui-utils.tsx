@@ -5,7 +5,7 @@ import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren, RefObject } from 'preact'
 import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
-import { checksummedAddress } from '../utils/bigint.js'
+import { bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { ChainEntry, RpcEntries } from '../types/rpc.js'
@@ -79,7 +79,7 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 export const humanReadableDate = (date: Date) => date.toISOString()
 
 export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
-	return humanReadableDate(new Date(Number(timeInSeconds) * 1000))
+	return humanReadableDate(bigintSecondsToDate(timeInSeconds))
 }
 
 export type PopupOrTab = {

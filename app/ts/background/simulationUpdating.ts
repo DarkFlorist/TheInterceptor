@@ -1,6 +1,6 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -13,7 +13,7 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANS
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
-import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, bigintSecondsToDate, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
@@ -135,7 +135,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			simulatedBlocks: [{
 				signedMessages: [],
 				stateOverrides: {},
-				blockTimestamp: new Date(parentBlock.timestamp.toTimeString() + 12 * 1000),
+				blockTimestamp: bigintSecondsToDate((dateToBigintSeconds(parentBlock.timestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit))),
 				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 				simulatedTransactions: [{
 					preSimulationTransaction: {

@@ -1,7 +1,7 @@
 import { Interface, Result } from 'ethers'
 import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { CompoundTimeLock } from '../utils/abi.js'
-import { addressString, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, bigintSecondsToDate, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
@@ -85,7 +85,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		calls: [executingTransaction],
 		blockOverrides: {
 			prevRandao: 0x1n,
-			time: new Date(Number(eta) * 1000), // timestamp is set to ETA
+			time: bigintSecondsToDate(eta), // timestamp is set to ETA
 			gasLimit: parentBlock.gasLimit,
 			feeRecipient: parentBlock.miner,
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas

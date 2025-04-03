@@ -18,6 +18,7 @@ import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { DeltaUnit, TimePicker, TimePickerMode } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
+import { bigintSecondsToDate, dateToBigintSeconds } from '../../utils/bigint.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -112,7 +113,7 @@ function FirstCard(param: FirstCardParams) {
 					if (timeSelectorAbsoluteTime.value === undefined) return undefined
 					return {
 						type: 'SetTimetamp',
-						timeToSet: BigInt(Math.floor(timeSelectorAbsoluteTime.value.getTime() / 1000))
+						timeToSet: dateToBigintSeconds(timeSelectorAbsoluteTime.value)
 					} as const
 				}
 				default: assertNever(timeSelectorMode.value)
@@ -135,7 +136,7 @@ function FirstCard(param: FirstCardParams) {
 			}
 			case 'SetTimetamp': {
 				timeSelectorMode.value = 'Until'
-				timeSelectorAbsoluteTime.value = new Date(Number(value.timeToSet) * 1000)
+				timeSelectorAbsoluteTime.value = bigintSecondsToDate(value.timeToSet)
 				break
 			}
 			case undefined: break
