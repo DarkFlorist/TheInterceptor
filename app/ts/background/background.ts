@@ -464,7 +464,7 @@ export async function popupMessageHandler(
 		switch (parsedRequest.method) {
 			case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
-			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator.ethereum, simulator.tokenPriceService, parsedRequest)
+			case 'popup_changeMakeMeRich': return await changeMakeMeRich(parsedRequest)
 			case 'popup_changePage': return await changePage(parsedRequest)
 			case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
 			case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator.ethereum, simulator.tokenPriceService)
