@@ -78,8 +78,9 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 	}
 }
 
-export async function changeMakeMeRich(makeMeRichChange: ChangeMakeMeRich) {
+export async function changeMakeMeRich(makeMeRichChange: ChangeMakeMeRich, simulator: Simulator, settings: Settings) {
 	await setMakeMeRich(makeMeRichChange.data)
+	await refreshSimulation(simulator, settings, true)
 }
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
