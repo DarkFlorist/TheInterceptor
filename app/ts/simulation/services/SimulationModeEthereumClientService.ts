@@ -1,6 +1,6 @@
 import { EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
-import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
 import { SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
@@ -209,7 +209,7 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 			}),
 			signedMessages: simulationStateInput.blocks[blockIndex]?.signedMessages || [],
 			stateOverrides: simulationStateInput.blocks[blockIndex]?.stateOverrides || {},
-			blockTimestamp: new Date(Number(callResult.timestamp) * 1000),
+			blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION
 
 		})),
@@ -470,7 +470,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		receiptsRoot: parentBlock.receiptsRoot, // TODO: this is wrong
 		sha3Uncles: parentBlock.sha3Uncles, // TODO: this is wrong
 		stateRoot: parentBlock.stateRoot, // TODO: this is wrong
-		timestamp: simulationState.simulatedBlocks[blockDelta]?.blockTimestamp || new Date(simulationState.blockTimestamp.getUTCSeconds() * 12 + 1000),
+		timestamp: simulationState.simulatedBlocks[blockDelta]?.blockTimestamp || bigintSecondsToDate((dateToBigintSeconds(simulationState.blockTimestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit))),
 		size: parentBlock.size, // TODO: this is wrong
 		totalDifficulty: (parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
