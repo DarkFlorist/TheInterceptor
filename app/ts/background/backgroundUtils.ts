@@ -139,6 +139,6 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
-	if (port.sender?.tab?.id === undefined) throw new Error('tab id not found in socket')
+	if (port.sender?.tab?.id === undefined) return undefined
 	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }
 }

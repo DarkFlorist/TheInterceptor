@@ -32,7 +32,8 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { ...signerAccounts.length > 0 ? { signerAccountError: undefined } : {}, signerAccounts, activeSigningAddress }))
 	sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId: port.sender.tab.id, activeSigningAddress } })
-	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port) } })
+	const socket = getSocketFromPort(port)
+	if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])

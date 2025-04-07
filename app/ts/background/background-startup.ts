@@ -13,7 +13,7 @@ import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { handleUnexpectedError, isNewBlockAbort } from '../utils/errors.js'
+import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
@@ -88,7 +88,10 @@ const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pendin
 
 async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
-	if (port?.sender?.url === undefined) return
+	if (port?.sender?.url === undefined || socket === undefined) {
+		printError(`Could not connect to a port: ${ port.name}`)
+		return
+	}
 	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
