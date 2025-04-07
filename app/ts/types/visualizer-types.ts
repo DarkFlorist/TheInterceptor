@@ -35,6 +35,36 @@ export const TokenPriceEstimate = funtypes.ReadonlyObject({
 	price: EthereumQuantity
 })
 
+export type BlockTimeManipulationDeltaUnit = funtypes.Static<typeof BlockTimeManipulationDeltaUnit>
+export const BlockTimeManipulationDeltaUnit = funtypes.Union(
+	funtypes.Literal('Seconds'),
+	funtypes.Literal('Minutes'),
+	funtypes.Literal('Hours'),
+	funtypes.Literal('Days'),
+	funtypes.Literal('Weeks'),
+	funtypes.Literal('Years')
+)
+export type BlockTimeManipulation = funtypes.Static<typeof BlockTimeManipulation>
+export const BlockTimeManipulation = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('AddToTimestamp'),
+		deltaToAdd: EthereumQuantity,
+		deltaUnit: BlockTimeManipulationDeltaUnit,
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('SetTimetamp'),
+		timeToSet: EthereumQuantity,
+	}),
+)
+
+export type BlockTimeManipulationWithNoDelay = funtypes.Static<typeof BlockTimeManipulationWithNoDelay>
+export const BlockTimeManipulationWithNoDelay = funtypes.Union(
+	BlockTimeManipulation,
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('No Delay'),
+	}),
+)
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -131,28 +161,6 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 	messageIdentifier: EthereumQuantity,
 })
-
-export type BlockTimeManipulationDeltaUnit = funtypes.Static<typeof BlockTimeManipulationDeltaUnit>
-export const BlockTimeManipulationDeltaUnit = funtypes.Union(
-	funtypes.Literal('Seconds'),
-	funtypes.Literal('Minutes'),
-	funtypes.Literal('Hours'),
-	funtypes.Literal('Days'),
-	funtypes.Literal('Weeks'),
-	funtypes.Literal('Years')
-)
-export type BlockTimeManipulation = funtypes.Static<typeof BlockTimeManipulation>
-export const BlockTimeManipulation = funtypes.Union(
-	funtypes.ReadonlyObject({
-		type: funtypes.Literal('AddToTimestamp'),
-		deltaToAdd: EthereumQuantity,
-		deltaUnit: BlockTimeManipulationDeltaUnit,
-	}),
-	funtypes.ReadonlyObject({
-		type: funtypes.Literal('SetTimetamp'),
-		timeToSet: EthereumQuantity,
-	}),
-)
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({
@@ -290,6 +298,7 @@ export const VisualizedSimulationState = funtypes.ReadonlyObject({
 	visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+		blockTimeManipulation: BlockTimeManipulation
 	}))
 })
 

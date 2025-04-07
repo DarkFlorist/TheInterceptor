@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refresh
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -78,7 +78,7 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 	}
 }
 
-export async function changeMakeMeRich(makeMeRichChange: ChangeMakeMeRich, simulator: Simulator, settings: Settings) {
+export async function changeMakeMeRich(simulator: Simulator, settings: Settings, makeMeRichChange: ChangeMakeMeRich) {
 	await setMakeMeRich(makeMeRichChange.data)
 	await refreshSimulation(simulator, settings, true)
 }
@@ -170,7 +170,7 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 				}
 				return { operations: removeConsequtiveTimeManipulations(newOperations) }
 			}
-			case 'SignedMessage': {
+			case 'Message': {
 				const messageIdentifier = params.data.messageIdentifier
 				return {
 					operations: removeConsequtiveTimeManipulations(prevStack.operations)
@@ -678,6 +678,37 @@ export async function forceSetGasLimitForTransaction(simulator: Simulator, parse
 	await refreshPopupConfirmTransactionSimulation(simulator)
 }
 
-export async function changePreSimulationBlockTimeManipulation(parsedRequest: ChangePreSimulationBlockTimeManipulation) {
+export async function changePreSimulationBlockTimeManipulation(simulator: Simulator, settings: Settings, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
 	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
+	await refreshSimulation(simulator, settings, true)
+}
+
+export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, settings: Settings, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
+	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+		const identifier = parsedRequest.data.transactionOrMessageIdentifier
+		const appendAfterIndex = prevStack.operations.findIndex((operation) => {
+			switch(operation.type) {
+				case 'Transaction': return identifier.type === operation.type && identifier.transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier
+				case 'Message': return identifier.type === operation.type && identifier.messageIdentifier === operation.signedMessageTransaction.messageIdentifier
+				case 'TimeManipulation': return false
+				default: assertNever(operation)
+			}
+		})
+		if (appendAfterIndex < 0) return prevStack
+		const indexOfMaybeManipulator = appendAfterIndex + 1
+		const maybeExistingManipulator = prevStack.operations[indexOfMaybeManipulator]
+		if (maybeExistingManipulator?.type === 'TimeManipulation') {
+			// no delay, so we can remove the manipulator
+			if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), ...prevStack.operations.slice(indexOfMaybeManipulator + 1)] }
+			const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
+			// replace manipulator
+			return { operations: prevStack.operations.map((operation, index) => index === indexOfMaybeManipulator ? newManipulator : operation) }
+		}
+		// insert new manipulator
+		if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return prevStack
+		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
+		return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...prevStack.operations.slice(indexOfMaybeManipulator)] }
+	})
+
+	await refreshSimulation(simulator, settings, true)
 }
