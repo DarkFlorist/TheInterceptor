@@ -1,18 +1,18 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import { PendingTransaction } from '../types/accessRequest.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import { PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getSettings, getWethForChainId } from './settings.js'
+import { getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -27,11 +27,13 @@ const getMakeMeRichStateOverride = (addressToMakeRich: bigint | undefined) => ad
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
 	const makeRichAddressPromise = getAddressToMakeRich()
-	const stack: InterceptorTransactionStack = await getInterceptorTransactionStack()
+	const preSimulationBlockTimeManipulation = await getPreSimulationBlockTimeManipulation()
+	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeMeRichStateOverride(await makeRichAddressPromise)
+	let previousBlockTimeManipulation = preSimulationBlockTimeManipulation
 	for (const operation of stack.operations) {
 		switch(operation.type) {
 			case 'Transaction': {
@@ -47,8 +49,9 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 					stateOverrides: currentBlockStateOverrides,
 					transactions: currentBlockTransactions,
 					signedMessages: currentBlockSignedMessages,
-					blockTimeManipulation: operation.blockTimeManipulation
+					blockTimeManipulation: previousBlockTimeManipulation
 				})
+				previousBlockTimeManipulation = operation.blockTimeManipulation
 				currentBlockSignedMessages = []
 				currentBlockStateOverrides = {}
 				currentBlockTransactions = []
@@ -62,7 +65,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 			stateOverrides: currentBlockStateOverrides,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
-			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n }
+			blockTimeManipulation: previousBlockTimeManipulation
 		})
 	}
 	return { blocks: inputBlocks }
@@ -133,7 +136,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				signedMessages: [],
 				stateOverrides: {},
 				blockTimestamp: new Date(parentBlock.timestamp.toTimeString() + 12 * 1000),
-				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n },
+				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 				simulatedTransactions: [{
 					preSimulationTransaction: {
 						signedTransaction: signedExecutionTransaction,

@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -63,6 +63,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	latestUnexpectedError: UnexpectedErrorOccured,
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
+	preSimulationBlockTimeManipulation: BlockTimeManipulation
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -94,6 +95,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('latestUnexpectedError'),
 	funtypes.Literal('ensNameHashes'),
 	funtypes.Literal('ensLabelHashes'),
+	funtypes.Literal('preSimulationBlockTimeManipulation')
 )
 
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2>

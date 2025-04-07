@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState } from '../types/visualizer-types.js'
+import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
@@ -88,6 +88,7 @@ export function App() {
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 	const [unexpectedError, setUnexpectedError] = useState<UnexpectedErrorOccured | undefined>(undefined)
+	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -172,6 +173,9 @@ export function App() {
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				rpcConnectionStatus.value = data.rpcConnectionStatus
+				if (!isSettingsLoaded) {
+					preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
+				}
 				return true
 			})
 		}
@@ -386,6 +390,7 @@ export function App() {
 							simulationUpdatingState = { simulationUpdatingState }
 							simulationResultState = { simulationResultState }
 							interceptorDisabled = { interceptorDisabled }
+							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
 						/>
 
 						<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>

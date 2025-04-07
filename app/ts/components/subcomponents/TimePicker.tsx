@@ -12,8 +12,8 @@ export type TimePickerMode = typeof timePickerModeDownOptions[number]
 
 type TimePickerModeViewsParams = {
 	mode: Signal<TimePickerMode>
-	absoluteTime: Signal<string>
-	deltaValue: Signal<number>
+	absoluteTime: Signal<Date | undefined>
+	deltaValue: Signal<bigint>
 	deltaUnit: Signal<DeltaUnit>
 
 	timePickerDeltaOptionsSignal: Signal<readonly DeltaUnit[]>
@@ -26,9 +26,9 @@ type TimePickerModeViewsParams = {
 const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal, deltaValue, deltaUnit, changeDeltaUnit, absoluteTimeChanged, changeDeltaValue }: TimePickerModeViewsParams) => {
 	switch(mode.value) {
 		case 'No Delay': return <></>
-		case 'Until': return <input type = 'datetime-local' class = 'datetime' value = { absoluteTime.value } onInput = { absoluteTimeChanged } />
+		case 'Until': return <input type = 'datetime-local' class = 'datetime' value = { absoluteTime.value?.toISOString().slice(0, 19) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
-			<input class = 'input' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { deltaValue.value } onInput = { changeDeltaValue } />
+			<input class = 'input' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
 			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' }/>
 		</div>
 		default: assertNever(mode.value)
@@ -37,8 +37,8 @@ const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal,
 
 type TimePickerParams = {
 	mode: Signal<TimePickerMode>
-	absoluteTime: Signal<string>
-	deltaValue: Signal<number>
+	absoluteTime: Signal<Date | undefined>
+	deltaValue: Signal<bigint>
 	deltaUnit: Signal<DeltaUnit>
 	onChangedCallBack: () => void
 	startText: string
@@ -58,11 +58,11 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 		onChangedCallBack()
 	}
 	const absoluteTimeChanged = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
-		absoluteTime.value = event.currentTarget.value;
+		absoluteTime.value = new Date(Date.parse(event.currentTarget.value))
 		onChangedCallBack()
 	}
 	const changeDeltaValue = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
-		deltaValue.value = parseInt(event.currentTarget.value) || deltaValue.value
+		deltaValue.value = BigInt(parseInt(event.currentTarget.value) || deltaValue.value)
 		onChangedCallBack()
 	}
 
