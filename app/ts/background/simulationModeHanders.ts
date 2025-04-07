@@ -1,6 +1,6 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedTransactionCount, getAddressToMakeRich, getSimulatedStackV2, getSimulatedStackV1 } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedTransactionCount, getAddressToMakeRich } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
@@ -14,6 +14,7 @@ import { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { handleUnexpectedError } from '../utils/errors.js'
+import { getSimulatedStackV1, getSimulatedStackV2 } from '../simulation/SimulationStackExtraction.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHash(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
