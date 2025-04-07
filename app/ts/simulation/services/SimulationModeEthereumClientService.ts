@@ -156,6 +156,7 @@ export const getBlockTimeManipulationSeconds = (deltaToAdd: EthereumQuantity, de
 		case 'Hours': return deltaToAdd * 60n * 60n
 		case 'Days': return deltaToAdd * 60n * 60n * 24n
 		case 'Weeks': return deltaToAdd * 60n * 60n * 24n * 7n
+		case 'Months': return deltaToAdd * 60n * 60n * 24n * 30n
 		case 'Years': return deltaToAdd * 60n * 60n * 24n * 365n
 		default: assertNever(deltaUnit)
 	}
