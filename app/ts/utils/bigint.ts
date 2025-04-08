@@ -91,7 +91,11 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 
 // biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
-	return JSON.stringify(value, (_key, value) => { return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value }, space)
+	return JSON.stringify(value, (_key, value) => {
+		if (typeof value === 'bigint') return `0x${ value.toString(16) }`
+		if (value instanceof Uint8Array) return '0x' + Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('')
+		return value
+	}, space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {
