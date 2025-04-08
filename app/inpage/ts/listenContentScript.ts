@@ -3,7 +3,7 @@ function listenContentScript(connectionName: string | undefined) {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
 	}
-	
+
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
 	 * this script serves as a _very thin_ proxy between the page scripts (dapp) and the extension, simply forwarding messages between the two
@@ -27,7 +27,7 @@ function listenContentScript(connectionName: string | undefined) {
 		if (extensionPort === undefined) return
 		try {
 			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
-			if (!('data' in messageEvent)) return
+			if (!('data' in messageEvent) || !(typeof messageEvent['data'] === 'object' && messageEvent['data'] !== null) || !('interceptorRequest' in messageEvent['data'])) return
 			extensionPort.postMessage({ data: messageEvent.data })
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
