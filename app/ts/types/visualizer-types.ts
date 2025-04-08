@@ -42,6 +42,7 @@ export const BlockTimeManipulationDeltaUnit = funtypes.Union(
 	funtypes.Literal('Hours'),
 	funtypes.Literal('Days'),
 	funtypes.Literal('Weeks'),
+	funtypes.Literal('Months'),
 	funtypes.Literal('Years')
 )
 export type BlockTimeManipulation = funtypes.Static<typeof BlockTimeManipulation>

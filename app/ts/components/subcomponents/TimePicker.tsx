@@ -6,7 +6,7 @@ import { dateToBigintSeconds } from '../../utils/bigint.js'
 
 const timePickerModeDownOptions = ['Until', 'For', 'No Delay'] as const
 const timePickerModeDownOptionsWithoutNoDelay = ['Until', 'For'] as const
-const timePickerDeltaOptions = ['Seconds', 'Minutes', 'Hours', 'Days', 'Weeks', 'Years'] as const
+const timePickerDeltaOptions = ['Seconds', 'Minutes', 'Hours', 'Days', 'Weeks', 'Months', 'Years'] as const
 
 export type DeltaUnit = typeof timePickerDeltaOptions[number]
 export type TimePickerMode = typeof timePickerModeDownOptions[number]
