@@ -10,7 +10,7 @@ import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/simulator.js'
-import { isValidMessage } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getMessageHashForPersonalSign, getSafeTxHash, isValidMessage, getMessageAndDomainHash } from '../../simulation/services/SimulationModeEthereumClientService.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -46,7 +46,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			quarantineReasons: [],
 			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			rawMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0]),
-			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, originalParams.originalRequestParameters.params[1])
+			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, originalParams.originalRequestParameters.params[1]),
+			messageHash: 'Not available for eth_signTypedData',
 		}
 	}
 
@@ -62,12 +63,12 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			quarantineReasons: [],
 			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			rawMessage: originalParams.originalRequestParameters.params[0],
-			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, originalParams.originalRequestParameters.params[1])
+			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, originalParams.originalRequestParameters.params[1]),
+			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
 	const account = await identifyAddress(ethereumClientService, requestAbortController, namedParams.account)
-
 	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
 	if (maybeParsed.success === false) {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
@@ -85,7 +86,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...chainid === undefined ? { quarantine: false, quarantineReasons: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
 				stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
 				rawMessage: stringifyJSONWithBigInts(namedParams.param),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address),
+				...getMessageAndDomainHash(originalParams.originalRequestParameters),
 			}
 		} catch(e: unknown) {
 			console.error(e)
@@ -112,7 +114,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
 				rawMessage: stringifyJSONWithBigInts(parsed, 4),
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address),
+				...getMessageAndDomainHash(originalParams.originalRequestParameters),
 			}
 		}
 		case 'PermitSingle': {
@@ -132,7 +135,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 				rawMessage: stringifyJSONWithBigInts(parsed),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, parsed.message.spender)
+				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, parsed.message.spender),
+				...getMessageAndDomainHash(originalParams.originalRequestParameters),
 			}
 		}
 		case 'SafeTx': {
@@ -158,7 +162,9 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				rawMessage: stringifyJSONWithBigInts(parsed),
 				parsedMessageData,
 				parsedMessageDataAddressBookEntries: await Promise.all(addressesInEventsAndInputData.map((address) => identifyAddress(ethereumClientService, requestAbortController, address))),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address),
+				...getMessageAndDomainHash(originalParams.originalRequestParameters),
+				safeTxHash: getSafeTxHash(parsed),
 			}
 		}
 		case 'OrderComponents': return {
@@ -171,7 +177,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 			rawMessage: stringifyJSONWithBigInts(parsed),
-			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address),
+			...getMessageAndDomainHash(originalParams.originalRequestParameters),
 		}
 		default: assertNever(parsed)
 	}

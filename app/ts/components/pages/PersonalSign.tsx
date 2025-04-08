@@ -275,6 +275,10 @@ function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignReque
 			<SomeTimeAgo priorTimestamp = { bigintSecondsToDate(permit2.message.message.details.expiration) } countBackwards = { true }/>
 			{ ` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })` }
 		</> }/>
+		<CellElement text = 'Domain Hash: '/>
+		<CellElement text = { permit2.domainHash }/>
+		<CellElement text = 'Message Hash: '/>
+		<CellElement text = { permit2.messageHash }/>
 	</>
 }
 
@@ -286,6 +290,10 @@ function PermitExtraDetails({ permit }: { permit: VisualizedPersonalSignRequestP
 		<CellElement text = { permit.message.message.nonce.toString(10) }/>
 		<CellElement text = 'Signature expires in:'/>
 		<CellElement text = { <SomeTimeAgo priorTimestamp = { bigintSecondsToDate(BigInt(permit.message.message.deadline)) } countBackwards = { true }/> }/>
+		<CellElement text = 'Domain Hash: '/>
+		<CellElement text = { permit.domainHash }/>
+		<CellElement text = 'Message Hash: '/>
+		<CellElement text = { permit.messageHash }/>
 	</>
 }
 
@@ -309,48 +317,71 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 				</>
 				: <></>
 			}
-			<CellElement text = 'baseGas: '/>
+			<CellElement text = 'Base Gas: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.baseGas }/>
-			<CellElement text = 'gasPrice: '/>
+			<CellElement text = 'Gas Price: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.gasPrice }/>
 			{ visualizedPersonalSignRequestSafeTx.message.message.gasToken !== 0n
 				? <>
-					<CellElement text = 'gasToken: '/>
+					<CellElement text = 'Gas Token: '/>
 					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
 				: <></>
 			}
-			<CellElement text = 'nonce: '/>
+			<CellElement text = 'Nonce: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.nonce }/>
-			<CellElement text = 'operation: '/>
+			<CellElement text = 'Operation: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.operation }/>
 			{ visualizedPersonalSignRequestSafeTx.message.message.refundReceiver !== 0n ?
 				<>
-					<CellElement text = 'refundReceiver: '/>
+					<CellElement text = 'Refund Receiver: '/>
 					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
 				: <></>
 			}
-			<CellElement text = 'safeTxGas: '/>
+			<CellElement text = 'Safe Transaction Gas: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
-			<CellElement text = 'to: '/>
+			<CellElement text = 'To: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
-			<CellElement text = 'value: '/>
-			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/>  }/>
+			<CellElement text = 'Value: '/>
+			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/> }/>
+			<CellElement text = 'Domain Hash: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/>
+			<CellElement text = 'Message Hash: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/>
+			<CellElement text = 'Safe Transaction hash: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
 		<TransactionInput parsedInputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } to = { visualizedPersonalSignRequestSafeTx.to } input = { visualizedPersonalSignRequestSafeTx.parsedMessageData.input } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/>
 	</>
 }
 
+
+function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
+	switch(visualizedPersonalSignRequest.type) {
+		case 'EIP712':
+		case 'NotParsed': return <>
+			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+				{ visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <>
+					<CellElement text = 'Domain Hash: '/>
+					<CellElement text = { visualizedPersonalSignRequest.domainHash }/>
+				</> }
+				<CellElement text = 'Message Hash: '/>
+				<CellElement text = { visualizedPersonalSignRequest.messageHash }/>
+			</span>
+		</>
+		case 'OrderComponents': return <OrderComponentsExtraDetails orderComponents = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/>
+		case 'Permit': return <PermitExtraDetails permit = { visualizedPersonalSignRequest }/>
+		case 'Permit2': return <Permit2ExtraDetails permit2 = { visualizedPersonalSignRequest }/>
+		case 'SafeTx': return <GnosisSafeExtraDetails visualizedPersonalSignRequestSafeTx = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
+		default: assertNever(visualizedPersonalSignRequest)
+	}
+}
+
+
 function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	if (visualizedPersonalSignRequest.type !== 'Permit2'
-		&& visualizedPersonalSignRequest.type !== 'Permit'
-		&& visualizedPersonalSignRequest.type !== 'OrderComponents'
-		&& visualizedPersonalSignRequest.type !== 'SafeTx') {
-		return <></>
-	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
@@ -367,11 +398,8 @@ function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: 
 				<div class = 'card-content'>
 					<div class = 'container' style = 'margin-bottom: 10px;'>
 						<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-							{ visualizedPersonalSignRequest.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { visualizedPersonalSignRequest }/> }
-							{ visualizedPersonalSignRequest.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { visualizedPersonalSignRequest }/> }
-							{ visualizedPersonalSignRequest.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/> }
+							<ExtraDetailsInner visualizedPersonalSignRequest = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
 						</span>
-						{ visualizedPersonalSignRequest.type !== 'SafeTx' ? <></> : <GnosisSafeExtraDetails visualizedPersonalSignRequestSafeTx = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/> }
 					</div>
 				</div>
 			</>

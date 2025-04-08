@@ -8,12 +8,13 @@ import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
-import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import { PersonalSignParams, SignMessageParams, SignTypedDataParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
+import { SafeTx } from '../../types/personal-message-definitions.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -685,6 +686,48 @@ export const isValidMessage = (params: SignMessageParams, signingAddress: Ethere
 	}
 }
 
+export const getSafeTxHash = (safeTx: SafeTx) => {
+	const eip721SafeTxType = {
+		SafeTx: [
+			{ type: 'address', name: 'to' },
+			{ type: 'uint256', name: 'value' },
+			{ type: 'bytes', name: 'data' },
+			{ type: 'uint8', name: 'operation' },
+			{ type: 'uint256', name: 'safeTxGas' },
+			{ type: 'uint256', name: 'baseGas' },
+			{ type: 'uint256', name: 'gasPrice' },
+			{ type: 'address', name: 'gasToken' },
+			{ type: 'address', name: 'refundReceiver' },
+			{ type: 'uint256', name: 'nonce' },
+		],
+	}
+	const serializedMessage = {
+		to: EthereumAddress.serialize(safeTx.message.to),
+		value: safeTx.message.value,
+		data: EthereumData.serialize(safeTx.message.data),
+		operation: safeTx.message.operation,
+		safeTxGas: safeTx.message.safeTxGas,
+		baseGas: safeTx.message.baseGas,
+		gasPrice: safeTx.message.gasPrice,
+		gasToken: EthereumAddress.serialize(safeTx.message.gasToken),
+		refundReceiver: EthereumAddress.serialize(safeTx.message.refundReceiver),
+		nonce: safeTx.message.nonce
+	}
+	return ethers.TypedDataEncoder.hash({ verifyingContract: addressString(safeTx.domain.verifyingContract), chainId: safeTx.domain.chainId }, eip721SafeTxType, serializedMessage)
+}
+
+export const getMessageAndDomainHash = (params: SignTypedDataParams) => {
+	const { types, primaryType, domain, message } = params.params[1]
+	if (!types[primaryType]) throw new Error('primary type missing from eip712 message')
+	const domainHash = ethers.TypedDataEncoder.hashDomain(domain)
+	const mutableTypes: Record<string, ethers.TypedDataField[]> = Object.fromEntries(Object.entries(types).map(([key, fields]) => [key, fields ? [...fields] : []]))
+	delete mutableTypes.EIP712Domain
+	const messageHash = ethers.TypedDataEncoder.from(mutableTypes).hash(message)
+	return { messageHash, domainHash }
+}
+
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage(params.params[0])
+
 export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
 	switch (params.method) {
@@ -693,16 +736,13 @@ export const simulatePersonalSign = (params: SignMessageParams, signingAddress: 
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4': {
-			const typesWithoutDomain = Object.assign({}, params.params[1].types)
-			delete typesWithoutDomain.EIP712Domain
-			const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
-			const messageHash = ethers.TypedDataEncoder.hash(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message)
+			const messageHash = getMessageAndDomainHash(params).messageHash
 			const signature = wallet.signMessageSync(messageHash)
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
 			signature: wallet.signMessageSync(stringToUint8Array(params.params[0])),
-			messageHash: hashMessage(params.params[0])
+			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
 	}
@@ -857,7 +897,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 			}
 			case 'TransferBatch': {
 				for (const parsedLog of handleERC1155TransferBatch(log)) {
-					if (parsedLog.type !== "ERC1155") continue
+					if (parsedLog.type !== 'ERC1155') continue
 					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
 					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
 				}
