@@ -349,7 +349,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/>
 			<CellElement text = 'Message Hash: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/>
-			<CellElement text = 'Safe Transaction hash: '/>
+			<CellElement text = 'Safe Transaction Hash: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
