@@ -380,6 +380,7 @@ const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData')),
 		type: funtypes.Literal('NotParsed'),
 		message: funtypes.String,
+		messageHash: funtypes.String,
 	})
 )
 
@@ -398,6 +399,8 @@ const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 		method: EthSignTyped,
 		type: funtypes.Literal('EIP712'),
 		message: EnrichedEIP712,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
 	})
 )
 
@@ -411,6 +414,8 @@ export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 		owner: AddressBookEntry,
 		spender: AddressBookEntry,
 		verifyingContract: AddressBookEntry,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
 	})
 )
 
@@ -424,6 +429,8 @@ export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 		token: AddressBookEntry,
 		spender: AddressBookEntry,
 		verifyingContract: AddressBookEntry,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
 	})
 )
 
@@ -434,6 +441,8 @@ const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 		method: EthSignTyped,
 		type: funtypes.Literal('OrderComponents'),
 		message: OpenSeaOrderMessageWithAddressBookEntries,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
 	})
 )
 
@@ -493,6 +502,9 @@ export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 		to: AddressBookEntry,
 		refundReceiver: AddressBookEntry,
 		verifyingContract: AddressBookEntry,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
+		safeTxHash: funtypes.String,
 	})
 )
 
