@@ -380,7 +380,7 @@ const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData')),
 		type: funtypes.Literal('NotParsed'),
 		message: funtypes.String,
-		messageHash: funtypes.String,
+		messageHash: funtypes.Union(funtypes.String, funtypes.Undefined),
 	})
 )
 
