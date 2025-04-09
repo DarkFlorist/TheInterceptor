@@ -155,7 +155,7 @@ export const decodeEthereumError = (errorInterfaces: readonly Interface[], error
 			if (predicate(error)) return handle(errorInterface, error)
 		}
 		return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
-	} catch(decodingError: unknown) {
+	} catch (decodingError: unknown) {
 		printError(decodingError)
 		return unknownErrorResult({ data: error.data, reason: `Failed to decode error: ${ error.message }`, name: 'unknown' })
 	}
