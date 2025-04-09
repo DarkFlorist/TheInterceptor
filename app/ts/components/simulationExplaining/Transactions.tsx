@@ -173,7 +173,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	)
 }
 
-type TransactionOrSignedMessageWithBlockTimeManipulatorParams = {
+type TransactionOrMessageWithBlockTimeManipulatorParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	simTx: SimulatedAndVisualizedTransaction | VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
@@ -184,7 +184,7 @@ type TransactionOrSignedMessageWithBlockTimeManipulatorParams = {
 	blockTimeManipulation: BlockTimeManipulationWithNoDelay
 }
 
-const TransactionOrSignedMessageWithBlockTimeManipulator = ({ simTx, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation }: TransactionOrSignedMessageWithBlockTimeManipulatorParams) => {
+const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
 	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
@@ -271,7 +271,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 		transactionsAndMessagesInBlock.flatMap((block, blockIndex) => {
 			const nextBlockManipulator = transactionsAndMessagesInBlock[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
 			return block.operations.map((simTx, transactionIndex) => <li>
-				<TransactionOrSignedMessageWithBlockTimeManipulator
+				<TransactionOrMessageWithBlockTimeManipulator
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
