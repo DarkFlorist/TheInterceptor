@@ -27,8 +27,8 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 				<span class = 'truncate' style = { { contain: 'content' } }>{ selected.value }</span>
 			</button>
 		</div>
-		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { left: 'unset' } }>
-			<div class = 'dropdown-content'> {
+		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>
+			<div class = 'dropdown-content' style = { { right: '0' } }> {
 				dropDownOptions.value.map((option) => <>
 					<button type = { buttonClassses } class = { `dropdown-item ${ option === selected.value ? 'is-active' : '' }` } onClick = { () => onChanged(option) } >
 						{ option }
