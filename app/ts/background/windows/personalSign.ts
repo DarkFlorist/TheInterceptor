@@ -10,7 +10,8 @@ import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/simulator.js'
-import { getMessageHashForPersonalSign, getSafeTxHash, isValidMessage, getMessageAndDomainHash, canComputeMessageAndDomainHash } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { canComputeMessageAndDomainHash, getMessageHashForPersonalSign, isValidMessage } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getMessageAndDomainHash, getSafeTxHash } from '../../utils/eip712.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {

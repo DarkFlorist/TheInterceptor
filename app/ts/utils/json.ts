@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 
-type typeJSONEncodeable = string | number | boolean | { [x: string]: typeJSONEncodeable | undefined } | readonly typeJSONEncodeable[]
+export type typeJSONEncodeable = string | number | boolean | { [x: string]: typeJSONEncodeable | undefined } | readonly typeJSONEncodeable[]
 type JSONEncodeable = funtypes.Static<typeof JSONEncodeable>
 const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Lazy(() => funtypes.Union(
 	funtypes.String,

@@ -14,7 +14,7 @@ import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeMeRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
-import { SafeTx } from '../../types/personal-message-definitions.js'
+import { getMessageAndDomainHash } from '../../utils/eip712.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -673,68 +673,6 @@ const simulateTransactionsOnTopOfSimulationState = async (ethereumClientService:
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
 const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => BigInt(simulationState.simulationConductedTimestamp.getTime() * 100000 + blockDelta)
 
-export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
-export type MessageHashAndSignature = { signature: string, messageHash: string }
-
-export const isValidMessage = (params: SignMessageParams, signingAddress: EthereumAddress) => {
-	try {
-		simulatePersonalSign(params, signingAddress)
-		return true
-	} catch(e) {
-		console.error(e)
-		return false
-	}
-}
-
-export const getSafeTxHash = (safeTx: SafeTx) => {
-	const eip721SafeTxType = {
-		SafeTx: [
-			{ type: 'address', name: 'to' },
-			{ type: 'uint256', name: 'value' },
-			{ type: 'bytes', name: 'data' },
-			{ type: 'uint8', name: 'operation' },
-			{ type: 'uint256', name: 'safeTxGas' },
-			{ type: 'uint256', name: 'baseGas' },
-			{ type: 'uint256', name: 'gasPrice' },
-			{ type: 'address', name: 'gasToken' },
-			{ type: 'address', name: 'refundReceiver' },
-			{ type: 'uint256', name: 'nonce' },
-		],
-	}
-	const serializedMessage = {
-		to: EthereumAddress.serialize(safeTx.message.to),
-		value: safeTx.message.value,
-		data: EthereumData.serialize(safeTx.message.data),
-		operation: safeTx.message.operation,
-		safeTxGas: safeTx.message.safeTxGas,
-		baseGas: safeTx.message.baseGas,
-		gasPrice: safeTx.message.gasPrice,
-		gasToken: EthereumAddress.serialize(safeTx.message.gasToken),
-		refundReceiver: EthereumAddress.serialize(safeTx.message.refundReceiver),
-		nonce: safeTx.message.nonce
-	}
-	return ethers.TypedDataEncoder.hash({ verifyingContract: addressString(safeTx.domain.verifyingContract), chainId: safeTx.domain.chainId }, eip721SafeTxType, serializedMessage)
-}
-
-export const getMessageAndDomainHash = (params: SignTypedDataParams) => {
-	const { types, primaryType, domain, message } = params.params[1]
-	if (!types[primaryType]) throw new Error('primary type missing from eip712 message')
-	const domainHash = ethers.TypedDataEncoder.hashDomain(domain)
-	const mutableTypes: Record<string, ethers.TypedDataField[]> = Object.fromEntries(Object.entries(types).map(([key, fields]) => [key, fields ? [...fields] : []]))
-	delete mutableTypes.EIP712Domain
-	const messageHash = ethers.TypedDataEncoder.from(mutableTypes).hash(message)
-	return { messageHash, domainHash }
-}
-
-export const canComputeMessageAndDomainHash = (params: SignTypedDataParams) => {
-	try {
-		getMessageAndDomainHash(params)
-		return true
-	} catch(e) {
-		return false
-	}
-}
-
 export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage(params.params[0])
 
 export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
@@ -754,6 +692,27 @@ export const simulatePersonalSign = (params: SignMessageParams, signingAddress: 
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
+	}
+}
+
+// TODO FIX
+export const isValidMessage = (params: SignMessageParams, signingAddress: EthereumAddress) => {
+	try {
+		simulatePersonalSign(params, signingAddress)
+		return true
+	} catch(e) {
+		console.error(e)
+		return false
+	}
+}
+
+// TODO FIX
+export const canComputeMessageAndDomainHash = (params: SignTypedDataParams) => {
+	try {
+		getMessageAndDomainHash(params)
+		return true
+	} catch(e) {
+		return false
 	}
 }
 
