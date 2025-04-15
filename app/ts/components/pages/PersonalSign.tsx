@@ -346,11 +346,11 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 			<CellElement text = 'Value: '/>
 			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/> }/>
 			<CellElement text = 'Domain Hash: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/>
+			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/></code>
 			<CellElement text = 'Message Hash: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/>
+			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/></code>
 			<CellElement text = 'Safe Transaction Hash: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/>
+			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/></code>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
 		<TransactionInput parsedInputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } to = { visualizedPersonalSignRequestSafeTx.to } input = { visualizedPersonalSignRequestSafeTx.parsedMessageData.input } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/>
