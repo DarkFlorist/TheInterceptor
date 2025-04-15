@@ -8,7 +8,7 @@ import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
-import { PersonalSignParams, SignMessageParams, SignTypedDataParams } from '../../types/jsonRpc-signing-types.js'
+import { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
@@ -692,27 +692,6 @@ export const simulatePersonalSign = (params: SignMessageParams, signingAddress: 
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
-	}
-}
-
-// TODO FIX
-export const isValidMessage = (params: SignMessageParams, signingAddress: EthereumAddress) => {
-	try {
-		simulatePersonalSign(params, signingAddress)
-		return true
-	} catch(e) {
-		console.error(e)
-		return false
-	}
-}
-
-// TODO FIX
-export const canComputeMessageAndDomainHash = (params: SignTypedDataParams) => {
-	try {
-		getMessageAndDomainHash(params)
-		return true
-	} catch(e) {
-		return false
 	}
 }
 
