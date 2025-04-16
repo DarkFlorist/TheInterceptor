@@ -153,14 +153,6 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		return typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
 	}
 
-	// Check for fixed point numbers (simplistic check)
-	const fixedRegex = /^(u?)fixed(\d+)x(\d+)$/
-	const fixedMatch = typeStr.match(fixedRegex)
-	if (fixedMatch) {
-		//todo, this is probably incorrect
-		return typeof value === 'number' ? { valid: true} : { valid: false, reason: `${ value } is invalid fixed number` }
-	}
-
 	// Other built-in types
 	if (typeStr === 'bool') return typeof value === 'boolean' ? { valid: true } : { valid: false, reason: `${ value } is not boolean` }
 	if (typeStr === 'string') return typeof value === 'string' ? { valid: true } : { valid: false, reason: `${ value } is not string` }
@@ -241,16 +233,41 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 	return { valid: true, tree: extracted }
 }
 
+const isValidEIP712DomainOrder = (expected: readonly string[], test: readonly string[]): boolean => {
+	const matched = test.filter(t => expected.includes(t))
+	const expectedIndex = (field: string) => expected.indexOf(field)
+	const isOrdered = matched.every((field, idx, arr) => {
+		if (idx === 0) return true
+		const previous = arr[idx - 1]
+		if (previous === undefined) throw new Error('array underflow')
+		return expectedIndex(previous) <= expectedIndex(field)
+	})
+	if (!isOrdered) return false
+	// Find the index in test where matched expected fields end
+	const lastMatchedIndex = test.findIndex((t, i) => {
+		if (i === 0) return false
+		const previous = test[i - 1]
+		if (previous === undefined) throw new Error('array underflow')
+		return expected.includes(previous) && !expected.includes(t)
+	})
+	const extras = lastMatchedIndex === -1 ? [] : test.slice(lastMatchedIndex).filter(t => !expected.includes(t))
+	return extras.every((field, i, arr) => {
+		if (i === 0) return true
+		const previous = arr[i - 1]
+		if (previous === undefined) throw new Error('array underflow')
+		return previous <= field
+	})
+}
+
 export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid: true } | { valid: false, reason: string } => {
 	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: `EIP712 message should only have 4 fields` }
 
-	// EIP712Domain
-	// todo, order is also enforced
 	const validEIP712DomainEntries = [
 		{ name: 'name', type: 'string' },
 		{ name: 'version', type: 'string' },
 		{ name: 'chainId', type: 'uint256' },
-		{ name: 'verifyingContract', type: 'address' }
+		{ name: 'verifyingContract', type: 'address' },
+		{ name: 'salt', type: 'bytes32' }
 	]
 	const eip712Domain = maybeEip712Message.types['EIP712Domain']
 	if (eip712Domain === undefined) return { valid: false, reason: 'EIP712Domain does not exist' }
@@ -267,6 +284,9 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 	if ('version' in maybeEip712Message.domain && !String.safeParse(maybeEip712Message.domain['version']).success) return { valid: false, reason: 'EIP712Domain.version is in wrong type' }
 	if ('verifyingContract' in maybeEip712Message.domain && !EthereumAddress.safeParse(maybeEip712Message.domain['verifyingContract']).success) return { valid: false, reason: 'EIP712Domain.verifyingContract is in wrong type' }
 	if ('name' in maybeEip712Message.domain && !String.safeParse(maybeEip712Message.domain['name']).success) return { valid: false, reason: 'EIP712Domain.name is in wrong type' }
+	if ('salt' in maybeEip712Message.domain && !EthereumData.safeParse(maybeEip712Message.domain['salt']).success) return { valid: false, reason: 'EIP712Domain.salt is in wrong type' }
+
+	if (!isValidEIP712DomainOrder(validEIP712DomainEntries.map((entry) => entry.name), eip712Domain.map((entry) => entry.name))) throw new Error('domain types are in wrong order')
 
 	// domain fields exist in valid in types
 	const domainArray = Object.entries(maybeEip712Message.domain)
