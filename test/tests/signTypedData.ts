@@ -7,7 +7,7 @@ import { MockRequestHandler } from '../MockRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { getMessageAndDomainHash, verifyEip712Message } from '../../app/ts/utils/eip712.js'
-import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
+import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
 
 export async function main() {
 
@@ -134,6 +134,18 @@ export async function main() {
 			const verification = verifyEip712Message(JSON.parse(tupleSupport))
 			assert.deepEqual(verification, { valid: false, reason: 'Message was invalid: unknown type: tuple(uint256, uint256)'})
 		})
+		should('can verify d2Array message', () => {
+			const parsed = EIP712Message.parse(d2Array)
+			assert.deepEqual(verifyEip712Message(parsed), { valid: true })
+		})
+		should('can verify d2ArrayFixed message', () => {
+			const parsed = EIP712Message.parse(d2ArrayFixed)
+			assert.deepEqual(verifyEip712Message(parsed), { valid: true })
+		})
+		should('can verify d3ArrayFixed message', () => {
+			const parsed = EIP712Message.parse(d3ArrayFixed)
+			assert.deepEqual(verifyEip712Message(parsed), { valid: true })
+		})
 		should('can validate safeTx message', () => {
 			const parsed = EIP712Message.parse(safeTx)
 			assert.equal(validateEIP712Types(parsed), true)
@@ -146,6 +158,7 @@ export async function main() {
 			const parsed = EIP712Message.parse(openSeaWithTotalOriginalConsiderationItems)
 			assert.equal(validateEIP712Types(parsed), true)
 		})
+
 		should('can extract safeTx message', async () => {
 			const parsed = EIP712Message.parse(safeTx)
 			const enrichedMessage = stringifyJSONWithBigInts(await extractEIP712Message(ethereum, undefined, parsed, false))

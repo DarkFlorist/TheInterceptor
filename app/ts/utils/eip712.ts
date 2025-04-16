@@ -8,27 +8,25 @@ import { ethers } from 'ethers'
 import { addressString } from './bigint.js'
 import { assertNever, modifyObject } from './typescript.js'
 
-käy läpi tää ja putsaile, poista väärät kommentit ja nimeä uudlleen
-
-
 type TypeDefinition = ({ name: string, type: string, primaryType: true } | { name: string, typeName: string, baseType: string, type: TypeDefinition[], primaryType: false })
 type SolidityTypeTree = Record<string, TypeDefinition[]>
 
 const isValidSolidityType = (type: string, validStructNames: readonly string[]): boolean => {
 	const identifierPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/
-	const arraySuffixPattern = /^(\[(?!0\])[0-9]*\])*$/  // valid: [], [1], [2][]; invalid: [0]
 
 	// Handle tuple types, e.g. tuple(uint256,MyStruct) or tuple(uint256,MyStruct)[]
 	if (type.startsWith('tuple(')) return false
 
 	// Handle arrays (e.g. MyType[2][], Custom[5][])
-	const arrayMatch = type.match(/^([^\[]+)(\[(?!0\])[0-9]*\](\[(?!0\])[0-9]*\])*)$/)
-	if (arrayMatch) {
-		const base = arrayMatch[1]
-		const suffix = arrayMatch[2]
-		if (base === undefined || suffix === undefined) return false
-		if (!arraySuffixPattern.test(suffix)) return false
-		return isValidSolidityType(base, validStructNames)
+	const match = type.match(/^([^\[]+)(\[(?!0\])[0-9]*\](\[(?!0\])[0-9]*\])*)$/)
+	if (match) {
+		const base = match[1] // "array"
+		const brackets = match[2] // "[][][]"
+		// Remove first bracket set only
+		if (base === undefined || brackets === undefined) return false
+		const remaining = brackets.replace(/^(\[(?!0\])[0-9]*\])/, '')
+		const innerType = base + remaining
+		return isValidSolidityType(innerType, validStructNames)
 	}
 
 	// At this point, type is supposed to be an identifier
@@ -77,11 +75,13 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 	if (typeStr.startsWith('tuple(')) return { valid: false, reason: 'tuples are not supported'}
 
 	// Check for array types (non-tuple arrays)
-	const arrayRegex = /^([^\[]+)((\[(?!0\])[0-9]*\])+)$/
-	const arrayMatch = typeStr.match(arrayRegex)
+	const arrayMatch = typeStr.match(/^([^\[]+)(\[(?!0\])[0-9]*\](\[(?!0\])[0-9]*\])*)$/)
 	if (arrayMatch) {
-		const baseType = arrayMatch[1]
-		// Extract the number inside the last set of brackets, if present
+		const base = arrayMatch[1] // "array"
+		const brackets = arrayMatch[2] // "[][][]"
+		if (base === undefined || brackets === undefined) return { valid: false, reason: 'base or brackets were undefined'}
+		const remaining = brackets.replace(/^(\[(?!0\])[0-9]*\])/, '')
+		const innerType = base + remaining
 		const arrayLength = (brackets: string | undefined) => {
 			if (brackets === undefined) return undefined
 			const lengthMatch = brackets.match(/\[(\d*)\]$/)
@@ -89,13 +89,10 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 		}
 		const expectedLength = arrayLength(arrayMatch[2])
 		if (!Array.isArray(value)) return { valid: false, reason: `invalid array: ${ JSON.stringify(value) }` }
-		if (baseType === undefined) return { valid: false, reason: `invalid array: ${ JSON.stringify(value) }` }
 
-		if (expectedLength !== undefined && value.length > expectedLength) {
-			return { valid: false, reason: `expected array of length ${ expectedLength }, got ${ value.length }` }
-		}
+		if (expectedLength !== undefined && value.length > expectedLength) return { valid: false, reason: `expected array of length ${ expectedLength }, got ${ value.length }` }
 		for (const elem of value) {
-			const valid = validateTypeValue(baseType, elem, solidityTypeTree)
+			const valid = validateTypeValue(innerType, elem, solidityTypeTree)
 			if (valid.valid === false) return valid
 		}
 		return { valid: true }
@@ -104,10 +101,7 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 	return validatePrimitiveOrStruct(typeStr, value, solidityTypeTree)
 }
 
-const getBaseType = (typeStr: string): string => {
-	const baseTypeMatch = typeStr.match(/^([^\[]+)/)
-	return baseTypeMatch?.[1] ?? typeStr
-}
+const getBaseType = (typeStr: string): string => typeStr.match(/^([^\[]+)/)?.[1] ?? typeStr
 
 const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, solidityTypeTree: SolidityTypeTree): { valid: true } | { valid: false, reason: string } => {
 	const identifierPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/
@@ -229,15 +223,15 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 				extractedTypes.push({ name: currentType.name, type: currentType.type, primaryType: true })
 				continue
 			}
-			const root = struct[0]
-			const existing = extracted[root]
+			const newRoot = struct[0]
+			const existing = extracted[newRoot]
 			if (existing !== undefined) {
-				extractedTypes.push({ name: currentType.name, baseType: root, typeName: currentType.type, type: existing, primaryType: false })
+				extractedTypes.push({ name: currentType.name, baseType: newRoot, typeName: currentType.type, type: existing, primaryType: false })
 				continue
 			}
-			const simplified = subSimplifyTypesToSolidityTypes(root, nonExtractedTypes, depth + 1)
+			const simplified = subSimplifyTypesToSolidityTypes(newRoot, nonExtractedTypes, depth + 1)
 			if (!simplified.valid) return simplified
-			extractedTypes.push({ name: currentType.name, primaryType: false, baseType: root, typeName: currentType.type, type: simplified.TypeDefinitionArray })
+			extractedTypes.push({ name: currentType.name, primaryType: false, baseType: newRoot, typeName: currentType.type, type: simplified.TypeDefinitionArray })
 		}
 		extracted[root] = extractedTypes
 		return { valid: true, TypeDefinitionArray: extractedTypes }
