@@ -377,7 +377,7 @@ type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedP
 const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData')),
+		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData'), funtypes.Literal('eth_signTypedData_v1'), funtypes.Literal('eth_signTypedData_v2'), funtypes.Literal('eth_signTypedData_v3'), funtypes.Literal('eth_signTypedData_v4')),
 		type: funtypes.Literal('NotParsed'),
 		message: funtypes.String,
 		messageHash: funtypes.Union(funtypes.String, funtypes.Undefined),

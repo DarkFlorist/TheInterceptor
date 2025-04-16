@@ -6,11 +6,12 @@ import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { MessageHashAndSignature, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
+import { getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { RpcEntry } from '../../types/rpc.js'
 import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import { MessageHashAndSignature } from '../../utils/eip712.js'
 
 export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
 	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)

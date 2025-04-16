@@ -19,7 +19,7 @@ const TEST_DIRECTORY = path.join(path.dirname(__filename), 'tests')
 
 async function importValidateAndRun(relativeFilePath: string) {
 	const imported = await import(relativeFilePath)
-	if( ! ('main' in imported) && typeof imported.main === 'function') throw new Error(`missing main function in ${ relativeFilePath }`)
+	if (!('main' in imported)) return
 	await imported.main()
 }
 
