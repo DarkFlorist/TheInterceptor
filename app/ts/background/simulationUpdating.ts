@@ -262,7 +262,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 }
 
 export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	const parentBlock = ethereum.getCachedBlock()
+	const parentBlock = await ethereum.getBlock(undefined)
 	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : { blocks: simulationInput.blocks.map((block) => (
 		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
 	))}
