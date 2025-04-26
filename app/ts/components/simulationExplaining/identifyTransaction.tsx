@@ -212,7 +212,8 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
 	if (deadEnds.size === 0) return false
-
+	const path = removeDuplicates(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)))
+	if (path.length === 0) return false
 	// the sum of all currency in dead ends, must equal to the sum sent initially (multiplied by -1)
 	const netSums = getNetSums(edges)
 	const deadEndSum = Array.from(deadEnds).map((deadEnd) => netSums.get(deadEnd[0]) || 0n).reduce((prev, current) => prev + current, 0n)
