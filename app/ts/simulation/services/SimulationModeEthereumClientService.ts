@@ -64,7 +64,7 @@ export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { 
 export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	if (blockTag === 'finalized' || simulationState === undefined) return await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
 	const blockNumToUseForSim = blockTag === 'latest' || blockTag === 'pending' ? simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length) : blockTag
-	const blockNumToUseForChain = blockTag === 'latest' || blockTag === 'pending' ? simulationState.blockNumber : min(blockTag, simulationState.blockNumber)
+	const blockNumToUseForChain = blockTag === 'latest' || blockTag === 'pending' ? blockTag : min(blockTag, await ethereumClientService.getBlockNumber(requestAbortController))
 	let addedTransactions = 0n
 	if (simulationState !== undefined && (blockTag === 'latest' || blockTag === 'pending' || blockTag > simulationState.blockNumber)) {
 		// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
