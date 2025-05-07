@@ -388,7 +388,7 @@ export const getMessageAndDomainHash = (params: SignTypedDataParams) => {
 	return { messageHash, domainHash }
 }
 
-export const isValidMessage = (params: SignMessageParams): { valid: true} | { valid: false, reason: string } => {
+export const isValidMessage = (params: SignMessageParams): { valid: true } | { valid: false, reason: string } => {
 	switch (params.method) {
 		case 'eth_signTypedData': return { valid: false, reason: 'No support for eth_signTypedData' }
 		case 'eth_signTypedData_v1':
