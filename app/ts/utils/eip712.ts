@@ -115,6 +115,8 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		const isUnsigned = intMatch[1] === 'u'
 		if (!intMatch[2]) return { valid: false, reason: `intMatch was undefined` }
 		const bitWidth = parseInt(intMatch[2])
+		if (bitWidth < 8 || bitWidth > 256) return { valid: false, reason: `${typeStr} is not a valid type, number widths must be in range [8,256]` }
+		if (!Number.isInteger(bitWidth / 8) return {valid: false, reason: `${typeStr} is not a valid type, number widths must be divisible by 8.`
 		// For unsigned: range is 0 to 2^width - 1
 		// For signed: range is -2^(width-1) to 2^(width-1) - 1
 		const min = isUnsigned ? 0n : -(2n ** BigInt(bitWidth - 1))
