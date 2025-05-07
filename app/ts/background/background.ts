@@ -85,8 +85,6 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 					await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId }  })
 					return undefined
 				}
-				// clear simulation, unexpected error occured
-				await updateSimulationResults(modifyObject(emptyDoneResults, { simulationResultState: 'corrupted' as const }))
 				handleUnexpectedError(error)
 				return undefined
 			}
