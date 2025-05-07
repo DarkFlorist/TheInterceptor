@@ -726,6 +726,15 @@ export const getMessageAndDomainHash = (params: SignTypedDataParams) => {
 	return { messageHash, domainHash }
 }
 
+export const canComputeMessageAndDomainHash = (params: SignTypedDataParams) => {
+	try {
+		getMessageAndDomainHash(params)
+		return true
+	} catch(e) {
+		return false
+	}
+}
+
 export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage(params.params[0])
 
 export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
