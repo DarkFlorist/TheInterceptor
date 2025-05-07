@@ -141,6 +141,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	if (fixedBytesMatch) {
 		if (!fixedBytesMatch[1]) return { valid: false, reason: 'not valid bytes' }
 		const expectedSize = parseInt(fixedBytesMatch[1])
+		if (expectedSize < 1 || expectedSize > 32) return { valid: false, reason: `Only 'bytes1' through 'bytes32' are valid, '${typeStr}' is not in that range` }
 		// Value must be a hex string with 2 + 2*expectedSize characters (0x + hex digits)
 		const valid = typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) && value.length === 2 + expectedSize * 2
 		return valid ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
