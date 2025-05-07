@@ -115,6 +115,8 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		const isUnsigned = intMatch[1] === 'u'
 		if (!intMatch[2]) return { valid: false, reason: `intMatch was undefined` }
 		const bitWidth = parseInt(intMatch[2])
+		if (bitWidth < 8 || bitWidth > 256) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be in range [8,256]` }
+		if (!Number.isInteger(bitWidth / 8)) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be divisible by 8.` }
 		// For unsigned: range is 0 to 2^width - 1
 		// For signed: range is -2^(width-1) to 2^(width-1) - 1
 		const min = isUnsigned ? 0n : -(2n ** BigInt(bitWidth - 1))
@@ -125,7 +127,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 			if (!Number.isInteger(value)) return { valid: false, reason: `${ JSON.stringify(value) } wasn't integer` }
 			bigValue = BigInt(value)
 		} else if (typeof value === 'string') {
-			const parsed = Eip712Number.safeParse(value) // todo, does the quantity need to be in hex format?
+			const parsed = Eip712Number.safeParse(value)
 			if (!parsed.success) return { valid: false, reason: `${ JSON.stringify(value) } wasn't integer` }
 			bigValue = parsed.value
 		} else {
@@ -141,6 +143,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	if (fixedBytesMatch) {
 		if (!fixedBytesMatch[1]) return { valid: false, reason: 'not valid bytes' }
 		const expectedSize = parseInt(fixedBytesMatch[1])
+		if (expectedSize < 1 || expectedSize > 32) return { valid: false, reason: `Only 'bytes1' through 'bytes32' are valid, '${ typeStr }' is not in that range` }
 		// Value must be a hex string with 2 + 2*expectedSize characters (0x + hex digits)
 		const valid = typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) && value.length === 2 + expectedSize * 2
 		return valid ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
