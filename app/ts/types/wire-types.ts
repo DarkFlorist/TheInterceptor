@@ -528,6 +528,7 @@ export const EthereumBlockHeaderWithTransactionHashes = funtypes.Union(funtypes.
 
 type EthereumUnknownTransactionType = funtypes.Static<typeof EthereumUnknownTransactionType>
 const EthereumUnknownTransactionType = funtypes.ReadonlyObject({
+	hash: EthereumBytes32,
 	type: funtypes.String.withConstraint((type) => {
 		if (!isHexEncodedNumber(type)) return false
 		const alreadyHandled = ['0x0', '0x1', '0x2', '0x3', '0x4', '0x7e']
@@ -536,10 +537,13 @@ const EthereumUnknownTransactionType = funtypes.ReadonlyObject({
 	})
 })
 
+export type EthereumBlockHeaderTransaction = funtypes.Static<typeof EthereumBlockHeaderTransaction>
+export const EthereumBlockHeaderTransaction = funtypes.Union(EthereumSignedTransaction, EthereumUnknownTransactionType)
+
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = funtypes.Union(funtypes.Null, funtypes.Intersect(
 	EthereumBlockHeaderWithoutTransactions,
-	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(funtypes.Union(EthereumSignedTransaction, EthereumUnknownTransactionType)) })
+	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumBlockHeaderTransaction) })
 ))
 
 //
