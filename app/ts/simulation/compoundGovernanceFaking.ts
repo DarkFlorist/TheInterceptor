@@ -1,12 +1,13 @@
 import { Interface, Result } from 'ethers'
 import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { CompoundTimeLock } from '../utils/abi.js'
-import { addressString, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, bigintSecondsToDate, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from './services/SimulationModeEthereumClientService.js'
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
 	const compoundTimeLockAbi = new Interface(CompoundTimeLock)
@@ -51,7 +52,14 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	]
 	const parentBlock = await ethereumClientService.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures([calls], [], parentBlock.number, undefined))[0]?.calls
+	const input = { blocks: [ {
+		stateOverrides: {},
+		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
+		signedMessages: [],
+		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION
+	} ] } as const
+
+	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
 	if (governanceContractCalls === undefined) throw new Error('simulateTransactionsAndSignatures returned zero length aray')
 	for (const call of governanceContractCalls) {
 		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')
@@ -76,9 +84,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const query = [{
 		calls: [executingTransaction],
 		blockOverrides: {
-			number: parentBlock.number + 1n,
 			prevRandao: 0x1n,
-			time: new Date(Number(eta) * 1000), // timestamp is set to ETA
+			time: bigintSecondsToDate(eta), // timestamp is set to ETA
 			gasLimit: parentBlock.gasLimit,
 			feeRecipient: parentBlock.miner,
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas

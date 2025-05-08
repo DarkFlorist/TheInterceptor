@@ -1,16 +1,16 @@
 import * as funtypes from 'funtypes'
 import { JSONEncodeableObject, isJSON } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
-import { serialize } from './wire-types.js'
+import { EthereumQuantity, NonHexBigInt, serialize } from './wire-types.js'
+
+export type EIP712Types = funtypes.Static<typeof EIP712Types>
+export const EIP712Types = funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
+	funtypes.ReadonlyObject({ name: funtypes.String, type: funtypes.String })
+))
 
 type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
 const EIP712MessageUnderlying = funtypes.ReadonlyObject({
-	types: funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
-		funtypes.ReadonlyObject({
-			name: funtypes.String,
-			type: funtypes.String,
-		})
-	)),
+	types: EIP712Types,
 	primaryType: funtypes.String,
 	domain: JSONEncodeableObject,
 	message: JSONEncodeableObject,
@@ -50,3 +50,22 @@ export const EnrichedEIP712 = funtypes.ReadonlyObject({
 	message: EnrichedEIP712Message,
 	domain: EnrichedEIP712Message,
 })
+
+const numberAsBigIntParser: funtypes.ParsedValue<funtypes.Number, bigint>['config'] = {
+	parse: value => {
+		if (!Number.isInteger(value)) return { success: false, message: `${value} is not integer.` }
+		if (value < Number.MIN_SAFE_INTEGER || value > Number.MAX_SAFE_INTEGER) return { success: false, message: `${value} is out of bounds` }
+		return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (!Number.isInteger(value)) return { success: false, message: `${value} is not integer.` }
+		if (value < Number.MIN_SAFE_INTEGER || value > Number.MAX_SAFE_INTEGER) return { success: false, message: `${value} is out of bounds` }
+		return { success: true, value: Number(value) }
+	},
+}
+
+export const NumberAsBigInt = funtypes.Number.withParser(numberAsBigIntParser)
+export type NumberAsBigInt = funtypes.Static<typeof NumberAsBigInt>
+
+export type Eip712Number = funtypes.Static<typeof Eip712Number>
+export const Eip712Number = funtypes.Union(EthereumQuantity, NonHexBigInt, NumberAsBigInt)

@@ -15,6 +15,11 @@ import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
+import { useComputed, useSignal } from '@preact/signals'
+import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
+import { assertNever } from '../../utils/typescript.js'
+import { bigintSecondsToDate } from '../../utils/bigint.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -63,7 +68,7 @@ function FirstCardHeader(param: FirstCardParams) {
 					</button>
 				</div>
 			</div>
-			<div>
+			<div style = 'display: flex; justify-content: right'>
 				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
 			</div>
 		</header>
@@ -89,6 +94,36 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 }
 
 function FirstCard(param: FirstCardParams) {
+	const timeSelectorMode = useSignal<TimePickerMode>('For')
+	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
+	const timeSelectorDeltaValue = useSignal<bigint>(12n)
+	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+
+	const timeSelectorOnChange = () => {
+		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
+		if (blockTimeManipulation.type === 'No Delay') return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION } })
+		return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
+	}
+
+	useEffect(() => {
+		const value = param.preSimulationBlockTimeManipulation.value
+		switch(value?.type) {
+			case 'AddToTimestamp': {
+				timeSelectorMode.value = 'For'
+				timeSelectorDeltaValue.value = value.deltaToAdd
+				timeSelectorDeltaUnit.value = value.deltaUnit
+				break
+			}
+			case 'SetTimetamp': {
+				timeSelectorMode.value = 'Until'
+				timeSelectorAbsoluteTime.value = bigintSecondsToDate(value.timeToSet)
+				break
+			}
+			case undefined: break
+			default: assertNever(value)
+		}
+	}, [param.preSimulationBlockTimeManipulation])
+
 	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode === false) {
 		return <>
 			<section class = 'card' style = 'margin: 10px;'>
@@ -131,11 +166,20 @@ function FirstCard(param: FirstCardParams) {
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
-				</> : <div style = 'display: flex; justify-content: space-between; padding-top: 10px'>
-					<label class = 'form-control'>
+				</> : <div style = 'justify-content: space-between; padding-top: 10px'>
+					<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
-						<p class = 'paragraph checkbox-text'>Make me rich</p>
+						<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Make me rich</p>
 					</label>
+					<TimePicker
+						startText = 'Simulate delay before first transaction'
+						mode = { timeSelectorMode }
+						absoluteTime = { timeSelectorAbsoluteTime }
+						deltaValue = { timeSelectorDeltaValue }
+						deltaUnit = { timeSelectorDeltaUnit }
+						onChangedCallBack = { timeSelectorOnChange }
+						removeNoDelayOption = { true }
+					/>
 				</div> }
 			</div>
 		</section>
@@ -150,9 +194,19 @@ function FirstCard(param: FirstCardParams) {
 	</>
 }
 
+export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
+	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
+		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
+		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
+}
+
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
+	const isEmpty = useComputed(() => {
+		if (param.simulationAndVisualisationResults === undefined) return true
+		return isEmptySimulation(param.simulationAndVisualisationResults)
+	})
 	return <div>
 		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 			<div class = 'log-cell' style = 'justify-content: left;'>
@@ -167,7 +221,7 @@ function SimulationResults(param: SimulationStateParam) {
 				</button>
 			</div>
 		</div>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ?
+		{ isEmpty.value ?
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		: <>
 			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
@@ -277,6 +331,7 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		<FirstCard
+			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { activeAddresses }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }

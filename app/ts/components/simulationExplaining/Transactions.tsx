@@ -1,4 +1,4 @@
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { BlockTimeManipulationWithNoDelay, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -13,8 +13,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
-import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
-import { bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
+import { bigintSecondsToDate, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -25,6 +24,11 @@ import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponents/ens.js'
 import { insertBetweenElements } from '../subcomponents/misc.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
+import { useSignal } from '@preact/signals'
+import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { useEffect } from 'preact/hooks'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -169,6 +173,83 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	)
 }
 
+type TransactionOrMessageWithBlockTimeManipulatorParams = {
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	simTx: SimulatedAndVisualizedTransaction | VisualizedPersonalSignRequest
+	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+	activeAddress: bigint
+	addressMetaData: readonly AddressBookEntry[]
+	blockTimeManipulation: BlockTimeManipulationWithNoDelay
+}
+
+const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
+	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
+	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
+	const timeSelectorDeltaValue = useSignal<bigint>(12n)
+	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+
+	useEffect(() => {
+		switch(blockTimeManipulation.type) {
+			case 'No Delay': {
+				timeSelectorMode.value = 'No Delay'
+				break
+			}
+			case 'AddToTimestamp': {
+				timeSelectorMode.value = 'For'
+				timeSelectorDeltaValue.value = blockTimeManipulation.deltaToAdd
+				timeSelectorDeltaUnit.value = blockTimeManipulation.deltaUnit
+				break
+			}
+			case 'SetTimetamp': {
+				timeSelectorMode.value = 'Until'
+				timeSelectorAbsoluteTime.value = bigintSecondsToDate(blockTimeManipulation.timeToSet)
+				break
+			}
+			default: assertNever(blockTimeManipulation)
+		}
+	}, [])
+
+	const timeSelectorOnChange = (transactionOrMessage: SimulatedAndVisualizedTransaction | VisualizedPersonalSignRequest) => {
+		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
+		if (blockTimeManipulation === undefined) return
+		const transactionOrMessageIdentifier = 'activeAddress' in transactionOrMessage ?
+			{ type: 'Message', messageIdentifier: transactionOrMessage.messageIdentifier } as const:
+			{ type: 'Transaction', transactionIdentifier: transactionOrMessage.transactionIdentifier } as const
+		return sendPopupMessageToBackgroundPage({ method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier, blockTimeManipulation } })
+	}
+	return <>
+		{ 'activeAddress' in simTx ? <SignatureCard
+			visualizedPersonalSignRequest = { simTx }
+			renameAddressCallBack = { renameAddressCallBack }
+			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+			numberOfUnderTransactions = { 0 }
+		/> : <Transaction
+			simTx = { simTx }
+			simulationAndVisualisationResults = { simulationAndVisualisationResults }
+			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+			activeAddress = { activeAddress }
+			renameAddressCallBack = { renameAddressCallBack }
+			addressMetaData = { addressMetaData }
+			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+		/>
+		}
+		<div style = 'display: flex; justify-content: center; padding-top: 10px;'>
+			<TimePicker
+				startText = { 'Simulate delay' }
+				mode = { timeSelectorMode }
+				absoluteTime = { timeSelectorAbsoluteTime }
+				deltaValue = { timeSelectorDeltaValue }
+				deltaUnit = { timeSelectorDeltaUnit }
+				onChangedCallBack = { () => { timeSelectorOnChange(simTx) } }
+				removeNoDelayOption = { false }
+			/>
+		</div>
+	</>
+}
+
 type TransactionsAndSignedMessagesParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
@@ -180,34 +261,29 @@ type TransactionsAndSignedMessagesParams = {
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => param.removedTransactionOrSignedMessages.find((x) => x.type === 'Transaction' && x.transactionIdentifier === tx.transactionIdentifier) === undefined)
-	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !param.removedTransactionOrSignedMessages.map((x) => x.type === 'SignedMessage' ? x.messageIdentifier : undefined).includes(message.messageIdentifier))
-	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
-	return <ul>
-		{ transactionsAndMessages.map((simTx, _index) => (
-			<li>
-				{ 'activeAddress' in simTx ? <>
-					<SignatureCard
-						visualizedPersonalSignRequest = { simTx }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-						numberOfUnderTransactions = { 0 }
-					/>
-				</> : <>
-					<Transaction
-						simTx = { simTx }
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.activeAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { param.addressMetaData }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					/>
-				</> }
-			</li>
-		)) }
-	</ul>
+	const visualizedBlocks = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
+	const transactionsAndMessagesInBlock = visualizedBlocks.map((block) => ({
+		operations: [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests].sort((n1, n2) => n1.created.getTime() - n2.created.getTime()),
+		blockTimeManipulation: block.blockTimeManipulation,
+	}))
+
+	return <ul> {
+		transactionsAndMessagesInBlock.flatMap((block, blockIndex) => {
+			const nextBlockManipulator = transactionsAndMessagesInBlock[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
+			return block.operations.map((simTx, transactionIndex) => <li>
+				<TransactionOrMessageWithBlockTimeManipulator
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					simTx = { simTx }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+					activeAddress = { param.activeAddress }
+					addressMetaData = { param.addressMetaData }
+					blockTimeManipulation = { transactionIndex === block.operations.length - 1 ? nextBlockManipulator : { type: 'No Delay' } as const }
+				/>
+			</li> )
+		})
+	} </ul>
 }
 
 type TokenLogEventParams = {
@@ -366,7 +442,6 @@ export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
 	</span>
 }
-
 
 type ParsedInputDataParams = {
 	inputData: EnrichedEthereumInputData

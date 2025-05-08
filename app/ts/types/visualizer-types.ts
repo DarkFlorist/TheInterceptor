@@ -10,9 +10,9 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
-import { EthSimulateV1CallResult } from './ethSimulate-types.js'
+import { EthSimulateV1CallResult, StateOverrides } from './ethSimulate-types.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
-import { EnrichedEthereumEvent, EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -34,6 +34,37 @@ export const TokenPriceEstimate = funtypes.ReadonlyObject({
 	}),
 	price: EthereumQuantity
 })
+
+export type BlockTimeManipulationDeltaUnit = funtypes.Static<typeof BlockTimeManipulationDeltaUnit>
+export const BlockTimeManipulationDeltaUnit = funtypes.Union(
+	funtypes.Literal('Seconds'),
+	funtypes.Literal('Minutes'),
+	funtypes.Literal('Hours'),
+	funtypes.Literal('Days'),
+	funtypes.Literal('Weeks'),
+	funtypes.Literal('Months'),
+	funtypes.Literal('Years')
+)
+export type BlockTimeManipulation = funtypes.Static<typeof BlockTimeManipulation>
+export const BlockTimeManipulation = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('AddToTimestamp'),
+		deltaToAdd: EthereumQuantity,
+		deltaUnit: BlockTimeManipulationDeltaUnit,
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('SetTimetamp'),
+		timeToSet: EthereumQuantity,
+	}),
+)
+
+export type BlockTimeManipulationWithNoDelay = funtypes.Static<typeof BlockTimeManipulationWithNoDelay>
+export const BlockTimeManipulationWithNoDelay = funtypes.Union(
+	BlockTimeManipulation,
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('No Delay'),
+	}),
+)
 
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
@@ -132,16 +163,49 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	messageIdentifier: EthereumQuantity,
 })
 
-export type SimulationState = funtypes.Static<typeof SimulationState>
-export const SimulationState = funtypes.ReadonlyObject({
-	addressToMakeRich: funtypes.Union(funtypes.Undefined, EthereumAddress),
+export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
+export const SimulationStateInputBlock = funtypes.ReadonlyObject({
+	stateOverrides: StateOverrides,
+	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+	blockTimeManipulation: BlockTimeManipulation,
+})
+
+export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
+export const SimulationStateInput = funtypes.ReadonlyObject({
+	blocks: funtypes.ReadonlyArray(SimulationStateInputBlock)
+})
+
+export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
+export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
+	stateOverrides: StateOverrides,
+	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction })),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+	blockTimeManipulation: BlockTimeManipulation,
+})
+
+export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
+export const SimulationStateInputMinimalData = funtypes.ReadonlyObject({
+	blocks: funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
+})
+
+export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
+export const SimulationStateBlock = funtypes.ReadonlyObject({
+	stateOverrides: StateOverrides,
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+	blockTimestamp: EthereumTimestamp,
+	blockTimeManipulation: BlockTimeManipulation,
+})
+
+export type SimulationState = funtypes.Static<typeof SimulationState>
+export const SimulationState = funtypes.ReadonlyObject({
+	simulatedBlocks: funtypes.ReadonlyArray(SimulationStateBlock),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
 	baseFeePerGas: EthereumQuantity,
-	rpcNetwork: RpcNetwork,
 	simulationConductedTimestamp: EthereumTimestamp,
+	rpcNetwork: RpcNetwork,
 })
 
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
@@ -184,8 +248,7 @@ export type SimulationAndVisualisationResults = {
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
 	addressBookEntries: readonly AddressBookEntry[],
-	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
-	visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[],
+	visualizedSimulationState: VisualizedSimulationState,
 	rpcNetwork: RpcNetwork,
 	tokenPriceEstimates: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
@@ -231,14 +294,17 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 	tokenIdName: funtypes.String
 })
 
-type EventsForEachTransaction = funtypes.Static<typeof EventsForEachTransaction>
-const EventsForEachTransaction = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
+export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulationState>
+export const VisualizedSimulationState = funtypes.ReadonlyObject({
+	visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+		blockTimeManipulation: BlockTimeManipulation
+	}))
+})
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
-	eventsForEachTransaction: EventsForEachTransaction,
-	parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
@@ -248,8 +314,8 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	simulationUpdatingState: SimulationUpdatingState,
 	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
-	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+	visualizedSimulationState: VisualizedSimulationState,
+	makeMeRich: funtypes.Boolean,
 })
 
 type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
@@ -274,16 +340,12 @@ export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.U
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
-	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-	parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(Erc20TokenEntry, funtypes.Undefined),
 	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 	simulationState: funtypes.Union(SimulationState),
-	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+	visualizedSimulationState: VisualizedSimulationState,
 })
 
 type ModifyAddressWindowStateError = funtypes.Static<typeof ModifyAddressWindowStateError>
@@ -303,8 +365,22 @@ export const EditEnsNamedHashWindowState = funtypes.ReadonlyObject({
 	name: funtypes.Union(funtypes.Undefined, funtypes.String)
 })
 
-export type TransactionStack = funtypes.Static<typeof TransactionStack>
-export const TransactionStack = funtypes.ReadonlyObject({
-	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
-	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction)
+export type InterceptorStackOperation = funtypes.Static<typeof InterceptorStackOperation>
+export const InterceptorStackOperation = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('Transaction'),
+		preSimulationTransaction: PreSimulationTransaction
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('Message'),
+		signedMessageTransaction: SignedMessageTransaction
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('TimeManipulation'),
+		blockTimeManipulation: BlockTimeManipulation
+}))
+
+export type InterceptorTransactionStack = funtypes.Static<typeof InterceptorTransactionStack>
+export const InterceptorTransactionStack = funtypes.ReadonlyObject({
+	operations: funtypes.ReadonlyArray(InterceptorStackOperation),
 })

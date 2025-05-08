@@ -1,6 +1,6 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedStackOld } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedTransactionCount, getAddressToMakeRich } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
@@ -14,6 +14,7 @@ import { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { handleUnexpectedError } from '../utils/errors.js'
+import { getSimulatedStackV1, getSimulatedStackV2 } from '../simulation/SimulationStackExtraction.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHash(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
@@ -152,9 +153,12 @@ export async function getTransactionCount(ethereumClientService: EthereumClientS
 export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {
 	const version = request.params[0]
 	switch (version) {
-		case '2.0.0': return { type: 'result' as const, method: request.method, result: { version, payload: getSimulatedStack(simulationState) } as const }
+		case '2.0.0': return { type: 'result', method: request.method, result: { version, payload: getSimulatedStackV2(simulationState) } } as const
 		case '1.0.0':
-		case '1.0.1': return { type: 'result' as const, method: request.method, result: { version, payload: getSimulatedStackOld(simulationState, version) } as const }
+		case '1.0.1': {
+			const addressToMakeRich = await getAddressToMakeRich()
+			return { type: 'result', method: request.method, result: { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } } as const
+		}
 		default: assertNever(version)
 	}
 }

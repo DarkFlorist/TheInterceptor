@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState } from '../types/visualizer-types.js'
+import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
@@ -18,7 +18,6 @@ import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
@@ -89,6 +88,7 @@ export function App() {
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 	const [unexpectedError, setUnexpectedError] = useState<UnexpectedErrorOccured | undefined>(undefined)
+	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -126,8 +126,7 @@ export function App() {
 			simState: SimulationState | undefined,
 			addressBookEntries: AddressBookEntries,
 			tokenPriceEstimates: readonly TokenPriceEstimate[],
-			simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
-			personalSignRequests: readonly VisualizedPersonalSignRequest[],
+			visualizedSimulationState: VisualizedSimulationState,
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
 		) => {
@@ -137,8 +136,7 @@ export function App() {
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
-				simulatedAndVisualizedTransactions,
-				visualizedPersonalSignRequests: personalSignRequests,
+				visualizedSimulationState,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPriceEstimates,
 				activeAddress: activeSimulationAddress,
@@ -163,8 +161,7 @@ export function App() {
 						data.visualizedSimulatorState.simulationState,
 						data.visualizedSimulatorState.addressBookEntries,
 						data.visualizedSimulatorState.tokenPriceEstimates,
-						data.visualizedSimulatorState.simulatedAndVisualizedTransactions,
-						data.visualizedSimulatorState.visualizedPersonalSignRequests,
+						data.visualizedSimulatorState.visualizedSimulationState,
 						data.visualizedSimulatorState.activeAddress,
 						data.visualizedSimulatorState.namedTokenIds,
 					)
@@ -176,6 +173,9 @@ export function App() {
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				rpcConnectionStatus.value = data.rpcConnectionStatus
+				if (!isSettingsLoaded) {
+					preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
+				}
 				return true
 			})
 		}
@@ -390,6 +390,7 @@ export function App() {
 							simulationUpdatingState = { simulationUpdatingState }
 							simulationResultState = { simulationResultState }
 							interceptorDisabled = { interceptorDisabled }
+							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
 						/>
 
 						<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>

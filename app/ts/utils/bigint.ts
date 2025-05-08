@@ -91,7 +91,11 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 
 // biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
-	return JSON.stringify(value, (_key, value) => { return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value }, space)
+	return JSON.stringify(value, (_key, value) => {
+		if (typeof value === 'bigint') return `0x${ value.toString(16) }`
+		if (value instanceof Uint8Array) return '0x' + Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('')
+		return value
+	}, space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {
@@ -139,3 +143,11 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	const interpolation = (targetIndex - lowerWeight) / (upperWeight - lowerWeight)
 	return lowerValue.dataPoint + (upperValue.dataPoint - lowerValue.dataPoint) * interpolation
 }
+
+export const bigintSecondsToDate = (seconds: bigint) => {
+	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${ seconds }`)
+	if (seconds < 0) throw new Error(`Got negative seconds: ${ seconds }`)
+	return new Date(Number(seconds) * 1000)
+}
+
+export const dateToBigintSeconds = (date: Date) => BigInt(date.getTime()) / 1000n

@@ -10,7 +10,8 @@ import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/simulator.js'
-import { isValidMessage } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getMessageHashForPersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -27,6 +28,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
 	const originalParams = signedMessageTransaction
+	const isValid = isValidMessage(signedMessageTransaction.originalRequestParameters)
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineReasons: readonly string[] }> => {
 		const quarantineReasons: string[] = []
@@ -46,7 +48,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			quarantineReasons: [],
 			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			rawMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0]),
-			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, originalParams.originalRequestParameters.params[1])
+			isValidMessage: isValid.valid,
+			messageHash: undefined,
 		}
 	}
 
@@ -62,36 +65,50 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			quarantineReasons: [],
 			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			rawMessage: originalParams.originalRequestParameters.params[0],
-			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, originalParams.originalRequestParameters.params[1])
+			isValidMessage: isValid.valid,
+			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
 	const account = await identifyAddress(ethereumClientService, requestAbortController, namedParams.account)
-
 	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
-	if (maybeParsed.success === false) {
-		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
-		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
-		try {
-			const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
-			const chainid = message.domain.chainId?.type === 'unsignedInteger' ? message.domain.chainId.value : undefined
-			return {
-				method: originalParams.originalRequestParameters.method,
-				...basicParams,
-				rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
-				type: 'EIP712' as const,
-				message,
-				account,
-				...chainid === undefined ? { quarantine: false, quarantineReasons: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
-				stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
-				rawMessage: stringifyJSONWithBigInts(namedParams.param),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
-			}
-		} catch(e: unknown) {
-			console.error(e)
-			throw new Error('Not a valid EIP712 Message')
+	if (isValid.valid === false) {
+		return {
+			method: originalParams.originalRequestParameters.method,
+			...basicParams,
+			rpcNetwork,
+			type: 'NotParsed' as const,
+			message: stringifyJSONWithBigInts(namedParams.param, 4),
+			account,
+			quarantine: true, quarantineReasons: [isValid.reason],
+			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
+			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			isValidMessage: isValid.valid,
+			messageHash: undefined,
 		}
 	}
+
+	if (maybeParsed.success === false) {
+		const hashes = getMessageAndDomainHash(originalParams.originalRequestParameters)
+		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
+		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
+		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
+		const chainid = message.domain.chainId?.type === 'unsignedInteger' ? message.domain.chainId.value : undefined
+		return {
+			method: originalParams.originalRequestParameters.method,
+			...basicParams,
+			rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
+			type: 'EIP712' as const,
+			message,
+			account,
+			...chainid === undefined ? { quarantine: false, quarantineReasons: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
+			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
+			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			isValidMessage: isValid.valid,
+			...hashes,
+		}
+	}
+	const hashes = getMessageAndDomainHash(originalParams.originalRequestParameters)
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
@@ -112,7 +129,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
 				rawMessage: stringifyJSONWithBigInts(parsed, 4),
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+				isValidMessage: isValid.valid,
+				...hashes,
 			}
 		}
 		case 'PermitSingle': {
@@ -132,7 +150,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 				rawMessage: stringifyJSONWithBigInts(parsed),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, parsed.message.spender)
+				isValidMessage: isValid.valid,
+				...hashes,
 			}
 		}
 		case 'SafeTx': {
@@ -158,7 +177,9 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				rawMessage: stringifyJSONWithBigInts(parsed),
 				parsedMessageData,
 				parsedMessageDataAddressBookEntries: await Promise.all(addressesInEventsAndInputData.map((address) => identifyAddress(ethereumClientService, requestAbortController, address))),
-				isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+				isValidMessage: isValid.valid,
+				...hashes,
+				safeTxHash: getSafeTxHash(parsed),
 			}
 		}
 		case 'OrderComponents': return {
@@ -171,7 +192,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 			rawMessage: stringifyJSONWithBigInts(parsed),
-			isValidMessage: isValidMessage(signedMessageTransaction.originalRequestParameters, account.address)
+			isValidMessage: isValid.valid,
+			...hashes,
 		}
 		default: assertNever(parsed)
 	}

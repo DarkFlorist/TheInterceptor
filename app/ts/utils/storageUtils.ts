@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, TransactionStack } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -45,7 +45,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	makeMeRich: funtypes.Boolean,
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
-	transactionStack: funtypes.Union(funtypes.Undefined, TransactionStack),
+	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
@@ -63,6 +63,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	latestUnexpectedError: UnexpectedErrorOccured,
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
+	preSimulationBlockTimeManipulation: BlockTimeManipulation
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -77,7 +78,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeMeRich'),
 	funtypes.Literal('ChainChangeConfirmationPromise'),
-	funtypes.Literal('transactionStack'),
+	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('simulationResults'),
 	funtypes.Literal('signerName'),
 	funtypes.Literal('currentTabId'),
@@ -94,6 +95,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('latestUnexpectedError'),
 	funtypes.Literal('ensNameHashes'),
 	funtypes.Literal('ensLabelHashes'),
+	funtypes.Literal('preSimulationBlockTimeManipulation')
 )
 
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2>

@@ -1,6 +1,7 @@
 import { AbiCoder } from 'ethers'
 import { Result } from 'ethers'
 import { ErrorFragment, Interface, ErrorDescription } from 'ethers'
+import { printError } from './errors.js'
 
 const ERROR_STRING_PREFIX = '0x08c379a0' // Error(string)
 const PANIC_CODE_PREFIX = '0x4e487b71' // Panic(uint256)
@@ -38,11 +39,11 @@ type ErrorResultFormatterParam = {
 	selector?: string
 	name?: string
 }
-	
+
 type ErrorResultFormatter = (params: ErrorResultFormatterParam) => DecodedError
-	
+
 const formatReason = (reason: string, defaultReason: string): string => reason.trim() !== '' ? reason : defaultReason
-	
+
 const baseErrorResult: (params: ErrorResultFormatterParam & { type: ErrorType } ) => DecodedError = ({ type, data, reason, fragment, args, selector, name }) => {
 	const res: DecodedError = {
 		type,
@@ -148,9 +149,14 @@ const handlers = [
 const errorHandlers: ErrorHandler[] = handlers.map((handler) => ({ predicate: handler.predicate, handle: handler.handle }))
 
 export const decodeEthereumError = (errorInterfaces: readonly Interface[], error: EthereumError): DecodedError => {
-	const errorInterface = new Interface(errorInterfaces.flatMap((iface) => iface.fragments.filter((fragment) => ErrorFragment.isFragment(fragment))))
-	for (const { predicate, handle } of errorHandlers) {
-		if (predicate(error)) return handle(errorInterface, error)
+	try {
+		const errorInterface = new Interface(errorInterfaces.flatMap((iface) => iface.fragments.filter((fragment) => ErrorFragment.isFragment(fragment))))
+		for (const { predicate, handle } of errorHandlers) {
+			if (predicate(error)) return handle(errorInterface, error)
+		}
+		return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
+	} catch (decodingError: unknown) {
+		printError(decodingError)
+		return unknownErrorResult({ data: error.data, reason: `Failed to decode error: ${ error.message }`, name: 'unknown' })
 	}
-	return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
 }

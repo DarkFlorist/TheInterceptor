@@ -1,8 +1,8 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
-import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation, BlockTimeManipulationWithNoDelay } from './visualizer-types.js'
+import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
@@ -12,8 +12,7 @@ import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
-import { GetSimulationStackOldReply, GetSimulationStackReply } from './simulationStackTypes.js'
-import { EnrichedEthereumEvent, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -96,8 +95,8 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: funtypes.Union(
-		funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1')), payload: GetSimulationStackOldReply }),
-		funtypes.ReadonlyObject({ version: funtypes.Literal('2.0.0'), payload: GetSimulationStackReply })
+		funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1')), payload: GetSimulationStackReplyV1 }),
+		funtypes.ReadonlyObject({ version: funtypes.Literal('2.0.0'), payload: GetSimulationStackReplyV2 })
 	) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getLogs'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendRawTransaction'), result: EthereumBytes32 }),
@@ -302,7 +301,7 @@ export const EnableSimulationMode = funtypes.ReadonlyObject({
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: EthereumQuantity }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), messageIdentifier: EthereumQuantity })
+	funtypes.ReadonlyObject({ type: funtypes.Literal('Message'), messageIdentifier: EthereumQuantity })
 )
 
 export type RemoveTransaction = funtypes.Static<typeof RemoveTransaction>
@@ -561,6 +560,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
+		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	})
 })
 
@@ -685,12 +685,8 @@ export const SimulateExecutionReplyData = funtypes.Union(
 		result: funtypes.ReadonlyObject({
 			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+			visualizedSimulationState: VisualizedSimulationState,
 			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
-			eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-			parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-			protectors: funtypes.ReadonlyArray(ProtectorResults),
 			simulationState: funtypes.Union(SimulationState),
 		})
 	})
@@ -842,6 +838,23 @@ export const ForceSetGasLimitForTransaction = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type ChangePreSimulationBlockTimeManipulation = funtypes.Static<typeof ChangePreSimulationBlockTimeManipulation>
+export const ChangePreSimulationBlockTimeManipulation = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_changePreSimulationBlockTimeManipulation'),
+	data: funtypes.ReadonlyObject({
+		blockTimeManipulation: BlockTimeManipulation
+	})
+}).asReadonly()
+
+export type SetTransactionOrMessageBlockTimeManipulator = funtypes.Static<typeof SetTransactionOrMessageBlockTimeManipulator>
+export const SetTransactionOrMessageBlockTimeManipulator = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setTransactionOrMessageBlockTimeManipulator'),
+	data: funtypes.ReadonlyObject({
+		transactionOrMessageIdentifier: TransactionOrMessageIdentifier,
+		blockTimeManipulation: BlockTimeManipulationWithNoDelay
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -892,6 +905,8 @@ export const PopupMessage = funtypes.Union(
 	RemoveWebsiteAddressAccess,
 	RemoveWebsiteAccess,
 	ForceSetGasLimitForTransaction,
+	ChangePreSimulationBlockTimeManipulation,
+	SetTransactionOrMessageBlockTimeManipulator,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>

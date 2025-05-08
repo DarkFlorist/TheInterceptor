@@ -371,7 +371,6 @@ a:hover {
 }
 
 code {
-  background-color: whitesmoke;
   color: #da1039;
   font-size: 0.875em;
   font-weight: normal;
@@ -4745,7 +4744,6 @@ fieldset[disabled] .select select:hover {
 
 .dropdown-menu {
   display: none;
-  left: 0;
   min-width: 12rem;
   padding-top: 4px;
   position: absolute;
@@ -4772,7 +4770,6 @@ fieldset[disabled] .select select:hover {
 
 a.dropdown-item,
 button.dropdown-item {
-  padding-right: 3rem;
   text-align: inherit;
   white-space: nowrap;
   width: 100%;
