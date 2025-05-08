@@ -1,18 +1,18 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumData, EthereumQuantity } from './wire-types.js'
+import { EthereumAddress, EthereumData, EthereumQuantity, SignedEthereumQuantity } from './wire-types.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 
 export type PureGroupedSolidityType = funtypes.Static<typeof PureGroupedSolidityType>
 export const PureGroupedSolidityType = funtypes.Union(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger'), value: EthereumQuantity }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger'), value: SignedEthereumQuantity }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('unsignedInteger'), value: EthereumQuantity }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes'), value: EthereumData }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes'), value: EthereumData }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bool'), value: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('string'), value: funtypes.String }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('address'), value: EthereumAddress }),
-	
-	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
+
+	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger[]'), value: funtypes.ReadonlyArray(SignedEthereumQuantity) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('unsignedInteger[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
@@ -23,15 +23,15 @@ export const PureGroupedSolidityType = funtypes.Union(
 
 export type EnrichedGroupedSolidityType = funtypes.Static<typeof EnrichedGroupedSolidityType>
 export const EnrichedGroupedSolidityType = funtypes.Union(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger'), value: EthereumQuantity }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger'), value: SignedEthereumQuantity }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('unsignedInteger'), value: EthereumQuantity }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes'), value: EthereumData }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes'), value: EthereumData }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bool'), value: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('string'), value: funtypes.String }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('address'), value: AddressBookEntry }),
-	
-	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
+
+	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger[]'), value: funtypes.ReadonlyArray(SignedEthereumQuantity) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('unsignedInteger[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
