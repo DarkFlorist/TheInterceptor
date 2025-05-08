@@ -31,6 +31,7 @@ import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-d
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -222,33 +223,39 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 		}
 		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults.statusCode === 'failed') return
-			const visualizedSimulationState = await visualizeSimulatorState(first.simulationResults.data.simulationState, ethereumClientService, tokenPriceService, requestAbortController)
-			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-				data: {
-					pendingTransactionAndSignableMessages: [
-						modifyObject(first,
-							{
-								simulationResults: {
-									statusCode: 'success',
-									data: modifyObject(first.simulationResults.data, { ...visualizedSimulationState })
-								}
-							})
-						, ...promises.slice(1)],
-					currentBlockNumber: await currentBlockNumberPromise,
+			try {
+				const visualizedSimulationState = await visualizeSimulatorState(first.simulationResults.data.simulationState, ethereumClientService, tokenPriceService, requestAbortController)
+				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+					data: {
+						pendingTransactionAndSignableMessages: [
+							modifyObject(first,
+								{
+									simulationResults: {
+										statusCode: 'success',
+										data: modifyObject(first.simulationResults.data, { ...visualizedSimulationState })
+									}
+								})
+							, ...promises.slice(1)],
+						currentBlockNumber: await currentBlockNumberPromise,
+					}
 				}
-			}
-			const message: UpdateConfirmTransactionDialog = {
-				method: 'popup_update_confirm_transaction_dialog' as const,
-				data: {
-					visualizedSimulatorState: await visualizedSimulatorStatePromise,
-					currentBlockNumber: await currentBlockNumberPromise,
+				const message: UpdateConfirmTransactionDialog = {
+					method: 'popup_update_confirm_transaction_dialog' as const,
+					data: {
+						visualizedSimulatorState: await visualizedSimulatorStatePromise,
+						currentBlockNumber: await currentBlockNumberPromise,
+					}
 				}
+				return await Promise.all([
+					sendPopupMessageToOpenWindows(messagePendingTransactions),
+					sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+				])
+			} catch(error: unknown) {
+				if (error instanceof Error && isNewBlockAbort(error)) return
+				if (error instanceof Error && isFailedToFetchError(error)) return
+				throw error
 			}
-			return await Promise.all([
-				sendPopupMessageToOpenWindows(messagePendingTransactions),
-				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
-			])
 		}
 		default: assertNever(first)
 	}

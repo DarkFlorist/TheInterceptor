@@ -203,16 +203,7 @@ export class EthereumClientService {
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		] } as const
-		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
-		/*
-		console.log('ethSimulateV1')
-		console.log(call)
-		console.log(unvalidatedResult)
-		console.log(stringifyJSONWithBigInts(EthSimulateV1Params.serialize(call)))
-		console.log(stringifyJSONWithBigInts(unvalidatedResult))
-		console.log('end')
-		*/
-		return EthSimulateV1Result.parse(unvalidatedResult)
+		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(call))
 	}
 
 	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
@@ -222,7 +213,6 @@ export class EthereumClientService {
 		const blockOverrides: BlockOverrides[] = []
 		let previousBlockOverride = {
 			time: parentBlock.timestamp,
-			gasLimit: parentBlock.gasLimit,
 			feeRecipient: parentBlock.miner,
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		}

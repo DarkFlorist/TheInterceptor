@@ -450,16 +450,17 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		input: input,
 		accessList: []
 	} as const
-
-	const simulatedTransactions = await simulateTransactionsOnTopOfSimulationState(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
-	const lastResult = simulatedTransactions.at(-1)
-	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
-	if (lastResult.status === 'failure') return { statusCode: 'failure' } as const
-	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnData)
-	return {
-		statusCode: lastResult.status,
-		getCodeReturn: EthereumData.parse(parsed.toString())
-	} as const
+	try {
+		const simulatedTransactions = await simulateTransactionsOnTopOfSimulationState(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
+		const lastResult = simulatedTransactions.at(-1)
+		if (lastResult === undefined) throw new Error('last result did not exist in multicall')
+		if (lastResult.status === 'failure') return { statusCode: 'failure' } as const
+		const parsed = atInterface.decodeFunctionResult('at', lastResult.returnData)
+		return { statusCode: lastResult.status, getCodeReturn: EthereumData.parse(parsed.toString()) } as const
+	} catch(error: unknown) {
+		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
+		throw error
+	}
 }
 // ported from: https://github.com/ethereum/go-ethereum/blob/509a64ffb9405942396276ae111d06f9bded9221/consensus/misc/eip1559/eip1559.go#L55
 const getNextBaseFeePerGas = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
