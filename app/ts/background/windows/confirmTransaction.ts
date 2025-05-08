@@ -338,7 +338,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		try {
 			const transactionToSimulate = await transactionToSimulatePromise
 			const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)
-			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
+			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
 
 			const pendingTransaction = {
 				type: 'Transaction' as const,
@@ -372,7 +372,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			return { success: true }
 		} catch(e: unknown) {
 			printError(e)
-			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to parse the transaction')
+			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 		}
 	})
 	if (!('success' in outcome)) return formRejectMessage(outcome.error.code, outcome.error.message)

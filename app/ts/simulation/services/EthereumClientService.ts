@@ -22,7 +22,7 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
-	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
+	private cacheRefreshTimer: NodeJS.Timeout | undefined = undefined
 	private retrievingBlock = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
