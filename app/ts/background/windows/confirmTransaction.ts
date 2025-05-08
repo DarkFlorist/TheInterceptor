@@ -313,7 +313,7 @@ export async function openConfirmTransactionDialogForMessage(
 		})
 	} catch(e) {
 		await handleUnexpectedError(e)
-		return formRejectMessage('Failed to process message signing request. See Interceptor for error message')
+		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'Failed to process message signing request. See Interceptor for error message')
 	}
 	const pendingTransactionData = await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier)
 	if (pendingTransactionData === undefined) return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
