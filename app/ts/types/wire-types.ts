@@ -13,6 +13,17 @@ const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	},
 }
 
+const SignedBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^-?0x[a-fA-F0-9]{1,64}$/.test(value)) return { success: false, message: `${ value } is not a hex string encoded number.` }
+		return { success: true, value: BigInt(value.startsWith('-') ? -value.slice(1) : value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
+		return { success: true, value: value < 0 ? `-0x${ (-value).toString(16) }` : `0x${ value.toString(16) }` }
+	}
+}
+
 const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
@@ -138,6 +149,9 @@ export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
 export const EthereumQuantity = funtypes.String.withParser(BigIntParser)
 export type EthereumQuantity = funtypes.Static<typeof EthereumQuantity>
+
+export const SignedEthereumQuantity = funtypes.String.withParser(SignedBigIntParser)
+export type SignedEthereumQuantity = funtypes.Static<typeof SignedEthereumQuantity>
 
 export const EthereumQuantitySmall = funtypes.String.withParser(SmallIntParser)
 export type EthereumQuantitySmall = funtypes.Static<typeof EthereumQuantitySmall>
