@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import { UnionToIntersection } from '../utils/typescript.js'
+import { isHexEncodedNumber } from '../utils/bigint.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -525,10 +526,20 @@ export const EthereumBlockHeaderWithTransactionHashes = funtypes.Union(funtypes.
 	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumBytes32) })
 ))
 
+type EthereumUnknownTransactionType = funtypes.Static<typeof EthereumUnknownTransactionType>
+const EthereumUnknownTransactionType = funtypes.ReadonlyObject({
+	type: funtypes.String.withConstraint((type) => {
+		if (!isHexEncodedNumber(type)) return false
+		const alreadyHandled = ['0x0', '0x1', '0x2', '0x3', '0x4', '0x7e']
+		if (alreadyHandled.includes(type)) return false
+		return true
+	})
+})
+
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = funtypes.Union(funtypes.Null, funtypes.Intersect(
 	EthereumBlockHeaderWithoutTransactions,
-	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumSignedTransaction) })
+	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(funtypes.Union(EthereumSignedTransaction, EthereumUnknownTransactionType)) })
 ))
 
 //
