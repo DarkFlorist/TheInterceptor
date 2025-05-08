@@ -1,7 +1,7 @@
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedTransactionCount, mockSignTransaction, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -98,9 +98,9 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 	if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 	if (!(await updateConfirmTransactionView(simulator.ethereum))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 
-	if (confirmation.data.action === 'noResponse') return reply(formRejectMessage(undefined))
-	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(undefined))
-	if (confirmation.data.action === 'reject') return reply(formRejectMessage(confirmation.data.errorString))
+	if (confirmation.data.action === 'noResponse') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
+	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
+	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') return reply({ type: 'result', result: confirmation.data.signerReply })
 		return reply({ type: 'forwardToSigner' })
@@ -148,13 +148,10 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 	await clearPendingTransactions()
 }
 
-const formRejectMessage = (errorString: undefined | string) => {
+const formRejectMessage = (code: number, errorString: string) => {
 	return {
 		type: 'result' as const,
-		error: {
-			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-			message: errorString === undefined ? 'Interceptor Tx Signature: User denied transaction signature.' : `Interceptor Tx Signature: User denied reverting transaction: ${ errorString }.`
-		}
+		error: { code, message: errorString }
 	}
 }
 
@@ -316,10 +313,10 @@ export async function openConfirmTransactionDialogForMessage(
 		})
 	} catch(e) {
 		await handleUnexpectedError(e)
-		return formRejectMessage('Failed to process message signing request. See Interceptor for error message')
+		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'Failed to process message signing request. See Interceptor for error message')
 	}
 	const pendingTransactionData = await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier)
-	if (pendingTransactionData === undefined) return formRejectMessage(undefined)
+	if (pendingTransactionData === undefined) return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
 	return { type: 'doNotReply' as const }
 }
 
@@ -337,45 +334,50 @@ export async function openConfirmTransactionDialogForTransaction(
 	const created = new Date()
 	const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(simulator.ethereum, undefined, activeAddress, website, transactionParams, created, transactionIdentifier, simulationMode) : formSendRawTransaction(simulator.ethereum, transactionParams, website, created, transactionIdentifier)
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
-	await pendingConfirmationSemaphore.execute(async () => {
-		const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)
-		if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
+	const outcome = await pendingConfirmationSemaphore.execute(async () => {
+		try {
+			const transactionToSimulate = await transactionToSimulatePromise
+			const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)
+			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
 
-		const pendingTransaction = {
-			type: 'Transaction' as const,
-			popupOrTabId: openedDialog,
-			originalRequestParameters: transactionParams,
-			uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-			simulationMode,
-			activeAddress,
-			created,
-			transactionOrMessageCreationStatus: 'Crafting' as const,
-			transactionIdentifier,
-			website,
-			approvalStatus: { status: 'WaitingForUser' as const }
-		}
-		await appendPendingTransactionOrMessage(pendingTransaction)
-		await updateConfirmTransactionView(simulator.ethereum)
-
-		const transactionToSimulate = await transactionToSimulatePromise
-		const simulationResultsPromise = refreshConfirmTransactionSimulation(simulator, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
-		if (transactionToSimulate.success) {
-			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
+			const pendingTransaction = {
+				type: 'Transaction' as const,
+				popupOrTabId: openedDialog,
+				originalRequestParameters: transactionParams,
+				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+				simulationMode,
+				activeAddress,
+				created,
+				transactionOrMessageCreationStatus: 'Crafting' as const,
+				transactionIdentifier,
+				website,
+				approvalStatus: { status: 'WaitingForUser' as const }
+			}
+			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(simulator.ethereum)
+			const simulationResultsPromise = refreshConfirmTransactionSimulation(simulator, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
+			if (transactionToSimulate.success) {
+				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
+				await updateConfirmTransactionView(simulator.ethereum)
+			}
+			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+				if (transaction.type !== 'Transaction') return transaction
+				const simulationResults = await simulationResultsPromise
+				if (simulationResults === undefined) return transaction
+				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'Simulated' }
+				return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+			})
+			await updateConfirmTransactionView(simulator.ethereum)
+			await tryFocusingTabOrWindow(openedDialog)
+			return { success: true }
+		} catch(e: unknown) {
+			printError(e)
+			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 		}
-		await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-			if (transaction.type !== 'Transaction') return transaction
-			const simulationResults = await simulationResultsPromise
-			if (simulationResults === undefined) return transaction
-			if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'Simulated' }
-			return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'FailedToSimulate' }
-		})
-		await updateConfirmTransactionView(simulator.ethereum)
-		await tryFocusingTabOrWindow(openedDialog)
 	})
-
+	if (!('success' in outcome)) return formRejectMessage(outcome.error.code, outcome.error.message)
 	const pendingTransactionData = await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier)
 
-	if (pendingTransactionData === undefined) return formRejectMessage(undefined)
+	if (pendingTransactionData === undefined) return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
 	return { type: 'doNotReply' as const }
 }

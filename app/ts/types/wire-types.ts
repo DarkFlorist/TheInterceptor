@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import { UnionToIntersection } from '../utils/typescript.js'
+import { isHexEncodedNumber } from '../utils/bigint.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -233,6 +234,30 @@ const EthereumUnsignedTransaction1559 = funtypes.Intersect(
 	}).asReadonly(),
 )
 
+type EthereumUnsignedTransaction7702 = funtypes.Static<typeof EthereumUnsignedTransaction7702>
+const EthereumUnsignedTransaction7702 = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+		from: EthereumAddress,
+		nonce: EthereumQuantity,
+		maxFeePerGas: EthereumQuantity,
+		maxPriorityFeePerGas: EthereumQuantity,
+		gas: EthereumQuantity,
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
+		value: EthereumQuantity,
+		input: EthereumInput,
+		chainId: EthereumQuantity,
+		authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+			chainId: EthereumQuantity,
+			address: EthereumAddress,
+			nonce: EthereumQuantity,
+		}))
+	}).asReadonly(),
+	funtypes.Partial({
+		accessList: EthereumAccessList,
+	}).asReadonly(),
+)
+
 type EthereumUnsignedTransaction4844  = funtypes.Static<typeof EthereumUnsignedTransaction4844>
 const EthereumUnsignedTransaction4844 = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -255,7 +280,7 @@ const EthereumUnsignedTransaction4844 = funtypes.Intersect(
 )
 
 export type EthereumUnsignedTransaction = funtypes.Static<typeof EthereumUnsignedTransaction>
-export const EthereumUnsignedTransaction = funtypes.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559, EthereumUnsignedTransaction4844)
+export const EthereumUnsignedTransaction = funtypes.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559, EthereumUnsignedTransaction4844, EthereumUnsignedTransaction7702)
 
 type OptionalEthereumUnsignedTransaction1559 = funtypes.Static<typeof EthereumUnsignedTransaction1559>
 const OptionalEthereumUnsignedTransaction1559 = funtypes.Intersect(
@@ -297,8 +322,32 @@ const OptionalEthereumUnsignedTransaction4844 = funtypes.Intersect(
 	}).asReadonly(),
 )
 
+type OptionalEthereumUnsignedTransaction7702 = funtypes.Static<typeof EthereumUnsignedTransaction7702>
+const OptionalEthereumUnsignedTransaction7702 = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+		from: EthereumAddress,
+		nonce: EthereumQuantity,
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
+		value: EthereumQuantity,
+		input: EthereumInput,
+		chainId: EthereumQuantity,
+		authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+			chainId: EthereumQuantity,
+			address: EthereumAddress,
+			nonce: EthereumQuantity,
+		}))
+	}).asReadonly(),
+	funtypes.Partial({
+		gas: EthereumQuantity,
+		maxFeePerGas: EthereumQuantity,
+		maxPriorityFeePerGas: EthereumQuantity,
+		accessList: EthereumAccessList,
+	}).asReadonly(),
+)
+
 export type OptionalEthereumUnsignedTransaction = funtypes.Static<typeof OptionalEthereumUnsignedTransaction>
-export const OptionalEthereumUnsignedTransaction = funtypes.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, OptionalEthereumUnsignedTransaction1559, OptionalEthereumUnsignedTransaction4844)
+export const OptionalEthereumUnsignedTransaction = funtypes.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, OptionalEthereumUnsignedTransaction1559, OptionalEthereumUnsignedTransaction4844, OptionalEthereumUnsignedTransaction7702)
 
 const EthereumTransaction2930And1559And4844Signature = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -361,6 +410,34 @@ const EthereumSignedTransaction2930 = funtypes.Intersect(
 	EthereumTransaction2930And1559And4844Signature,
 )
 
+type EthereumSignedTransaction7702 = funtypes.Static<typeof EthereumSignedTransaction7702>
+const EthereumSignedTransaction7702 = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+		from: EthereumAddress,
+		nonce: EthereumQuantity,
+		maxFeePerGas: EthereumQuantity,
+		maxPriorityFeePerGas: EthereumQuantity,
+		gas: EthereumQuantity,
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
+		value: EthereumQuantity,
+		input: EthereumInput,
+		chainId: EthereumQuantity,
+		authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+			chainId: EthereumQuantity,
+			address: EthereumAddress,
+			nonce: EthereumQuantity,
+			r: EthereumQuantity,
+			s: EthereumQuantity,
+			yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const)))
+		}))
+	}).asReadonly(),
+	funtypes.Partial({
+		accessList: EthereumAccessList,
+	}).asReadonly(),
+	EthereumTransaction2930And1559And4844Signature
+)
+
 export type EthereumSignedTransaction1559 = funtypes.Static<typeof EthereumSignedTransaction1559>
 export const EthereumSignedTransaction1559 = funtypes.Intersect(
 	EthereumUnsignedTransaction1559,
@@ -374,7 +451,7 @@ const EthereumSignedTransaction4844 = funtypes.Intersect(
 )
 
 export type EthereumSendableSignedTransaction = funtypes.Static<typeof EthereumSendableSignedTransaction>
-export const EthereumSendableSignedTransaction = funtypes.Union(EthereumSignedTransactionLegacy, EthereumSignedTransaction2930, EthereumSignedTransaction1559, EthereumSignedTransaction4844)
+export const EthereumSendableSignedTransaction = funtypes.Union(EthereumSignedTransactionLegacy, EthereumSignedTransaction2930, EthereumSignedTransaction1559, EthereumSignedTransaction4844, EthereumSignedTransaction7702)
 
 export type EthereumSignedTransaction = funtypes.Static<typeof EthereumSignedTransaction>
 export const EthereumSignedTransaction = funtypes.Union(EthereumSendableSignedTransaction, EthereumSignedTransactionOptimismDeposit)
@@ -386,6 +463,7 @@ export const EthereumSignedTransactionWithBlockData = funtypes.Intersect(
 		EthereumSignedTransaction2930,
 		funtypes.Intersect(EthereumSignedTransaction1559, funtypes.ReadonlyObject({ gasPrice: EthereumQuantity })),
 		funtypes.Intersect(EthereumSignedTransaction4844, funtypes.ReadonlyObject({ gasPrice: EthereumQuantity })),
+		funtypes.Intersect(EthereumSignedTransaction7702, funtypes.ReadonlyObject({ gasPrice: EthereumQuantity })),
 	),
 	funtypes.ReadonlyObject({
 		data: EthereumInput,
@@ -448,10 +526,24 @@ export const EthereumBlockHeaderWithTransactionHashes = funtypes.Union(funtypes.
 	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumBytes32) })
 ))
 
+type EthereumUnknownTransactionType = funtypes.Static<typeof EthereumUnknownTransactionType>
+const EthereumUnknownTransactionType = funtypes.ReadonlyObject({
+	hash: EthereumBytes32,
+	type: funtypes.String.withConstraint((type) => {
+		if (!isHexEncodedNumber(type)) return false
+		const alreadyHandled = ['0x0', '0x1', '0x2', '0x3', '0x4', '0x7e']
+		if (alreadyHandled.includes(type)) return false
+		return true
+	})
+})
+
+export type EthereumBlockHeaderTransaction = funtypes.Static<typeof EthereumBlockHeaderTransaction>
+export const EthereumBlockHeaderTransaction = funtypes.Union(EthereumSignedTransaction, EthereumUnknownTransactionType)
+
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = funtypes.Union(funtypes.Null, funtypes.Intersect(
 	EthereumBlockHeaderWithoutTransactions,
-	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumSignedTransaction) })
+	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumBlockHeaderTransaction) })
 ))
 
 //
