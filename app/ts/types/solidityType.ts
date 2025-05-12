@@ -1,7 +1,20 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumData, EthereumQuantity } from './wire-types.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { SignedBigInt } from './visualizer-types.js'
+
+const SignedBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^-?0x[a-fA-F0-9]{1,64}$/.test(value)) return { success: false, message: `${ value } is not a hex string encoded number.` }
+		return { success: true, value: BigInt(value.startsWith('-') ? -value.slice(1) : value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
+		return { success: true, value: value < 0 ? `-0x${ (-value).toString(16) }` : `0x${ value.toString(16) }` }
+	}
+}
+
+export const SignedBigInt = funtypes.String.withParser(SignedBigIntParser)
+export type SignedBigInt = funtypes.Static<typeof SignedBigInt>
 
 export type PureGroupedSolidityType = funtypes.Static<typeof PureGroupedSolidityType>
 export const PureGroupedSolidityType = funtypes.Union(

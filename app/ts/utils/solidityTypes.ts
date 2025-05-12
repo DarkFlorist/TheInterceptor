@@ -3,8 +3,7 @@ import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '.
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { EnrichedGroupedSolidityType, PureGroupedSolidityType, SolidityType } from '../types/solidityType.js'
-import { SignedBigInt } from '../types/visualizer-types.js'
+import { EnrichedGroupedSolidityType, PureGroupedSolidityType, SignedBigInt, SolidityType } from '../types/solidityType.js'
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {
