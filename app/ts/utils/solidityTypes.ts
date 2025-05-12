@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '.
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { EnrichedGroupedSolidityType, PureGroupedSolidityType, SolidityType } from '../types/solidityType.js'
+import { EnrichedGroupedSolidityType, PureGroupedSolidityType, SignedBigInt, SolidityType } from '../types/solidityType.js'
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {
@@ -122,7 +122,7 @@ export async function parseSolidityValueByTypeEnriched(ethereumClientService: Et
 	return parsed
 }
 
-const SignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, EthereumQuantity)
+const SignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, SignedBigInt)
 const UnsignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, EthereumQuantity).withConstraint((number) => BigInt(number) >= 0n)
 
 export function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArray: boolean): PureGroupedSolidityType {
