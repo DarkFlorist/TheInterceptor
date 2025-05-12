@@ -51,16 +51,15 @@ export class EthereumJSONRpcRequestHandler {
 			const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
 			this.cache.set(hash, responseObject)
 			future.resolve(responseObject)
-			return responseObject
 		} catch(error: unknown) {
 			if (error instanceof Error) {
 				future.reject(error)
 			} else {
 				future.reject(new Error('Unknown error'))
 			}
-			throw error
 		} finally {
 			this.pendingCache.delete(hash)
+			return await future
 		}
 	}
 
