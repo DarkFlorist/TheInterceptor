@@ -177,7 +177,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 }
 
 export const getAddressesForSolidityTypes = (variables: readonly SolidityVariable[]) => {
-	return variables.map((argumentVariable) => {
+	return variables.flatMap((argumentVariable) => {
 		if (argumentVariable.typeValue.type === 'address') return argumentVariable.typeValue.value
 		if (argumentVariable.typeValue.type === 'address[]') return argumentVariable.typeValue.value
 		return undefined
