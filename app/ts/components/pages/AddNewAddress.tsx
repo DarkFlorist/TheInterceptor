@@ -362,18 +362,19 @@ export function AddNewAddress(param: AddAddressParam) {
 		} })
 	}
 
-	function showOnChainVerificationErrorBox() {
+	const showOnChainVerificationErrorBox = useComputed(() => {
 		if (param.modifyAddressWindowState.value === undefined) return false
 		const incompleteAddressBookEntry = param.modifyAddressWindowState.value.incompleteAddressBookEntry
 		return incompleteAddressBookEntry.entrySource === 'OnChain' && (incompleteAddressBookEntry.type === 'ERC20' || incompleteAddressBookEntry.type === 'ERC721')
-	}
+	})
 
-	function isSubmitButtonDisabled() {
+
+	const isSubmitButtonDisabled = useComputed(() => {
 		if (param.modifyAddressWindowState.value === undefined) return true
 		return !areInputsValid()
 			|| (param.modifyAddressWindowState.value.errorState?.blockEditing)
-			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
-	}
+			|| (showOnChainVerificationErrorBox.value && !onChainInformationVerifiedByUser)
+	})
 
 	function getCardTitle() {
 		if (param.modifyAddressWindowState.value === undefined) return '...'
@@ -381,7 +382,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (incompleteAddressBookEntry.addingAddress) {
 			return `Add New ${ readableAddressType[incompleteAddressBookEntry.type] }`
 		}
-		const alleged = showOnChainVerificationErrorBox() ? 'alleged ' : ''
+		const alleged = showOnChainVerificationErrorBox.value ? 'alleged ' : ''
 		const name = incompleteAddressBookEntry.name !== undefined ? `${ alleged }${ incompleteAddressBookEntry.name }` : readableAddressType[incompleteAddressBookEntry.type]
 		return `Modify ${ name }`
 	}
@@ -424,7 +425,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
 					{ param.modifyAddressWindowState.value?.errorState === undefined ? <></> : <Notice text = { param.modifyAddressWindowState.value.errorState.message } /> }
-					{ !showOnChainVerificationErrorBox() ? <></> :
+					{ !showOnChainVerificationErrorBox.value ? <></> :
 						<ErrorCheckBox
 							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
 							checked = { onChainInformationVerifiedByUser }
@@ -435,7 +436,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value?.incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { !areInputsValid() }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled() }> { param.modifyAddressWindowState.value?.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value?.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
