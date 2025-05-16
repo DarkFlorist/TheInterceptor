@@ -40,7 +40,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
 							<p class = 'ellipsis paragraph' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
-								{ param.sending ? 'Send' : 'Receive' }&nbsp;
+								{ param.sending ? 'Send' : 'Receive' }
 							</p>
 						</div>
 						<div class = 'log-cell'>
