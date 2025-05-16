@@ -81,7 +81,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow&nbsp;</p>
+				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow</p>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
@@ -91,11 +91,11 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
+				<p class = 'ellipsis' style = { `color: ${ textColor };` }> to spend </p>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.change > 2n ** 100n ?
-					<p class = 'ellipsis' style = { `color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
+					<p class = 'ellipsis' style = { `color: ${ textColor };` }> <b>ALL</b></p>
 					:
 					<TokenAmount
 						tokenEntry = { param }
@@ -200,7 +200,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Allow&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Allow</p>
 							</div>
 							<div class = 'log-cell'>
 								<SmallAddress
@@ -210,7 +210,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 								/>
 							</div>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis'  style = { `color: ${ param.negativeColor }` }>&nbsp;to spend <b>ALL</b>&nbsp;</p>
+								<p class = 'ellipsis'  style = { `color: ${ param.negativeColor }` }>to spend <b>ALL</b></p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenSymbol
@@ -228,7 +228,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 					<div class = { param.isImportant ? 'box token-box positive-box': '' } >
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = { `color: ${ param.textColor };` }> to NOT spend ANY&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.textColor };` }> to NOT spend ANY</p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenSymbol
@@ -264,7 +264,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Approve&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Approve</p>
 							</div>
 							<div class = 'log-cell'>
 								<SmallAddress
@@ -274,7 +274,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 								/>
 							</div>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }>for</p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenOrEth
@@ -559,7 +559,7 @@ export type TransactionGasses = {
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: RpcNetwork } ) {
 	return <>
 		<div class = 'log-cell'>
-			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> Gas fee:&nbsp;</p>
+			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> Gas fee:</p>
 		</div>
 		<div class = 'log-cell'>
 			<EtherAmount
