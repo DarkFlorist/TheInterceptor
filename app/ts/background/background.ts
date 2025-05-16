@@ -36,7 +36,7 @@ import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInp
 const updateSimulationStateSemaphore = new Semaphore(1)
 let simulationAbortController = new AbortController()
 
-export async function updateSimulationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, activeAddress: bigint | undefined, invalidateOldState: boolean, onlyIfNotAlreadyUpdating = false) {
+export async function updateSimulationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState: boolean, onlyIfNotAlreadyUpdating = false) {
 	if (onlyIfNotAlreadyUpdating && updateSimulationStateSemaphore.getPermits() === 0) return
 	simulationAbortController.abort(new Error(NEW_BLOCK_ABORT))
 	simulationAbortController = new AbortController()
@@ -52,7 +52,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 				await updateSimulationResults(modifyObject(simulationResults, { simulationId, simulationUpdatingState: 'updating' }))
 			}
 			const changedMessagePromise = sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
-			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
+			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress: (await getSettings()).activeSimulationAddress }
 			const emptyDoneResults: CompleteVisualizedSimulation = {
 				...doneState,
 				addressBookEntries: [],
@@ -297,9 +297,8 @@ async function handleRPCRequest(
 }
 
 export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService) {
-	const settings = await getSettings()
 	await updateInterceptorTransactionStack(() => ({ operations: [] }))
-	return await updateSimulationState(ethereumClientService, tokenPriceService, settings.activeSimulationAddress, true)
+	return await updateSimulationState(ethereumClientService, tokenPriceService, true)
 }
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
@@ -322,8 +321,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
-
 	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
 			if (change.rpcNetwork.httpsRpc !== undefined) simulator.reset(change.rpcNetwork)
@@ -459,12 +456,12 @@ export async function popupMessageHandler(
 		switch (parsedRequest.method) {
 			case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
-			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, settings, parsedRequest)
+			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest)
 			case 'popup_changePage': return await changePage(parsedRequest)
 			case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
 			case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator.ethereum, simulator.tokenPriceService)
-			case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, parsedRequest, settings)
-			case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
+			case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, parsedRequest)
+			case 'popup_refreshSimulation': return await refreshSimulation(simulator, false)
 			case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator)
 			case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController, simulator.tokenPriceService)
 			case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
@@ -505,8 +502,8 @@ export async function popupMessageHandler(
 			case 'popup_removeWebsiteAccess': return await removeWebsiteAccess(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_removeWebsiteAddressAccess': return await removeWebsiteAddressAccess(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_forceSetGasLimitForTransaction': return await forceSetGasLimitForTransaction(simulator, parsedRequest)
-			case 'popup_changePreSimulationBlockTimeManipulation': return await changePreSimulationBlockTimeManipulation(simulator, settings, parsedRequest)
-			case 'popup_setTransactionOrMessageBlockTimeManipulator': return await setTransactionOrMessageBlockTimeManipulator(simulator, settings, parsedRequest)
+			case 'popup_changePreSimulationBlockTimeManipulation': return await changePreSimulationBlockTimeManipulation(simulator, parsedRequest)
+			case 'popup_setTransactionOrMessageBlockTimeManipulator': return await setTransactionOrMessageBlockTimeManipulator(simulator, parsedRequest)
 			default: assertUnreachable(parsedRequest)
 		}
 	} catch(error: unknown) {
