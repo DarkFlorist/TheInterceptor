@@ -129,9 +129,8 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 	const addressString = checksummedAddress(addressBookEntry.address)
 
 	const generateIcon = () => {
-		if (addressBookEntry.logoUri) return <img src = { addressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
-		if (addressBookEntry.address) return <Blockie address = { addressBookEntry.address } />
-		return <></>
+		if (addressBookEntry?.logoUri !== undefined) return <img src = { addressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
+		return <Blockie address = { addressBookEntry.address } />
 	}
 
 	return <InlineCard label = { addressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(addressBookEntry) } style = { style } />
