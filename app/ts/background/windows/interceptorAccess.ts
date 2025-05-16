@@ -14,7 +14,7 @@ import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
-import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
+import { PendingAccessRequest } from '../../types/accessRequest.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 
 type OpenedDialogWithListeners = {
@@ -109,7 +109,6 @@ export async function requestAccessFromUser(
 	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulator, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
-	const pendingAccessRequests = new Future<PendingAccessRequests>()
 	await pendingInterceptorAccessSemaphore.execute(async () => {
 		const verifyPendingRequests = async () => {
 			const previousRequests = await getPendingAccessRequests()
@@ -180,10 +179,9 @@ export async function requestAccessFromUser(
 			}
 			return previousPendingAccessRequests
 		})
-		if (pendingRequests.current.find((x) => x.accessRequestId === accessRequestId) === undefined) return pendingAccessRequests.resolve(pendingRequests.current)
 		const oldPendingRequest = pendingRequests.previous.find((x) => x.accessRequestId === accessRequestId)
 		if (oldPendingRequest !== undefined) {
-			await tryFocusingTabOrWindow(oldPendingRequest.popupOrTabId)
+			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
 			if (request !== undefined) {
 				replyToInterceptedRequest(websiteTabConnections, {
 					type: 'result',
@@ -194,24 +192,20 @@ export async function requestAccessFromUser(
 			}
 			return
 		}
-		if (justAddToPending) {
-			if (pendingRequests.current.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
-				await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
-					activeAddresses: await getActiveAddresses(),
-					pendingAccessRequests: pendingRequests.current,
-				} })
-			}
-			await sendPopupMessageToOpenWindows({
-				method: 'popup_interceptor_access_dialog_pending_changed',
-				data: {
-					activeAddresses: await getActiveAddresses(),
-					pendingAccessRequests: pendingRequests.current,
-				}
-			})
-			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
-			return
+		if (pendingRequests.current.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
+			await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
+				activeAddresses: await getActiveAddresses(),
+				pendingAccessRequests: pendingRequests.current,
+			} })
 		}
-		pendingAccessRequests.resolve(pendingRequests.current)
+		await sendPopupMessageToOpenWindows({
+			method: 'popup_interceptor_access_dialog_pending_changed',
+			data: {
+				activeAddresses: await getActiveAddresses(),
+				pendingAccessRequests: pendingRequests.current,
+			}
+		})
+		if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
 	})
 }
 
