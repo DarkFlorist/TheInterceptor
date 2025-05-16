@@ -62,7 +62,6 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 	if (addressChange.data.activeAddress === 'signer') {
 		const signerAccount = await getSignerAccount()
 		await setUseSignersAddressAsActiveAddress(addressChange.data.activeAddress === 'signer', signerAccount)
-
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 
@@ -79,9 +78,9 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 	}
 }
 
-export async function changeMakeMeRich(simulator: Simulator, settings: Settings, makeMeRichChange: ChangeMakeMeRich) {
+export async function changeMakeMeRich(simulator: Simulator, makeMeRichChange: ChangeMakeMeRich) {
 	await setMakeMeRich(makeMeRichChange.data)
-	await refreshSimulation(simulator, settings, true)
+	await refreshSimulation(simulator, true)
 }
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -133,7 +132,7 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
+export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction) {
 	const removeConsequtiveTimeManipulations = (operations: readonly InterceptorStackOperation[]) => {
 		return operations.filter((operation, operationIndex) => !(operationIndex > 0 && operation.type === 'TimeManipulation' && operations[operationIndex - 1]?.type === 'TimeManipulation'))
 	}
@@ -182,11 +181,11 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 		}
 	})
 
-	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, true)
+	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, true)
 }
 
-export async function refreshSimulation(simulator: Simulator, settings: Settings, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean) {
-	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
+export async function refreshSimulation(simulator: Simulator, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean) {
+	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenPriceService: TokenPriceService) {
@@ -685,12 +684,12 @@ export async function forceSetGasLimitForTransaction(simulator: Simulator, parse
 	await refreshPopupConfirmTransactionSimulation(simulator)
 }
 
-export async function changePreSimulationBlockTimeManipulation(simulator: Simulator, settings: Settings, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
+export async function changePreSimulationBlockTimeManipulation(simulator: Simulator, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
 	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
-	await refreshSimulation(simulator, settings, true)
+	await refreshSimulation(simulator, true)
 }
 
-export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, settings: Settings, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
+export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
 		const appendAfterIndex = prevStack.operations.findIndex((operation) => {
@@ -717,5 +716,5 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 		return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...prevStack.operations.slice(indexOfMaybeManipulator)] }
 	})
 
-	await refreshSimulation(simulator, settings, true)
+	await refreshSimulation(simulator, true)
 }
