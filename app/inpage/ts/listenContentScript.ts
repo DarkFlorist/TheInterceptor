@@ -38,7 +38,7 @@ function listenContentScript(connectionName: string | undefined) {
 				}
 				if (error.message?.includes('User denied')) return // user denied signature
 			}
-			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [error] } })
+			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
 			throw error
 		}
 	})
