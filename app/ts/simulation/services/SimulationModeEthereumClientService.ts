@@ -154,7 +154,11 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 	return { ...transaction, ...signatureParams, hash }
 }
 
-export const getAddressToMakeRich = async () => await getMakeMeRich() ? (await getSettings()).activeSimulationAddress : undefined
+export const getAddressToMakeRich = async () => {
+	const settings = await getSettings()
+	if (!settings.simulationMode) return undefined
+	return await getMakeMeRich() ? settings.activeSimulationAddress : undefined
+}
 
 export const getBlockTimeManipulationSeconds = (deltaToAdd: EthereumQuantity, deltaUnit: BlockTimeManipulationDeltaUnit) => {
 	switch(deltaUnit) {

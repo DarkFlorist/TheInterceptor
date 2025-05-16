@@ -113,7 +113,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				...prevStack.operations,
 				{ type: 'Message' as const, signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }
 			] }))
-			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
+			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, true)
 			return reply({ type: 'result', result: simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor).signature })
 		}
 		case 'Transaction': {
@@ -123,7 +123,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
-			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
+			await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, true)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)

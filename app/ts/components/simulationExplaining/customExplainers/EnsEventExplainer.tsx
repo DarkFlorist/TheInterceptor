@@ -102,7 +102,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 			</div>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis paragraph' style = { textStyle }>
-					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for` }&nbsp;
+					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for` }
 				</p>
 			</div>
 			<div class = 'log-cell'>
@@ -120,7 +120,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 			</div>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis paragraph' style = { textStyle }>
-					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for` }&nbsp;
+					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for` }
 				</p>
 			</div>
 			<div class = 'log-cell'>
