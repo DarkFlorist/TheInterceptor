@@ -593,22 +593,26 @@ svg.spinner > circle {
 	display: grid;
 	grid-template-columns: max-content auto auto auto auto;
 	width: 100%;
+	gap: 0.45ch;
 }
 
 .log-table-4 {
 	display: grid;
 	grid-template-columns: max-content auto auto auto;
 	width: 100%;
+	gap: 0.45ch;
 }
 .log-table-3 {
 	display: grid;
 	grid-template-columns: max-content auto auto;
 	width: 100%;
+	gap: 0.45ch;
 }
 .log-table-1 {
 	display: grid;
 	grid-template-columns: auto;
 	width: 100%;
+	gap: 0.45ch;
 }
 
 .nontoken-log-table {
@@ -1619,7 +1623,6 @@ header:has(form[role='search']) h1 {
 	grid-template-rows: [start] min-content [end];
 
 	margin-block: 1px;
-	padding-inline: var(--bg-inline-padding);
 	padding-block: var(--bg-block-padding);
 	background: var(--bg-status-color, var(--bg-color));
 	border-radius: 0.15em;
@@ -1631,6 +1634,7 @@ header:has(form[role='search']) h1 {
 		line-height: 1em;
 		color: var(--text-color);
 		padding-inline: 0.25em;
+		padding-right: 0px;
 		text-align: center;
 		pointer-events: none;
 	}
