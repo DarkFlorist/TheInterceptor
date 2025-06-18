@@ -8,6 +8,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { getMessageAndDomainHash, verifyEip712Message } from '../../app/ts/utils/eip712.js'
 import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
+import { jsonParserWithNumbersAsStringsConverter } from '../../app/ts/utils/json.js'
 
 export async function main() {
 
@@ -24,6 +25,9 @@ export async function main() {
 	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => {}, async () => {}, rpcEntry)
 
 	describe('EIP712', () => {
+		should('can convert oversized number to bigint', () => {
+			assert.deepEqual(jsonParserWithNumbersAsStringsConverter('1234567890123456789012345678901234567890'), '1234567890123456789012345678901234567890')
+		})
 		should('can parse EIP712 message', () => {
 			EIP712Message.parse(permit2Message)
 		})

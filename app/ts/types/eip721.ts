@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { JSONEncodeableObject, isJSON } from '../utils/json.js'
+import { JSONEncodeableObject, isJSON, jsonParserWithNumbersAsStringsConverter } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
 import { EthereumQuantity, NonHexBigInt, serialize } from './wire-types.js'
 
@@ -18,8 +18,8 @@ const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 
 const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: value => {
-		if (!isJSON(value) || !EIP712MessageUnderlying.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
-		return { success: true, value: EIP712MessageUnderlying.parse(JSON.parse(value)) }
+		if (!isJSON(value) || !EIP712MessageUnderlying.test(jsonParserWithNumbersAsStringsConverter(value))) return { success: false, message: `${ value } is not EIP712 message` }
+		return { success: true, value: EIP712MessageUnderlying.parse(jsonParserWithNumbersAsStringsConverter(value)) }
 	},
 	serialize: value => {
 		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.`}
