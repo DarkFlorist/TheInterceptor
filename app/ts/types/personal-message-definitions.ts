@@ -1,11 +1,11 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'
 import { InterceptedRequest } from '../utils/requests.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { EnrichedEIP712 } from './eip721.js'
+import { Eip712Number, EnrichedEIP712 } from './eip721.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 type EIP2612Message = funtypes.Static<typeof EIP2612Message>
@@ -55,14 +55,14 @@ const EIP2612Message = funtypes.ReadonlyObject({
 	primaryType: funtypes.Literal('Permit'),
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.String,
-		version: NonHexBigInt,
-		chainId: NonHexBigInt,
+		version: Eip712Number,
+		chainId: Eip712Number,
 		verifyingContract: EthereumAddress,
 	}),
 	message: funtypes.ReadonlyObject({
 		owner: EthereumAddress,
 		spender: EthereumAddress,
-		value: NonHexBigInt,
+		value: Eip712Number,
 		nonce: funtypes.Number,
 		deadline: funtypes.Number,
 	}),
@@ -120,19 +120,19 @@ export const Permit2 = funtypes.ReadonlyObject({
 	}),
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.Literal('Permit2'),
-		chainId: NonHexBigInt,
+		chainId: Eip712Number,
 		verifyingContract: EthereumAddress,
 	}),
 	primaryType: funtypes.Literal('PermitSingle'),
 	message: funtypes.ReadonlyObject({
 		details: funtypes.ReadonlyObject({
 			token: EthereumAddress,
-			amount: NonHexBigInt,
-			expiration: NonHexBigInt,
-			nonce: NonHexBigInt,
+			amount: Eip712Number,
+			expiration: Eip712Number,
+			nonce: Eip712Number,
 		}),
 		spender: EthereumAddress,
-		sigDeadline: NonHexBigInt,
+		sigDeadline: Eip712Number,
 	})
 })
 
@@ -159,18 +159,18 @@ type SeaPortSingleOffer = funtypes.Static<typeof SeaPortSingleOffer>
 const SeaPortSingleOffer = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: EthereumAddress,
-	identifierOrCriteria: NonHexBigInt,
-	startAmount: NonHexBigInt,
-	endAmount: NonHexBigInt
+	identifierOrCriteria: Eip712Number,
+	startAmount: Eip712Number,
+	endAmount: Eip712Number
 })
 
 type SeaPortSingleConsideration = funtypes.Static<typeof SeaPortSingleConsideration>
 const SeaPortSingleConsideration = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: EthereumAddress,
-	identifierOrCriteria: NonHexBigInt,
-	startAmount: NonHexBigInt,
-	endAmount: NonHexBigInt,
+	identifierOrCriteria: Eip712Number,
+	startAmount: Eip712Number,
+	endAmount: Eip712Number,
 	recipient: EthereumAddress
 })
 
@@ -179,15 +179,15 @@ export const OpenSeaOrderMessage = funtypes.ReadonlyObject({
 	offerer: EthereumAddress,
 	offer: funtypes.ReadonlyArray(SeaPortSingleOffer),
 	consideration: funtypes.ReadonlyArray(SeaPortSingleConsideration),
-	startTime: NonHexBigInt,
-	endTime: NonHexBigInt,
+	startTime: Eip712Number,
+	endTime: Eip712Number,
 	orderType: SeaPortOrderType,
 	zone: EthereumAddress,
 	zoneHash: EthereumBytes32,
-	salt: NonHexBigInt,
+	salt: Eip712Number,
 	conduitKey: EthereumBytes32,
-	totalOriginalConsiderationItems: NonHexBigInt,
-	counter: NonHexBigInt,
+	totalOriginalConsiderationItems: Eip712Number,
+	counter: Eip712Number,
 })
 
 type OpenSeaOrder = funtypes.Static<typeof OpenSeaOrder>
@@ -310,7 +310,7 @@ const OpenSeaOrder = funtypes.ReadonlyObject({
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.Literal('Seaport'),
 		version: funtypes.Literal('1.5'),
-		chainId: NonHexBigInt,
+		chainId: Eip712Number,
 		verifyingContract: EthereumAddress,
 	}),
 	message: OpenSeaOrderMessage
@@ -320,18 +320,18 @@ export type SeaPortSingleOfferWithAddressBookEntries = funtypes.Static<typeof Se
 export const SeaPortSingleOfferWithAddressBookEntries = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: AddressBookEntry,
-	identifierOrCriteria: NonHexBigInt,
-	startAmount: NonHexBigInt,
-	endAmount: NonHexBigInt
+	identifierOrCriteria: Eip712Number,
+	startAmount: Eip712Number,
+	endAmount: Eip712Number
 })
 
 export type SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.Static<typeof SeaPortSingleConsiderationWithAddressBookEntries >
 export const SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: AddressBookEntry,
-	identifierOrCriteria: NonHexBigInt,
-	startAmount: NonHexBigInt,
-	endAmount: NonHexBigInt,
+	identifierOrCriteria: Eip712Number,
+	startAmount: Eip712Number,
+	endAmount: Eip712Number,
 	recipient: AddressBookEntry
 })
 
@@ -340,15 +340,15 @@ export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject
 	offerer: AddressBookEntry,
 	offer: funtypes.ReadonlyArray(SeaPortSingleOfferWithAddressBookEntries),
 	consideration: funtypes.ReadonlyArray(SeaPortSingleConsiderationWithAddressBookEntries),
-	startTime: NonHexBigInt,
-	endTime: NonHexBigInt,
+	startTime: Eip712Number,
+	endTime: Eip712Number,
 	orderType: SeaPortOrderType,
 	zone: AddressBookEntry,
 	zoneHash: EthereumBytes32,
-	salt: NonHexBigInt,
+	salt: Eip712Number,
 	conduitKey: EthereumBytes32,
-	totalOriginalConsiderationItems: NonHexBigInt,
-	counter: NonHexBigInt,
+	totalOriginalConsiderationItems: Eip712Number,
+	counter: Eip712Number,
 })
 
 type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
@@ -469,7 +469,7 @@ export const SafeTx = funtypes.ReadonlyObject({
 	primaryType: funtypes.Literal('SafeTx'),
 	domain: funtypes.Intersect(
 		funtypes.Partial({
-			chainId: funtypes.Union(EthereumQuantity, NonHexBigInt)
+			chainId: funtypes.Union(EthereumQuantity, Eip712Number)
 		}),
 		funtypes.ReadonlyObject({
 			verifyingContract: EthereumAddress,
@@ -477,15 +477,15 @@ export const SafeTx = funtypes.ReadonlyObject({
 	),
 	message: funtypes.ReadonlyObject({
 		to: EthereumAddress,
-		value: NonHexBigInt,
+		value: Eip712Number,
 		data: EthereumInput,
-		operation: NonHexBigInt,
-		safeTxGas: NonHexBigInt,
-		baseGas: NonHexBigInt,
-		gasPrice: NonHexBigInt,
+		operation: Eip712Number,
+		safeTxGas: Eip712Number,
+		baseGas: Eip712Number,
+		gasPrice: Eip712Number,
 		gasToken: EthereumAddress,
 		refundReceiver: EthereumAddress,
-		nonce: NonHexBigInt,
+		nonce: Eip712Number,
 	})
 })
 
