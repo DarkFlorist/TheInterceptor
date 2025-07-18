@@ -120,3 +120,8 @@ export const checkAndPrintRuntimeLastError = () => {
 	// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 	if (error !== null && error !== undefined && error.message !== undefined) console.log(error)
 }
+
+export const getHostWithPort = (urlString: string): string => {
+	const url = new URL(urlString)
+	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
+}
