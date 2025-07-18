@@ -109,6 +109,8 @@ export function calculatePricesFromUniswapLikeReturnData(multicallData: { succes
 		const reserve1 = BigInt(multicallReturn2.returnData)
 
 		if (reserve0 === 0n || reserve1 === 0n || sqrtPriceX96 === 0n) return undefined
+		// necessary to avoid divide by 0 error in equation below, pool cannot have epsilon liquidity
+		if (sqrtPriceX96 <= 2n**96n/10n**9n) return undefined
 
 		const price = poolAddresses.token0IsQuote
 			? (10n ** 36n) / ((((sqrtPriceX96 * 10n ** 18n) / (2n ** 96n)) ** 2n) / (10n ** 18n))
