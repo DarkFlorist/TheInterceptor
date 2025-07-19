@@ -7,7 +7,7 @@ import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
-import { WebsiteSocket } from '../utils/requests.js'
+import { WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -284,8 +284,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
-				const websiteOrigin = (new URL(details.originUrl)).hostname
-				const destinationHost = (new URL(details.url)).hostname
+				const websiteOrigin = getHostWithPort(details.originUrl)
+				const destinationHost = getHostWithPort(details.url)
 				if (destinationHost === websiteOrigin) return {}
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}

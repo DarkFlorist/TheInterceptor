@@ -11,7 +11,7 @@ import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
@@ -92,7 +92,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const websiteOrigin = (new URL(port.sender.url)).hostname
+	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
 
@@ -226,7 +226,7 @@ async function startup() {
 		await catchAllErrorsAndCall(async () => {
 			if (changeInfo.status !== 'complete') return
 			if (tab.url === undefined) return
-			const websiteOrigin = (new URL(tab.url)).hostname
+			const websiteOrigin = getHostWithPort(tab.url)
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 			await updateDeclarativeNetRequestBlocks(websiteTabConnections)

@@ -1,5 +1,5 @@
 import { getInterceptorDisabledSites, getSettings } from "../background/settings.js"
-import { checkAndThrowRuntimeLastError } from "./requests.js"
+import { checkAndThrowRuntimeLastError, getHostWithPort } from "./requests.js"
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -40,7 +40,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const allTabs = await browser.tabs.query({})
 	const thisTab = allTabs.find((tab) => tab.id === content.tabId)
 	const urls = [content.url, ...thisTab?.url === undefined ? [] : [thisTab.url]]
-	const hostnames = urls.map((url) => new URL(url).hostname)
+	const hostnames = urls.map((url) => getHostWithPort(url))
 	const disabledSites = getInterceptorDisabledSites(await getSettings())
 	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
