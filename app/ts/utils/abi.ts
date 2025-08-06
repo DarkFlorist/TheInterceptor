@@ -94,7 +94,7 @@ function getStringBetweenParentheses(inputString: string): string | undefined {
 // Transfer(address,address,uint256) -> ['address', 'address', 'uint256']
 export const extractFunctionArgumentTypes = (signature: string) => {
 	const args = getStringBetweenParentheses(signature)
-	return args === undefined ? undefined : args.split(',')
+	return args === undefined || args.length === 0 ? [] : args.split(',')
 }
 
 export const removeTextBetweenBrackets = (inputString: string) => inputString.replace(/\[.*?\]/g, '')
