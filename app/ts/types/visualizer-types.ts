@@ -169,6 +169,7 @@ export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
+	simulateWithZeroBaseFee: funtypes.Boolean,
 })
 
 export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
@@ -182,6 +183,7 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction })),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
+	simulateWithZeroBaseFee: funtypes.Boolean,
 })
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
@@ -196,6 +198,7 @@ export const SimulationStateBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimestamp: EthereumTimestamp,
 	blockTimeManipulation: BlockTimeManipulation,
+	blockBaseFeePerGas: EthereumQuantity,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>

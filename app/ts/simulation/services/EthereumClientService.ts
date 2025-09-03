@@ -211,13 +211,18 @@ export class EthereumClientService {
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
+		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		let previousBlockOverride = {
 			time: parentBlock.timestamp,
 			feeRecipient: parentBlock.miner,
-			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		}
+
 		for (const inputBlock of simulationStateInput.blocks) {
-			const newBlockOverride = { ...previousBlockOverride, time: getNextBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation) }
+			const newBlockOverride = {
+				...previousBlockOverride,
+				baseFeePerGas: inputBlock.simulateWithZeroBaseFee ? 0n : baseFeePerGas,
+				time: getNextBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation)
+			}
 			blockOverrides.push(newBlockOverride)
 			previousBlockOverride = newBlockOverride
 		}
