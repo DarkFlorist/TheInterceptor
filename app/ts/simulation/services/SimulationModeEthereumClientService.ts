@@ -97,8 +97,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
 		// Ideally, we would estimate using the correct base fee and priority fee values.
-		// However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block,
-		// which is not a reasonable expectation.
+		// However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block, which is not a reasonable expectation.
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n ,
 		gas: data.gas === undefined ? maxGas : data.gas,
