@@ -49,7 +49,8 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 					stateOverrides: currentBlockStateOverrides,
 					transactions: currentBlockTransactions,
 					signedMessages: currentBlockSignedMessages,
-					blockTimeManipulation: previousBlockTimeManipulation
+					blockTimeManipulation: previousBlockTimeManipulation,
+					simulateWithZeroBaseFee: false,
 				})
 				previousBlockTimeManipulation = operation.blockTimeManipulation
 				currentBlockSignedMessages = []
@@ -64,7 +65,8 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		stateOverrides: currentBlockStateOverrides,
 		transactions: currentBlockTransactions,
 		signedMessages: currentBlockSignedMessages,
-		blockTimeManipulation: previousBlockTimeManipulation
+		blockTimeManipulation: previousBlockTimeManipulation,
+		simulateWithZeroBaseFee: false,
 	})
 	return { blocks: inputBlocks }
 }
@@ -147,6 +149,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 					ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
 					tokenBalancesAfter,
 				}],
+				blockBaseFeePerGas: parentBlock.baseFeePerGas,
 			}],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,

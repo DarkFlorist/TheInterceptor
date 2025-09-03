@@ -3,7 +3,7 @@ import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
-import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
+import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
@@ -211,13 +211,18 @@ export class EthereumClientService {
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
+		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		let previousBlockOverride = {
 			time: parentBlock.timestamp,
 			feeRecipient: parentBlock.miner,
-			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		}
+
 		for (const inputBlock of simulationStateInput.blocks) {
-			const newBlockOverride = { ...previousBlockOverride, time: getNextBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation) }
+			const newBlockOverride = {
+				...previousBlockOverride,
+				baseFeePerGas: inputBlock.simulateWithZeroBaseFee ? 0n : baseFeePerGas,
+				time: getNextBlockTimeStampOverride(previousBlockOverride.time, inputBlock.blockTimeManipulation)
+			}
 			blockOverrides.push(newBlockOverride)
 			previousBlockOverride = newBlockOverride
 		}

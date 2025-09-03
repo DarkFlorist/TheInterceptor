@@ -91,20 +91,16 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	const simulatedBlockIncrement = blockDelta === undefined ? simulationState?.simulatedBlocks.length || 0 : blockDelta
 	const maxGas = simulationGasLeft(simulationState?.simulatedBlocks[simulatedBlockIncrement] || undefined, block)
 
-	const getGasPriceFields = (data: PartialEthereumTransaction) => {
-		if (data.gasPrice !== undefined) return { maxFeePerGas: data.gasPrice, maxPriorityFeePerGas: data.gasPrice }
-		if (data.maxPriorityFeePerGas !== undefined && data.maxPriorityFeePerGas !== null && data.maxFeePerGas !== undefined && data.maxFeePerGas !== null) {
-			return { maxFeePerGas: data.maxFeePerGas, maxPriorityFeePerGas: data.maxPriorityFeePerGas }
-		}
-		return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
-	}
-
-	const tmp = {
+	const estimateGasTransaction = {
 		type: '1559' as const,
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
-		...getGasPriceFields(data),
+		// Ideally, we would estimate using the correct base fee and priority fee values.
+		// However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block,
+		// which is not a reasonable expectation.
+		maxFeePerGas: 0n, // ideally here we would estimate with correct base and priority fee values, however, if we did, we were to need the account to have enough ETH to cover the whole block worth of gas, which is not reasonable requirement.
+		maxPriorityFeePerGas: 0n ,
 		gas: data.gas === undefined ? maxGas : data.gas,
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
@@ -112,7 +108,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		accessList: []
 	}
 	try {
-		const simulatedTransactions = await simulateTransactionsOnTopOfSimulationState(ethereumClientService, requestAbortController, simulationState, [tmp])
+		const simulatedTransactions = await simulateTransactionsOnTopOfSimulationState(ethereumClientService, requestAbortController, simulationState, [estimateGasTransaction], {}, true)
 		const lastResult = simulatedTransactions[simulatedTransactions.length - 1]
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
@@ -185,7 +181,8 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 				signedMessages: [],
 				stateOverrides: simulationStateInput.blocks[0]?.stateOverrides || {},
 				blockTimestamp: new Date(getNextBlockTimeStampOverride(new Date(), simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION)),
-				blockTimeManipulation: simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION
+				blockTimeManipulation: simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
+				blockBaseFeePerGas: parentBlock.baseFeePerGas || 0n,
 			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: new Date(),
@@ -222,7 +219,8 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 			signedMessages: simulationStateInput.blocks[blockIndex]?.signedMessages || [],
 			stateOverrides: simulationStateInput.blocks[blockIndex]?.stateOverrides || {},
 			blockTimestamp: bigintSecondsToDate(callResult.timestamp),
-			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION
+			blockTimeManipulation: simulationStateInput.blocks[blockIndex]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
+			blockBaseFeePerGas: callResult.baseFeePerGas,
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
@@ -235,16 +233,17 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 export const getPreSimulated = (simulatedTransactions: readonly SimulatedTransaction[]) => simulatedTransactions.map((transaction) => transaction.preSimulationTransaction)
 
 export const convertSimulationStateToSimulationInput = (simulationState: SimulationState | undefined) => {
-	if (simulationState === undefined) return { blocks: [{ stateOverrides: {}, transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] } as const
+	if (simulationState === undefined) return { blocks: [{ stateOverrides: {}, transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }] } as const
 	return { blocks: simulationState.simulatedBlocks.map((block) => ({
 		stateOverrides: block.stateOverrides,
 		transactions: getPreSimulated(block.simulatedTransactions),
 		signedMessages: block.signedMessages,
-		blockTimeManipulation: block.blockTimeManipulation
+		blockTimeManipulation: block.blockTimeManipulation,
+		simulateWithZeroBaseFee: block.blockBaseFeePerGas === 0n,
 	})) }
 }
 
-export const appendTransactionsToInput = (simulationStateInput: SimulationStateInput | undefined, transactions: PreSimulationTransaction[], blockDelta: number | undefined = undefined, stateOverrides: StateOverrides = {}): SimulationStateInput => {
+export const appendTransactionsToInput = (simulationStateInput: SimulationStateInput | undefined, transactions: PreSimulationTransaction[], blockDelta: number | undefined = undefined, stateOverrides: StateOverrides = {}, simulateWithZeroBaseFee = false): SimulationStateInput => {
 	const nonUndefinedBlockDelta = simulationStateInput?.blocks.length || 0
 	const mergeStateSets = (oldOverrides: StateOverrides, newOverrides: StateOverrides) => {
 		const copy = { ...oldOverrides }
@@ -252,25 +251,27 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 		return copy
 	}
 	const newTransactions = [...transactions]
-	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] } as const
+	if (simulationStateInput === undefined) return { blocks: [{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }] } as const
 	if (simulationStateInput.blocks[nonUndefinedBlockDelta] !== undefined) {
 		return { blocks: simulationStateInput.blocks.map((block, index) => ({
 			stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
 			transactions: index === blockDelta ? [...block.transactions, ...newTransactions] : block.transactions,
 			signedMessages: block.signedMessages,
 			blockTimeManipulation: block.blockTimeManipulation,
+			simulateWithZeroBaseFee: block.simulateWithZeroBaseFee,
 		})) } as const
 	}
 	const oldBlocks = simulationStateInput.blocks.map((block) => ({
 		stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
 		transactions: block.transactions,
 		signedMessages: block.signedMessages,
-		blockTimeManipulation: block.blockTimeManipulation
+		blockTimeManipulation: block.blockTimeManipulation,
+		simulateWithZeroBaseFee: block.simulateWithZeroBaseFee
 	}))
 	return {
 		blocks: [
 			...oldBlocks,
-			{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }
+			{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
 		]
 	}
 }
@@ -677,7 +678,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	}
 }
 
-const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput, transactions: EthereumUnsignedTransaction[], extraOverrides: StateOverrides = {}) => {
+const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput, transactions: EthereumUnsignedTransaction[], extraOverrides: StateOverrides = {}, simulateWithZeroBaseFee: boolean = false) => {
 	if (transactions.length === 0) return []
 	const signedTransactions = transactions.map((transaction) => mockSignTransaction(transaction))
 	const simulationStateInputWithNewTransactions = { blocks: [...simulationStateInput.blocks, {
@@ -685,14 +686,15 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 		stateOverrides: extraOverrides,
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+		simulateWithZeroBaseFee,
 	}] } as const
 	const ethSimulateV1CallResult = await ethereumClientService.simulate(simulationStateInputWithNewTransactions, await ethereumClientService.getBlockNumber(requestAbortController), requestAbortController)
 	return ethSimulateV1CallResult.at(-1)?.calls || []
 }
 
-const simulateTransactionsOnTopOfSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], extraOverrides: StateOverrides = {}) => {
+const simulateTransactionsOnTopOfSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], extraOverrides: StateOverrides = {}, simulateWithZeroBaseFee: boolean = false) => {
 	const simulationInput = convertSimulationStateToSimulationInput(simulationState)
-	return simulateTransactionsOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationInput, transactions, extraOverrides)
+	return simulateTransactionsOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationInput, transactions, extraOverrides, simulateWithZeroBaseFee)
 }
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
 const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => BigInt(simulationState.simulationConductedTimestamp.getTime() * 100000 + blockDelta)
