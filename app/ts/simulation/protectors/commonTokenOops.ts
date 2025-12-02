@@ -18,7 +18,7 @@ export async function getCodeOrError(ethereum: EthereumClientService, requestAbo
 	const code = await getSimulatedCode(ethereum, requestAbortController, simulationState, address)
 	if (code.statusCode !== 'failure') return code
 	const identifiedAddress = await identifyAddress(ethereum, requestAbortController, address)
-	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress } contains code or not.` }
+	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress.address }(${ identifiedAddress.name }) contains code or not.` }
 }
 export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)
