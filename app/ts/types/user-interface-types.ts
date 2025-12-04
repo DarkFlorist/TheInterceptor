@@ -42,7 +42,7 @@ export type HomeParams = {
 	simVisResults: SimulationAndVisualisationResults | undefined,
 	rpcNetwork: Signal<RpcNetwork | undefined>,
 	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void,
-	simulationMode: boolean,
+	simulationMode: Signal<boolean>,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -68,12 +68,11 @@ export type ChangeActiveAddressParam = {
 
 export type FirstCardParams = {
 	activeAddress: AddressBookEntry | undefined
-	enableSimulationMode: (x: boolean) => void
 	useSignersAddressAsActiveAddress: boolean
 	activeAddresses: Signal<AddressBookEntries | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => void
 	rpcNetwork: Signal<RpcNetwork | undefined>
-	simulationMode: boolean
+	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
 	makeMeRich: Signal<boolean>
 	richList: Signal<readonly AddressBookEntry[]>
