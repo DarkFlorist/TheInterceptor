@@ -1,8 +1,8 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation } from './settings.js'
+import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -15,7 +15,7 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { CompleteVisualizedSimulation, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
-import { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { stringToAddress } from '../utils/bigint.js'
@@ -32,6 +32,7 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { RequestMakeMeRichDataReply } from '../types/interceptor-reply-messages.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -65,21 +66,33 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 
-		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: signerAccount,
 		})
 	} else {
 		await setUseSignersAddressAsActiveAddress(false)
-		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: addressChange.data.activeAddress,
 		})
 	}
 }
 
-export async function changeMakeMeRich(simulator: Simulator, makeMeRichChange: ChangeMakeMeRich) {
-	await setMakeMeRich(makeMeRichChange.data)
+export async function modifyMakeMeRich(simulator: Simulator, makeMeRichChange: ModifyMakeMeRich) {
+	if (makeMeRichChange.data.address === 'KeepSelectedAddressRichEvenIfIChangeAddress') {
+		return await setKeepSelectedAddressRichEvenIfIChangeAddress(makeMeRichChange.data.add)
+	}
+	else if (makeMeRichChange.data.address === 'CurrentAddress') {
+		await setMakeMeRich(makeMeRichChange.data.add)
+	} else {
+		const currentList = await getMakeMeRichList()
+		if (makeMeRichChange.data.add) {
+			await setMakeMeRichList([...new Set([...currentList, makeMeRichChange.data.address])])
+		} else {
+			await setMakeMeRichList(currentList.filter((address) => address !== makeMeRichChange.data.address))
+		}
+	}
 	await refreshSimulation(simulator, true)
 }
 
@@ -299,14 +312,14 @@ export async function enableSimulationMode(simulator: Simulator, websiteTabConne
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
-		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: await getSignerAccount(),
 			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
 		})
 	} else {
 		const selectedNetworkToSwitch = settings.activeRpcNetwork.httpsRpc !== undefined ? settings.activeRpcNetwork : (await getRpcList())[0]
-		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
 			simulationMode: params.data,
 			...settings.activeRpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
 		})
@@ -349,7 +362,6 @@ export async function requestNewHomeData(simulator: Simulator, requestAbortContr
 
 export async function refreshHomeData(simulator: Simulator) {
 	const settingsPromise = getSettings()
-	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
 	const rpcEntriesPromise = getRpcList()
 	const activeAddressesPromise = getActiveAddresses()
@@ -373,7 +385,6 @@ export async function refreshHomeData(simulator: Simulator) {
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			currentBlockNumber: simulator.ethereum.getCachedBlock()?.number,
 			settings: settings,
-			makeMeRich: await makeMeRichPromise,
 			rpcConnectionStatus: await rpcConnectionStatusPromise,
 			tabId,
 			rpcEntries: await rpcEntriesPromise,
@@ -717,4 +728,16 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 	})
 
 	await refreshSimulation(simulator, true)
+}
+
+export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined,) {
+	const keepSelectedAddressRichEvenIfIChangeAddressPromise = getKeepSelectedAddressRichEvenIfIChangeAddress()
+	const makeMeRichPromise = getMakeMeRich()
+	const richList = await getMakeMeRichList()
+	const addressbookEntryPromises: Promise<AddressBookEntry>[] = Array.from(richList.values()).map((address) => identifyAddress(ethereumClientService, requestAbortController, address))
+	return RequestMakeMeRichDataReply.serialize({
+		richList: await Promise.all(addressbookEntryPromises),
+		keepSelectedAddressRichEvenIfIChangeAddress : await keepSelectedAddressRichEvenIfIChangeAddressPromise,
+		makeMeRich: await makeMeRichPromise
+	})
 }

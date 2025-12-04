@@ -82,7 +82,7 @@ export async function getSimulationResults() {
 		activeAddress: undefined,
 		namedTokenIds: [],
 		visualizedSimulationState: { visualizedBlocks: [] },
-		makeMeRich: false,
+		numberOfAddressesMadeRich: 0,
 	}
 	try {
 		return (await browserStorageLocalGet('simulationResults'))?.simulationResults ?? emptyResults

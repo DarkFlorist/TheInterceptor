@@ -12,7 +12,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { getMakeMeRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, bigintSecondsToDate, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -23,16 +23,31 @@ import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '..
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
 
-const getMakeMeRichStateOverride = (addressToMakeRich: bigint | undefined) => addressToMakeRich !== undefined ? { [addressString(addressToMakeRich)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } } : {}
+const getMakeMeRichStateOverride = (addressesToMakeRich: bigint[]) => {
+	if (addressesToMakeRich.length === 0) return {}
+	return Object.fromEntries(
+		addressesToMakeRich.map(currentAddress => {
+			const addressKey = addressString(currentAddress)
+			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
+		})
+	)
+}
+
+export const getMakeMeRichListWithCurrent = async () => {
+	const makeRichAddressPromise = getAddressToMakeRich()
+	const makeRichAddressListPromise = getMakeMeRichList()
+	const makeMeRich = await makeRichAddressPromise
+	return Array.from(new Set(makeMeRich === undefined ? await makeRichAddressListPromise : [...await makeRichAddressListPromise, makeMeRich]))
+}
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
-	const makeRichAddressPromise = getAddressToMakeRich()
 	const preSimulationBlockTimeManipulation = await getPreSimulationBlockTimeManipulation()
+	const richListPromise = getMakeMeRichListWithCurrent()
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeMeRichStateOverride(await makeRichAddressPromise)
+	let currentBlockStateOverrides = getMakeMeRichStateOverride(await richListPromise)
 	let previousBlockTimeManipulation = preSimulationBlockTimeManipulation
 	for (const operation of stack.operations) {
 		switch(operation.type) {

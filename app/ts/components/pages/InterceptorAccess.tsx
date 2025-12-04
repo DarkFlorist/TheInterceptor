@@ -171,7 +171,7 @@ type Page = { page: 'Home', accessRequestId: string }
 
 export function InterceptorAccess() {
 	const [pendingAccessRequests, setAccessRequest] = useState<PendingAccessRequests>([])
-	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>([])
+	const activeAddresses = useSignal<AddressBookEntries>([])
 	const appPage = useSignal<Page>({ page: 'Home', accessRequestId: '' })
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -194,7 +194,7 @@ export function InterceptorAccess() {
 					if (pendingAccessRequests.length > 0) setInformationUpdatedTimestamp(Date.now())
 				}
 				setAccessRequest(parsed.data.pendingAccessRequests)
-				setActiveAddresses(parsed.data.activeAddresses)
+				activeAddresses.value = parsed.data.activeAddresses
 				return
 			}
 			return

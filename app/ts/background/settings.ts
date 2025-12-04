@@ -139,6 +139,12 @@ export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))
 export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
 export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.makeMeRich ?? false
 
+export const setKeepSelectedAddressRichEvenIfIChangeAddress = async (keepSelectedAddressRichEvenIfIChangeAddress: boolean) => await browserStorageLocalSet({ keepSelectedAddressRichEvenIfIChangeAddress })
+export const getKeepSelectedAddressRichEvenIfIChangeAddress = async() => (await browserStorageLocalGet('keepSelectedAddressRichEvenIfIChangeAddress'))?.keepSelectedAddressRichEvenIfIChangeAddress ?? false
+
+export const setMakeMeRichList = async (makeMeRich: bigint[]) => await browserStorageLocalSet({ makeMeRichList: makeMeRich })
+export const getMakeMeRichList = async() => (await browserStorageLocalGet('makeMeRichList'))?.makeMeRichList ?? []
+
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
 	return await browserStorageLocalSet({
 		useSignersAddressAsActiveAddress,
