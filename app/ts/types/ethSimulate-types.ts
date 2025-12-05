@@ -109,7 +109,8 @@ const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
 	  gasUsed: EthereumQuantitySmall,
 	  error: funtypes.ReadonlyObject({
 		  code: funtypes.Number,
-		  message: funtypes.String
+		  message: funtypes.String,
+		  data: funtypes.String,
 	  })
 })
 
