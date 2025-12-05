@@ -100,9 +100,9 @@ export const updateTabIfExists = async (tabId: number, updateProperties: browser
 	}
 }
 
-export const updateWindowIfExists = async (tabId: number, updateProperties: browser.windows._UpdateUpdateInfo) => {
+export const updateWindowIfExists = async (windowId: number, updateProperties: browser.windows._UpdateUpdateInfo) => {
 	try {
-		const window = await browser.windows.update(tabId, updateProperties)
+		const window = await browser.windows.update(windowId, updateProperties)
 		checkAndThrowRuntimeLastError()
 		return window
 	} catch (e: unknown){
