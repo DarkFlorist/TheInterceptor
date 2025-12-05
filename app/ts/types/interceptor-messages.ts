@@ -561,7 +561,6 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
-		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	})
 })

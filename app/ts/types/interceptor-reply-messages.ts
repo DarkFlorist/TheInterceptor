@@ -1,6 +1,7 @@
 
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { UnexpectedErrorOccured } from './interceptor-messages.js'
 
 export type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
 export const RequestMakeMeRichDataReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
@@ -19,10 +20,16 @@ export const RequestSimulationModeReply = funtypes.Union(funtypes.Undefined, fun
 	simulationMode: funtypes.Boolean
 }))
 
+export type RequestLatestUnexpectedErrorReply = funtypes.Static<typeof RequestLatestUnexpectedErrorReply>
+export const RequestLatestUnexpectedErrorReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+	latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
+}))
+
 export const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
+	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
 }
 
 export type PopupRequestsReplies = {
@@ -33,4 +40,5 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
 )
