@@ -32,7 +32,7 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { RequestMakeMeRichDataReply } from '../types/interceptor-reply-messages.js'
+import { RequestActiveAddressesReply, RequestMakeMeRichDataReply, RequestSimulationModeReply } from '../types/interceptor-reply-messages.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -364,7 +364,6 @@ export async function refreshHomeData(simulator: Simulator) {
 	const settingsPromise = getSettings()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
 	const rpcEntriesPromise = getRpcList()
-	const activeAddressesPromise = getActiveAddresses()
 	const latestUnexpectedError = getLatestUnexpectedError()
 	const preSimulationBlockTimeManipulationPromise = getPreSimulationBlockTimeManipulation()
 
@@ -379,7 +378,6 @@ export async function refreshHomeData(simulator: Simulator) {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,
-			activeAddresses: await activeAddressesPromise,
 			websiteAccessAddressMetadata: await getAddressMetadataForAccess(settings.websiteAccess),
 			tabState,
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
@@ -741,3 +739,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		makeMeRich: await makeMeRichPromise
 	})
 }
+
+export const requestActiveAddresses = async () => RequestActiveAddressesReply.serialize({ activeAddresses: await getActiveAddresses() })
+
+export const requestSimulationMode = async () => RequestSimulationModeReply.serialize({ simulationMode: (await getSettings()).simulationMode })

@@ -31,27 +31,27 @@ export type AddAddressParam = {
 }
 
 export type HomeParams = {
-	changeActiveAddress: () => void,
-	makeMeRich: Signal<boolean>,
-	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>,
-	activeAddresses: Signal<AddressBookEntries>,
-	tabState: TabState | undefined,
-	activeSimulationAddress: bigint | undefined,
-	activeSigningAddress: bigint | undefined,
-	useSignersAddressAsActiveAddress: boolean,
-	simVisResults: SimulationAndVisualisationResults | undefined,
-	rpcNetwork: Signal<RpcNetwork | undefined>,
-	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void,
-	simulationMode: boolean,
-	tabIconDetails: TabIconDetails,
-	currentBlockNumber: bigint | undefined,
-	renameAddressCallBack: RenameAddressCallBack,
-	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
-	rpcConnectionStatus: Signal<RpcConnectionStatus>,
+	changeActiveAddress: () => void
+	makeMeRich: Signal<boolean>
+	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>
+	activeAddresses: Signal<AddressBookEntries>
+	tabState: TabState | undefined
+	activeSimulationAddress: bigint | undefined
+	activeSigningAddress: bigint | undefined
+	useSignersAddressAsActiveAddress: boolean
+	simVisResults: SimulationAndVisualisationResults | undefined
+	rpcNetwork: Signal<RpcNetwork | undefined>
+	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void
+	simulationMode: Signal<boolean>
+	tabIconDetails: TabIconDetails
+	currentBlockNumber: bigint | undefined
+	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	rpcEntries: Signal<RpcEntries>
-	simulationUpdatingState: SimulationUpdatingState | undefined,
-	simulationResultState: SimulationResultState | undefined,
-	interceptorDisabled: boolean,
+	simulationUpdatingState: SimulationUpdatingState | undefined
+	simulationResultState: SimulationResultState | undefined
+	interceptorDisabled: boolean
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	makeMeRichList: Signal<readonly AddressBookEntry[]>
 }
@@ -68,12 +68,11 @@ export type ChangeActiveAddressParam = {
 
 export type FirstCardParams = {
 	activeAddress: AddressBookEntry | undefined
-	enableSimulationMode: (x: boolean) => void
 	useSignersAddressAsActiveAddress: boolean
 	activeAddresses: Signal<AddressBookEntries | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => void
 	rpcNetwork: Signal<RpcNetwork | undefined>
-	simulationMode: boolean
+	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
 	makeMeRich: Signal<boolean>
 	richList: Signal<readonly AddressBookEntry[]>

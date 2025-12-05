@@ -23,7 +23,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/Simulation
 
 type SignerExplanationParams = {
 	activeAddress: AddressBookEntry | undefined
-	simulationMode: boolean
+	simulationMode: Signal<boolean>
 	tabState: TabState | undefined
 	useSignersAddressAsActiveAddress: boolean
 	tabIcon: TabIcon
@@ -39,6 +39,12 @@ function SignerExplanation(param: SignerExplanationParams) {
 }
 
 function FirstCardHeader(param: FirstCardParams) {
+
+	function enableSimulationMode(enabled: boolean ) {
+		param.simulationMode.value = enabled
+		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+	}
+
 	return <>
 		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, 1fr)', columnGap: '1rem', alignItems: 'center' } }>
 			<div>
@@ -49,17 +55,17 @@ function FirstCardHeader(param: FirstCardParams) {
 			<div>
 				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
 					<button
-						class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
-						style = { `margin-bottom: 0px; ${ param.simulationMode ? 'opacity: 1;' : 'border-style: none;' }` }
-						disabled = { param.simulationMode }
-						onClick = { () => param.enableSimulationMode(true) }>
+						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
+						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
+						disabled = { param.simulationMode.value }
+						onClick = { () => enableSimulationMode(true) }>
 						Simulating
 					</button>
 					<button
-						class = { `button is-primary ${ param.simulationMode ? 'is-outlined' : ''}` }
-						style = { `margin-bottom: 0px; ${ param.simulationMode ? 'border-style: none;' : 'opacity: 1;' }` }
-						disabled = { !param.simulationMode }
-						onClick = { () => param.enableSimulationMode(false) }>
+						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
+						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
+						disabled = { !param.simulationMode.value }
+						onClick = { () => enableSimulationMode(false) }>
 						<SignerLogoText signerName = { param.tabState?.signerName ?? 'NoSignerDetected' } text = { 'Signing' } />
 					</button>
 				</div>
@@ -184,7 +190,7 @@ function FirstCard(param: FirstCardParams) {
 		}
 	}, [param.preSimulationBlockTimeManipulation])
 
-	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode === false) {
+	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode.value === false) {
 		return <>
 			<section class = 'card' style = 'margin: 10px;'>
 				<FirstCardHeader { ...param }/>
@@ -199,7 +205,7 @@ function FirstCard(param: FirstCardParams) {
 		<section class = 'card' style = 'margin: 10px;'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
-				{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
+				{ param.useSignersAddressAsActiveAddress || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState === undefined || param.tabState?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.signerName } /></> }
 						{ param.tabState?.signerConnected ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
@@ -210,11 +216,11 @@ function FirstCard(param: FirstCardParams) {
 				<ActiveAddressComponent
 					activeAddress = { param.activeAddress }
 					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode }
+					disableButton = { !param.simulationMode.value }
 					changeActiveAddress = { param.changeActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
-				{ !param.simulationMode ? <>
+				{ !param.simulationMode.value ? <>
 					{ (param.tabState?.signerAccounts.length === 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
 							<button className = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
@@ -312,7 +318,6 @@ export function Home(param: HomeParams) {
 	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressBookEntry | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
-	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
@@ -328,7 +333,6 @@ export function Home(param: HomeParams) {
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? getActiveAddressEntry(param.activeSimulationAddress, param.activeAddresses.value) : undefined)
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? getActiveAddressEntry(param.activeSigningAddress, param.activeAddresses.value) : undefined)
-		setSimulationMode(param.simulationMode)
 		setTabConnection(param.tabIconDetails)
 		setTabState(param.tabState)
 		setCurrentBlockNumber(param.currentBlockNumber)
@@ -343,7 +347,6 @@ export function Home(param: HomeParams) {
 		param.tabState,
 		param.useSignersAddressAsActiveAddress,
 		param.rpcNetwork.value,
-		param.simulationMode,
 		param.tabIconDetails,
 		param.currentBlockNumber,
 		param.simVisResults,
@@ -352,10 +355,6 @@ export function Home(param: HomeParams) {
 		param.simulationResultState,
 		param.interceptorDisabled,
 	])
-
-	function enableSimulationMode(enabled: boolean ) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
-	}
 
 	function resetSimulation() {
 		setDisableReset(true)
@@ -387,11 +386,10 @@ export function Home(param: HomeParams) {
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
-			enableSimulationMode = { enableSimulationMode }
-			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
+			activeAddress = { param.simulationMode.value ? activeSimulationAddress : activeSigningAddress }
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
-			simulationMode = { simulationMode }
+			simulationMode = { param.simulationMode }
 			changeActiveAddress = { param.changeActiveAddress }
 			makeMeRich = { param.makeMeRich }
 			richList = { param.makeMeRichList }
@@ -402,7 +400,7 @@ export function Home(param: HomeParams) {
 			rpcEntries = { param.rpcEntries }
 		/>
 
-		{ simulationMode && activeSimulationAddress !== undefined ? <SimulationResults
+		{ param.simulationMode.value && activeSimulationAddress !== undefined ? <SimulationResults
 			simulationAndVisualisationResults = { simulationAndVisualisationResults }
 			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 			disableReset = { disableReset }

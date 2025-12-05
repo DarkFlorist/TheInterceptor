@@ -13,6 +13,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './ac
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
+import { PopupMessageReplyRequests } from './interceptor-reply-messages.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -552,7 +553,6 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		websiteAccessAddressMetadata: AddressBookEntries,
-		activeAddresses: AddressBookEntries,
 		tabState: TabState,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
@@ -859,6 +859,7 @@ export const SetTransactionOrMessageBlockTimeManipulator = funtypes.ReadonlyObje
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
+	PopupMessageReplyRequests,
 	TransactionConfirmation,
 	RemoveTransaction,
 	ResetSimulation,
@@ -867,7 +868,6 @@ export const PopupMessage = funtypes.Union(
 	ChangeActiveAddress,
 	ChangePage,
 	RequestAccountsFromSigner,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation') }),
 	RefreshConfirmTransactionMetadata,
 	InterceptorAccess,
