@@ -1,6 +1,6 @@
 import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress } from './settings.js'
-import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
@@ -32,7 +32,7 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { RequestActiveAddressesReply, RequestMakeMeRichDataReply, RequestSimulationModeReply } from '../types/interceptor-reply-messages.js'
+import { RequestActiveAddressesReply, RequestLatestUnexpectedErrorReply, RequestMakeMeRichDataReply, RequestSimulationModeReply } from '../types/interceptor-reply-messages.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -364,7 +364,6 @@ export async function refreshHomeData(simulator: Simulator) {
 	const settingsPromise = getSettings()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
 	const rpcEntriesPromise = getRpcList()
-	const latestUnexpectedError = getLatestUnexpectedError()
 	const preSimulationBlockTimeManipulationPromise = getPreSimulationBlockTimeManipulation()
 
 	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = getSimulationResults()
@@ -387,7 +386,6 @@ export async function refreshHomeData(simulator: Simulator) {
 			tabId,
 			rpcEntries: await rpcEntriesPromise,
 			interceptorDisabled,
-			latestUnexpectedError: await latestUnexpectedError,
 			preSimulationBlockTimeManipulation: await preSimulationBlockTimeManipulationPromise
 		}
 	}
@@ -743,3 +741,5 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 export const requestActiveAddresses = async () => RequestActiveAddressesReply.serialize({ activeAddresses: await getActiveAddresses() })
 
 export const requestSimulationMode = async () => RequestSimulationModeReply.serialize({ simulationMode: (await getSettings()).simulationMode })
+
+export const requestLatestUnexpectedError = async () => RequestLatestUnexpectedErrorReply.serialize({ latestUnexpectedError: await getLatestUnexpectedError() })
