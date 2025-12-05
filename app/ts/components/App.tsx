@@ -13,7 +13,7 @@ import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { UpdateHomePage, Settings, MessageToPopup, UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
-import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../background/backgroundUtils.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
@@ -25,7 +25,7 @@ import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
-import { Signal, useSignal } from '@preact/signals'
+import { Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -67,8 +67,7 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
-	const [makeMeRich, setMakeMeRich] = useState(false)
-	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>(defaultActiveAddresses)
+	const activeAddresses = useSignal<AddressBookEntries>(defaultActiveAddresses)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
@@ -89,6 +88,10 @@ export function App() {
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 	const [unexpectedError, setUnexpectedError] = useState<UnexpectedErrorOccured | undefined>(undefined)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
+
+	const makeMeRichList = useSignal<readonly AddressBookEntry[]>([])
+	const makeMeRich = useSignal<boolean>(false)
+	const keepSelectedAddressRichEvenIfIChangeAddress = useSignal<boolean>(false)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -121,6 +124,19 @@ export function App() {
 		}
 	}
 
+	const requestRichData = async () => {
+		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestMakeMeRichData', data: [] })
+		if (reply === undefined) return
+		makeMeRichList.value = reply.richList
+		makeMeRich.value = reply.makeMeRich
+		keepSelectedAddressRichEvenIfIChangeAddress.value = reply.keepSelectedAddressRichEvenIfIChangeAddress
+	}
+	useEffect(() => { requestRichData() }, [])
+	useSignalEffect(() => {
+		activeAddresses.value
+		requestRichData()
+	})
+
 	useEffect(() => {
 		const setSimulationState = (
 			simState: SimulationState | undefined,
@@ -149,7 +165,7 @@ export function App() {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				rpcEntries.value = data.rpcEntries
-				setActiveAddresses(data.activeAddresses)
+				activeAddresses.value = data.activeAddresses
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				setInterceptorDisabled(data.interceptorDisabled)
@@ -168,7 +184,6 @@ export function App() {
 					setSimulationUpdatingState(data.visualizedSimulatorState.simulationUpdatingState)
 					setSimulationResultState(data.visualizedSimulatorState.simulationResultState)
 				}
-				setMakeMeRich(data.makeMeRich)
 				setTabState(data.tabState)
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
@@ -247,7 +262,7 @@ export function App() {
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
-		for (const activeAddress of activeAddresses) {
+		for (const activeAddress of activeAddresses.value) {
 			if (activeAddress.address === bigIntReprentation) return await setActiveAddressAndInformAboutIt(activeAddress.address)
 		}
 
@@ -391,6 +406,8 @@ export function App() {
 							simulationResultState = { simulationResultState }
 							interceptorDisabled = { interceptorDisabled }
 							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
+							makeMeRichList = { makeMeRichList }
+							keepSelectedAddressRichEvenIfIChangeAddress = { keepSelectedAddressRichEvenIfIChangeAddress }
 						/>
 
 						<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>

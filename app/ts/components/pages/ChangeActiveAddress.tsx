@@ -25,7 +25,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		param.addNewAddress()
 	}
 
-	const signerAddressName = param.activeAddresses.find((x) => x.address === getSignerAccount() )?.name
+	const signerAddressName = param.activeAddresses.value.find((x) => x.address === getSignerAccount() )?.name
 
 	return ( <>
 		<div class = 'modal-background'> </div>
@@ -73,7 +73,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 
 					{ param.activeAddresses === undefined
 						? <></>
-						: param.activeAddresses.map((activeAddress) => (
+						: param.activeAddresses.value.map((activeAddress) => (
 							<li>
 								<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
 									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>

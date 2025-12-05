@@ -111,6 +111,7 @@ input[type=checkbox]:not([role=switch]) {
 	border-radius: 3px;
 	background-color: var(--unimportant-text-color);
 	border: 1px solid black;
+	align-self: anchor-center;
 }
 
 input[type=checkbox]:not([role=switch])::before {

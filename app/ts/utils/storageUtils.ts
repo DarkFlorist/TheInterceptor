@@ -63,7 +63,9 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	latestUnexpectedError: UnexpectedErrorOccured,
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
-	preSimulationBlockTimeManipulation: BlockTimeManipulation
+	preSimulationBlockTimeManipulation: BlockTimeManipulation,
+	makeMeRichList: funtypes.ReadonlyArray(EthereumAddress),
+	keepSelectedAddressRichEvenIfIChangeAddress: funtypes.Boolean,
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -95,7 +97,9 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('latestUnexpectedError'),
 	funtypes.Literal('ensNameHashes'),
 	funtypes.Literal('ensLabelHashes'),
-	funtypes.Literal('preSimulationBlockTimeManipulation')
+	funtypes.Literal('preSimulationBlockTimeManipulation'),
+	funtypes.Literal('makeMeRichList'),
+	funtypes.Literal('keepSelectedAddressRichEvenIfIChangeAddress'),
 )
 
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2>

@@ -2,9 +2,9 @@ import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack, updateSimulationResults } from './storageVariables.js'
-import { changeSimulationMode, getMakeMeRich, getSettings } from './settings.js'
+import { changeSimulationMode, getKeepSelectedAddressRichEvenIfIChangeAddress, getMakeMeRich, getMakeMeRichList, getSettings, setMakeMeRichList } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator } from './popupMessageHandlers.js'
+import { changeActiveAddress, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList } from './popupMessageHandlers.js'
 import { CompleteVisualizedSimulation, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -31,7 +31,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, getMakeMeRichListWithCurrent, visualizeSimulatorState } from './simulationUpdating.js'
 
 const updateSimulationStateSemaphore = new Semaphore(1)
 let simulationAbortController = new AbortController()
@@ -63,14 +63,14 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 				visualizedSimulationState: {
 					visualizedBlocks: []
 				},
-				makeMeRich: await getMakeMeRich()
+				numberOfAddressesMadeRich: (await getMakeMeRichListWithCurrent()).length
 			}
 			try {
 				const oldSimulationStateInput = await getCurrentSimulationInput()
 				const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(oldSimulationStateInput, ethereum)
 
 				if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState.rpcNetwork.chainId) {
-					await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisSimulationsController), ...doneState, makeMeRich: emptyDoneResults.makeMeRich })
+					await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisSimulationsController), ...doneState, numberOfAddressesMadeRich: emptyDoneResults.numberOfAddressesMadeRich })
 				} else {
 					await updateSimulationResults(modifyObject(emptyDoneResults, { simulationResultState: 'corrupted' as const }))
 				}
@@ -300,8 +300,17 @@ export async function resetSimulatorStateFromConfig(ethereumClientService: Ether
 	return await updateSimulationState(ethereumClientService, tokenPriceService, true)
 }
 
-const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
-export async function changeActiveAddressAndChainAndResetSimulation(
+const updateRichListAfterActiveAddressChange = async (newActiveAddress: bigint) => {
+	if (!await getMakeMeRich()) return
+	if (!await getKeepSelectedAddressRichEvenIfIChangeAddress()) return
+	const activeAddress = (await getSettings()).activeSimulationAddress
+	if (activeAddress === undefined || activeAddress === newActiveAddress) return
+	const richList = await getMakeMeRichList()
+	await setMakeMeRichList([...richList, activeAddress])
+}
+
+const changeActiveAddressAndChainSemaphore = new Semaphore(1)
+export async function changeActiveAddressAndChain(
 	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	change: {
@@ -310,6 +319,9 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		rpcNetwork?: RpcNetwork,
 	},
 ) {
+
+	if (change.simulationMode && change.activeAddress !== undefined) await updateRichListAfterActiveAddressChange(change.activeAddress)
+
 	if (change.simulationMode) {
 		await changeSimulationMode({ ...change, ...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {} })
 	} else {
@@ -320,14 +332,15 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
+	await changeActiveAddressAndChainSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
 			if (change.rpcNetwork.httpsRpc !== undefined) simulator.reset(change.rpcNetwork)
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.rpcNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-		}
 
-		if (updatedSettings.simulationMode) await resetSimulatorStateFromConfig(simulator.ethereum, simulator.tokenPriceService)
+			// reset simulation if chain id was changed
+			if (updatedSettings.simulationMode) await resetSimulatorStateFromConfig(simulator.ethereum, simulator.tokenPriceService)
+		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
 		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
@@ -335,7 +348,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
 	// allow switching RPC only if we are in simulation mode, or that chain id would not change
-	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, { simulationMode, rpcNetwork })
+	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChain(simulator, websiteTabConnections, { simulationMode, rpcNetwork })
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 	await promoteRpcAsPrimary(rpcNetwork)
@@ -455,7 +468,7 @@ export async function popupMessageHandler(
 		switch (parsedRequest.method) {
 			case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
-			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest)
+			case 'popup_modifyMakeMeRich': return await modifyMakeMeRich(simulator, parsedRequest)
 			case 'popup_changePage': return await changePage(parsedRequest)
 			case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
 			case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator.ethereum, simulator.tokenPriceService)
@@ -503,6 +516,7 @@ export async function popupMessageHandler(
 			case 'popup_forceSetGasLimitForTransaction': return await forceSetGasLimitForTransaction(simulator, parsedRequest)
 			case 'popup_changePreSimulationBlockTimeManipulation': return await changePreSimulationBlockTimeManipulation(simulator, parsedRequest)
 			case 'popup_setTransactionOrMessageBlockTimeManipulator': return await setTransactionOrMessageBlockTimeManipulator(simulator, parsedRequest)
+			case 'popup_requestMakeMeRichData': return await requestMakeMeRichList(simulator.ethereum, simulationAbortController)
 			default: assertUnreachable(parsedRequest)
 		}
 	} catch(error: unknown) {

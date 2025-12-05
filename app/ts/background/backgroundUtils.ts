@@ -4,6 +4,7 @@ import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
+import { PopupMessageReplyRequests, PopupRequestsReplies } from '../types/interceptor-reply-messages.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
@@ -61,6 +62,11 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 		handleUnexpectedError(error)
 		return false
 	}
+}
+
+export async function sendPopupMessageToBackgroundPageWithReply<MethodKey extends keyof PopupRequestsReplies, MessageType extends { method: MethodKey }>(message: MessageType): Promise<PopupRequestsReplies[MethodKey]> {
+	const reply = await browser.runtime.sendMessage(PopupMessageReplyRequests.parse(message))
+	return PopupRequestsReplies.fields[message.method].parse(reply)
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'
