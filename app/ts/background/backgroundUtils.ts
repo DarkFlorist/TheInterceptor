@@ -4,7 +4,7 @@ import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { PopupMessageReplyRequests, PopupRequestsReplies, RequestActiveAddressesReply, RequestMakeMeRichDataReply, RequestSimulationModeReply } from '../types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, PopupRequestsReplies, RequestActiveAddressesReply, RequestLatestUnexpectedErrorReply, RequestMakeMeRichDataReply, RequestSimulationModeReply } from '../types/interceptor-reply-messages.js'
 import { assertNever } from '../utils/typescript.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
@@ -65,13 +65,13 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-
 export async function sendPopupMessageToBackgroundPageWithReply<MethodKey extends keyof PopupRequestsReplies>(message: { method: MethodKey }): Promise<PopupRequestsReplies[MethodKey]> {
 	const reply = await browser.runtime.sendMessage(PopupMessageReplyRequests.parse(message))
 	switch(message.method) {
 		case 'popup_requestActiveAddresses': return RequestActiveAddressesReply.parse(reply) as PopupRequestsReplies[MethodKey]
 		case 'popup_requestMakeMeRichData': return RequestMakeMeRichDataReply.parse(reply) as PopupRequestsReplies[MethodKey]
 		case 'popup_requestSimulationMode': return RequestSimulationModeReply.parse(reply) as PopupRequestsReplies[MethodKey]
+		case 'popup_requestLatestUnexpectedError': return RequestLatestUnexpectedErrorReply.parse(reply) as PopupRequestsReplies[MethodKey]
 		default: assertNever(message.method)
 	}
 }

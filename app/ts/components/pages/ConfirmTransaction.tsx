@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { MessageToPopup, UnexpectedErrorOccured, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
+import { MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
 import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, VisualizedSimulationState } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
@@ -30,6 +30,7 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
+import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
@@ -583,7 +584,7 @@ export function ConfirmTransaction() {
 						: <></> }
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
-						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError.value }/>
+						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						{ currentPendingTransactionOrSignableMessage.value === undefined ? <></> : <>
 							<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.value.website } websiteSocket = { currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.value.simulationMode }/>
@@ -618,7 +619,7 @@ export function ConfirmTransaction() {
 				</div>
 				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 					<div style = 'position: sticky; top: 0; z-index: 1;'>
-						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError.value }/>
+						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.value.website } websiteSocket = { currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.value.simulationMode }/>
 						<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }/>

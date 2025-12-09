@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
-import { UpdateHomePage, Settings, MessageToPopup, UnexpectedErrorOccured } from '../types/interceptor-messages.js'
+import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../background/backgroundUtils.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
@@ -26,6 +26,7 @@ import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useSignal, useSignalEffect } from '@preact/signals'
+import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -85,7 +86,7 @@ export function App() {
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
-	const [unexpectedError, setUnexpectedError] = useState<UnexpectedErrorOccured | undefined>(undefined)
+	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 
 	const makeMeRichList = useSignal<readonly AddressBookEntry[]>([])
@@ -144,10 +145,17 @@ export function App() {
 		keepSelectedAddressRichEvenIfIChangeAddress.value = reply.keepSelectedAddressRichEvenIfIChangeAddress
 	}
 
+	const requestUnexpectedError = async () => {
+		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestLatestUnexpectedError' })
+		if (reply === undefined) return
+		unexpectedError.value = reply.latestUnexpectedError
+	}
+
 	useEffect(() => {
 		requestRichData()
 		requestSimulationMode()
 		requestActiveAddresses()
+		requestUnexpectedError()
 	}, [])
 
 	useSignalEffect(() => {
@@ -187,7 +195,6 @@ export function App() {
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				setInterceptorDisabled(data.interceptorDisabled)
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
-				setUnexpectedError(data.latestUnexpectedError)
 				if (isSettingsLoaded === false) setTabConnection(data.tabState.tabIconDetails)
 				if (data.visualizedSimulatorState !== undefined) {
 					setSimulationState(
@@ -230,7 +237,10 @@ export function App() {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			switch(parsed.method) {
-				case 'popup_UnexpectedErrorOccured': return setUnexpectedError(parsed)
+				case 'popup_UnexpectedErrorOccured': {
+					unexpectedError.value = parsed
+					return
+				}
 				case 'popup_settingsUpdated': return updateHomePageSettings(parsed.data, true)
 				case 'popup_activeSigningAddressChanged': {
 					if (parsed.data.tabId !== currentTabId) return
@@ -372,7 +382,7 @@ export function App() {
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 	async function clearUnexpectedError() {
-		setUnexpectedError(undefined)
+		unexpectedError.value = undefined
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 	return (
