@@ -1,7 +1,7 @@
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
 import { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
-import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
+import { changeActiveAddressAndChain } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
@@ -38,7 +38,7 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 	const settings = await getSettings()
 	if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
 	|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
-		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			activeAddress: tabStateChange.newState.activeSigningAddress,
 		})
@@ -55,7 +55,7 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
-		return changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+		return changeActiveAddressAndChain(simulator, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			rpcNetwork: await getRpcNetworkForChain(signerChain),
 		})

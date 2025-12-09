@@ -32,8 +32,9 @@ export type AddAddressParam = {
 
 export type HomeParams = {
 	changeActiveAddress: () => void,
-	makeMeRich: boolean,
-	activeAddresses: AddressBookEntries,
+	makeMeRich: Signal<boolean>,
+	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>,
+	activeAddresses: Signal<AddressBookEntries>,
 	tabState: TabState | undefined,
 	activeSimulationAddress: bigint | undefined,
 	activeSigningAddress: bigint | undefined,
@@ -52,10 +53,11 @@ export type HomeParams = {
 	simulationResultState: SimulationResultState | undefined,
 	interceptorDisabled: boolean,
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
+	makeMeRichList: Signal<readonly AddressBookEntry[]>
 }
 
 export type ChangeActiveAddressParam = {
-	activeAddresses: AddressBookEntries
+	activeAddresses: Signal<AddressBookEntries>
 	close: () => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
@@ -65,15 +67,17 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
-	activeAddress: AddressBookEntry | undefined,
-	enableSimulationMode: (x: boolean) => void,
-	useSignersAddressAsActiveAddress: boolean,
-	activeAddresses: AddressBookEntries | undefined,
-	changeActiveRpc: (rpcEntry: RpcEntry) => void,
-	rpcNetwork: Signal<RpcNetwork | undefined>,
-	simulationMode: boolean,
-	changeActiveAddress: () => void,
-	makeMeRich: boolean,
+	activeAddress: AddressBookEntry | undefined
+	enableSimulationMode: (x: boolean) => void
+	useSignersAddressAsActiveAddress: boolean
+	activeAddresses: Signal<AddressBookEntries | undefined>
+	changeActiveRpc: (rpcEntry: RpcEntry) => void
+	rpcNetwork: Signal<RpcNetwork | undefined>
+	simulationMode: boolean
+	changeActiveAddress: () => void
+	makeMeRich: Signal<boolean>
+	richList: Signal<readonly AddressBookEntry[]>
+	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>
 	tabIconDetails: TabIconDetails,
 	tabState: TabState | undefined,
 	renameAddressCallBack: RenameAddressCallBack,

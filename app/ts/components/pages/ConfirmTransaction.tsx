@@ -112,7 +112,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
 		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 		const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
-		return [...param.completeVisualizedSimulation.value.makeMeRich ? ['Simply making you rich'] : [], ...names, titleOfCurrentPendingTransaction() ]
+		return [...param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${ param.completeVisualizedSimulation.value.numberOfAddressesMadeRich } addresses rich`] : [], ...names, titleOfCurrentPendingTransaction() ]
 	})
 
 	return <div class = 'block' style = 'margin-bottom: 10px;'>

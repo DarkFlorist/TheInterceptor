@@ -5,7 +5,7 @@ import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAc
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
-import { changeActiveAddressAndChainAndResetSimulation, handleInterceptedRequest, refuseAccess } from '../background.js'
+import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
@@ -220,7 +220,7 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(simulator, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
-			await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+			await changeActiveAddressAndChain(simulator, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: accessReply.requestAccessToAddress,
 			})
