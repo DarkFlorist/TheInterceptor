@@ -137,7 +137,7 @@ function RichList(param: RichListParams) {
 			: <div class = 'card-content'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content; padding-bottom: 10px' onClick = { event => { event.stopPropagation() } }>
 					<input type = 'checkbox' checked = { param.keepSelectedAddressRichEvenIfIChangeAddress.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableKeepSelectedAddressRichEvenIfIChangeAddress(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Keep selected address rich even if I change addresss</p>
+					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Keep selected address rich even if I change address</p>
 				</label>
 
 				<div style = { { display: 'flex', flexDirection: 'column' } } >

@@ -88,7 +88,7 @@ export async function modifyMakeMeRich(simulator: Simulator, makeMeRichChange: M
 	} else {
 		const currentList = await getMakeMeRichList()
 		if (makeMeRichChange.data.add) {
-			await setMakeMeRichList([...new Set([...currentList, makeMeRichChange.data.address])])
+			await setMakeMeRichList([...currentList, makeMeRichChange.data.address])
 		} else {
 			await setMakeMeRichList(currentList.filter((address) => address !== makeMeRichChange.data.address))
 		}
