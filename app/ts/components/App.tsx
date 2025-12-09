@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
-import { UpdateHomePage, Settings, MessageToPopup, UnexpectedErrorOccured } from '../types/interceptor-messages.js'
+import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../background/backgroundUtils.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
@@ -26,6 +26,7 @@ import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useSignal, useSignalEffect } from '@preact/signals'
+import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined

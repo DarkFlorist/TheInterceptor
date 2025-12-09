@@ -8,8 +8,8 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
+import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyObject({

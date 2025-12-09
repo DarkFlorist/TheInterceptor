@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { MessageToPopup, UnexpectedErrorOccured, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
+import { MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
 import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, VisualizedSimulationState } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
@@ -30,6 +30,7 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
+import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]

@@ -1,7 +1,7 @@
 import type { ComponentChild, JSX } from 'preact'
-import { UnexpectedErrorOccured } from '../../types/interceptor-messages.js'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
 import { Signal } from '@preact/signals'
+import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 
 interface ErrorProps {
 	text: ComponentChild

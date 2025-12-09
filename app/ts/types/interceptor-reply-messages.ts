@@ -1,7 +1,13 @@
 
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
-import { UnexpectedErrorOccured } from './interceptor-messages.js'
+import { EthereumTimestamp } from './wire-types.js'
+
+export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
+export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
+	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
+})
 
 export type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
 export const RequestMakeMeRichDataReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({

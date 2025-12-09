@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation, BlockTimeManipulationWithNoDelay } from './visualizer-types.js'
 import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -13,7 +13,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './ac
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { PopupMessageReplyRequests } from './interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -539,12 +539,6 @@ type PartialUpdateHomePage = funtypes.Static<typeof PartialUpdateHomePage>
 const PartialUpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.Unknown,
-})
-
-export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
-export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
-	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
 })
 
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
