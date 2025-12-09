@@ -188,3 +188,8 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 	},
 	transactionSendingFormat: 'eth_sendTransaction' as const,
 }
+
+export const BURN_ADDRESSES = [
+	0x0000000000000000000000000000000000000000n,
+	0x000000000000000000000000000000000000deadn
+]
