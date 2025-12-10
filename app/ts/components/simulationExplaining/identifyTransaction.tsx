@@ -1,5 +1,5 @@
 import { get4Byte, get4ByteString } from '../../utils/calldata.js'
-import { FourByteExplanations } from '../../utils/constants.js'
+import { BURN_ADDRESSES, FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
 import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
@@ -162,7 +162,10 @@ function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): 
 	if (tokenResults.length === 1
 		&& tokenResult.isApproval === false
 		&& tokenResult.from.address !== tokenResult.to.address
-		&& tokenResult.from.address === transaction.transaction.from.address) return true
+		&& tokenResult.from.address === transaction.transaction.from.address
+		&& !BURN_ADDRESSES.includes(tokenResult.from.address)
+		&& !BURN_ADDRESSES.includes(tokenResult.to.address)
+	) return true
 	return false
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
@@ -196,6 +199,11 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	if (transaction.events.some((x) => x.type === 'ENS')) return false
 	// there need to be atleast two token logs (otherwise its a simple send)
 	if (tokenResults.length < 2) return false
+
+	// no burning allowed
+	if (!tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return false
+	if (!tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return false
+
 	// no approvals allowed
 	if (tokenResults.filter((result) => result.isApproval).length !== 0) return false
 	// sender has only one token leaving by logs (gas fees are not in logs)
