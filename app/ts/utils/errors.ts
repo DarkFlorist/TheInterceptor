@@ -42,6 +42,7 @@ export function printError(error: unknown) {
 
 export async function handleUnexpectedError(error: unknown) {
 	printError(error)
+	console.trace()
 	const errorMessage = {
 		method: 'popup_UnexpectedErrorOccured' as const,
 		data: {

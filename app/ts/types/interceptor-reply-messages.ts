@@ -48,3 +48,11 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
 )
+
+export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
+export const PopupReplyOption = funtypes.Union(
+	RequestMakeMeRichDataReply,
+	RequestActiveAddressesReply,
+	RequestSimulationModeReply,
+	RequestLatestUnexpectedErrorReply,
+)

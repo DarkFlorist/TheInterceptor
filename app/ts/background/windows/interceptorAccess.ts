@@ -272,7 +272,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 
 export async function interceptorAccessMetadataRefresh() {
 	const settings = await getSettings()
-	return await sendPopupMessageToOpenWindows({
+	await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
 		data: {
 			activeAddresses: await getActiveAddresses(),
