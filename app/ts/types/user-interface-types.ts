@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -13,6 +13,7 @@ import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 import { Signal } from '@preact/signals'
+import { SimulationStackVersion } from './JsonRpc-types.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,
@@ -180,4 +181,12 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	rpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
+})
+
+export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof PendingFetchSimulationStackRequestPromise>
+export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
+	website: Website,
+	popupOrTabId: PopupOrTabId,
+	simulationStackVersion: SimulationStackVersion,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
 })

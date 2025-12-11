@@ -5,7 +5,6 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 
-
 export function ChangeChain() {
 	const [chainChangeData, setChainChangeData] = useState<PendingChainChangeConfirmationPromise | undefined>(undefined)
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
@@ -95,7 +94,7 @@ export function ChangeChain() {
 							disabled = { chainChangeData.rpcNetwork.httpsRpc === undefined && ( (!connectAnyway && !chainChangeData.simulationMode ) || chainChangeData.simulationMode ) }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>
-							{ chainChangeData.rpcNetwork.httpsRpc !== undefined? 'Change chain' : 'Disable The Interceptor and change' }
+							{ chainChangeData.rpcNetwork.httpsRpc !== undefined ? 'Change chain' : 'Disable The Interceptor and change' }
 						</button>
 					</div>
 				</div>

@@ -88,6 +88,7 @@ const files = [
 	'html/confirmTransaction.html',
 	'html/interceptorAccess.html',
 	'html/changeChain.html',
+	'html/fetchSimulationStack.html',
 	'html/addressBook.html',
 	'html/settingsView.html',
 	'html/websiteAccess.html'
