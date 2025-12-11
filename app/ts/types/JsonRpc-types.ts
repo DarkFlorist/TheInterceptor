@@ -293,10 +293,13 @@ const EthSign = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, funtypes.String),
 }).asReadonly()
 
+export type SimulationStackVersion = funtypes.Static<typeof SimulationStackVersion>
+export const SimulationStackVersion = funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0'))
+
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({
 	method: funtypes.Literal('interceptor_getSimulationStack'),
-	params: funtypes.ReadonlyTuple(funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0')))
+	params: funtypes.ReadonlyTuple(SimulationStackVersion)
 }).asReadonly()
 
 export type WalletAddEthereumChain = funtypes.Static<typeof WalletAddEthereumChain>

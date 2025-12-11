@@ -1,6 +1,6 @@
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
@@ -63,10 +63,16 @@ export async function removePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('ChainChangeConfirmationPromise'))?.ChainChangeConfirmationPromise ?? undefined
-export async function setChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
-	if (promise === undefined) return await browserStorageLocalRemove('ChainChangeConfirmationPromise')
-	return await browserStorageLocalSet({ ChainChangeConfirmationPromise: promise })
+export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
+export async function setChainChangeConfirmationPromise(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
+	if (chainChangeConfirmationPromise === undefined) return await browserStorageLocalRemove('chainChangeConfirmationPromise')
+	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
+}
+
+export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
+export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
+	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
 }
 
 const simulationResultsSemaphore = new Semaphore(1)

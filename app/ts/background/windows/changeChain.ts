@@ -20,7 +20,7 @@ let openedDialog: PopupOrTab | undefined = undefined
 
 export async function updateChainChangeViewWithPendingRequest() {
 	const promise = await getChainChangeConfirmationPromise()
-	if (promise) sendPopupMessageToOpenWindows({ method: 'popup_ChangeChainRequest', data: promise })
+	if (promise) await sendPopupMessageToOpenWindows({ method: 'popup_ChangeChainRequest', data: promise })
 	return
 }
 

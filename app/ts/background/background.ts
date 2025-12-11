@@ -3,8 +3,8 @@ import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack, updateSimulationResults } from './storageVariables.js'
 import { changeSimulationMode, getKeepSelectedAddressRichEvenIfIChangeAddress, getMakeMeRich, getMakeMeRichList, getSettings, setMakeMeRichList } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
-import { changeActiveAddress, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError } from './popupMessageHandlers.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack } from './simulationModeHanders.js'
+import { changeActiveAddress, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow } from './popupMessageHandlers.js'
 import { CompleteVisualizedSimulation, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -32,12 +32,13 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, getMakeMeRichListWithCurrent, visualizeSimulatorState } from './simulationUpdating.js'
+import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 
 const updateSimulationStateSemaphore = new Semaphore(1)
 let simulationAbortController = new AbortController()
 
 export async function updateSimulationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState: boolean, onlyIfNotAlreadyUpdating = false) {
-	if (onlyIfNotAlreadyUpdating && updateSimulationStateSemaphore.getPermits() === 0) return
+	if (onlyIfNotAlreadyUpdating && updateSimulationStateSemaphore.getPermits() === 0) return undefined
 	simulationAbortController.abort(new Error(NEW_BLOCK_ABORT))
 	simulationAbortController = new AbortController()
 	const thisSimulationsController = simulationAbortController
@@ -248,7 +249,7 @@ async function handleRPCRequest(
 		case 'eth_requestAccounts': return await getAccounts(activeAddress)
 		case 'eth_gasPrice': return await gasPrice(simulator.ethereum)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator.ethereum, simulationState, parsedRequest)
-		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
+		case 'interceptor_getSimulationStack': return await requestInterceptorSimulatorStack(simulationState, websiteTabConnections, parsedRequest, website, request, socket)
 		case 'eth_simulateV1': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
@@ -297,7 +298,8 @@ async function handleRPCRequest(
 
 export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updateInterceptorTransactionStack(() => ({ operations: [] }))
-	return await updateSimulationState(ethereumClientService, tokenPriceService, true)
+	await updateSimulationState(ethereumClientService, tokenPriceService, true)
+	return
 }
 
 const updateRichListAfterActiveAddressChange = async (newActiveAddress: bigint) => {
@@ -520,6 +522,9 @@ export async function popupMessageHandler(
 			case 'popup_requestActiveAddresses': return await requestActiveAddresses()
 			case 'popup_requestSimulationMode': return await requestSimulationMode()
 			case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
+			case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(websiteTabConnections, parsedRequest)
+			case 'popup_fetchSimulationStackRequestReadyAndListening': return await updateFetchSimulationStackRequestWithPendingRequest()
+			case 'popup_UnexpectedErrorOccured': return await handleUnexpectedErrorInWindow(parsedRequest)
 			default: assertUnreachable(parsedRequest)
 		}
 	} catch(error: unknown) {

@@ -1,11 +1,10 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedTransactionCount, getAddressToMakeRich } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedTransactionCount } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
-import { assertNever } from '../utils/typescript.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SendRawTransactionParams, SendTransactionParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
 import { Simulator } from '../simulation/simulator.js'
@@ -14,7 +13,7 @@ import { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { getSimulatedStackV1, getSimulatedStackV2 } from '../simulation/SimulationStackExtraction.js'
+import { openFetchSimulationStackDialogOrGetCachedResult } from './windows/fetchSimulationStack.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHash(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
@@ -150,19 +149,6 @@ export async function getTransactionCount(ethereumClientService: EthereumClientS
 	return { type: 'result' as const, method: request.method, result: await getSimulatedTransactionCount(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
 }
 
-export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {
-	const version = request.params[0]
-	switch (version) {
-		case '2.0.0': return { type: 'result', method: request.method, result: { version, payload: getSimulatedStackV2(simulationState) } } as const
-		case '1.0.0':
-		case '1.0.1': {
-			const addressToMakeRich = await getAddressToMakeRich()
-			return { type: 'result', method: request.method, result: { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } } as const
-		}
-		default: assertNever(version)
-	}
-}
-
 export async function getLogs(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthGetLogsParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedLogs(ethereumClientService, undefined, simulationState, request.params[0]) }
 }
@@ -199,4 +185,10 @@ export async function getFilterLogs(request: GetFilterLogs, ethereumClientServic
 export async function handleIterceptorError(request: InterceptorError) {
 	await handleUnexpectedError(request)
 	return { type: 'doNotReply' as const }
+}
+
+export async function requestInterceptorSimulatorStack(simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+	const result = await openFetchSimulationStackDialogOrGetCachedResult(simulationState, websiteTabConnections, params, website, request, socket)
+	if ('error' in result && result.error !== undefined) return { type: 'result' as const, method: params.method, error: result.error }
+	return { type: 'result' as const, method: params.method, ...result }
 }
