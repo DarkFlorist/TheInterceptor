@@ -55,6 +55,7 @@ export type HomeParams = {
 	interceptorDisabled: boolean
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	makeMeRichList: Signal<readonly AddressBookEntry[]>
+	openImportSimulation: () => void
 }
 
 export type ChangeActiveAddressParam = {
@@ -97,6 +98,7 @@ export type SimulationStateParam = {
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	simulationUpdatingState: SimulationUpdatingState | undefined
 	simulationResultState: SimulationResultState | undefined
+	openImportSimulation: () => void
 }
 
 export type LogAnalysisParams = {

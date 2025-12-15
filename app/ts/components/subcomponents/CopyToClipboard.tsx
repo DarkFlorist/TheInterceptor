@@ -1,21 +1,40 @@
 import { ComponentChildren, JSX } from 'preact'
 import { clipboardCopy } from './clipboardcopy.js'
 
-interface CopyToClipboardParams {
+type CopySource = { content: string } | { copyFunction: () => Promise<string | undefined> }
+
+type CopyToClipboardProps = CopySource & {
 	children: ComponentChildren
-	content: string
 	contentDisplayOverride?: string
 	copyMessage?: string
 	style?: JSX.CSSProperties
+	classNames?: string
 }
 
-export function CopyToClipboard(props: CopyToClipboardParams) {
+export function CopyToClipboard(props: CopyToClipboardProps) {
+	const performCopy = async () => {
+		if ('content' in props) {
+			await clipboardCopy(props.content)
+			return
+		}
+
+		const resolvedText = await props.copyFunction()
+		if (resolvedText === undefined) return
+		await clipboardCopy(resolvedText)
+	}
+
+	const tooltipContent = 'content' in props ? (props.contentDisplayOverride ?? props.content) : props.contentDisplayOverride
+
 	return (
-		<div onClick = { () => { clipboardCopy(props.content) } } style = { 'style' in props ? props.style : 'display: inherit; overflow: inherit;' }>
+		<div
+			onClick = { performCopy }
+			class = { props.classNames }
+			style = { props.style ?? 'display: inherit; overflow: inherit;' }
+		>
 			<div
 				data-hint-clickable-hide-timer-ms = { 1500 }
-				data-hint = { props.copyMessage ? props.copyMessage : 'Copied to clipboard!' }
-				data-tooltip = { props.contentDisplayOverride ? props.contentDisplayOverride : props.content }
+				data-hint = { props.copyMessage ?? 'Copied to clipboard!' }
+				data-tooltip = { tooltipContent }
 				style = 'display: inherit; overflow: inherit; width: 100%;'
 			>
 				{ props.children }

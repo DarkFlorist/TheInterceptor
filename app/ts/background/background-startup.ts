@@ -42,6 +42,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 			if (error.message.includes('The message port closed before a response was received')) return
 			if (error.message.includes('Could not establish connection. Receiving end does not exist')) return
 			if (error.message.includes('Failed to fetch')) return
+			if (isNewBlockAbort(error)) return
 		}
 		console.error(error)
 		handleUnexpectedError(error)

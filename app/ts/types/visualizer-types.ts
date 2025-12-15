@@ -10,7 +10,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
-import { EthSimulateV1CallResult, StateOverrides } from './ethSimulate-types.js'
+import { EthSimulateV1CallResult, EthSimulateV1Params, StateOverrides } from './ethSimulate-types.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
@@ -381,9 +381,18 @@ export const InterceptorStackOperation = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('TimeManipulation'),
 		blockTimeManipulation: BlockTimeManipulation
-}))
+	})
+)
 
 export type InterceptorTransactionStack = funtypes.Static<typeof InterceptorTransactionStack>
 export const InterceptorTransactionStack = funtypes.ReadonlyObject({
 	operations: funtypes.ReadonlyArray(InterceptorStackOperation),
+})
+
+export type InterceptorSimulateExport = funtypes.Static<typeof InterceptorSimulateExport>
+export const InterceptorSimulateExport = funtypes.ReadonlyObject({
+	name: funtypes.Literal('Interceptor Simulate Export'),
+	version: funtypes.Literal('1.0.0'),
+	eth_simulateV1: EthSimulateV1Params,
+	interceptorSimulateStack: InterceptorTransactionStack,
 })

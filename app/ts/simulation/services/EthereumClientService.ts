@@ -206,7 +206,7 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(call))
 	}
 
-	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
+	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
@@ -273,9 +273,21 @@ export class EthereumClientService {
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
 			return await getBlockStateCall(block, blockOverrideForBlock)
 		}))
-		const ethSimulateResults = await this.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
-		if (ethSimulateResults.length !== blockStateCalls.length) throw new Error(`Ran Eth Simulate for ${ blockStateCalls.length } blocks but got ${ ethSimulateResults.length } blocks`)
-		return ethSimulateResults
+		if (parentBlock === null) throw new Error('The latest block is null')
+		return {
+			method: 'eth_simulateV1',
+			params: [{
+				blockStateCalls: blockStateCalls,
+				traceTransfers: true,
+				validation: false,
+			},
+			blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber
+		] } as const
+	}
+
+	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
+		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
 	}
 
 	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {

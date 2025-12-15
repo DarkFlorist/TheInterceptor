@@ -27,6 +27,7 @@ import { humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -65,6 +66,7 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 	| { page: 'EditEnsNamedHash', state: EditEnsNamedHashWindowState }
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
 	| { page: 'ChangeActiveAddress' }
+	| { page: 'ImportSimulation', state: Signal<string> }
 
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
@@ -232,7 +234,8 @@ export function App() {
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
-		const popupMessageListener = (msg: unknown) => {
+		// this function has to return void, undefined or false. Otherwise listener expects a reply and cause hard to debug issues
+		const popupMessageListener = async (msg: unknown): Promise<void> => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -257,9 +260,9 @@ export function App() {
 					return
 				}
 				case 'popup_update_rpc_list': return
-				case 'popup_simulation_state_changed': return sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+				case 'popup_simulation_state_changed': return await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 			}
-			if (parsed.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -434,6 +437,7 @@ export function App() {
 							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
 							makeMeRichList = { makeMeRichList }
 							keepSelectedAddressRichEvenIfIChangeAddress = { keepSelectedAddressRichEvenIfIChangeAddress }
+							openImportSimulation = { () => { appPage.value = { page: 'ImportSimulation', state: new Signal('') } } }
 						/>
 
 						<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
@@ -470,6 +474,12 @@ export function App() {
 									close = { goHome }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 									rpcEntries = { rpcEntries }
+								/>
+							: <></> }
+							{ appPage.value.page === 'ImportSimulation' ?
+								<ImportSimulationStack
+									close = { goHome }
+									simulationInput = { appPage.value.state }
 								/>
 							: <></> }
 						</div>
