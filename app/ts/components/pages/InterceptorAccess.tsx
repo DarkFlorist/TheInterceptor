@@ -200,7 +200,6 @@ export function InterceptorAccess() {
 			}
 			return
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})

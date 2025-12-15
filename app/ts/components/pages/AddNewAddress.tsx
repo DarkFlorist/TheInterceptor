@@ -15,6 +15,7 @@ import { XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 const readableAddressType = {
 	contact: 'Contact',
