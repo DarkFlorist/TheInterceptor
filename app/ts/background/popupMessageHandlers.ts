@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
-import { Simulator } from '../simulation/simulator.js'
+import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -30,10 +30,11 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
-import { getCurrentSimulationInput, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
+import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -744,7 +745,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		type: 'RequestMakeMeRichDataReply' as const,
 		richList: await Promise.all(addressbookEntryPromises),
 		keepSelectedAddressRichEvenIfIChangeAddress : await keepSelectedAddressRichEvenIfIChangeAddressPromise,
-		makeMeRich: await makeMeRichPromise
+		makeMeRich: await makeMeRichPromise,
 	}
 }
 
@@ -796,4 +797,40 @@ export async function importSimulationStack(simulator: Simulator, parsedRequest:
 		}) }
 	})
 	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, true)
+}
+
+export async function requestCompleteVisualizedSimulation() {
+	const visualizedSimulatorState = await getSimulationResults()
+	return { type: 'RequestCompleteVisualizedSimulationReply' as const, visualizedSimulatorState }
+}
+
+export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
+	const settings = await getSettings()
+	const simulationState = settings.simulationMode ? (await getSimulationResults()).simulationState : undefined
+	if (simulationState === undefined) return {
+		type: 'RequestSimulationMetadata' as const,
+		metadata: {
+			namedTokenIds: [], addressBookEntries: [], ens: { ensNameHashes: [], ensLabelHashes: [] }
+		}
+	}
+	const eventsForEachBlockAndTransactionPromise = Promise.all(
+		simulationState.simulatedBlocks.map((block) =>
+			Promise.all(block.simulatedTransactions.map(
+				async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereumClientService, undefined)
+			))
+		)
+	)
+	const parsedInputDataForEachBlockAndTransactionPromise = Promise.all(
+		simulationState.simulatedBlocks.map((block) => {
+			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
+			return Promise.all(transactions.map((transaction) =>
+				parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereumClientService, undefined)
+			))
+		})
+	)
+	const events = (await eventsForEachBlockAndTransactionPromise).flat()
+	const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
+
+	const metadata = await getMetadataForSimulation(simulationState, ethereumClientService, undefined, events, inputData)
+	return { type: 'RequestSimulationMetadata' as const, metadata }
 }

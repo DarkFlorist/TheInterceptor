@@ -86,7 +86,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	return { blocks: inputBlocks }
 }
 
-async function updateMetadataForSimulation(
+export async function getMetadataForSimulation(
 	simulationState: SimulationState,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -268,7 +268,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			const events = (await eventsForEachBlockAndTransactionPromise).flat()
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, events, inputData)
+			const metadata = await getMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, events, inputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (error instanceof Error && isNewBlockAbort(error)) return prevState
@@ -306,7 +306,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 
 	const settingsPromise = getSettings()
-	const settings = await settingsPromise
 
 	const eventsForEachBlockAndTransactionPromise = Promise.all(
 		simulationState.simulatedBlocks.map((block) =>
@@ -336,13 +335,14 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-	const updatedMetadata = await updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
+	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
 
 	const tokenPriceEstimatesPromise = weth === undefined ? [] : tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
 	const protectorsForEachBlockAndTransaction = await protectorsForEachBlockAndTransactionPromise
 
 	const tokenPriceEstimates = await tokenPriceEstimatesPromise
+	const settings = await settingsPromise
 	const visualizedBlocks = await Promise.all(simulationState.simulatedBlocks.map(async(block, blockIndex) => {
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
 		const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
