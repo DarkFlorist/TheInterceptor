@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
-import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
@@ -44,7 +44,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	simulationMode: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	makeMeRich: funtypes.Boolean,
-	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
+	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
@@ -66,6 +66,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	makeMeRichList: funtypes.ReadonlyArray(EthereumAddress),
 	keepSelectedAddressRichEvenIfIChangeAddress: funtypes.Boolean,
+	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -79,7 +80,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeMeRich'),
-	funtypes.Literal('ChainChangeConfirmationPromise'),
+	funtypes.Literal('chainChangeConfirmationPromise'),
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('simulationResults'),
 	funtypes.Literal('signerName'),
@@ -100,6 +101,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
 	funtypes.Literal('makeMeRichList'),
 	funtypes.Literal('keepSelectedAddressRichEvenIfIChangeAddress'),
+	funtypes.Literal('fetchSimulationStackRequestPromise'),
 )
 
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2>
