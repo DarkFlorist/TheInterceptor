@@ -2,6 +2,7 @@ import { sendPopupMessageToBackgroundPage } from '../../../background/background
 import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
@@ -91,7 +92,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return
 			return setSimulateExecutionReply(reply)
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

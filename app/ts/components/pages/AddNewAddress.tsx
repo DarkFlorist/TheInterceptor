@@ -210,7 +210,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				}
 			}
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 

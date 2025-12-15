@@ -4,6 +4,7 @@ import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 export function ChangeChain() {
 	const [chainChangeData, setChainChangeData] = useState<PendingChainChangeConfirmationPromise | undefined>(undefined)
@@ -17,7 +18,7 @@ export function ChangeChain() {
 			if (parsed.method !== 'popup_ChangeChainRequest') return
 			setChainChangeData(parsed.data)
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

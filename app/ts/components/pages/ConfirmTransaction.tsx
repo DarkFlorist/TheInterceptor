@@ -31,6 +31,7 @@ import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
 import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
@@ -442,7 +443,7 @@ export function ConfirmTransaction() {
 			}
 			return
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

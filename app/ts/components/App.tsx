@@ -28,6 +28,7 @@ import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../utils/browser.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -234,8 +235,7 @@ export function App() {
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
-		// this function has to return void, undefined or false. Otherwise listener expects a reply and cause hard to debug issues
-		const popupMessageListener = async (msg: unknown): Promise<void> => {
+		const popupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -260,12 +260,12 @@ export function App() {
 					return
 				}
 				case 'popup_update_rpc_list': return
-				case 'popup_simulation_state_changed': return await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+				case 'popup_simulation_state_changed': return sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 			}
-			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			if (parsed.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

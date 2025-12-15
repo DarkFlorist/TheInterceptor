@@ -14,6 +14,7 @@ import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: Signal<ModifyAddressWindowState> }
@@ -227,6 +228,7 @@ export function AddressBook() {
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
 	}, [])
 
