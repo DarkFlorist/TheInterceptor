@@ -227,7 +227,6 @@ export function AddressBook() {
 			return
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-		browser.runtime.onMessage.addListener(popupMessageListener)
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
 	}, [])
