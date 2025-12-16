@@ -764,7 +764,6 @@ export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 	return handleUnexpectedError(new Error(parsedRequest.data.message))
 }
 
-export async function requestEthSimulateV1Input(ethereumClientService: EthereumClientService) {
 export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
 	const stackPromise = getInterceptorTransactionStack()
 	const simulationInput = await getCurrentSimulationInput()
