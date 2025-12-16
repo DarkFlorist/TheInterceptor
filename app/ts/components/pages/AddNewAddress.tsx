@@ -15,6 +15,7 @@ import { XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 const readableAddressType = {
 	contact: 'Contact',
@@ -210,7 +211,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				}
 			}
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 

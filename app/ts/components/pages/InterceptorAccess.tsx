@@ -17,6 +17,7 @@ import { Signal, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <span style = 'font-weight: 900; line-height: 48px'>
@@ -199,7 +200,7 @@ export function InterceptorAccess() {
 			}
 			return
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

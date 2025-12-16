@@ -17,6 +17,7 @@ import { AddNewAddress } from './AddNewAddress.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { RpcEntries } from '../../types/rpc.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -64,7 +65,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			}
 		}
 
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}
 
@@ -285,7 +286,7 @@ const WebsiteSettingsDetail = () => {
 			}
 			return
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

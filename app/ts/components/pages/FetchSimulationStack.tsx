@@ -4,6 +4,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { useSignal } from '@preact/signals'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 export function FetchSimulationStack() {
 	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
@@ -16,7 +17,7 @@ export function FetchSimulationStack() {
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return
 			changeRequest.value = parsed.data
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

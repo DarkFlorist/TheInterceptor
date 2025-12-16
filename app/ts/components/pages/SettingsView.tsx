@@ -12,6 +12,7 @@ import { getChainName } from '../../utils/constants.js'
 import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -49,7 +50,7 @@ function ImportExport() {
 			if (parsed.method !== 'popup_initiate_export_settings') return
 			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
@@ -124,7 +125,7 @@ export function SettingsView() {
 			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
 			return
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
@@ -250,7 +251,7 @@ export function useRpcConnectionsList() {
 
 	useEffect(() => {
 		initiallyLoadEntriesFromStorage()
-		browser.runtime.onMessage.addListener(trackRpcListChanges)
+		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		return () => browser.runtime.onMessage.removeListener(trackRpcListChanges)
 	}, [])
 

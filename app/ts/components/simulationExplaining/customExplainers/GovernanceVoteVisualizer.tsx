@@ -5,6 +5,7 @@ import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-
 import { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
@@ -170,7 +171,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 			if (reply.data.transactionOrMessageIdentifier !== param.simTx.transactionIdentifier) return
 			return setSimulateExecutionReply(reply)
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
