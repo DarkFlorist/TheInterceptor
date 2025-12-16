@@ -741,7 +741,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 								<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
 									<ExportIcon/>
 								</span>
-								<span>Export Simulate Stack</span>
+								<span>Export Simulation Stack</span>
 							</p>
 						</CopyToClipboard>
 					</div>

@@ -282,7 +282,7 @@ function SimulationResults(param: SimulationStateParam) {
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
 						<ImportIcon/>
 					</span>
-					<span>Import Simulate Stack</span>
+					<span>Import Simulation Stack</span>
 				</button>
 				<button className = 'button is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
