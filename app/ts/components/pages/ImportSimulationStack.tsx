@@ -48,7 +48,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 		if (!isJSON(trimmed)) return 'not a valid JSON'
 		const parseResult = InterceptorSimulateExport.safeParse(JSON.parse(trimmed))
 		if (parseResult.success) return undefined
-		return `The input needs to be valid Interceptor Simulate Stack Export: ${ parseResult.message }`
+		return `The input needs to be valid Interceptor Simulation Stack Export: ${ parseResult.message }`
 	})
 
 	const Text = (param: { text: ComponentChildren }) => {
@@ -73,7 +73,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { 'Import Interceptor Simulate Stack' } </p>
+					<p className = 'paragraph'> { 'Import Interceptor Simulation Stack' } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
@@ -86,7 +86,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
 								<div class = 'container' style = 'margin-bottom: 10px;'>
 									<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
-										<CellElement element = { <Text text = { 'Interceptor Simulate Stack: ' }/> }/>
+										<CellElement element = { <Text text = { 'Interceptor Simulation Stack: ' }/> }/>
 										<CellElement element = { <>
 											<SimulationInput input = { param.simulationInput } isValid = { isValid } disabled = { false }/>
 											<div style = 'padding-left: 5px'/>
