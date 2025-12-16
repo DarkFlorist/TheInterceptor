@@ -113,7 +113,7 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 	const namesWithCurrentTransaction = useComputed(() => {
 		if (param.completeVisualizedSimulation.value === undefined || param.completeVisualizedSimulation.value.simulationResultState !== 'done') return []
 		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
-		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
+		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions])
 		const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
 		return [...param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${ param.completeVisualizedSimulation.value.numberOfAddressesMadeRich } addresses rich`] : [], ...names, ...param.includeCurrentTransaction ? [titleOfCurrentPendingTransaction()] : [] ]
 	})

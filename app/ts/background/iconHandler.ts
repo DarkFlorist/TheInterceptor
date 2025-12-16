@@ -64,7 +64,6 @@ export async function updateExtensionBadge() {
 	return await setExtensionBadgeText( { text: '' } )
 }
 
-
 export async function retrieveWebsiteDetails(tabId: number) {
 	const waitForLoadedFuture = new Future<void>
 

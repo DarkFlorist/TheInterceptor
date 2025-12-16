@@ -5,7 +5,7 @@ import { XMarkIcon } from '../subcomponents/icons.js'
 import { Signal, useComputed } from '@preact/signals'
 import { isJSON } from '../../utils/json.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { InterceptorSimulateExport } from '../../types/visualizer-types.js'
+import { InterceptorSimulationExport } from '../../types/visualizer-types.js'
 
 const CellElement = (param: { element: ComponentChildren }) => {
 	return <div class = 'log-cell' style = 'justify-content: right;'>
@@ -46,7 +46,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 		const trimmed = param.simulationInput.value.trim()
 		if (trimmed.length === 0) return undefined
 		if (!isJSON(trimmed)) return 'not a valid JSON'
-		const parseResult = InterceptorSimulateExport.safeParse(JSON.parse(trimmed))
+		const parseResult = InterceptorSimulationExport.safeParse(JSON.parse(trimmed))
 		if (parseResult.success) return undefined
 		return `The input needs to be valid Interceptor Simulation Stack Export: ${ parseResult.message }`
 	})
@@ -59,7 +59,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 
 	const importStack = () => {
 		const trimmed = param.simulationInput.value.trim()
-		sendPopupMessageToBackgroundPage({ method: 'popup_importSimulationStack', data: InterceptorSimulateExport.parse(JSON.parse(trimmed)) })
+		sendPopupMessageToBackgroundPage({ method: 'popup_importSimulationStack', data: InterceptorSimulationExport.parse(JSON.parse(trimmed)) })
 		param.close()
 	}
 

@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress, getWebsiteAccess } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
@@ -12,7 +12,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meda
 import { getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { CompleteVisualizedSimulation, InterceptorSimulateExport, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, InterceptorSimulationExport, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
@@ -765,17 +765,28 @@ export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 }
 
 export async function requestEthSimulateV1Input(ethereumClientService: EthereumClientService) {
+export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
 	const stackPromise = getInterceptorTransactionStack()
 	const simulationInput = await getCurrentSimulationInput()
 	const currentBlockNumberPromise = ethereumClientService.getBlockNumber(undefined)
-	const input = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
-	return { type: 'RequestEthSimulateV1InputReply' as const, ethSimulateV1InputString:
+	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
+	const stack = await stackPromise
+
+	const interceptorSimulateStack = modifyObject(stack, { operations: stack.operations.map((operation) => {
+		switch(operation.type) {
+			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { website: { ...operation.signedMessageTransaction.website, icon: undefined, title: undefined } }) })
+			case 'TimeManipulation': return operation
+			case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { website: { ...operation.preSimulationTransaction.website, icon: undefined, title: undefined } }) })
+			default: assertNever(operation)
+		}
+	}) })
+	return { type: 'requestInterceptorSimulationInputReply' as const, ethSimulateV1InputString:
 		JSON.stringify(
-			InterceptorSimulateExport.serialize({
-				name: 'Interceptor Simulate Export',
+			InterceptorSimulationExport.serialize({
+				name: 'Interceptor Simulation Export',
 				version: '1.0.0',
-				eth_simulateV1: input,
-				interceptorSimulateStack: await stackPromise,
+				eth_simulateV1,
+				interceptorSimulateStack,
 			})
 		, null, '\t')
 	}
@@ -784,14 +795,21 @@ export async function requestEthSimulateV1Input(ethereumClientService: EthereumC
 export async function importSimulationStack(simulator: Simulator, parsedRequest: ImportSimulationStack) {
 	if (parsedRequest.data.version !== '1.0.0') throw new Error('version was not 1.0.0')
 	if (parsedRequest.data.interceptorSimulateStack.operations.length === 0) return
+
+	const websiteAccess = await getWebsiteAccess()
+	const updateWebsiteDetails = (website: Website) => {
+		const websiteData = websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website
+		return websiteData ?? website
+	}
+
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
 		// generate new ids for operations to prevent duplicated ids
 		return { operations: newOperations.map((operation) => {
 			switch(operation.type) {
-				case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt() }) })
+				case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
 				case 'TimeManipulation': return operation
-				case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt() }) })
+				case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
 				default: assertNever(operation)
 			}
 		}) }
