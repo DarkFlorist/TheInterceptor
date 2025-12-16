@@ -23,7 +23,7 @@ import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
-import { humanReadableDate } from './ui-utils.js'
+import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
@@ -321,23 +321,7 @@ export function App() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		const newPage = { page: 'ModifyAddress', state: {
-			windowStateId: 'appRename',
-			errorState: undefined,
-			incompleteAddressBookEntry: {
-				addingAddress: false,
-				askForAddressAccess: true,
-				symbol: undefined,
-				decimals: undefined,
-				logoUri: undefined,
-				abi: undefined,
-				useAsActiveAddress: false,
-				declarativeNetRequestBlockMode: undefined,
-				chainId: entry.chainId || 1n,
-				...entry,
-				address: checksummedAddress(entry.address),
-			}
-		} } as const
+		const newPage = { page: 'ModifyAddress', state: addressEditEntry(entry) } as const
 		appPage.value = { page: 'ModifyAddress', state: new Signal(newPage.state) }
 		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
@@ -360,7 +344,7 @@ export function App() {
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
 				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
-			}}
+			} }
 		} as const
 		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }
 		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })

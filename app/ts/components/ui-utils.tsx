@@ -5,7 +5,7 @@ import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren, RefObject } from 'preact'
 import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
-import { bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
+import { addressString, bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { ChainEntry, RpcEntries } from '../types/rpc.js'
@@ -194,4 +194,24 @@ export function removeDuplicates(entries: AddressBookEntry[]): AddressBookEntry[
 		unique.set(entry.address, entry)
 	}
 	return Array.from(unique.values())
+}
+
+export const addressEditEntry = (entry: AddressBookEntry) => {
+	return {
+		windowStateId: addressString(entry.address),
+		errorState: undefined,
+		incompleteAddressBookEntry: {
+			addingAddress: false,
+			askForAddressAccess: true,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			useAsActiveAddress: false,
+			abi : undefined,
+			declarativeNetRequestBlockMode: undefined,
+			chainId: entry.chainId || 1n,
+			...entry,
+			address: checksummedAddress(entry.address),
+		}
+	}
 }

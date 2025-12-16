@@ -16,8 +16,8 @@ import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { RpcEntries } from '../../types/rpc.js'
-import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { addressEditEntry } from '../ui-utils.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -255,23 +255,7 @@ const WebsiteSettingsDetail = () => {
 	const closeDetails = () => { window.location.hash = '' }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = { page: 'ModifyAddress', state: new Signal({
-			windowStateId: addressString(entry.address),
-			errorState: undefined,
-			incompleteAddressBookEntry: {
-				addingAddress: false,
-				askForAddressAccess: true,
-				symbol: undefined,
-				decimals: undefined,
-				logoUri: undefined,
-				useAsActiveAddress: false,
-				declarativeNetRequestBlockMode: undefined,
-				...entry,
-				abi: 'abi' in entry ? entry.abi : undefined,
-				address: checksummedAddress(entry.address),
-				chainId: entry.chainId || 1n,
-			}
-		}) }
+		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
 	useEffect(() => {
