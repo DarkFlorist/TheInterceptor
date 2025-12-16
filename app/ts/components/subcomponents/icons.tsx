@@ -54,3 +54,15 @@ export const CopyIcon = () => <svg width = '1em' height = '1em' viewBox = '0 0 2
 export const EditIcon = () => <svg width = '1em' height = '1em' viewBox = '0 0 24 24' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'><path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M10 3H7v2H4a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h3v2h3zM7 8v8H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z' fill = 'currentColor' /><path d = 'M19 16h-7v3h8a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-8v3h7a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1' fill = 'currentColor' /></svg>
 
 export const ChevronIcon = () => <svg role = 'img' aria-label = 'chevron-icon' width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'><path d = 'm2 5.333 6 6 6-6' stroke = 'currentColor' strokeWidth = { 1.5 } /></svg>
+
+export const ImportIcon = () =>
+	<svg width = '1em' height = '1em' viewBox = '0 0 24 24' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<path d = 'M4 4h16v4h2V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v5h2z' fill = 'currentColor' />
+		<path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M12 21l5-5h-3v-6h-4v6H7z' fill = 'currentColor' />
+	</svg>
+
+export const ExportIcon = () =>
+	<svg width = '1em' height = '1em' viewBox = '0 0 24 24' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<path d = 'M4 20h16v-4h2v5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-5h2z' fill = 'currentColor' />
+		<path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M12 3l-5 5h3v6h4V8h3z' fill = 'currentColor' />
+	</svg>

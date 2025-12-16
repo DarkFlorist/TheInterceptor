@@ -9,33 +9,44 @@ export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
 })
 
-export type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
-export const RequestMakeMeRichDataReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
+const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('RequestMakeMeRichDataReply'),
 	richList: funtypes.ReadonlyArray(AddressBookEntry),
 	makeMeRich: funtypes.Boolean,
 	keepSelectedAddressRichEvenIfIChangeAddress: funtypes.Boolean,
-}))
+})
 
-export type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
-export const RequestActiveAddressesReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
+const RequestActiveAddressesReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('RequestActiveAddressesReply'),
 	activeAddresses: funtypes.ReadonlyArray(AddressBookEntry)
-}))
+})
 
-export type RequestSimulationModeReply = funtypes.Static<typeof RequestSimulationModeReply>
-export const RequestSimulationModeReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+type RequestSimulationModeReply = funtypes.Static<typeof RequestSimulationModeReply>
+const RequestSimulationModeReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('RequestSimulationModeReply'),
 	simulationMode: funtypes.Boolean
-}))
+})
 
-export type RequestLatestUnexpectedErrorReply = funtypes.Static<typeof RequestLatestUnexpectedErrorReply>
-export const RequestLatestUnexpectedErrorReply = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+type RequestLatestUnexpectedErrorReply = funtypes.Static<typeof RequestLatestUnexpectedErrorReply>
+const RequestLatestUnexpectedErrorReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('RequestLatestUnexpectedErrorReply'),
 	latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
-}))
+})
+
+type RequestEthSimulateV1InputReply = funtypes.Static<typeof RequestEthSimulateV1InputReply>
+const RequestEthSimulateV1InputReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('RequestEthSimulateV1InputReply'),
+	ethSimulateV1InputString: funtypes.String
+})
 
 export const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
+	popup_requestInterceptorSimulateInput: RequestEthSimulateV1InputReply,
 }
 
 export type PopupRequestsReplies = {
@@ -47,6 +58,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulateInput') }),
 )
 
 export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
@@ -55,4 +67,5 @@ export const PopupReplyOption = funtypes.Union(
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
 	RequestLatestUnexpectedErrorReply,
+	RequestEthSimulateV1InputReply,
 )

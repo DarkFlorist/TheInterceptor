@@ -18,9 +18,9 @@ import { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
-import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { Signal, useComputed } from '@preact/signals'
@@ -671,6 +671,12 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 		return '../img/success-icon.svg'
 	})
 
+	const exportEthSimulateInput = async () => {
+		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestInterceptorSimulateInput' })
+		if (reply === undefined) return
+		return reply.ethSimulateV1InputString
+	}
+
 	return (
 		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
 			<header class = 'card-header'>
@@ -724,13 +730,31 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 
-				<span style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
-					<SimulatedInBlockNumber
-						simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
-						currentBlockNumber = { param.currentBlockNumber }
-						simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
-						rpcConnectionStatus = { param.rpcConnectionStatus }
-					/>
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
+					<div class = 'log-cell'>
+						<CopyToClipboard
+							copyFunction = { exportEthSimulateInput }
+							copyMessage = 'eth_simulateV1 input query copied!'
+							classNames = { 'btn btn--outline is-small' }
+						>
+							<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
+								<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
+									<ExportIcon/>
+								</span>
+								<span>Export Simulation Stack</span>
+							</p>
+						</CopyToClipboard>
+					</div>
+
+					<div class = 'log-cell' style = 'justify-content: center;'> </div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<SimulatedInBlockNumber
+							simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
+							currentBlockNumber = { param.currentBlockNumber }
+							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
+							rpcConnectionStatus = { param.rpcConnectionStatus }
+						/>
+					</div>
 				</span>
 			</div>
 		</div>

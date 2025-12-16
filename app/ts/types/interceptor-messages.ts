@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation, BlockTimeManipulationWithNoDelay } from './visualizer-types.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulateExport } from './visualizer-types.js'
 import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -868,6 +868,12 @@ const FetchSimulationStackRequest = funtypes.ReadonlyObject({
 	data: PendingFetchSimulationStackRequestPromise,
 })
 
+export type ImportSimulationStack = funtypes.Static<typeof ImportSimulationStack>
+export const ImportSimulationStack = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_importSimulationStack'),
+	data: InterceptorSimulateExport,
+})
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	PopupMessageReplyRequests,
@@ -924,6 +930,7 @@ export const PopupMessage = funtypes.Union(
 	SetTransactionOrMessageBlockTimeManipulator,
 	FetchSimulationStackRequestConfirmation,
 	UnexpectedErrorOccured,
+	ImportSimulationStack,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>

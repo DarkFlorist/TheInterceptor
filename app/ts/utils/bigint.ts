@@ -151,3 +151,13 @@ export const bigintSecondsToDate = (seconds: bigint) => {
 }
 
 export const dateToBigintSeconds = (date: Date) => BigInt(date.getTime()) / 1000n
+
+export function generate256BitRandomBigInt(): bigint {
+	const cryptoInterface = globalThis.crypto
+	if (cryptoInterface === undefined || cryptoInterface.getRandomValues === undefined) {
+		throw new Error("Secure random number generator is not available in this environment")
+	}
+	const randomBytes = new Uint8Array(32)
+	cryptoInterface.getRandomValues(randomBytes)
+	return bytesToUnsigned(randomBytes)
+}

@@ -13,7 +13,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { BroomIcon, ChevronIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, ImportIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
@@ -271,14 +271,21 @@ function SimulationResults(param: SimulationStateParam) {
 		if (param.simulationAndVisualisationResults === undefined) return true
 		return isEmptySimulation(param.simulationAndVisualisationResults)
 	})
+
 	return <div>
 		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 			<div class = 'log-cell' style = 'justify-content: left;'>
 				<p className = 'h1'> Simulation Results </p>
 			</div>
-			<div class = 'log-cell' style = 'justify-content: right;'>
+			<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
+				<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
+						<ImportIcon/>
+					</span>
+					<span>Import Simulation Stack</span>
+				</button>
 				<button className = 'button is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
-					<span style = {{ marginRight: '0.25rem', fontSize: '1rem' }}>
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
 						<BroomIcon />
 					</span>
 					<span>Clear</span>
@@ -412,6 +419,7 @@ export function Home(param: HomeParams) {
 			rpcConnectionStatus = { param.rpcConnectionStatus }
 			simulationUpdatingState = { simulationUpdatingState }
 			simulationResultState = { simulationResultState }
+			openImportSimulation = { param.openImportSimulation }
 		/> : <> </> }
 		{ tabState?.website === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
