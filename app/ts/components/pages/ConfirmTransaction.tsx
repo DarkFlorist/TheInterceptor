@@ -12,8 +12,8 @@ import { ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { tryFocusingTabOrWindow } from '../ui-utils.js'
-import { addressString, checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
+import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
@@ -520,26 +520,7 @@ export function ConfirmTransaction() {
 	})
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = {
-			page: 'modifyAddress',
-			state: new Signal({
-				windowStateId: addressString(entry.address),
-				errorState: undefined,
-				incompleteAddressBookEntry: {
-					addingAddress: false,
-					askForAddressAccess: true,
-					symbol: undefined,
-					decimals: undefined,
-					logoUri: undefined,
-					useAsActiveAddress: false,
-					abi : undefined,
-					declarativeNetRequestBlockMode: undefined,
-					chainId: entry.chainId || 1n,
-					...entry,
-					address: checksummedAddress(entry.address),
-				}
-			})
-		}
+		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
 	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {

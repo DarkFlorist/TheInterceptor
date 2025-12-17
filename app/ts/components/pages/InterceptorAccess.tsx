@@ -5,11 +5,10 @@ import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
+import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
-import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
@@ -240,23 +239,7 @@ export function InterceptorAccess() {
 	}
 
 	function renameAddressCallBack(accessRequestId: string, entry: AddressBookEntry) {
-		appPage.value = { page: 'ModifyAddress', state: new Signal({
-			windowStateId: addressString(entry.address),
-			errorState: undefined,
-			incompleteAddressBookEntry: {
-				addingAddress: false,
-				askForAddressAccess: true,
-				symbol: undefined,
-				decimals: undefined,
-				logoUri: undefined,
-				useAsActiveAddress: false,
-				abi: undefined,
-				declarativeNetRequestBlockMode: undefined,
-				chainId: entry.chainId || 1n,
-				...entry,
-				address: checksummedAddress(entry.address),
-			}
-		}), accessRequestId }
+		appPage.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)), accessRequestId }
 	}
 
 	const changeActiveAddress = (accessRequestId: string) => { appPage.value = { accessRequestId, page: 'ChangeActiveAddress' } }

@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../../background/backgroundUtils.js'
-import { tryFocusingTabOrWindow } from '../ui-utils.js'
+import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -11,7 +11,6 @@ import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.j
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import Hint from '../subcomponents/Hint.js'
 import { RpcEntries } from '../../types/rpc.js'
 import { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
@@ -32,26 +31,7 @@ export function FetchSimulationStack() {
 	const rpcEntries = useSignal<RpcEntries>([]) // TODO
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = {
-			page: 'modifyAddress',
-			state: new Signal({
-				windowStateId: addressString(entry.address),
-				errorState: undefined,
-				incompleteAddressBookEntry: {
-					addingAddress: false,
-					askForAddressAccess: true,
-					symbol: undefined,
-					decimals: undefined,
-					logoUri: undefined,
-					useAsActiveAddress: false,
-					abi : undefined,
-					declarativeNetRequestBlockMode: undefined,
-					chainId: entry.chainId || 1n,
-					...entry,
-					address: checksummedAddress(entry.address),
-				}
-			})
-		}
+		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
 	useEffect(() => {

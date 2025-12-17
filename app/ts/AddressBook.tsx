@@ -6,7 +6,6 @@ import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
-import { checksummedAddress } from './utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
 import { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
@@ -15,6 +14,7 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
+import { addressEditEntry } from './components/ui-utils.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: Signal<ModifyAddressWindowState> }
@@ -288,24 +288,7 @@ export function AddressBook() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = { page: 'addNewAddress', state: new Signal({
-			windowStateId: 'AddressBookRename',
-			errorState: undefined,
-			incompleteAddressBookEntry: {
-				addingAddress: false,
-				askForAddressAccess: true,
-				symbol: undefined,
-				decimals: undefined,
-				logoUri: undefined,
-				useAsActiveAddress: false,
-				declarativeNetRequestBlockMode: undefined,
-				...entry,
-				abi: 'abi' in entry ? entry.abi : undefined,
-				address: checksummedAddress(entry.address),
-				chainId: entry.chainId || 1n,
-			}
-		}) }
-		return
+		modalState.value = { page: 'addNewAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
 	function removeAddressBookEntry(entry: AddressBookEntry) {
