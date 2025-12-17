@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
@@ -237,16 +237,6 @@ export function AddNewAddress(param: AddAddressParam) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_fetchAbiAndNameFromBlockExplorerReply') {
-				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
-				canFetchFromEtherScan.value = true
-				if (!parsed.data.success) {
-					param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: { blockEditing: false, message: parsed.data.error } })
-					return
-				}
-				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: modifyObject(param.modifyAddressWindowState.value.incompleteAddressBookEntry, { abi: parsed.data.abi, name: param.modifyAddressWindowState.value.incompleteAddressBookEntry.name === undefined ? parsed.data.contractName : param.modifyAddressWindowState.value.incompleteAddressBookEntry.name }), errorState: undefined } )
-				return
-			}
 			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
 				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
 				if (parsed.data.identifiedAddress !== undefined && parsed.data.identifiedAddress.type === 'ERC20' && param.modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20') {
@@ -356,11 +346,25 @@ export function AddNewAddress(param: AddAddressParam) {
 		const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
 		if (address === undefined) return
 		canFetchFromEtherScan.value = false
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromBlockExplorer', data: {
+		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data: {
 			address,
-			windowStateId: param.modifyAddressWindowState.value.windowStateId,
 			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
 		} })
+		if (reply === undefined) return
+		canFetchFromEtherScan.value = true
+		if (!reply.data.success) {
+			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+				errorState: { blockEditing: false, message: reply.data.error }
+			})
+			return
+		}
+		param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+			incompleteAddressBookEntry: modifyObject(param.modifyAddressWindowState.value.incompleteAddressBookEntry, {
+				abi: reply.data.abi,
+				name: param.modifyAddressWindowState.value.incompleteAddressBookEntry.name === undefined ? reply.data.contractName : param.modifyAddressWindowState.value.incompleteAddressBookEntry.name
+			}),
+			errorState: undefined
+		} )
 	}
 
 	const showOnChainVerificationErrorBox = useComputed(() => {

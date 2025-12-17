@@ -759,36 +759,6 @@ const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	})
 })
 
-export type FetchAbiAndNameFromBlockExplorer = funtypes.Static<typeof FetchAbiAndNameFromBlockExplorer>
-export const FetchAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromBlockExplorer'),
-	data: funtypes.ReadonlyObject({
-		windowStateId: funtypes.String,
-		address: EthereumAddress,
-		chainId: ChainIdWithUniversal,
-	})
-}).asReadonly()
-
-type FetchAbiAndNameFromBlockExplorerReply = funtypes.Static<typeof FetchAbiAndNameFromBlockExplorerReply>
-const FetchAbiAndNameFromBlockExplorerReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromBlockExplorerReply'),
-	data: funtypes.Union(
-		funtypes.ReadonlyObject({
-			windowStateId: funtypes.String,
-			success: funtypes.Literal(true),
-			address: EthereumAddress,
-			abi: funtypes.Union(funtypes.String, funtypes.Undefined),
-			contractName: funtypes.String,
-		}),
-		funtypes.ReadonlyObject({
-			windowStateId: funtypes.String,
-			address: EthereumAddress,
-			success: funtypes.Literal(false),
-			error: funtypes.String,
-		}),
-	)
-}).asReadonly()
-
 export type OpenWebPage = funtypes.Static<typeof OpenWebPage>
 export const OpenWebPage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_openWebPage'),
@@ -915,7 +885,6 @@ export const PopupMessage = funtypes.Union(
 	ChangeSettings,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,
-	FetchAbiAndNameFromBlockExplorer,
 	OpenWebPage,
 	DisableInterceptor,
 	SetEnsNameForHash,
@@ -953,7 +922,6 @@ export const MessageToPopup = funtypes.Union(
 	PartiallyParsedSimulateExecutionReply,
 	SettingsOpenedReply,
 	PopupAddOrModifyAddressWindowStateInfomation,
-	FetchAbiAndNameFromBlockExplorerReply,
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,
