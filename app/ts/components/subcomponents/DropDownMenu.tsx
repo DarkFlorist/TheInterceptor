@@ -26,7 +26,7 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
 			<button className = { buttonClassses } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
 				<span class = 'truncate' style = { { contain: 'content' } }>{ selected.value }</span>
-				<span style = { { marginLeft: '0.2em' } }><ChevronIcon /></span>
+				<span class = 'dropdown-chevron'><ChevronIcon /></span>
 			</button>
 		</div>
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>
