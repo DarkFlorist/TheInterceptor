@@ -263,7 +263,7 @@ type TransactionsAndSignedMessagesParams = {
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const visualizedBlocks = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
 	const transactionsAndMessagesInBlock = visualizedBlocks.map((block) => ({
-		operations: [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests].sort((n1, n2) => n1.created.getTime() - n2.created.getTime()),
+		operations: [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions],
 		blockTimeManipulation: block.blockTimeManipulation,
 	}))
 

@@ -389,9 +389,9 @@ export const InterceptorTransactionStack = funtypes.ReadonlyObject({
 	operations: funtypes.ReadonlyArray(InterceptorStackOperation),
 })
 
-export type InterceptorSimulateExport = funtypes.Static<typeof InterceptorSimulateExport>
-export const InterceptorSimulateExport = funtypes.ReadonlyObject({
-	name: funtypes.Literal('Interceptor Simulate Export'),
+export type InterceptorSimulationExport = funtypes.Static<typeof InterceptorSimulationExport>
+export const InterceptorSimulationExport = funtypes.ReadonlyObject({
+	name: funtypes.Literal('Interceptor Simulation Export'),
 	version: funtypes.Literal('1.0.0'),
 	eth_simulateV1: EthSimulateV1Params,
 	interceptorSimulateStack: InterceptorTransactionStack,

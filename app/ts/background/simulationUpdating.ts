@@ -7,7 +7,7 @@ import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/Enri
 import { PendingTransaction } from '../types/accessRequest.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -49,6 +49,21 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeMeRichStateOverride(await richListPromise)
 	let previousBlockTimeManipulation = preSimulationBlockTimeManipulation
+
+	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
+		inputBlocks.push({
+			stateOverrides: currentBlockStateOverrides,
+			transactions: currentBlockTransactions,
+			signedMessages: currentBlockSignedMessages,
+			blockTimeManipulation: previousBlockTimeManipulation,
+			simulateWithZeroBaseFee: false,
+		})
+		previousBlockTimeManipulation = blockTimeManipulation
+		currentBlockSignedMessages = []
+		currentBlockStateOverrides = {}
+		currentBlockTransactions = []
+	}
+
 	for (const operation of stack.operations) {
 		switch(operation.type) {
 			case 'Transaction': {
@@ -56,21 +71,14 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 				break
 			}
 			case 'Message': {
+				if (currentBlockTransactions.length > 0) {
+					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
+				}
 				currentBlockSignedMessages.push(operation.signedMessageTransaction)
 				break
 			}
 			case 'TimeManipulation': {
-				inputBlocks.push({
-					stateOverrides: currentBlockStateOverrides,
-					transactions: currentBlockTransactions,
-					signedMessages: currentBlockSignedMessages,
-					blockTimeManipulation: previousBlockTimeManipulation,
-					simulateWithZeroBaseFee: false,
-				})
-				previousBlockTimeManipulation = operation.blockTimeManipulation
-				currentBlockSignedMessages = []
-				currentBlockStateOverrides = {}
-				currentBlockTransactions = []
+				pushBlock(operation.blockTimeManipulation)
 				break
 			}
 			default: assertNever(operation)

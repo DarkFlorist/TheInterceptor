@@ -36,9 +36,9 @@ const RequestLatestUnexpectedErrorReply = funtypes.ReadonlyObject({
 	latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 })
 
-type RequestEthSimulateV1InputReply = funtypes.Static<typeof RequestEthSimulateV1InputReply>
-const RequestEthSimulateV1InputReply = funtypes.ReadonlyObject({
-	type: funtypes.Literal('RequestEthSimulateV1InputReply'),
+type requestInterceptorSimulationInputReply = funtypes.Static<typeof requestInterceptorSimulationInputReply>
+const requestInterceptorSimulationInputReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('requestInterceptorSimulationInputReply'),
 	ethSimulateV1InputString: funtypes.String
 })
 
@@ -75,7 +75,7 @@ export const PopupRequestsReplies = {
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
-	popup_requestInterceptorSimulateInput: RequestEthSimulateV1InputReply,
+	popup_requestInterceptorSimulationInput: requestInterceptorSimulationInputReply,
 	popup_requestCompleteVisualizedSimulation: RequestCompleteVisualizedSimulationReply,
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 }
@@ -89,7 +89,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulateInput') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulationInput') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
 )
@@ -100,7 +100,7 @@ export const PopupReplyOption = funtypes.Union(
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
 	RequestLatestUnexpectedErrorReply,
-	RequestEthSimulateV1InputReply,
+	requestInterceptorSimulationInputReply,
 	RequestCompleteVisualizedSimulationReply,
 	RequestSimulationMetadataReply,
 )

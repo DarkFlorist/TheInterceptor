@@ -672,7 +672,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	})
 
 	const exportEthSimulateInput = async () => {
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestInterceptorSimulateInput' })
+		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
 		if (reply === undefined) return
 		return reply.ethSimulateV1InputString
 	}
@@ -734,7 +734,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					<div class = 'log-cell'>
 						<CopyToClipboard
 							copyFunction = { exportEthSimulateInput }
-							copyMessage = 'eth_simulateV1 input query copied!'
+							copyMessage = 'Interceptor Simulation input copied!'
 							classNames = { 'btn btn--outline is-small' }
 						>
 							<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
