@@ -116,10 +116,13 @@ export const AddressBookEntry = funtypes.Union(
 export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
 export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
 
+export type AddressBookEntryType = funtypes.Static<typeof AddressBookEntryType>
+export const AddressBookEntryType = funtypes.Union(funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721'))
+
 export type IncompleteAddressBookEntry = funtypes.Static<typeof IncompleteAddressBookEntry>
 export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	addingAddress: funtypes.Boolean, // if false, we are editing addess
-	type: funtypes.Union(funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721')),
+	type: AddressBookEntryType,
 	address: funtypes.Union(funtypes.String, funtypes.Undefined),
 	askForAddressAccess: funtypes.Boolean,
 	name: funtypes.Union(funtypes.String, funtypes.Undefined),

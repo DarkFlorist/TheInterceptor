@@ -404,8 +404,10 @@ li {
 .dropdown-content {
 	background-color: var(--card-content-bg-color);
 	box-shadow: 0px 8px 16px 0px rgb(0 0 0 / 20%);
+	border: 1px solid #ffffff20;
 	position: absolute;
 	z-index: 20;
+	padding: 10px;
 }
 
 .dropdown-item {
@@ -1933,4 +1935,14 @@ header:has(form[role='search']) h1 {
 	align-items: center;
 	justify-self: center;
 	padding: 10px;
+}
+
+.btn.is-small {
+	font-size: 0.75rem;
+}
+
+.btn.is-danger {
+  background-color: var(--negative-color);
+  border-color: transparent;
+  color: #fff;
 }

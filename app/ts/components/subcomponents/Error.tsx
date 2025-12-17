@@ -9,6 +9,11 @@ interface ErrorProps {
 	containerStyle?: JSX.CSSProperties
 }
 
+export function ErrorText(props: ErrorProps) {
+	const textColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
+	return <p className = 'paragraph' style = { `color: ${ textColor }` }> { props.text } </p>
+}
+
 export function ErrorComponent(props: ErrorProps) {
 	const boxColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'

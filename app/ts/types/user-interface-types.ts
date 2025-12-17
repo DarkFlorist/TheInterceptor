@@ -26,7 +26,7 @@ export type InterceptorAccessListParams = {
 export type AddAddressParam = {
 	close: () => void
 	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined
-	modifyAddressWindowState: Signal<ModifyAddressWindowState | undefined>
+	modifyAddressWindowState: Signal<ModifyAddressWindowState>
 	activeAddress: bigint | undefined
 	rpcEntries: Signal<RpcEntries>
 }
