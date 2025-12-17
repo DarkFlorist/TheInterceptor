@@ -1916,3 +1916,21 @@ header:has(form[role='search']) h1 {
 	padding-left: 0.5em;
 	padding-right: 0.5em;
 }
+
+.sub-importance-box {
+	background-color: var(--alpha-005);
+	box-shadow: unset;
+	margin-bottom: 0px;
+	display: grid;
+	padding: 10px;
+	align-items: center;
+}
+
+.simulation-stack-view {
+	gap: 10px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-self: center;
+	padding: 10px;
+}

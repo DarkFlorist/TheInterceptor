@@ -90,11 +90,12 @@ function UnderTransactions(param: UnderTransactionsParams) {
 }
 
 type TransactionNamesParams = {
+	includeCurrentTransaction: boolean
 	completeVisualizedSimulation: Signal<CompleteVisualizedSimulation | undefined>
 	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage| undefined>
 }
 
-const TransactionNames = (param: TransactionNamesParams) => {
+export const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation.value === undefined || param.completeVisualizedSimulation.value.simulationResultState !== 'done') return <></>
 
 	const titleOfCurrentPendingTransaction = () => {
@@ -114,24 +115,22 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
 		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.simulatedAndVisualizedTransactions, ...block.visualizedPersonalSignRequests]).sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 		const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
-		return [...param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${ param.completeVisualizedSimulation.value.numberOfAddressesMadeRich } addresses rich`] : [], ...names, titleOfCurrentPendingTransaction() ]
+		return [...param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${ param.completeVisualizedSimulation.value.numberOfAddressesMadeRich } addresses rich`] : [], ...names, ...param.includeCurrentTransaction ? [titleOfCurrentPendingTransaction()] : [] ]
 	})
 
-	return <div class = 'block' style = 'margin-bottom: 10px;'>
-		<nav class = 'breadcrumb has-succeeds-separator is-small'>
-			<ul>
-				{ namesWithCurrentTransaction.value.map((name, index) => (
-					<li style = 'margin: 0px;'>
-						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.value.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-							<p class = 'paragraph' style = { `margin: 0px; ${ index !== namesWithCurrentTransaction.value.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
-								{ name }
-							</p>
-						</div>
-					</li>
-				)) }
-			</ul>
-		</nav>
-	</div>
+	return <nav class = 'breadcrumb has-succeeds-separator is-small'>
+		<ul>
+			{ namesWithCurrentTransaction.value.map((name, index) => (
+				<li style = 'margin: 0px;'>
+					<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : ''}` }>
+						<p class = 'paragraph' style = { `margin: 0px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'color: var(--disabled-text-color)' : ''}` }>
+							{ name }
+						</p>
+					</div>
+				</li>
+			)) }
+		</ul>
+	</nav>
 }
 
 type TransactionCardParams = {
@@ -643,7 +642,9 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
+							<div style = 'margin-bottom: 10px;'>
+								<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } includeCurrentTransaction = { true }/>
+							</div>
 							<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions.value }/>
 							<div style = { `top: ${ underTransactions.value.length * -HALF_HEADER_HEIGHT }px` }></div>
 							{ currentPendingTransactionOrSignableMessage.value.type === 'Transaction' ?
