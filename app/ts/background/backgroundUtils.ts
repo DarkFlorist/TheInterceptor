@@ -56,7 +56,7 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-export async function sendPopupMessageToBackgroundPageWithReply<MethodKey extends keyof PopupRequestsReplies>(message: { method: MethodKey, data: unknown }): Promise<PopupRequestsReplies[MethodKey] | undefined> {
+export async function sendPopupMessageToBackgroundPageWithReply<MethodKey extends keyof PopupRequestsReplies>(message: { method: MethodKey, data?: unknown }): Promise<PopupRequestsReplies[MethodKey] | undefined> {
 	try {
 		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.parse(message))) as PopupRequestsReplies[MethodKey]
 	} catch (error) {
