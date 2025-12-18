@@ -25,8 +25,8 @@ import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
-import { Signal, useSignal, useSignalEffect } from '@preact/signals'
-import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { Signal, useComputed, useSignal } from '@preact/signals'
+import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../utils/browser.js'
 
@@ -72,8 +72,8 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
 	const activeAddresses = useSignal<AddressBookEntries>(defaultActiveAddresses)
-	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
-	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
+	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
+	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
@@ -92,9 +92,8 @@ export function App() {
 	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 
-	const makeMeRichList = useSignal<readonly AddressBookEntry[]>([])
-	const makeMeRich = useSignal<boolean>(false)
-	const keepSelectedAddressRichEvenIfIChangeAddress = useSignal<boolean>(false)
+	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
+	const makeCurrentAddressRich = useSignal<boolean>(false)
 	const simulationMode = useSignal<boolean>(false)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
@@ -102,22 +101,25 @@ export function App() {
 		if (address === 'signer') {
 			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode.value } })
 			if (simulationMode.value) {
-				return setActiveSimulationAddress(tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined)
+				activeSimulationAddress.value = tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined
+				return
 			}
-			return setActiveSigningAddress(tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined)
+			activeSigningAddress.value = tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined
+			return
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode.value } })
 		if (simulationMode.value) {
-			return setActiveSimulationAddress(address)
+			activeSimulationAddress.value = address
+			return
 		}
-		return setActiveSigningAddress(address)
+		activeSigningAddress.value = address
 	}
 
 	function isSignerConnected() {
 		return tabState !== undefined && tabState.signerAccounts.length > 0
 			&& (
-				simulationMode.value && activeSimulationAddress !== undefined && tabState.signerAccounts[0] === activeSimulationAddress
-				|| !simulationMode.value && activeSigningAddress !== undefined && tabState.signerAccounts[0] === activeSigningAddress
+				simulationMode.value && activeSimulationAddress.value !== undefined && tabState.signerAccounts[0] === activeSimulationAddress.value
+				|| !simulationMode.value && activeSigningAddress.value !== undefined && tabState.signerAccounts[0] === activeSigningAddress.value
 			)
 	}
 
@@ -143,9 +145,8 @@ export function App() {
 	const requestRichData = async () => {
 		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestMakeMeRichData' })
 		if (reply === undefined) return
-		makeMeRichList.value = reply.richList
-		makeMeRich.value = reply.makeMeRich
-		keepSelectedAddressRichEvenIfIChangeAddress.value = reply.keepSelectedAddressRichEvenIfIChangeAddress
+		fixedAddressRichList.value = reply.richList
+		makeCurrentAddressRich.value = reply.makeCurrentAddressRich
 	}
 
 	const requestUnexpectedError = async () => {
@@ -160,11 +161,6 @@ export function App() {
 		requestActiveAddresses()
 		requestUnexpectedError()
 	}, [])
-
-	useSignalEffect(() => {
-		activeAddresses.value
-		requestRichData()
-	})
 
 	useEffect(() => {
 		const setSimulationState = (
@@ -195,7 +191,7 @@ export function App() {
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				rpcEntries.value = data.rpcEntries
 				setCurrentTabId(data.tabId)
-				setActiveSigningAddress(data.activeSigningAddressInThisTab)
+				activeSigningAddress.value = data.activeSigningAddressInThisTab
 				setInterceptorDisabled(data.interceptorDisabled)
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
 				if (isSettingsLoaded === false) setTabConnection(data.tabState.tabIconDetails)
@@ -230,7 +226,7 @@ export function App() {
 				}
 			}
 			rpcNetwork.value = settings.activeRpcNetwork
-			setActiveSimulationAddress(settings.activeSimulationAddress)
+			activeSimulationAddress.value = settings.activeSimulationAddress
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setWebsiteAccess(settings.websiteAccess)
 		}
@@ -244,10 +240,14 @@ export function App() {
 					unexpectedError.value = parsed
 					return
 				}
-				case 'popup_settingsUpdated': return updateHomePageSettings(parsed.data, true)
+				case 'popup_settingsUpdated': {
+					requestRichData()
+					return updateHomePageSettings(parsed.data, true)
+				}
 				case 'popup_activeSigningAddressChanged': {
 					if (parsed.data.tabId !== currentTabId) return
-					return setActiveSigningAddress(parsed.data.activeSigningAddress)
+					activeSigningAddress.value = parsed.data.activeSigningAddress
+					return
 				}
 				case 'popup_websiteIconChanged': return setTabConnection(parsed.data)
 				case 'popup_new_block_arrived': {
@@ -372,6 +372,9 @@ export function App() {
 		unexpectedError.value = undefined
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
+
+	const activeAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+
 	return (
 		<main>
 			<Hint>
@@ -405,7 +408,7 @@ export function App() {
 							activeSigningAddress = { activeSigningAddress }
 							activeSimulationAddress = { activeSimulationAddress }
 							changeActiveAddress = { changeActiveAddress }
-							makeMeRich = { makeMeRich }
+							makeCurrentAddressRich = { makeCurrentAddressRich }
 							activeAddresses = { activeAddresses }
 							simulationMode = { simulationMode }
 							tabIconDetails = { tabIconDetails }
@@ -419,8 +422,7 @@ export function App() {
 							simulationResultState = { simulationResultState }
 							interceptorDisabled = { interceptorDisabled }
 							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
-							makeMeRichList = { makeMeRichList }
-							keepSelectedAddressRichEvenIfIChangeAddress = { keepSelectedAddressRichEvenIfIChangeAddress }
+							fixedAddressRichList = { fixedAddressRichList }
 							openImportSimulation = { () => { appPage.value = { page: 'ImportSimulation', state: new Signal('') } } }
 						/>
 
@@ -456,7 +458,7 @@ export function App() {
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									modifyAddressWindowState = { appPage.value.state }
 									close = { goHome }
-									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
+									activeAddress = { activeAddress.value }
 									rpcEntries = { rpcEntries }
 								/>
 							: <></> }

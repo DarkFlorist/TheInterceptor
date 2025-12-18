@@ -5,7 +5,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
@@ -125,14 +125,11 @@ export function getInterceptorDisabledSites(settings: Settings): string[] {
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
-export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
-export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.makeMeRich ?? false
+export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
+export const getMakeCurrentAddressRich = async() => (await browserStorageLocalGet('makeCurrentAddressRich'))?.makeCurrentAddressRich ?? false
 
-export const setKeepSelectedAddressRichEvenIfIChangeAddress = async (keepSelectedAddressRichEvenIfIChangeAddress: boolean) => await browserStorageLocalSet({ keepSelectedAddressRichEvenIfIChangeAddress })
-export const getKeepSelectedAddressRichEvenIfIChangeAddress = async() => (await browserStorageLocalGet('keepSelectedAddressRichEvenIfIChangeAddress'))?.keepSelectedAddressRichEvenIfIChangeAddress ?? false
-
-export const setMakeMeRichList = async (makeMeRich: bigint[]) => await browserStorageLocalSet({ makeMeRichList: Array.from(new Set(makeMeRich)) })
-export const getMakeMeRichList = async() => (await browserStorageLocalGet('makeMeRichList'))?.makeMeRichList ?? []
+export const setFixedMakeMeRichList = async (fixedAdressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList: fixedAdressRichList })
+export const getFixedAddressRichList = async() => (await browserStorageLocalGet('fixedAddressRichList'))?.fixedAddressRichList ?? []
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
 	return await browserStorageLocalSet({

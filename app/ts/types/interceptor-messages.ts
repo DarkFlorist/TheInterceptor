@@ -256,7 +256,7 @@ export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyMakeMeRich'),
 	data: funtypes.ReadonlyObject({
 		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), funtypes.Literal('KeepSelectedAddressRichEvenIfIChangeAddress'), EthereumAddress)
+		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
 	})
 }).asReadonly()
 

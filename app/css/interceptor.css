@@ -1959,3 +1959,13 @@ header:has(form[role='search']) h1 {
 .dropdown.is-active .dropdown-chevron {
 	transform: rotateX(180deg)
 }
+
+.card-content-header {
+	padding-left: 10px;
+	background-color: var(--card-content-bg-color);
+	border-bottom-left-radius: 0.25rem;
+	border-bottom-right-radius: 0.25rem;
+	border-left: 1px solid #ffffff20;
+	border-right: 1px solid #ffffff20;
+	border-bottom: 1px solid #ffffff20;
+}

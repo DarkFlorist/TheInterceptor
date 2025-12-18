@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress, getWebsiteAccess } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, setMakeCurrentAddressRich, setFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
@@ -15,7 +15,7 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
-import { AddressBookEntry, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -82,17 +82,18 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 }
 
 export async function modifyMakeMeRich(simulator: Simulator, makeMeRichChange: ModifyMakeMeRich) {
-	if (makeMeRichChange.data.address === 'KeepSelectedAddressRichEvenIfIChangeAddress') {
-		return await setKeepSelectedAddressRichEvenIfIChangeAddress(makeMeRichChange.data.add)
-	}
-	else if (makeMeRichChange.data.address === 'CurrentAddress') {
-		await setMakeMeRich(makeMeRichChange.data.add)
+	if (makeMeRichChange.data.address === 'CurrentAddress') {
+		await setMakeCurrentAddressRich(makeMeRichChange.data.add)
 	} else {
-		const currentList = await getMakeMeRichList()
+		const currentList = await getFixedAddressRichList()
 		if (makeMeRichChange.data.add) {
-			await setMakeMeRichList([...currentList, makeMeRichChange.data.address])
+			await setFixedMakeMeRichList([...currentList, {
+				address: makeMeRichChange.data.address,
+				makingRich: true,
+				type: 'UserAdded'
+			}])
 		} else {
-			await setMakeMeRichList(currentList.filter((address) => address !== makeMeRichChange.data.address))
+			await setFixedMakeMeRichList(currentList.filter((element) => element.address !== makeMeRichChange.data.address))
 		}
 	}
 	await refreshSimulation(simulator, true)
@@ -732,15 +733,15 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
-	const keepSelectedAddressRichEvenIfIChangeAddressPromise = getKeepSelectedAddressRichEvenIfIChangeAddress()
-	const makeMeRichPromise = getMakeMeRich()
-	const richList = await getMakeMeRichList()
-	const addressbookEntryPromises: Promise<AddressBookEntry>[] = Array.from(richList.values()).map((address) => identifyAddress(ethereumClientService, requestAbortController, address))
+	const makeMeRichPromise = getMakeCurrentAddressRich()
+	const fixedAddressRichList = await getFixedAddressRichList()
+	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => (
+		{ ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
+	))
 	return {
 		type: 'RequestMakeMeRichDataReply' as const,
-		richList: await Promise.all(addressbookEntryPromises),
-		keepSelectedAddressRichEvenIfIChangeAddress : await keepSelectedAddressRichEvenIfIChangeAddressPromise,
-		makeMeRich: await makeMeRichPromise,
+		richList: await Promise.all(fixedRichListPromises),
+		makeCurrentAddressRich: await makeMeRichPromise,
 	}
 }
 

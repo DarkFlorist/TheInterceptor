@@ -33,6 +33,13 @@ export const OldActiveAddressEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 })
 
+export type RichListElement = funtypes.Static<typeof RichListElement>
+export const RichListElement = funtypes.ReadonlyObject({
+	address: EthereumAddress,
+	makingRich: funtypes.Boolean,
+	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
+})
+
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
@@ -43,7 +50,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeRpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
-	makeMeRich: funtypes.Boolean,
+	makeCurrentAddressRich: funtypes.Boolean,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
@@ -64,8 +71,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	makeMeRichList: funtypes.ReadonlyArray(EthereumAddress),
-	keepSelectedAddressRichEvenIfIChangeAddress: funtypes.Boolean,
+	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 })
 
@@ -79,7 +85,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeRpcNetwork'),
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
-	funtypes.Literal('makeMeRich'),
+	funtypes.Literal('makeCurrentAddressRich'),
 	funtypes.Literal('chainChangeConfirmationPromise'),
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('simulationResults'),
@@ -99,8 +105,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ensNameHashes'),
 	funtypes.Literal('ensLabelHashes'),
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
-	funtypes.Literal('makeMeRichList'),
-	funtypes.Literal('keepSelectedAddressRichEvenIfIChangeAddress'),
+	funtypes.Literal('fixedAddressRichList'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 )
 

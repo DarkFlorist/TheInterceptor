@@ -14,6 +14,7 @@ import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 import { Signal } from '@preact/signals'
 import { SimulationStackVersion } from './JsonRpc-types.js'
+import { EnrichedRichListElement } from './interceptor-reply-messages.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,
@@ -33,12 +34,11 @@ export type AddAddressParam = {
 
 export type HomeParams = {
 	changeActiveAddress: () => void
-	makeMeRich: Signal<boolean>
-	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>
+	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
 	tabState: TabState | undefined
-	activeSimulationAddress: bigint | undefined
-	activeSigningAddress: bigint | undefined
+	activeSimulationAddress: Signal<bigint | undefined>
+	activeSigningAddress: Signal<bigint | undefined>
 	useSignersAddressAsActiveAddress: boolean
 	simVisResults: SimulationAndVisualisationResults | undefined
 	rpcNetwork: Signal<RpcNetwork | undefined>
@@ -54,7 +54,7 @@ export type HomeParams = {
 	simulationResultState: SimulationResultState | undefined
 	interceptorDisabled: boolean
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
-	makeMeRichList: Signal<readonly AddressBookEntry[]>
+	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
 	openImportSimulation: () => void
 }
 
@@ -69,16 +69,15 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
-	activeAddress: AddressBookEntry | undefined
+	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: boolean
 	activeAddresses: Signal<AddressBookEntries | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => void
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
-	makeMeRich: Signal<boolean>
-	richList: Signal<readonly AddressBookEntry[]>
-	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>
+	makeCurrentAddressRich: Signal<boolean>
+	richList: Signal<readonly EnrichedRichListElement[]>
 	tabIconDetails: TabIconDetails,
 	tabState: TabState | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
