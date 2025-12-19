@@ -2,9 +2,9 @@ import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { getSimulationResults, getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack, updateSimulationResults } from './storageVariables.js'
-import { changeSimulationMode, getKeepSelectedAddressRichEvenIfIChangeAddress, getMakeMeRich, getMakeMeRichList, getSettings, setMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMakeMeRichList } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack } from './simulationModeHanders.js'
-import { changeActiveAddress, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupfetchAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata } from './popupMessageHandlers.js'
+import { changeActiveAddress, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata } from './popupMessageHandlers.js'
 import { CompleteVisualizedSimulation, SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -31,7 +31,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, getMakeMeRichListWithCurrent, visualizeSimulatorState } from './simulationUpdating.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, getAddressesbeingMadeRich, visualizeSimulatorState } from './simulationUpdating.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 
@@ -65,7 +65,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 				visualizedSimulationState: {
 					visualizedBlocks: []
 				},
-				numberOfAddressesMadeRich: (await getMakeMeRichListWithCurrent()).length
+				numberOfAddressesMadeRich: (await getAddressesbeingMadeRich()).length
 			}
 			try {
 				const oldSimulationStateInput = await getCurrentSimulationInput()
@@ -302,13 +302,11 @@ export async function resetSimulatorStateFromConfig(ethereumClientService: Ether
 	await updateSimulationState(ethereumClientService, tokenPriceService, true)
 }
 
-const updateRichListAfterActiveAddressChange = async (newActiveAddress: bigint) => {
-	if (!await getMakeMeRich()) return
-	if (!await getKeepSelectedAddressRichEvenIfIChangeAddress()) return
-	const activeAddress = (await getSettings()).activeSimulationAddress
-	if (activeAddress === undefined || activeAddress === newActiveAddress) return
-	const richList = await getMakeMeRichList()
-	await setMakeMeRichList([...richList, activeAddress])
+const keepTrackOfPreviousAddressforRichList = async () => {
+	const richList = (await getFixedAddressRichList()).filter((element) => !(element.type === 'PreviousActiveAddress' && !element.makingRich)).map((element) => ({ ...element, type: 'UserAdded' as const }))
+	const previousActiveAddress = (await getSettings()).activeSimulationAddress
+	if (previousActiveAddress === undefined || richList.some((element) => element.address === previousActiveAddress)) return await setFixedMakeMeRichList(richList)
+	await setFixedMakeMeRichList([...richList, { address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' as const }])
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
@@ -322,7 +320,7 @@ export async function changeActiveAddressAndChain(
 	},
 ) {
 
-	if (change.simulationMode && change.activeAddress !== undefined) await updateRichListAfterActiveAddressChange(change.activeAddress)
+	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressforRichList()
 
 	if (change.simulationMode) {
 		await changeSimulationMode({ ...change, ...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {} })
@@ -511,7 +509,7 @@ export async function popupMessageHandler(
 				case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, simulator.tokenPriceService, parsedRequest)
 				case 'popup_simulateGnosisSafeTransaction': return await simulateGnosisSafeTransactionOnPass(simulator.ethereum, simulator.tokenPriceService, parsedRequest.data.gnosisSafeMessage)
 				case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
-				case 'popup_fetchAbiAndNameFromBlockExplorer': return await popupfetchAbiAndNameFromBlockExplorer(parsedRequest)
+				case 'popup_requestAbiAndNameFromBlockExplorer': return await requestAbiAndNameFromBlockExplorer(parsedRequest)
 				case 'popup_openWebPage': return await openWebPage(parsedRequest)
 				case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
 				case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)

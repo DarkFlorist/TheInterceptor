@@ -7,14 +7,14 @@ import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Interface } from 'ethers'
 import { CompoundGovernanceAbi } from '../../utils/abi.js'
-import { dataStringWith0xStart } from '../../utils/bigint.js'
+import { addressString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
 import { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { removeDuplicates } from '../ui-utils.js'
+import { deduplicateByFunction } from '../../utils/array.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -265,7 +265,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 		const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
 
-		const transferRoute = removeDuplicates(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)))
+		const transferRoute = deduplicateByFunction(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
 		const netSums = getNetSums(edges)
 		if (transferRoute === undefined) throw new Error('no path found')
 		const texts = deadEnds.size > 1 ? {

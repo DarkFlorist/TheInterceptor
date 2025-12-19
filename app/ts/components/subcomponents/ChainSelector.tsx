@@ -18,13 +18,14 @@ export function RpcSelector(params: RpcSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${ rpcName }`)
 		params.changeRpc(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'button is-primary chainSelector'/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small'/>
 }
 
 interface ChainSelectorParams {
 	chainId: ReadonlySignal<ChainIdWithUniversal>
 	rpcEntries: Signal<RpcEntries>
 	changeChain: (entry: ChainEntry) => void
+	buttonClassses: string
 }
 
 export function ChainSelector(params: ChainSelectorParams) {
@@ -36,5 +37,5 @@ export function ChainSelector(params: ChainSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ rpcName }`)
 		params.changeChain(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'button is-primary chainSelector'/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = { params.buttonClassses }/>
 }

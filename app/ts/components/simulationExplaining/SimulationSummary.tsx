@@ -738,7 +738,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							classNames = { 'btn btn--outline is-small' }
 						>
 							<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
-								<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
+								<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 									<ExportIcon/>
 								</span>
 								<span>Export Simulation Stack</span>
