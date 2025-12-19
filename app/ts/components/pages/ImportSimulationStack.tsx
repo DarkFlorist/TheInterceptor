@@ -79,7 +79,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body' style = 'overflow: visible;'>
+			<section class = 'modal-card-body'>
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
 						<div class = 'media'>

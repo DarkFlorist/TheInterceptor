@@ -67,7 +67,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body' style = 'overflow: visible;'>
+			<section class = 'modal-card-body'>
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
 						<BigAddress
@@ -307,7 +307,7 @@ export function AddressBook() {
 				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
 					<div style = { { padding: '1rem 0'} }>
 						<div style = 'padding: 10px;'>
-							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain }/>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain } buttonClassses = 'button is-primary chainSelector'/>
 						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>

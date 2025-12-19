@@ -1,6 +1,7 @@
 import { Signal, useSignal } from '@preact/signals'
 import { useRef } from 'preact/hooks'
 import { clickOutsideAlerter } from '../ui-utils.js'
+import { ChevronIcon } from './icons.js'
 
 type DropDownMenuParams<OptionType> = {
 	selected: Signal<OptionType>
@@ -23,8 +24,9 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button className = { buttonClassses } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%', columnGap: '0.5em' } }>
+			<button className = { buttonClassses } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
 				<span class = 'truncate' style = { { contain: 'content' } }>{ selected.value }</span>
+				<span class = 'dropdown-chevron'><ChevronIcon /></span>
 			</button>
 		</div>
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>

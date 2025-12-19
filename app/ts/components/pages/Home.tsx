@@ -46,7 +46,7 @@ function FirstCardHeader(param: FirstCardParams) {
 	}
 
 	return <>
-		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, 1fr)', columnGap: '1rem', alignItems: 'center' } }>
+		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
 			<div>
 				<ToolTip content = {  param.tabIconDetails.iconReason }>
 					<img className = 'noselect nopointer' src = { param.tabIconDetails.icon } style = { { display: 'block', width: '3rem', height: '3rem' } } />
@@ -70,9 +70,7 @@ function FirstCardHeader(param: FirstCardParams) {
 					</button>
 				</div>
 			</div>
-			<div style = 'display: flex; justify-content: right'>
-				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
-			</div>
+			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
 		</header>
 	</>
 }
@@ -236,7 +234,7 @@ function FirstCard(param: FirstCardParams) {
 					<RichList keepSelectedAddressRichEvenIfIChangeAddress = { param.keepSelectedAddressRichEvenIfIChangeAddress } makeMeRich = { param.makeMeRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
-						startText = 'Simulate delay before first transaction'
+						startText = 'Delay first transaction by'
 						mode = { timeSelectorMode }
 						absoluteTime = { timeSelectorAbsoluteTime }
 						deltaValue = { timeSelectorDeltaValue }
@@ -279,13 +277,13 @@ function SimulationResults(param: SimulationStateParam) {
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
 				<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<ImportIcon/>
 					</span>
 					<span>Import Simulation Stack</span>
 				</button>
-				<button className = 'button is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem' } }>
+				<button className = 'btn is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<BroomIcon />
 					</span>
 					<span>Clear</span>
