@@ -10,12 +10,18 @@ export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
 })
 
+export type EnrichedRichListElement = funtypes.Static<typeof EnrichedRichListElement>
+export const EnrichedRichListElement = funtypes.ReadonlyObject({
+	addressBookEntry: AddressBookEntry,
+	makingRich: funtypes.Boolean,
+	type: funtypes.Union(funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded'), funtypes.Literal('CurrentActiveAddress')),
+})
+
 type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
 const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	type: funtypes.Literal('RequestMakeMeRichDataReply'),
-	richList: funtypes.ReadonlyArray(AddressBookEntry),
-	makeMeRich: funtypes.Boolean,
-	keepSelectedAddressRichEvenIfIChangeAddress: funtypes.Boolean,
+	richList: funtypes.ReadonlyArray(EnrichedRichListElement),
+	makeCurrentAddressRich: funtypes.Boolean,
 })
 
 type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>

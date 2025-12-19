@@ -10,7 +10,8 @@ import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
 import { EnsEventsExplainer } from './EnsEventExplainer.js'
 import { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
-import { removeDuplicates } from '../../ui-utils.js'
+import { deduplicateByFunction } from '../../../utils/array.js'
+import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -86,10 +87,10 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const tokenResults = extractTokenEvents(param.simTx.events)
 	const ensEvents = extractEnsEvents(param.simTx.events)
 
-	const tokenSendersAndReceivers = removeDuplicates(tokenResults.flatMap((tokenResult) => [
+	const tokenSendersAndReceivers = deduplicateByFunction(tokenResults.flatMap((tokenResult) => [
 		...tokenResult.from.address === msgSender || tokenResult.from.useAsActiveAddress ? [tokenResult.from] : [],
 		...tokenResult.to.address === msgSender || tokenResult.to.useAsActiveAddress ? [tokenResult.to] : []
-	]))
+	]), (element: AddressBookEntry) => addressString(element.address))
 	const eventTypesForEachAccount = tokenSendersAndReceivers.map((currentAddress) => {
 		const sendingTokenResults = tokenResults.filter((x) => x.from.address === currentAddress.address)
 		const receivingTokenResults = tokenResults.filter((x) => x.to.address === currentAddress.address)

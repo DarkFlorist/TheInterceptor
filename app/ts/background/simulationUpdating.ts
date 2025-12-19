@@ -12,7 +12,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getMakeMeRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, bigintSecondsToDate, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -23,7 +23,7 @@ import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '..
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
 
-const getMakeMeRichStateOverride = (addressesToMakeRich: bigint[]) => {
+const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
 	return Object.fromEntries(
 		addressesToMakeRich.map(currentAddress => {
@@ -33,21 +33,20 @@ const getMakeMeRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	)
 }
 
-export const getMakeMeRichListWithCurrent = async () => {
-	const makeRichAddressPromise = getAddressToMakeRich()
-	const makeRichAddressListPromise = getMakeMeRichList()
-	const makeMeRich = await makeRichAddressPromise
-	return Array.from(new Set(makeMeRich === undefined ? await makeRichAddressListPromise : [...await makeRichAddressListPromise, makeMeRich]))
+export const getAddressesbeingMadeRich = async () => {
+	const currentAddressBeingRich = await getAddressToMakeRich()
+	const makeRichAddressListPromise = await getFixedAddressRichList()
+	return [...makeRichAddressListPromise.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
 	const preSimulationBlockTimeManipulation = await getPreSimulationBlockTimeManipulation()
-	const richListPromise = getMakeMeRichListWithCurrent()
+	const richListPromise = getAddressesbeingMadeRich()
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeMeRichStateOverride(await richListPromise)
+	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
 	let previousBlockTimeManipulation = preSimulationBlockTimeManipulation
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {

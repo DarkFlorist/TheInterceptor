@@ -1,4 +1,4 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, TabIconDetails, TabIcon, TabState, RenameAddressCallBack } from '../../types/user-interface-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, TabIconDetails, TabState, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
@@ -20,17 +20,15 @@ import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } 
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 
 type SignerExplanationParams = {
-	activeAddress: AddressBookEntry | undefined
-	simulationMode: Signal<boolean>
+	activeAddress: Signal<AddressBookEntry | undefined>
 	tabState: TabState | undefined
-	useSignersAddressAsActiveAddress: boolean
-	tabIcon: TabIcon
 }
 
 function SignerExplanation(param: SignerExplanationParams) {
-	if (param.activeAddress !== undefined || param.tabState === undefined || param.tabState.signerAccountError !== undefined) return <></>
+	if (param.activeAddress.value !== undefined || param.tabState === undefined || param.tabState.signerAccountError !== undefined) return <></>
 	if (!param.tabState.signerConnected) {
 		if (param.tabState.signerName === 'NoSignerDetected' || param.tabState.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
@@ -94,63 +92,70 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 }
 
 type RichListParams = {
-	makeMeRich: Signal<boolean>
-	keepSelectedAddressRichEvenIfIChangeAddress: Signal<boolean>
-	richList: Signal<readonly AddressBookEntry[]>
-	renameAddressCallBack: RenameAddressCallBack,
+	makeCurrentAddressRich: Signal<boolean>
+	activeAddress: Signal<AddressBookEntry | undefined>
+	richList: Signal<readonly EnrichedRichListElement[]>
+	renameAddressCallBack: RenameAddressCallBack
 }
 
-function RichList(param: RichListParams) {
-	async function enableMakeMeRich(enabled: boolean) {
+function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack }: RichListParams) {
+	async function enableMakeCurrentAddressRich(enabled: boolean) {
 		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
-		param.makeMeRich.value = enabled
+		makeCurrentAddressRich.value = enabled
 	}
-	async function enableKeepSelectedAddressRichEvenIfIChangeAddress(enabled: boolean) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'KeepSelectedAddressRichEvenIfIChangeAddress' } } )
-		param.keepSelectedAddressRichEvenIfIChangeAddress.value = enabled
-	}
-	async function removeAddressFromRichList(address: bigint, add: boolean) {
-		if (!add) {
-			param.richList.value = param.richList.value.filter((x) => x.address !== address)
-		}
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add, address } } )
+	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
+		richList.value = [
+			...richList.value.filter((x) => x.addressBookEntry.address !== addressBookEntry.address),
+			...makeRich ? [{ addressBookEntry: addressBookEntry, makingRich: true, type: 'UserAdded' as const, }] : []
+		]
+		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: makeRich, address: addressBookEntry.address } } )
 	}
 
 	const showList = useSignal<boolean>(false)
+
+	const activeAddressSetAsRichViaFixedAddressList = useComputed(() =>
+		richList.value.filter((element) => element.makingRich).some((element) => element.addressBookEntry.address === activeAddress.value?.address)
+	)
+	const visibleRichList = useComputed(() => {
+		const peekedActiveAddress = activeAddress.peek() // peek active address here to avoid double render (changing active address retriggers rich bit later)
+		if (peekedActiveAddress === undefined) return richList.value
+		if (richList.value.some((element) => element.addressBookEntry.address === peekedActiveAddress.address)) return richList.value
+		return [...richList.value, { addressBookEntry: peekedActiveAddress, makingRich: false, type: 'CurrentActiveAddress' as const }]
+	})
+
+	const numberOfRichAddresses = useComputed(() => richList.value.filter((element) => element.makingRich).length)
 
 	return <>
 		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' checked = { param.makeMeRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Make me rich</p>
+					<input type = 'checkbox' checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
+					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
 			<div class = 'card-header-icon noselect' style = 'cursor: pointer;'>
+				{ numberOfRichAddresses.value === 0 ? <></> : <p class = 'paragraph checkbox-text' style = 'white-space: nowrap; color: gray; padding-right: 10px;'> (+{ numberOfRichAddresses.value } rich address{ numberOfRichAddresses.value > 1 ? 'es' : '' })</p> }
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showList.value
-			? <></>
+			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
+				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
+					<label class = 'form-control' style = 'gap: 1em;'>
+						<input type = 'checkbox' checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
+						<SmallAddress addressBookEntry = { activeAddress.value } renameAddressCallBack = { renameAddressCallBack } />
+					</label>
+				</div>
+			</> } </>
 			: <div class = 'card-content'>
-				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content; padding-bottom: 10px' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' checked = { param.keepSelectedAddressRichEvenIfIChangeAddress.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableKeepSelectedAddressRichEvenIfIChangeAddress(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Keep selected address rich even if I change address</p>
-				</label>
-
 				<div style = { { display: 'flex', flexDirection: 'column' } } >
-					{ param.richList.value.length === 0 ? <p class = 'paragraph'> No addresses being made rich</p> : <p class = 'paragraph'> Addresses being made rich:</p> }
-					{ param.richList.value.map((addressBookEntry) => {
-						return <label class = 'form-control' style = 'gap: 1em;'>
-							<input type = 'checkbox' checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { removeAddressFromRichList(addressBookEntry.address, false) } } } />
-								<p class = 'paragraph'>
-									<SmallAddress
-										addressBookEntry = { addressBookEntry }
-										renameAddressCallBack = { param.renameAddressCallBack }
-									/>
-								</p>
+					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
+					{ visibleRichList.value.map((richListElement) =>
+						<label class = 'form-control' style = 'gap: 1em;'>
+							<input type = 'checkbox' checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
+							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>
 						</label>
-					}) }
+					) }
 				</div>
 			</div>
 		}
@@ -212,7 +217,7 @@ function FirstCard(param: FirstCardParams) {
 				}
 
 				<ActiveAddressComponent
-					activeAddress = { param.activeAddress }
+					activeAddress = { param.activeAddress.value }
 					buttonText = { 'Change' }
 					disableButton = { !param.simulationMode.value }
 					changeActiveAddress = { param.changeActiveAddress }
@@ -231,7 +236,7 @@ function FirstCard(param: FirstCardParams) {
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
-					<RichList keepSelectedAddressRichEvenIfIChangeAddress = { param.keepSelectedAddressRichEvenIfIChangeAddress } makeMeRich = { param.makeMeRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
+					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
 						startText = 'Delay first transaction by'
@@ -246,13 +251,7 @@ function FirstCard(param: FirstCardParams) {
 			</div>
 		</section>
 
-		<SignerExplanation
-			activeAddress = { param.activeAddress }
-			simulationMode = { param.simulationMode }
-			tabState = { param.tabState }
-			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
-			tabIcon = { param.tabIconDetails.icon }
-		/>
+		<SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/>
 	</>
 }
 
@@ -319,8 +318,8 @@ function SimulationResults(param: SimulationStateParam) {
 }
 
 export function Home(param: HomeParams) {
-	const [activeSimulationAddress, setActiveSimulationAddress] = useState<AddressBookEntry | undefined>(undefined)
-	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressBookEntry | undefined>(undefined)
+	const activeSimulationAddress = useSignal<AddressBookEntry | undefined>(undefined)
+	const activeSigningAddress = useSignal<AddressBookEntry | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
@@ -336,8 +335,8 @@ export function Home(param: HomeParams) {
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
-		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? getActiveAddressEntry(param.activeSimulationAddress, param.activeAddresses.value) : undefined)
-		setActiveSigningAddress(param.activeSigningAddress !== undefined ? getActiveAddressEntry(param.activeSigningAddress, param.activeAddresses.value) : undefined)
+		activeSimulationAddress.value = param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
+		activeSigningAddress.value = param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
 		setTabConnection(param.tabIconDetails)
 		setTabState(param.tabState)
 		setCurrentBlockNumber(param.currentBlockNumber)
@@ -382,6 +381,8 @@ export function Home(param: HomeParams) {
 
 	if (!isLoaded || param.rpcNetwork.value === undefined) return <> </>
 
+	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+
 	return <>
 		{ param.rpcNetwork.value.httpsRpc === undefined ?
 			<ErrorComponent text = { `${ param.rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ param.rpcNetwork.value.name }.` }/>
@@ -391,21 +392,20 @@ export function Home(param: HomeParams) {
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
-			activeAddress = { param.simulationMode.value ? activeSimulationAddress : activeSigningAddress }
+			activeAddress = { currentActiveAddress }
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { param.simulationMode }
 			changeActiveAddress = { param.changeActiveAddress }
-			makeMeRich = { param.makeMeRich }
-			richList = { param.makeMeRichList }
-			keepSelectedAddressRichEvenIfIChangeAddress = { param.keepSelectedAddressRichEvenIfIChangeAddress }
+			makeCurrentAddressRich = { param.makeCurrentAddressRich }
+			richList = { param.fixedAddressRichList }
 			tabState = { tabState }
 			tabIconDetails = { tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
 		/>
 
-		{ param.simulationMode.value && activeSimulationAddress !== undefined ? <SimulationResults
+		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <SimulationResults
 			simulationAndVisualisationResults = { simulationAndVisualisationResults }
 			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 			disableReset = { disableReset }

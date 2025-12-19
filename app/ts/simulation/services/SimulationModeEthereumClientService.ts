@@ -12,9 +12,10 @@ import { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signi
 import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
-import { getMakeMeRich, getSettings } from '../../background/settings.js'
+import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { getMessageAndDomainHash } from '../../utils/eip712.js'
+import { deduplicateByFunction } from '../../utils/array.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -152,7 +153,7 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 export const getAddressToMakeRich = async () => {
 	const settings = await getSettings()
 	if (!settings.simulationMode) return undefined
-	return await getMakeMeRich() ? settings.activeSimulationAddress : undefined
+	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
 }
 
 export const getBlockTimeManipulationSeconds = (deltaToAdd: EthereumQuantity, deltaUnit: BlockTimeManipulationDeltaUnit) => {
@@ -733,16 +734,7 @@ type BalanceQuery = {
 
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput, balanceQueries: BalanceQuery[]): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
-	function removeDuplicates(queries: BalanceQuery[]): BalanceQuery[] {
-		const unique: Map<string, BalanceQuery> = new Map()
-		for (const query of queries) {
-			const key = `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : ''}`
-			if (unique.has(key)) continue
-			unique.set(key, query)
-		}
-		return Array.from(unique.values())
-	}
-	const deduplicatedBalanceQueries = removeDuplicates(balanceQueries)
+	const deduplicatedBalanceQueries = deduplicateByFunction(balanceQueries, (query: BalanceQuery) => `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : ''}`)
 	const IMulticall3 = new Interface(Multicall3ABI)
 	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
 	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
