@@ -28,7 +28,7 @@ export function FetchSimulationStack() {
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation | undefined>(undefined)
 	const currentPendingTransaction = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>([]) // TODO
+	const rpcEntries = useSignal<RpcEntries>([])
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
@@ -42,6 +42,10 @@ export function FetchSimulationStack() {
 			if (parsed.method === 'popup_simulation_state_changed') {
 				updateSimulation()
 				updateMetaData()
+				return
+			}
+			else if (parsed.method === 'popup_requestSettingsReply') {
+				rpcEntries.value = parsed.data.rpcEntries
 				return
 			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return
@@ -62,9 +66,12 @@ export function FetchSimulationStack() {
 		simulationMetadata.value = data.metadata
 	}
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestReadyAndListening' }) }, [])
-	useEffect(() => { updateSimulation() }, [])
-	useEffect(() => { updateMetaData() }, [])
+	useEffect(() => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestReadyAndListening' })
+		updateSimulation()
+		updateMetaData()
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+	}, [])
 
 	async function approve() {
 		if (changeRequest.value === undefined) return
