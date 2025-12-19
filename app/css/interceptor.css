@@ -1935,6 +1935,7 @@ header:has(form[role='search']) h1 {
 	align-items: center;
 	justify-self: center;
 	padding: 10px;
+	max-width: min-content;
 }
 
 .btn.is-small {

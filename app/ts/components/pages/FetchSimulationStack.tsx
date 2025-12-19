@@ -136,10 +136,10 @@ export function FetchSimulationStack() {
 								</p>
 								<div class = 'notification transaction-importance-box simulation-stack-view'>
 									<div style = 'width: 100%;'>
-										<p class = 'paragraph' style = { { maxWidth: '400px' } }> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
+										<p class = 'paragraph' style = { { minWidth: '400px' } }> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
 										<div class = 'sub-importance-box'>
 											{ addressReferences.value.length === 0 ? <p class = 'paragraph'> No address references</p> : <></> }
-											<div style = { { display: 'flex', flexDirection: 'column' } } >
+											<div style = { { display: 'flex', flexDirection: 'column', width: 'max-content', } } >
 												{ addressReferences.value.map((addressBookEntry) => <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/> ) }
 											</div>
 										</div>
