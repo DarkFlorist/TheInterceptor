@@ -2,7 +2,7 @@ import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransaction
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getMakeMeRichList, setMakeMeRichList, getKeepSelectedAddressRichEvenIfIChangeAddress, setKeepSelectedAddressRichEvenIfIChangeAddress, getWebsiteAccess } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromBlockExplorer, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -32,7 +32,7 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { RequestAbiAndNameFromBlockExplorer, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 
@@ -541,30 +541,25 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 	})
 }
 
-export async function popupfetchAbiAndNameFromBlockExplorer(parsedRequest: FetchAbiAndNameFromBlockExplorer) {
+export async function requestAbiAndNameFromBlockExplorer(parsedRequest: RequestAbiAndNameFromBlockExplorer) {
 	const etherscanReply = await fetchAbiFromBlockExplorer(parsedRequest.data.address, parsedRequest.data.chainId)
 	if (etherscanReply.success) {
-		await sendPopupMessageToOpenWindows({
-			method: 'popup_fetchAbiAndNameFromBlockExplorerReply' as const,
+		return {
+			method: 'RequestAbiAndNameFromBlockExplorerReply' as const,
 			data: {
-				windowStateId: parsedRequest.data.windowStateId,
 				success: true,
-				address: parsedRequest.data.address,
 				abi: etherscanReply.abi,
 				contractName: etherscanReply.contractName,
 			}
-		})
-		return
+		} as const
 	}
-	await sendPopupMessageToOpenWindows({
-		method: 'popup_fetchAbiAndNameFromBlockExplorerReply' as const,
+	return {
+		method: 'RequestAbiAndNameFromBlockExplorerReply' as const,
 		data: {
-			windowStateId: parsedRequest.data.windowStateId,
 			success: false,
-			address: parsedRequest.data.address,
 			error: etherscanReply.error
 		}
-	})
+	} as const
 }
 
 export async function openWebPage(parsedRequest: OpenWebPage) {
@@ -779,7 +774,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 			default: assertNever(operation)
 		}
 	}) })
-	return { type: 'requestInterceptorSimulationInputReply' as const, ethSimulateV1InputString:
+	return { type: 'RequestInterceptorSimulationInputReply' as const, ethSimulateV1InputString:
 		JSON.stringify(
 			InterceptorSimulationExport.serialize({
 				name: 'Interceptor Simulation Export',
