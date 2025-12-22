@@ -279,30 +279,25 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator) {
-	try {
-		const [firstTxn] = await getPendingTransactionsAndMessages()
-		if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
-		const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(simulator.ethereum, undefined, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(simulator.ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-		const refreshMessage = await refreshConfirmTransactionSimulation(simulator, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
-		if (refreshMessage === undefined) return
-		await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
-			switch (transactionOrMessage.type) {
-				case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
-				case 'Transaction': {
-					if (transactionToSimulate.success) {
-						return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
-					} else {
-						return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
-					}
+	const [firstTxn] = await getPendingTransactionsAndMessages()
+	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
+	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(simulator.ethereum, undefined, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(simulator.ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
+	if (refreshMessage === undefined) return
+	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
+		switch (transactionOrMessage.type) {
+			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
+			case 'Transaction': {
+				if (transactionToSimulate.success) {
+					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
+				} else {
+					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 				}
-				default: assertNever(transactionOrMessage)
 			}
-		})
-		await updateConfirmTransactionView(simulator.ethereum)
-	} catch(error: unknown) {
-		if (error instanceof Error && isNewBlockAbort(error)) return
-		throw error
-	}
+			default: assertNever(transactionOrMessage)
+		}
+	})
+	await updateConfirmTransactionView(simulator.ethereum)
 }
 
 export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
