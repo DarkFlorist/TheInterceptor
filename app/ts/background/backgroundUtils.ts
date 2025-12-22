@@ -4,7 +4,7 @@ import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { PopupMessageReplyRequests, PopupReplyOption, PopupRequestsReplies } from '../types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, PopupReplyOption, PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
@@ -56,12 +56,12 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-export async function sendPopupMessageToBackgroundPageWithReply<MethodKey extends keyof PopupRequestsReplies>(message: { method: MethodKey, data?: unknown }): Promise<PopupRequestsReplies[MethodKey] | undefined> {
+export async function sendPopupMessageToBackgroundPageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
 	try {
-		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.parse(message))) as PopupRequestsReplies[MethodKey]
+		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
 	} catch (error) {
 		if (error instanceof Error) {
-			if (error?.message?.includes('The message port closed before a response was received')) return
+			if (error.message.includes('The message port closed before a response was received')) return undefined
 		}
 		await handleUnexpectedError(error)
 		return undefined

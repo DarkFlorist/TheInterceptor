@@ -14,7 +14,7 @@ import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { ChainEntry, RpcEntries } from '../../types/rpc.js'
-import { Signal, useComputed, useSignal } from '@preact/signals'
+import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
@@ -178,6 +178,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setDeclarativeNetRequestBlockMode = async (declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { declarativeNetRequestBlockMode }))
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { askForAddressAccess }))
 
+	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -201,7 +202,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
+						<CellElement element = { <input disabled = { disableDueToSource } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
 					</> : <></> }
 					<CellElement element = { <Text text = { 'Abi: ' }/> }/>
 					<CellElement element = { <>
@@ -231,6 +232,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
 	const [onChainInformationVerifiedByUser, setOnChainInformationVerifiedByUser] = useState<boolean>(false)
 	const canFetchFromEtherScan = useSignal<boolean>(false)
+	const lastCheckedAddress = useSignal<bigint>(0n)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown) => {
@@ -239,16 +241,36 @@ export function AddNewAddress(param: AddAddressParam) {
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
 				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
-				if (parsed.data.identifiedAddress !== undefined && parsed.data.identifiedAddress.type === 'ERC20' && param.modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20') {
-					param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: { ...param.modifyAddressWindowState.value.incompleteAddressBookEntry, decimals: parsed.data.identifiedAddress.decimals }, errorState: parsed.data.errorState })
-				} else {
-					param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: parsed.data.errorState })
-				}
+				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: parsed.data.errorState })
 			}
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
+
+	useSignalEffect(() => {
+		// if user is adding a new address, fetch decimals and name from contract everytime that address changes
+		// we do not need to do that in case user is editing an address, as this data should have been fetched already
+		const identifyAddress = async () => {
+			if (!param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress) return
+			const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
+			if (address === undefined) return
+			if (lastCheckedAddress.value === address) return
+			lastCheckedAddress.value = address
+			const identifiedAddress = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestIdentifyAddress', data: { address } })
+			if (identifiedAddress === undefined) return
+			if (identifiedAddress.data.addressBookEntry.type === 'ERC20') {
+				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: {
+					...param.modifyAddressWindowState.value.incompleteAddressBookEntry,
+					name: identifiedAddress.data.addressBookEntry.name,
+					decimals: identifiedAddress.data.addressBookEntry.decimals,
+				} })
+			}
+		}
+		if (param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress !== true) return
+		if (stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) === lastCheckedAddress.value) return
+		identifyAddress()
+	})
 
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
@@ -322,8 +344,8 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	async function modifyOrAddEntry() {
 		const entryToAdd = getCompleteAddressBookEntry()
-		param.close()
 		if (entryToAdd.type === 'error') return
+		param.close()
 		await sendPopupMessageToBackgroundPage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd } )
 	}
 
