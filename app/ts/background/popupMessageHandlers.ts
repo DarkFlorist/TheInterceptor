@@ -32,7 +32,7 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { RequestAbiAndNameFromBlockExplorer, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 
@@ -524,21 +524,13 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 		}
 	}
 	await updatePage(parsedRequest.data.newState)
-
-	const identifyAddressCandidate = async (addressCandidate: string | undefined) => {
-		if (addressCandidate === undefined) return undefined
-		const address = EthereumAddress.safeParse(addressCandidate.trim())
-		if (address.success === false) return undefined
-		return await identifyAddress(ethereum, undefined, address.value)
-	}
-	const identifyPromise = identifyAddressCandidate(parsedRequest.data.newState.incompleteAddressBookEntry.address)
 	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, parsedRequest.data.newState.incompleteAddressBookEntry)
 
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_addOrModifyAddressWindowStateInformation',
-		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState, identifiedAddress: await identifyPromise }
+		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState }
 	})
 }
 
@@ -546,7 +538,7 @@ export async function requestAbiAndNameFromBlockExplorer(parsedRequest: RequestA
 	const etherscanReply = await fetchAbiFromBlockExplorer(parsedRequest.data.address, parsedRequest.data.chainId)
 	if (etherscanReply.success) {
 		return {
-			method: 'RequestAbiAndNameFromBlockExplorerReply' as const,
+			type: 'RequestAbiAndNameFromBlockExplorer' as const,
 			data: {
 				success: true,
 				abi: etherscanReply.abi,
@@ -555,7 +547,7 @@ export async function requestAbiAndNameFromBlockExplorer(parsedRequest: RequestA
 		} as const
 	}
 	return {
-		method: 'RequestAbiAndNameFromBlockExplorerReply' as const,
+		type: 'RequestAbiAndNameFromBlockExplorer' as const,
 		data: {
 			success: false,
 			error: etherscanReply.error
@@ -846,4 +838,8 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 
 	const metadata = await getMetadataForSimulation(simulationState, ethereumClientService, undefined, events, inputData)
 	return { type: 'RequestSimulationMetadata' as const, metadata }
+}
+
+export async function requestIdentifyAddress(ethereumClientService: EthereumClientService, parsedRequest: RequestIdentifyAddress) {
+	return { type: 'RequestIdentifyAddress' as const, data: { addressBookEntry: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address) } }
 }

@@ -78,7 +78,7 @@ const RequestSimulationMetadataReply = funtypes.ReadonlyObject({
 
 type RequestAbiAndNameFromBlockExplorerReply = funtypes.Static<typeof RequestAbiAndNameFromBlockExplorerReply>
 const RequestAbiAndNameFromBlockExplorerReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('RequestAbiAndNameFromBlockExplorerReply'),
+	type: funtypes.Literal('RequestAbiAndNameFromBlockExplorer'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(true),
@@ -92,6 +92,22 @@ const RequestAbiAndNameFromBlockExplorerReply = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
+export type RequestIdentifyAddress = funtypes.Static<typeof RequestIdentifyAddress>
+export const RequestIdentifyAddress = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestIdentifyAddress'),
+	data: funtypes.ReadonlyObject({
+		address: EthereumAddress
+	})
+}).asReadonly()
+
+type RequestIdentifyAddressReply = funtypes.Static<typeof RequestIdentifyAddressReply>
+const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
+	type: funtypes.Literal('RequestIdentifyAddress'),
+	data: funtypes.ReadonlyObject({
+		addressBookEntry: AddressBookEntry
+	})
+}).asReadonly()
+
 export const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
@@ -101,6 +117,7 @@ export const PopupRequestsReplies = {
 	popup_requestCompleteVisualizedSimulation: RequestCompleteVisualizedSimulationReply,
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
+	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
 }
 
 export type PopupRequestsReplies = {
@@ -115,6 +132,7 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 
 export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
+	RequestIdentifyAddress,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -123,6 +141,9 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
 )
+
+export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
+export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof PopupRequestsReplies ? PopupRequestsReplies[Request['method']] : undefined
 
 export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
 export const PopupReplyOption = funtypes.Union(
@@ -134,4 +155,5 @@ export const PopupReplyOption = funtypes.Union(
 	RequestCompleteVisualizedSimulationReply,
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
+	RequestIdentifyAddressReply,
 )

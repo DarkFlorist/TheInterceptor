@@ -755,7 +755,6 @@ const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		windowStateId: funtypes.String,
 		errorState: funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined),
-		identifiedAddress: funtypes.Union(funtypes.Undefined, AddressBookEntry)
 	})
 })
 
