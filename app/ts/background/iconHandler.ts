@@ -6,13 +6,14 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings } from './settings.js'
-import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
+import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { checkAndPrintRuntimeLastError, safeGetTab } from '../utils/requests.js'
+import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
+	if (!(await doesTabExist(tabId))) return
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { tabIconDetails }))
 	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
 	try {
@@ -25,6 +26,10 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 }
 
 export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
+	if (!(await doesTabExist(tabId))) {
+		await removeTabState(tabId)
+		return
+	}
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)

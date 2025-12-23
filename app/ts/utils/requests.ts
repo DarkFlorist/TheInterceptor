@@ -80,6 +80,12 @@ export const safeGetTab = async (tabId: number) => {
 	}
 }
 
+export const doesTabExist = async (tabId: number) => {
+	const tab = await safeGetTab(tabId)
+	if (tab === undefined) return false
+	return true
+}
+
 export const safeGetWindow = async (windowId: number) => {
 	try {
 		const tab = await browser.windows.get(windowId)
