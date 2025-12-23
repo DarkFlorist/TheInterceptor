@@ -135,17 +135,8 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 		updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { type }))
 	}
 
-	const updateIncompleteAddressBookEntry = async (
-		updateEntry: (previousEntry: typeof modifyAddressWindowState.peek extends () => infer State
-			? State extends { incompleteAddressBookEntry: infer Entry }
-				? Entry
-				: never
-			: never) => typeof modifyAddressWindowState.peek extends () => infer State
-				? State extends { incompleteAddressBookEntry: infer Entry }
-					? Entry
-					: never
-				: never
-	) => {
+	type ModifyEntry = typeof modifyAddressWindowState.peek extends () => infer State ? (State extends { incompleteAddressBookEntry: infer Entry } ? Entry : never) : never
+	const updateIncompleteAddressBookEntry = async (updateEntry: (previousEntry: ModifyEntry) => ModifyEntry) => {
 		const previousState = modifyAddressWindowState.peek()
 		modifyAddressWindowState.value = modifyObject(previousState, { incompleteAddressBookEntry: updateEntry(previousState.incompleteAddressBookEntry) })
 		try {
