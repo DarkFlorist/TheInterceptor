@@ -324,6 +324,8 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 	return await interceptorTransactionStackSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
 		const interceptorTransactionStack = updateFunc(prevStack)
+		const ids = interceptorTransactionStack.operations.map((x) => x.type === 'Transaction' ? x.preSimulationTransaction.transactionIdentifier : undefined).filter((x): x is bigint => x !== undefined)
+		if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
 		await browserStorageLocalSet({ interceptorTransactionStack })
 		return interceptorTransactionStack
 	})

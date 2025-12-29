@@ -69,7 +69,7 @@ export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress
 	const parsedSourceCode = await fetchAbi(contractAddress, api, chainId === 'AllChains' ? 1n : chainId)
 
 	// Extract ABI from getSourceCode request if not proxy, otherwise attempt to fetch ABI of implementation
-	if (parsedSourceCode.success === false || parsedSourceCode.value.status !== 'success') return { success: false as const, error: 'Could not get ABI for the contract.'}
+	if (parsedSourceCode.success === false || parsedSourceCode.value.status !== 'success') return { success: false as const, error: 'Could not get ABI for the contract.' }
 
 	if (api !== undefined && parsedSourceCode.value.result[0].Proxy === 'yes' && parsedSourceCode.value.result[0].Implementation !== '') {
 		const implReq = await fetchJson(`${ api.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)

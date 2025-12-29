@@ -161,7 +161,7 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 
 				const newOperations: InterceptorStackOperation[] = []
 				let transactionWasFound = false
-				for (const operation of prevStack.operations) {
+ 				for (const operation of prevStack.operations) {
 					if (operation.type === 'Transaction' && transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier) {
 						transactionWasFound = true
 						continue
