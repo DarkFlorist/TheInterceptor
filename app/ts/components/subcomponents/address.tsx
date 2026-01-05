@@ -76,12 +76,12 @@ export function BigAddress(params: BigAddressParams) {
 
 	const labelConfig: ActionableTextProps = {
 		displayText: labelText,
-		...(labelText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : configPartialWithEditOnClick
+		...(labelText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : (params.noEditAddress ? undefined : configPartialWithEditOnClick)
 	}
 
 	const noteConfig: ActionableTextProps = {
 		displayText: noteText,
-		...(noteText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : configPartialWithEditOnClick
+		...(noteText === addressString && !params.noCopying) ? configPartialWithCopyOnClick : (params.noEditAddress ? undefined : configPartialWithEditOnClick)
 	}
 
 	const iconConfig: ActionableIconProps = {
