@@ -201,8 +201,8 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	if (tokenResults.length < 2) return false
 
 	// no burning allowed
-	if (!tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return false
-	if (!tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return false
+	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return false
+	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return false
 
 	// no approvals allowed
 	if (tokenResults.filter((result) => result.isApproval).length !== 0) return false
