@@ -3,6 +3,7 @@ import { JSONEncodeableObject, JSONEncodeableObjectArray } from '../utils/json.j
 import { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord } from '../types/eip721.js'
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'
 import { SolidityType } from '../types/solidityType.js'
+import { promiseAllMapAbortSafe } from './requests.js'
 
 function findType(name: string, types: readonly { readonly name: string, readonly type: string}[]) {
 	return types.find((x) => x.name === name)?.type
@@ -51,7 +52,7 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
 	const messageEntries = Object.entries(message)
-	const pairArray: [string, EnrichedEIP712MessageRecord][] = await Promise.all(Array.from(messageEntries).map(async([key, messageEntry]) => {
+	const pairArray: [string, EnrichedEIP712MessageRecord][] = await promiseAllMapAbortSafe(Array.from(messageEntries), async([key, messageEntry]): Promise<[string, EnrichedEIP712MessageRecord]> => {
 		if (messageEntry === undefined) throw new Error(`Subtype not found: ${ key }`)
 		const fullType = findType(key, currentTypes)
 		if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
@@ -64,14 +65,14 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 			if (!jsonEncodeableArray.success) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
 			const currentType = arraylessType.arraylessType
 			if (currentType === undefined) throw new Error(`array's type is missing`)
-			return [key, { type: 'record[]', value: await Promise.all(jsonEncodeableArray.value.map((subSubMessage) => {
+			return [key, { type: 'record[]', value: await promiseAllMapAbortSafe(jsonEncodeableArray.value, (subSubMessage) => {
 				if (JSONEncodeableObject.test(subSubMessage)) return extractEIP712MessageSubset(ethereumClientService, requestAbortController, depth + 1, subSubMessage, currentType, types, useLocalStorage)
 				throw new Error('Too deep EIP712 message (object)')
-			})) }]
+			}) }]
 		}
 		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
 		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, requestAbortController, depth + 1, messageEntry, fullType, types, useLocalStorage) }]
-	}))
+	})
 	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value }), {} as Promise<EnrichedEIP712Message>)
 }
 

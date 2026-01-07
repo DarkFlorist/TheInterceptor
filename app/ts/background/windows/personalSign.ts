@@ -12,14 +12,15 @@ import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/simulator.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
+import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
 		...openSeaOrder,
 		zone: await identifyAddress(ethereumClientService, requestAbortController, openSeaOrder.zone),
 		offerer: await identifyAddress(ethereumClientService, requestAbortController, openSeaOrder.offerer),
-		offer: await Promise.all(openSeaOrder.offer.map( async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token) }))),
-		consideration: await Promise.all(openSeaOrder.consideration.map(async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token), recipient: await identifyAddress(ethereumClientService, requestAbortController, offer.recipient) })))
+		offer: await promiseAllMapAbortSafe(openSeaOrder.offer, async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token) })),
+		consideration: await promiseAllMapAbortSafe(openSeaOrder.consideration, async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token), recipient: await identifyAddress(ethereumClientService, requestAbortController, offer.recipient) }))
 	 }
 }
 
@@ -176,7 +177,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 				rawMessage: stringifyJSONWithBigInts(parsed),
 				parsedMessageData,
-				parsedMessageDataAddressBookEntries: await Promise.all(addressesInEventsAndInputData.map((address) => identifyAddress(ethereumClientService, requestAbortController, address))),
+				parsedMessageDataAddressBookEntries: await promiseAllMapAbortSafe(addressesInEventsAndInputData, (address) => identifyAddress(ethereumClientService, requestAbortController, address)),
 				isValidMessage: isValid.valid,
 				...hashes,
 				safeTxHash: getSafeTxHash(parsed),

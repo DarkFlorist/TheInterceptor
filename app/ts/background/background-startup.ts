@@ -11,7 +11,7 @@ import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
@@ -101,6 +101,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
+	silenceChromeUnCaughtPromise(websitePromise)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }

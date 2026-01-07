@@ -25,7 +25,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -46,6 +46,7 @@ export async function confirmRequestAccess(simulator: Simulator, websiteTabConne
 
 export async function getLastKnownCurrentTabId() {
 	const tabIdPromise = getCurrentTabId()
+	silenceChromeUnCaughtPromise(tabIdPromise)
 	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true })
 	const tabId = await tabIdPromise
 	// skip restricted or insufficient permission tabs
@@ -206,13 +207,15 @@ export async function refreshSimulation(simulator: Simulator, refreshOnlyIfNotAl
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenPriceService: TokenPriceService) {
 	const currentBlockNumberPromise = ethereumClientService.getBlockNumber(requestAbortController)
+	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const promises = await getPendingTransactionsAndMessages()
-	const visualizedSimulatorStatePromise = getSimulationResults()
+	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(getSimulationResults())
 	const first = promises[0]
 	if (first === undefined) return
 	switch (first.type) {
 		case 'SignableMessage': {
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereumClientService, requestAbortController, first.signedMessageTransaction, ethereumClientService.getRpcEntry())
+			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
 			const message: UpdateConfirmTransactionDialog = {
 				method: 'popup_update_confirm_transaction_dialog',
 				data: {
@@ -366,12 +369,12 @@ export async function requestNewHomeData(simulator: Simulator, requestAbortContr
 }
 
 export async function refreshHomeData(simulator: Simulator) {
-	const settingsPromise = getSettings()
-	const rpcConnectionStatusPromise = getRpcConnectionStatus()
-	const rpcEntriesPromise = getRpcList()
-	const preSimulationBlockTimeManipulationPromise = getPreSimulationBlockTimeManipulation()
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
+	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
 
-	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = getSimulationResults()
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getSimulationResults())
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
@@ -398,10 +401,10 @@ export async function refreshHomeData(simulator: Simulator) {
 }
 
 export async function settingsOpened() {
-	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
-	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
-	const rpcEntriesPromise = getRpcList()
-	const settingsPromise = getSettings()
+	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
+	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
+	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_requestSettingsReply' as const,
@@ -725,7 +728,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
-	const makeMeRichPromise = getMakeCurrentAddressRich()
+	const makeMeRichPromise = silenceChromeUnCaughtPromise(getMakeCurrentAddressRich())
 	const fixedAddressRichList = await getFixedAddressRichList()
 	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => (
 		{ ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
@@ -753,9 +756,9 @@ export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 }
 
 export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
-	const stackPromise = getInterceptorTransactionStack()
+	const stackPromise = silenceChromeUnCaughtPromise(getInterceptorTransactionStack())
 	const simulationInput = await getCurrentSimulationInput()
-	const currentBlockNumberPromise = ethereumClientService.getBlockNumber(undefined)
+	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
 	const stack = await stackPromise
 
@@ -818,21 +821,21 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 			namedTokenIds: [], addressBookEntries: [], ens: { ensNameHashes: [], ensLabelHashes: [] }
 		}
 	}
-	const eventsForEachBlockAndTransactionPromise = Promise.all(
+	const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(Promise.all(
 		simulationState.simulatedBlocks.map((block) =>
 			Promise.all(block.simulatedTransactions.map(
 				async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereumClientService, undefined)
 			))
 		)
-	)
-	const parsedInputDataForEachBlockAndTransactionPromise = Promise.all(
+	))
+	const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(Promise.all(
 		simulationState.simulatedBlocks.map((block) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
 			return Promise.all(transactions.map((transaction) =>
 				parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereumClientService, undefined)
 			))
 		})
-	)
+	))
 	const events = (await eventsForEachBlockAndTransactionPromise).flat()
 	const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 

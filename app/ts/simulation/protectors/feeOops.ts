@@ -7,6 +7,7 @@ export async function feeOops(transaction: EthereumUnsignedTransaction, ethereum
 		if (transaction.maxPriorityFeePerGas < 10n ** 9n * 10n) return // 10.0 nanoEth/gas
 		return `Attempt to send a transaction with an outrageous fee (${ transaction.maxPriorityFeePerGas / (10n ** 9n) } nanoEth/gas)`
 	}
-	if (transaction.gasPrice < await ethereum.getGasPrice(requestAbortController) * 10n) return // 10 times the estimate gas price
-	return `Attempt to send a transaction with an outrageous fee. GasPrice: ${ ethereum.getGasPrice(requestAbortController) }`
+	const gasPrice = await ethereum.getGasPrice(requestAbortController)
+	if (transaction.gasPrice < gasPrice * 10n) return // 10 times the estimate gas price
+	return `Attempt to send a transaction with an outrageous fee. GasPrice: ${ gasPrice }`
 }

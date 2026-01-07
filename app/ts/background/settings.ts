@@ -11,6 +11,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -98,13 +99,13 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: `https://
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
 export async function getSettings() : Promise<Settings> {
-	const resultsPromise = browserStorageLocalGet([
+	const resultsPromise = silenceChromeUnCaughtPromise(browserStorageLocalGet([
 		'activeSimulationAddress',
 		'openedPageV2',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
 		'simulationMode',
-	])
+	]))
 	const activeRpcNetwork = (await browserStorageLocalSafeParseGet('activeRpcNetwork'))?.activeRpcNetwork
 	const results = await resultsPromise
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')

@@ -6,6 +6,7 @@ import { calculatePricesFromUniswapLikeReturnData, calculateUniswapLikePools, co
 import { addressString, stringToUint8Array } from '../../utils/bigint.js'
 import { Erc20TokenEntry } from '../../types/addressBookTypes.js'
 import { getWithDefault } from '../../utils/typescript.js'
+import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 
 interface TokenDecimals {
 	address: bigint,
@@ -58,24 +59,23 @@ export class TokenPriceService {
 		}
 	}
 
-	public async estimateEthereumPricesForTokens (requestAbortController: AbortController | undefined, quoteToken: Erc20TokenEntry, tokens: TokenDecimals[]) : Promise<TokenPriceEstimate[]> {
+	public async estimateEthereumPricesForTokens(requestAbortController: AbortController | undefined, quoteToken: Erc20TokenEntry, tokens: TokenDecimals[]) : Promise<TokenPriceEstimate[]> {
 		if (tokens.length === 0) return []
 		this.cleanUpCacheIfNeeded()
 		const quoteTokenAddressString = addressString(quoteToken.address)
-		const tokenPricePromises: Promise<TokenPriceEstimate | undefined>[] = tokens.map(async (token) => {
+		return (await promiseAllMapAbortSafe(tokens, async (token) => {
 			const tokenAddressString = addressString(token.address)
 			if (token.address === quoteToken.address) return { token, quoteToken, price: 10n ** quoteToken.decimals }
 			const cachedEstimate = this.cachedPrices.get(quoteTokenAddressString)?.get(tokenAddressString)
 			if (cachedEstimate !== undefined && (cachedEstimate.estimate === undefined || cachedEstimate.estimate.token.decimals === token.decimals)) {
 				return cachedEstimate.estimate
 			}
-			const estimate = await this.getTokenPrice(requestAbortController, token, quoteToken)
+			const estimate = await silenceChromeUnCaughtPromise(this.getTokenPrice(requestAbortController, token, quoteToken))
 			const quoteTokenAddressCache = getWithDefault(this.cachedPrices, quoteTokenAddressString, new Map<string, CachedTokenPriceEstimate>() )
 			quoteTokenAddressCache.set(tokenAddressString, { estimate, estimateCalculated: new Date() })
 			this.cachedPrices.set(quoteTokenAddressString, quoteTokenAddressCache)
 			return estimate
-		})
-		return (await Promise.all(tokenPricePromises)).filter((tokenPrice): tokenPrice is TokenPriceEstimate => tokenPrice !== undefined)
+		})).filter((tokenPrice): tokenPrice is TokenPriceEstimate => tokenPrice !== undefined)
 	}
 }
 

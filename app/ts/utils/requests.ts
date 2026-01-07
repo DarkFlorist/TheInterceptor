@@ -131,3 +131,17 @@ export const getHostWithPort = (urlString: string): string => {
 	const url = new URL(urlString)
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
+
+export const silenceChromeUnCaughtPromise = async <ReturnValue>(maybeAwaytedFunction: Promise<ReturnValue>) => {
+	maybeAwaytedFunction.catch(() => { })
+	return maybeAwaytedFunction
+}
+
+export async function promiseAllMapAbortSafe<InputType, OutputType>(values: readonly InputType[], mapper: (value: InputType, index: number) => Promise<OutputType>): Promise<OutputType[]> {
+	const guardedPromises = values.map(async (value, index) => {
+		const mappedPromise = mapper(value, index)
+		mappedPromise.catch(() => { })
+		return await mappedPromise
+	})
+	return await silenceChromeUnCaughtPromise(Promise.all(guardedPromises))
+}

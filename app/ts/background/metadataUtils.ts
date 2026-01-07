@@ -17,6 +17,7 @@ import { ENSNameHashes } from '../types/ens.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
+import { promiseAllMapAbortSafe } from '../utils/requests.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -195,9 +196,8 @@ export async function getAddressBookEntriesForVisualiserFromTransactions(ethereu
 	}
 
 	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
-	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, requestAbortController, address))
 
-	return await Promise.all(addressIdentificationPromises)
+	return await promiseAllMapAbortSafe(Array.from(deDuplicated.values()), (address) => identifyAddress(ethereumClientService, requestAbortController, address))
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {

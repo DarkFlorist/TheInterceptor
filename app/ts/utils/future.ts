@@ -10,6 +10,7 @@ export class Future<T> implements PromiseLike<T> {
 			resolveFunction = resolve
 			rejectFunction = reject
 		})
+		this.promise.catch(() => { })
 		// the function passed to the Promise constructor is called before the constructor returns, so we can be sure the resolve and reject functions have been set by here even if the compiler can't verify
 		this.resolveFunction = resolveFunction!
 		this.rejectFunction = rejectFunction!

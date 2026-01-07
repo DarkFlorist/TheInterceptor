@@ -19,7 +19,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
 import { Website } from '../types/websiteAccessTypes.js'
@@ -54,6 +54,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 				await updateSimulationResults(modifyObject(simulationResults, { simulationId, simulationUpdatingState: 'updating' }))
 			}
 			const changedMessagePromise = sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
+			silenceChromeUnCaughtPromise(changedMessagePromise)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress: (await getSettings()).activeSimulationAddress }
 			const emptyDoneResults: CompleteVisualizedSimulation = {
 				...doneState,

@@ -8,7 +8,7 @@ import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '.
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab } from '../utils/requests.js'
+import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
@@ -31,6 +31,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		return
 	}
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
+	silenceChromeUnCaughtPromise(blockingWebsitePromise)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)
 
