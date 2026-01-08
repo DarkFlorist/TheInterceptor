@@ -33,8 +33,7 @@ export class EthereumJSONRpcRequestHandler {
 		}
 		if (!this.caching) {
 			const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
-			const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
-			return responseObject
+			return response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
 		}
 		const hash = keccak256(toUtf8Bytes(JSON.stringify(serialized)))
 		if (bypassCache === false) {
@@ -55,12 +54,13 @@ export class EthereumJSONRpcRequestHandler {
 			if (error instanceof Error) {
 				future.reject(error)
 			} else {
+				console.error(error)
 				future.reject(new Error('Unknown error'))
 			}
 		} finally {
 			this.pendingCache.delete(hash)
-			return await future
 		}
+		return await future
 	}
 
 	public getChainId = async () => {
@@ -75,7 +75,7 @@ export class EthereumJSONRpcRequestHandler {
 			console.error('RPC Request Failed')
 			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 			console.log({ rpcRequest, response: responseObject.response })
-			throw new Error(`Query to RPC server ${ this.rpcUrl } failed with error code: ${ responseObject.response.status } while quering for ${ rpcRequest.method }.`)
+			throw new Error(`Query to RPC server ${ this.rpcUrl } failed with error code: ${ responseObject.response?.status } while quering for ${ rpcRequest.method }.`)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
 		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
