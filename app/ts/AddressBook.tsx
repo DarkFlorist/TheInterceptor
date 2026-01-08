@@ -196,16 +196,19 @@ export function AddressBook() {
 	useSignalEffect(sendQuery)
 
 	useEffect(() => {
-		const popupMessageListener = (msg: unknown) => {
+		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
 				const chainId = activeChain.peek()?.chainId
 				if (chainId !== undefined) sendQuery()
-				return
+				return false
 			}
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_settingsUpdated') {
+				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return false
+			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
 				const prevActiveNetwork = activeChain.peek()
@@ -216,7 +219,7 @@ export function AddressBook() {
 					}
 				}
 			}
-			if (parsed.method !== 'popup_getAddressBookDataReply') return
+			if (parsed.method !== 'popup_getAddressBookDataReply') return false
 			const reply = GetAddressBookDataReply.parse(msg)
 			if (activeChain.peek()?.chainId === reply.data.data.chainId) {
 				addressBookEntriesWithFilter.value = {
@@ -224,7 +227,7 @@ export function AddressBook() {
 					activeFilter: reply.data.data.filter,
 				}
 			}
-			return
+			return false
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)

@@ -21,6 +21,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
+import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 
 type SignerExplanationParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
@@ -261,12 +262,20 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
 }
 
-function SimulationResults(param: SimulationStateParam) {
-	if (param.simulationAndVisualisationResults === undefined) return <></>
-
+function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
-		if (param.simulationAndVisualisationResults === undefined) return true
-		return isEmptySimulation(param.simulationAndVisualisationResults)
+		if (param.simulationAndVisualisationResults.value === undefined) return true
+		return isEmptySimulation(param.simulationAndVisualisationResults.value)
+	})
+
+	if (param.simulationAndVisualisationResults.value === undefined || (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined))) {
+		return <CenterToPageTextSpinner/>
+	}
+
+	const definedSimulationResults = useComputed(() => {
+		const currentResults = param.simulationAndVisualisationResults.value
+		if (currentResults === undefined) throw new Error('Simulation results are required')
+		return currentResults
 	})
 
 	return <div>
@@ -294,18 +303,18 @@ function SimulationResults(param: SimulationStateParam) {
 		: <>
 			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
 				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					simulationAndVisualisationResults = { definedSimulationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-					activeAddress = { param.simulationAndVisualisationResults.activeAddress }
+					activeAddress = { param.simulationAndVisualisationResults.value.activeAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
-					addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
+					addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
 				/>
 				{ param.removedTransactionOrSignedMessages.length > 0
 					? <></>
 					: <SimulationSummary
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						simulationAndVisualisationResults = { definedSimulationResults }
 						currentBlockNumber = { param.currentBlockNumber }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						rpcConnectionStatus = { param.rpcConnectionStatus }
@@ -321,7 +330,7 @@ export function Home(param: HomeParams) {
 	const activeSimulationAddress = useSignal<AddressBookEntry | undefined>(undefined)
 	const activeSigningAddress = useSignal<AddressBookEntry | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
-	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
+	const simulationAndVisualisationResults = useSignal<SimulationAndVisualisationResults | undefined>(undefined)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
@@ -333,7 +342,7 @@ export function Home(param: HomeParams) {
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 
 	useEffect(() => {
-		setSimulationAndVisualisationResults(param.simVisResults)
+		simulationAndVisualisationResults.value = param.simVisResults
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		activeSimulationAddress.value = param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
 		activeSigningAddress.value = param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
@@ -405,7 +414,7 @@ export function Home(param: HomeParams) {
 			rpcEntries = { param.rpcEntries }
 		/>
 
-		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <SimulationResults
+		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <PopupVisualisation
 			simulationAndVisualisationResults = { simulationAndVisualisationResults }
 			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 			disableReset = { disableReset }

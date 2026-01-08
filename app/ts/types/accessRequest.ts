@@ -106,7 +106,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
-	funtypes.ReadonlyObject({ simulationResults: ConfirmTransactionTransactionSingleVisualization }),
+	funtypes.ReadonlyObject({ popupVisualisation: ConfirmTransactionTransactionSingleVisualization }),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			transactionOrMessageCreationStatus: funtypes.Literal('Simulated'),

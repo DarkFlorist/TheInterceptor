@@ -13,7 +13,7 @@ import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../background/backgroundUtils.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
@@ -28,7 +28,7 @@ import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../utils/browser.js'
+import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -129,36 +129,35 @@ export function App() {
 			rpcNetwork.value = entry
 		}
 	}
-
 	const requestActiveAddresses = async () => {
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestActiveAddresses' })
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestActiveAddresses' })
 		if (reply === undefined) return
 		activeAddresses.value = reply.activeAddresses
 	}
 
 	const requestSimulationMode = async () => {
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestSimulationMode' })
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
 		if (reply === undefined) return
 		simulationMode.value = reply.simulationMode
 	}
 
 	const requestRichData = async () => {
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestMakeMeRichData' })
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
 		if (reply === undefined) return
 		fixedAddressRichList.value = reply.richList
 		makeCurrentAddressRich.value = reply.makeCurrentAddressRich
 	}
 
 	const requestUnexpectedError = async () => {
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestLatestUnexpectedError' })
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
 		if (reply === undefined) return
 		unexpectedError.value = reply.latestUnexpectedError
 	}
 
 	useEffect(() => {
+		requestActiveAddresses()
 		requestRichData()
 		requestSimulationMode()
-		requestActiveAddresses()
 		requestUnexpectedError()
 	}, [])
 
@@ -231,45 +230,65 @@ export function App() {
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
-		const popupMessageListener = (msg: unknown) => {
+		const replyPopupMessageListener = async (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			switch(parsed.method) {
 				case 'popup_UnexpectedErrorOccured': {
 					unexpectedError.value = parsed
-					return
+					return false
 				}
 				case 'popup_settingsUpdated': {
 					requestRichData()
-					return updateHomePageSettings(parsed.data, true)
+					updateHomePageSettings(parsed.data, true)
+					return false
 				}
 				case 'popup_activeSigningAddressChanged': {
-					if (parsed.data.tabId !== currentTabId) return
+					if (parsed.data.tabId !== currentTabId) return false
 					activeSigningAddress.value = parsed.data.activeSigningAddress
-					return
+					return false
 				}
-				case 'popup_websiteIconChanged': return setTabConnection(parsed.data)
+				case 'popup_websiteIconChanged': {
+					setTabConnection(parsed.data)
+					return false
+				}
 				case 'popup_new_block_arrived': {
 					sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+					sendPopupMessageToBackgroundPage({ method: 'popup_refreshSimulation' })
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					return
+					return false
 				}
 				case 'popup_failed_to_get_block': {
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					return
+					return false
 				}
-				case 'popup_update_rpc_list': return
-				case 'popup_simulation_state_changed': return sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+				case 'popup_update_rpc_list': return false
+				case 'popup_simulation_state_changed': {
+					sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+					return false
+				}
+				case 'popup_isMainPopupWindowOpen': {
+					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+				}
 			}
-			if (parsed.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			if (parsed.method !== 'popup_UpdateHomePage') {
+				sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+				return false
+			}
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+
+		browser.runtime.onMessage.addListener(replyPopupMessageListener)
+		return () => {
+			browser.runtime.onMessage.removeListener(replyPopupMessageListener)
+		}
 	})
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' }) }, [])
+	useEffect(() => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_refreshSimulation' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+	}, [])
 
 	function goHome() {
 		const newPage = { page: 'Home' } as const
@@ -380,26 +399,26 @@ export function App() {
 			<Hint>
 				<PasteCatcher enabled = { appPage.value.page === 'Unknown' || appPage.value.page === 'Home' } onPaste = { addressPaste } />
 				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
-					{ !isSettingsLoaded ? <></> : <>
-						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
-							<div class = 'navbar-brand'>
-								<a class = 'navbar-item' style = 'cursor: unset'>
-									<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
-									<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
-										<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
-									</p>
-								</a>
-								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-									<img src = '../img/internet.svg' width = '32' onClick = { openWebsiteAccess }/>
-									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
-									<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
-								</a>
-							</div>
-						</nav>
+					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
+						<div class = 'navbar-brand'>
+							<a class = 'navbar-item' style = 'cursor: unset'>
+								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
+								<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
+									<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
+								</p>
+							</a>
+							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
+								<img src = '../img/internet.svg' width = '32' onClick = { openWebsiteAccess }/>
+								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
+								<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
+							</a>
+						</div>
+					</nav>
 
-						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
-						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-						<ProviderErrors tabState = { tabState }/>
+					<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
+					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+					<ProviderErrors tabState = { tabState }/>
+					{ !isSettingsLoaded ? <CenterToPageTextSpinner/> : <>
 						<Home
 							setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 							rpcNetwork = { rpcNetwork }
@@ -425,51 +444,51 @@ export function App() {
 							fixedAddressRichList = { fixedAddressRichList }
 							openImportSimulation = { () => { appPage.value = { page: 'ImportSimulation', state: new Signal('') } } }
 						/>
-
-						<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
-							{ appPage.value.page === 'EditEnsNamedHash' ?
-								<EditEnsLabelHash
-									close = { goHome }
-									editEnsNamedHashWindowState = { appPage.value.state }
-								/>
-							: <></> }
-							{ appPage.value.page === 'AccessList' ?
-								<InterceptorAccessList
-									goHome = { goHome }
-									setWebsiteAccess = { setWebsiteAccess }
-									websiteAccess = { websiteAccess }
-									websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
-									renameAddressCallBack = { renameAddressCallBack }
-								/>
-							: <></> }
-							{ appPage.value.page === 'ChangeActiveAddress' ?
-								<ChangeActiveAddress
-									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									signerAccounts = { tabState?.signerAccounts ?? [] }
-									close = { goHome }
-									activeAddresses = { activeAddresses }
-									signerName = { tabState?.signerName ?? 'NoSignerDetected' }
-									renameAddressCallBack = { renameAddressCallBack }
-									addNewAddress = { addNewAddress }
-								/>
-							: <></> }
-							{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-								<AddNewAddress
-									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									modifyAddressWindowState = { appPage.value.state }
-									close = { goHome }
-									activeAddress = { activeAddress.value }
-									rpcEntries = { rpcEntries }
-								/>
-							: <></> }
-							{ appPage.value.page === 'ImportSimulation' ?
-								<ImportSimulationStack
-									close = { goHome }
-									simulationInput = { appPage.value.state }
-								/>
-							: <></> }
-						</div>
 					</> }
+
+					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
+						{ appPage.value.page === 'EditEnsNamedHash' ?
+							<EditEnsLabelHash
+								close = { goHome }
+								editEnsNamedHashWindowState = { appPage.value.state }
+							/>
+						: <></> }
+						{ appPage.value.page === 'AccessList' ?
+							<InterceptorAccessList
+								goHome = { goHome }
+								setWebsiteAccess = { setWebsiteAccess }
+								websiteAccess = { websiteAccess }
+								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+						: <></> }
+						{ appPage.value.page === 'ChangeActiveAddress' ?
+							<ChangeActiveAddress
+								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
+								signerAccounts = { tabState?.signerAccounts ?? [] }
+								close = { goHome }
+								activeAddresses = { activeAddresses }
+								signerName = { tabState?.signerName ?? 'NoSignerDetected' }
+								renameAddressCallBack = { renameAddressCallBack }
+								addNewAddress = { addNewAddress }
+							/>
+						: <></> }
+						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
+							<AddNewAddress
+								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
+								modifyAddressWindowState = { appPage.value.state }
+								close = { goHome }
+								activeAddress = { activeAddress.value }
+								rpcEntries = { rpcEntries }
+							/>
+						: <></> }
+						{ appPage.value.page === 'ImportSimulation' ?
+							<ImportSimulationStack
+								close = { goHome }
+								simulationInput = { appPage.value.state }
+							/>
+						: <></> }
+					</div>
 				</div>
 			</Hint>
 		</main>

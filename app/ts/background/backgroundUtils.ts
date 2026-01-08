@@ -56,12 +56,13 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-export async function sendPopupMessageToBackgroundPageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
+export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
 	try {
 		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error.message.includes('The message port closed before a response was received')) return undefined
+			if (error.message?.includes('Could not establish connection.')) return undefined
 		}
 		await handleUnexpectedError(error)
 		return undefined

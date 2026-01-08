@@ -925,4 +925,5 @@ export const MessageToPopup = funtypes.Union(
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,
 	FetchSimulationStackRequest,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
 )

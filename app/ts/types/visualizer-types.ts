@@ -13,6 +13,7 @@ import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EthSimulateV1CallResult, EthSimulateV1Params, StateOverrides } from './ethSimulate-types.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { ReadonlySignal } from '@preact/signals'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -260,7 +261,7 @@ export type SimulationAndVisualisationResults = {
 
 export type TransactionVisualizationParameters = {
 	simTx: SimulatedAndVisualizedTransaction
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack

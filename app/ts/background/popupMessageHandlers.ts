@@ -1,6 +1,6 @@
-import { changeActiveAddressAndChain, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
+import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, setMakeCurrentAddressRich, setFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
@@ -33,8 +33,9 @@ import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -97,7 +98,7 @@ export async function modifyMakeMeRich(simulator: Simulator, makeMeRichChange: M
 			await setFixedMakeMeRichList(currentList.filter((element) => element.address !== makeMeRichChange.data.address))
 		}
 	}
-	await refreshSimulation(simulator, true)
+	updatePopupVisualisationIfNeeded(simulator, false, true)
 }
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -198,23 +199,19 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 		}
 	})
 
-	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, true)
+	updatePopupVisualisationIfNeeded(simulator, true, false)
 }
 
-export async function refreshSimulation(simulator: Simulator, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean) {
-	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
-}
-
-export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenPriceService: TokenPriceService) {
-	const currentBlockNumberPromise = ethereumClientService.getBlockNumber(requestAbortController)
+export async function refreshPopupConfirmTransactionMetadata(simulator: Simulator, requestAbortController: AbortController | undefined, tokenPriceService: TokenPriceService) {
+	const currentBlockNumberPromise = simulator.ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const promises = await getPendingTransactionsAndMessages()
-	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(getSimulationResults())
+	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(simulator))
 	const first = promises[0]
 	if (first === undefined) return
 	switch (first.type) {
 		case 'SignableMessage': {
-			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereumClientService, requestAbortController, first.signedMessageTransaction, ethereumClientService.getRpcEntry())
+			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(simulator.ethereum, requestAbortController, first.signedMessageTransaction, simulator.ethereum.getRpcEntry())
 			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
 			const message: UpdateConfirmTransactionDialog = {
 				method: 'popup_update_confirm_transaction_dialog',
@@ -241,18 +238,18 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			return
 		}
 		case 'Transaction': {
-			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults.statusCode === 'failed') return
+			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
 			try {
-				const visualizedSimulationState = await visualizeSimulatorState(first.simulationResults.data.simulationState, ethereumClientService, tokenPriceService, requestAbortController)
+				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, simulator.ethereum, tokenPriceService, requestAbortController)
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
 						pendingTransactionAndSignableMessages: [
 							modifyObject(first,
 								{
-									simulationResults: {
+									popupVisualisation: {
 										statusCode: 'success',
-										data: modifyObject(first.simulationResults.data, { ...visualizedSimulationState })
+										data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
 									}
 								})
 							, ...promises.slice(1)],
@@ -292,15 +289,15 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
 				if (transactionToSimulate.success) {
-					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
+					return { ...transactionOrMessage, transactionToSimulate, popupVisualisation: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
 				} else {
-					return { ...transactionOrMessage, transactionToSimulate, simulationResults: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+					return { ...transactionOrMessage, transactionToSimulate, popupVisualisation: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 				}
 			}
 			default: assertNever(transactionOrMessage)
 		}
 	})
-	await updateConfirmTransactionView(simulator.ethereum)
+	await updateConfirmTransactionView(simulator)
 }
 
 export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
@@ -374,7 +371,7 @@ export async function refreshHomeData(simulator: Simulator) {
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
 
-	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getSimulationResults())
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationState())
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
@@ -480,8 +477,8 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 }
 
 export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
-	const simulationResults = await getSimulationResults()
-	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulationResults.simulationState, ethereum, tokenPriceService)
+	const simulationState = await getUpdatedSimulationState(ethereum)
+	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulationState, ethereum, tokenPriceService)
 	await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
@@ -694,7 +691,7 @@ export async function forceSetGasLimitForTransaction(simulator: Simulator, parse
 
 export async function changePreSimulationBlockTimeManipulation(simulator: Simulator, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
 	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
-	await refreshSimulation(simulator, true)
+	updatePopupVisualisationIfNeeded(simulator, true, true)
 }
 
 export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
@@ -724,7 +721,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 		return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...prevStack.operations.slice(indexOfMaybeManipulator)] }
 	})
 
-	await refreshSimulation(simulator, true)
+	updatePopupVisualisationIfNeeded(simulator, true, true)
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
@@ -746,9 +743,9 @@ export const requestSimulationMode = async () => ({ type: 'RequestSimulationMode
 
 export const requestLatestUnexpectedError = async () => ({ type: 'RequestLatestUnexpectedErrorReply' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
-export async function fetchSimulationStackRequestConfirmation(websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
-	const simulationResults = await getSimulationResults()
-	await resolveFetchSimulationStackRequest(simulationResults.simulationState, websiteTabConnections, confirmation)
+export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+	const simulationState = await getUpdatedSimulationState(ethereumClientService)
+	await resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, confirmation)
 }
 
 export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
@@ -804,17 +801,16 @@ export async function importSimulationStack(simulator: Simulator, parsedRequest:
 			}
 		}) }
 	})
-	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, true)
+	updatePopupVisualisationIfNeeded(simulator, true, true)
 }
 
-export async function requestCompleteVisualizedSimulation() {
-	const visualizedSimulatorState = await getSimulationResults()
-	return { type: 'RequestCompleteVisualizedSimulationReply' as const, visualizedSimulatorState }
+export async function requestCompleteVisualizedSimulation(simulator: Simulator) {
+	return { type: 'RequestCompleteVisualizedSimulationReply' as const, visualizedSimulatorState: await updatePopupVisualisationIfNeeded(simulator) }
 }
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	const simulationState = settings.simulationMode ? (await getSimulationResults()).simulationState : undefined
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService) : undefined
 	if (simulationState === undefined) return {
 		type: 'RequestSimulationMetadata' as const,
 		metadata: {
