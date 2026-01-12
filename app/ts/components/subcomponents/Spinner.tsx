@@ -10,11 +10,11 @@ export function Spinner({ height, color } : { height: string, color?: string }) 
 	)
 }
 
-export function CenterToPageTextSpinner({ text } : { text: string }) {
+export function CenterToPageTextSpinner({ text } : { text?: string }) {
 	return <main class = 'center-to-page'>
 		<div style = 'display: grid; place-items: center;'>
 			<Spinner height = '3em'/>
-			<p class = 'paragraph' style = 'font-size: 2em; word-break: break-word; color: var(--unimportant-text-color); padding-top: 10px; text-align: center;'> { text } </p>
+			{ text === undefined ? <></> : <p class = 'paragraph' style = 'font-size: 2em; word-break: break-word; color: var(--unimportant-text-color); padding-top: 10px; text-align: center;'> { text } </p> }
 		</div>
 	</main>
 }
