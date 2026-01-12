@@ -178,26 +178,35 @@ export function InterceptorAccess() {
 	const rpcEntries = useSignal<RpcEntries>([])
 
 	useEffect(() => {
-		function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_settingsUpdated') {
+				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return false
+			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
-				return
+				return false
 			}
-			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (parsed.method === 'popup_websiteAccess_changed') return refreshMetadata()
+			if (parsed.method === 'popup_addressBookEntriesChanged') {
+				refreshMetadata()
+				return false
+			}
+			if (parsed.method === 'popup_websiteAccess_changed') {
+				refreshMetadata()
+				return false
+			}
 			if (parsed.method === 'popup_interceptorAccessDialog' || parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
 				if (parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
 					if (pendingAccessRequests.length > 0) setInformationUpdatedTimestamp(Date.now())
 				}
 				setAccessRequest(parsed.data.pendingAccessRequests)
 				activeAddresses.value = parsed.data.activeAddresses
-				return
+				return false
 			}
-			return
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

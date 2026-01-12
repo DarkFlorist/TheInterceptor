@@ -48,9 +48,9 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	}
 
   const listenForPopupMessages = () => {
-		const popupMessageListener = (msg: unknown) => {
+		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false// not a message we are interested in
 			const parsed = maybeParsed.value
 			switch (parsed.method) {
 				case 'popup_setDisableInterceptorReply':
@@ -63,6 +63,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 					addressAccessMetadata.value = parsed.data.addressAccessMetadata
 					break
 			}
+			return false
 		}
 
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
@@ -259,16 +260,19 @@ const WebsiteSettingsDetail = () => {
 	}
 
 	useEffect(() => {
-		function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+			if (parsed.method === 'popup_settingsUpdated') {
+				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return false
+			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
-				return
+				return false
 			}
-			return
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

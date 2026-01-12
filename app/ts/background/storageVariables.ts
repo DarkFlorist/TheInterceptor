@@ -76,7 +76,7 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 }
 
 const simulationResultsSemaphore = new Semaphore(1)
-export async function getSimulationResults() {
+export async function getPopupVisualisationState() {
 	const emptyResults = {
 		simulationUpdatingState: 'done' as const,
 		simulationResultState: 'corrupted' as const,
@@ -91,30 +91,23 @@ export async function getSimulationResults() {
 		numberOfAddressesMadeRich: 0,
 	}
 	try {
-		return (await browserStorageLocalGet('simulationResults'))?.simulationResults ?? emptyResults
+		return (await browserStorageLocalGet('popupVisualisation'))?.popupVisualisation ?? emptyResults
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
-		await browserStorageLocalSet({ simulationResults: emptyResults })
+		await browserStorageLocalSet({ popupVisualisation: emptyResults })
 		return emptyResults
 	}
 }
 
-export async function updateSimulationResults(newResults: CompleteVisualizedSimulation) {
-	return await simulationResultsSemaphore.execute(async () => {
-		const oldResults = await getSimulationResults()
-		if (newResults.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await browserStorageLocalSet({ simulationResults: newResults })
-		return newResults
-	})
-}
+export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updateSimulationResultsWithCallBack(update: (oldResults: CompleteVisualizedSimulation | undefined) => Promise<CompleteVisualizedSimulation | undefined>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation | undefined) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
-		const oldResults = await getSimulationResults()
+		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await browserStorageLocalSet({ simulationResults: newRequests })
+		await browserStorageLocalSet({ popupVisualisation: newRequests })
 		return newRequests
 	})
 }

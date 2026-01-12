@@ -7,6 +7,7 @@ import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlock, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 import { WebsiteSocket } from '../../utils/requests.js'
+import { getUpdatedSimulationState } from '../../background/background.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 
@@ -31,7 +32,7 @@ export async function removeEthereumSubscription(socket: WebsiteSocket, subscrip
 	return false
 }
 
-export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections) {
+export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, isSimulation: boolean, websiteTabConnections: WebsiteTabConnections) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
 		if (websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
@@ -49,7 +50,8 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 					subscription: subscriptionOrFilter.subscriptionOrFilterId,
 				})
 
-				if (simulationState !== undefined) {
+				if (isSimulation) {
+					const simulationState = await getUpdatedSimulationState(ethereumClientService)
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, undefined, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
 					sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {

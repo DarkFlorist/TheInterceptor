@@ -20,16 +20,16 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
-import { Signal, useComputed } from '@preact/signals'
+import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -39,7 +39,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange) => {
 			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
 			return <div class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
+				<div class = { param.isImportant.value ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<TokenWithAmount
 						tokenEntry = { erc20TokenBalanceChange }
 						amount = { erc20TokenBalanceChange.changeAmount }
@@ -71,14 +71,14 @@ type Erc20ApprovalChangeParams = Erc20TokenEntry & {
 	entryToApprove: AddressBookEntry,
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	const textColor = param.change > 0 ? param.negativeColor : param.textColor
 
-	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
+	return <div class = { param.isImportant.value ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow</p>
@@ -122,7 +122,7 @@ type Erc20ApprovalChangesParams = {
 	erc20TokenApprovalChanges: ERC20TokenApprovalChange[]
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -152,7 +152,7 @@ type Erc721TokenChangesParams = {
 	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -161,7 +161,7 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	return <>
 		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
+				<div class = { param.isImportant.value ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 					<p class = 'noselect nopointer' style = { `color: ${ param.textColor }; align-items: center` }>
 						&nbsp;{ `${ tokenChange.received ? '+' : '-' }` }&nbsp;
 					</p>
@@ -187,7 +187,7 @@ type Erc721Or1155OperatorChangesParams = {
 	erc721or1155OperatorChanges: Erc721and1155OperatorChange[]
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -197,7 +197,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 		{ param.erc721or1155OperatorChanges.map((token) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				{ token.operator !== undefined ?
-					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
+					<div class = { param.isImportant.value ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
 								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Allow</p>
@@ -225,7 +225,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 						</table>
 					</div>
 					:
-					<div class = { param.isImportant ? 'box token-box positive-box': '' } >
+					<div class = { param.isImportant.value ? 'box token-box positive-box': '' } >
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
 								<p class = 'ellipsis' style = { `color: ${ param.textColor };` }> to NOT spend ANY</p>
@@ -252,7 +252,7 @@ type Erc721TokenIdApprovalChangesParams = {
 	Erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -261,7 +261,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 		<>
 			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => (
 				<div class = 'vertical-center' style = 'display: flex'>
-					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
+					<div class = { param.isImportant.value ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
 								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Approve</p>
@@ -299,7 +299,7 @@ type Erc1155TokenChangesParams = {
 	Erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[],
 	textColor: string,
 	negativeColor: string,
-	isImportant: boolean,
+	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 	namedTokenIds: readonly NamedTokenId[],
 }
@@ -310,7 +310,7 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 	return <>
 		{ param.Erc1155TokenBalanceChanges.map((tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
+				<div class = { param.isImportant.value ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 					<TokenWithAmount
 						tokenEntry = { tokenChange }
 						tokenId = { tokenChange.tokenId }
@@ -331,12 +331,12 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 
 type SummarizeAddressParams = {
 	balanceSummary: SummaryOutcome,
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function SummarizeAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
+	const isOwnAddress = useComputed(() => param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.value.activeAddress)
 	const positiveNegativeColors = isOwnAddress
 		? {
 			textColor: 'var(--text-color)',
@@ -403,7 +403,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
+				namedTokenIds = { param.simulationAndVisualisationResults.value.namedTokenIds }
 			/>
 		</div>
 	</div>
@@ -488,7 +488,7 @@ function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAdd
 
 type AccountChangesCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: readonly AddressBookEntry[]
 	namedTokenIds: readonly NamedTokenId[]
@@ -497,9 +497,9 @@ type AccountChangesCardParams = {
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPriceEstimates, namedTokenIds)
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.activeAddress)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.value.activeAddress)
 
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
@@ -647,32 +647,32 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 }
 
 type SimulationSummaryParams = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
-	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
+	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
+	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
-	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPriceEstimates, param.simulationAndVisualisationResults.namedTokenIds)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.activeAddress)
+	const addressMetaData = new Map(param.simulationAndVisualisationResults.value.addressBookEntries.map((x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.value.activeAddress)
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
 	const icon = useComputed(() => {
-		const transactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
+		const transactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 		if (transactions.some((transaction) => transaction.statusCode !== 'success')) return '../img/error-icon.svg'
 		if (transactions.some((transaction) => transaction.quarantine)) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
 
 	const exportEthSimulateInput = async () => {
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
 		if (reply === undefined) return
 		return reply.ethSimulateV1InputString
 	}
@@ -749,9 +749,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					<div class = 'log-cell' style = 'justify-content: center;'> </div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
-							simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
+							simulationBlockNumber = { param.simulationAndVisualisationResults.value.blockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
-							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
+							simulationConductedTimestamp = { param.simulationAndVisualisationResults.value.simulationConductedTimestamp }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>

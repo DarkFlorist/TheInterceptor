@@ -18,7 +18,7 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-import { getInterceptorTransactionStack, updateSimulationResultsWithCallBack } from './storageVariables.js'
+import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
@@ -119,7 +119,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
 		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
-		const pendingResults = pendingTransaction.simulationResults
+		const pendingResults = pendingTransaction.popupVisualisation
 		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
 		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
 		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
@@ -255,7 +255,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
-	return await updateSimulationResultsWithCallBack(async (prevState) => {
+	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
 		try {
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(

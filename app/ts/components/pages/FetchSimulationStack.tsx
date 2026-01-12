@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
@@ -35,33 +35,34 @@ export function FetchSimulationStack() {
 	}
 
 	useEffect(() => {
-		function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_simulation_state_changed') {
 				updateSimulation()
 				updateMetaData()
-				return
+				return false
 			}
 			else if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
-				return
+				return false
 			}
-			if (parsed.method !== 'popup_fetchSimulationStackRequest') return
+			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
 			changeRequest.value = parsed.data
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	const updateSimulation = async () => {
-		const simulationStack = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
+		const simulationStack = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	const updateMetaData = async () => {
-		const data = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestSimulationMetadata' })
+		const data = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
 		if (data === undefined) return
 		simulationMetadata.value = data.metadata
 	}

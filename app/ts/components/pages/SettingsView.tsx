@@ -39,16 +39,18 @@ function ImportExport() {
 	const [dismissedNotification, setdDismissedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
-		function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_initiate_export_settings_reply') {
 				setdDismissedNotification(false)
-				return setSettingsReply(parsed)
+				setSettingsReply(parsed)
+				return false
 			}
-			if (parsed.method !== 'popup_initiate_export_settings') return
+			if (parsed.method !== 'popup_initiate_export_settings') return false
 			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 
@@ -115,15 +117,18 @@ export function SettingsView() {
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean>(false)
 
 	useEffect(() => {
-		const popupMessageListener = (msg: unknown) => {
+		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-			if (parsed.method !== 'popup_requestSettingsReply') return
+			if (parsed.method === 'popup_settingsUpdated') {
+				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return false
+			}
+			if (parsed.method !== 'popup_requestSettingsReply') return false
 			setMetamaskCompatibilityMode(parsed.data.metamaskCompatibilityMode)
 			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
-			return
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -241,10 +246,11 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 export function useRpcConnectionsList() {
 	const entries = useSignal<RpcEntries>([])
 
-	const trackRpcListChanges = (message: unknown) => {
+	const trackRpcListChanges = (message: unknown): false => {
 		const parsedMessage = MessageToPopup.safeParse(message)
-		if (parsedMessage.success === false) return
+		if (parsedMessage.success === false) return false
 		if (parsedMessage.value.method === 'popup_update_rpc_list') { entries.value = parsedMessage.value.data }
+		return false
 	}
 
 	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }

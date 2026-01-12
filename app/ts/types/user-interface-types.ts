@@ -12,7 +12,7 @@ import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
-import { Signal } from '@preact/signals'
+import { ReadonlySignal, Signal } from '@preact/signals'
 import { SimulationStackVersion } from './JsonRpc-types.js'
 import { EnrichedRichListElement } from './interceptor-reply-messages.js'
 
@@ -86,7 +86,7 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: bigint | undefined
 	renameAddressCallBack: RenameAddressCallBack

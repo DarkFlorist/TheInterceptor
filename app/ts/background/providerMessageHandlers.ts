@@ -132,11 +132,11 @@ export async function signerReply(simulator: Simulator, websiteTabConnections: W
 			}
 			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-				await updateConfirmTransactionView(simulator.ethereum)
+				await updateConfirmTransactionView(simulator)
 				return doNotReply
 			}
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-			await updateConfirmTransactionView(simulator.ethereum)
+			await updateConfirmTransactionView(simulator)
 			return doNotReply
 		}
 	}

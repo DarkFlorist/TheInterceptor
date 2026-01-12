@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithReply } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
@@ -226,14 +226,15 @@ export function AddNewAddress(param: AddAddressParam) {
 	const lastCheckedAddress = useSignal<bigint>(0n)
 
 	useEffect(() => {
-		const popupMessageListener = (msg: unknown) => {
+		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
-				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
+				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return false
 				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: parsed.data.errorState })
 			}
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -248,7 +249,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			if (address === undefined) return
 			if (lastCheckedAddress.value === address) return
 			lastCheckedAddress.value = address
-			const identifiedAddress = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestIdentifyAddress', data: { address } })
+			const identifiedAddress = await sendPopupMessageWithReply({ method: 'popup_requestIdentifyAddress', data: { address } })
 			if (identifiedAddress === undefined) return
 			if (identifiedAddress.data.addressBookEntry.type === 'ERC20') {
 				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: {
@@ -359,7 +360,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
 		if (address === undefined) return
 		canFetchFromEtherScan.value = false
-		const reply = await sendPopupMessageToBackgroundPageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data: {
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data: {
 			address,
 			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
 		} })

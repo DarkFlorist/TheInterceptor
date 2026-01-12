@@ -1,3 +1,4 @@
+import { useComputed } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
 import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
@@ -41,20 +42,26 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	}
 	const simTx = simulateExecutionReply.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	if (simTx === undefined) return <></>
+
+	const results = useComputed(() => {
+		if (simulateExecutionReply.data.success === false) throw new Error('failed simulation')
+		return {
+			blockNumber: simulateExecutionReply.data.result.simulationState.blockNumber,
+			blockTimestamp: simulateExecutionReply.data.result.simulationState.blockTimestamp,
+			simulationConductedTimestamp: simulateExecutionReply.data.result.simulationState.simulationConductedTimestamp,
+			addressBookEntries: simulateExecutionReply.data.result.addressBookEntries,
+			rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
+			tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
+			activeAddress: activeAddress,
+			visualizedSimulationState: simulateExecutionReply.data.result.visualizedSimulationState,
+			namedTokenIds: simulateExecutionReply.data.result.namedTokenIds,
+		}
+	})
+
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
 			simTx = { simTx }
-			simulationAndVisualisationResults = { {
-				blockNumber: simulateExecutionReply.data.result.simulationState.blockNumber,
-				blockTimestamp: simulateExecutionReply.data.result.simulationState.blockTimestamp,
-				simulationConductedTimestamp: simulateExecutionReply.data.result.simulationState.simulationConductedTimestamp,
-				addressBookEntries: simulateExecutionReply.data.result.addressBookEntries,
-				rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
-				tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
-				activeAddress: activeAddress,
-				visualizedSimulationState: simulateExecutionReply.data.result.visualizedSimulationState,
-				namedTokenIds: simulateExecutionReply.data.result.namedTokenIds,
-			} }
+			simulationAndVisualisationResults = { results }
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }
@@ -79,18 +86,20 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 
 	useEffect(() => {
-		const popupMessageListener = (msg: unknown) => {
+		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_new_block_arrived') {
 				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-				return setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
+				setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
+				return false
 			}
-			if (parsed.method !== 'popup_simulateExecutionReply') return
+			if (parsed.method !== 'popup_simulateExecutionReply') return false
 			const reply = SimulateExecutionReply.parse(parsed)
-			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return
-			return setSimulateExecutionReply(reply)
+			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return false
+			setSimulateExecutionReply(reply)
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

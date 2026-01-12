@@ -12,6 +12,7 @@ import { EnsEventsExplainer } from './EnsEventExplainer.js'
 import { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
+import { useComputed } from '@preact/signals'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -170,7 +171,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 						erc20TokenApprovalChanges = { eventsGrouped.erc20TokenApprovalChanges }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						isImportant = { true }
+						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
@@ -179,7 +180,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 						erc721or1155OperatorChanges = { eventsGrouped.operatorChanges }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						isImportant = { true }
+						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
@@ -188,7 +189,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 						Erc721TokenIdApprovalChanges = { eventsGrouped.tokenIdApprovalChanges }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						isImportant = { true }
+						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>

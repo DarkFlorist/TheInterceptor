@@ -11,12 +11,13 @@ export function ChangeChain() {
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
 
 	useEffect(() => {
-		function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
+			if (!maybeParsed.success) return false// not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method !== 'popup_ChangeChainRequest') return
+			if (parsed.method !== 'popup_ChangeChainRequest') return false
 			setChainChangeData(parsed.data)
+			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
