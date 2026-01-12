@@ -16,6 +16,7 @@ import { getMakeCurrentAddressRich, getSettings } from '../../background/setting
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { getMessageAndDomainHash } from '../../utils/eip712.js'
 import { deduplicateByFunction } from '../../utils/array.js'
+import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -930,10 +931,10 @@ export const getTokenBalancesAfter = async (
 	ethSimulateV1Result: EthSimulateV1Result,
 	simulationStateInput: SimulationStateInput,
 ): Promise<TokenBalancesBlocksAfter> => {
-	const tokenBalancesAfterArray = await Promise.all(Array.from(simulationStateInput.blocks.entries()).map(([inputBlockIndex, inputBlock]) => {
+	const tokenBalancesAfterArray = await promiseAllMapAbortSafe(Array.from(simulationStateInput.blocks.entries()), async ([inputBlockIndex, inputBlock]) => {
 		const simulateResultBlock = ethSimulateV1Result[inputBlockIndex]
 		if (simulateResultBlock === undefined) throw new Error('singleResult block was undefined')
-		return Promise.all(Array.from(inputBlock.transactions.entries()).map(([inputTransactionIndex, inputTransaction]) => {
+		return await promiseAllMapAbortSafe(Array.from(inputBlock.transactions.entries()), async ([inputTransactionIndex, inputTransaction]) => {
 			const simulateResultTransaction = simulateResultBlock.calls[inputTransactionIndex]
 			if (simulateResultTransaction === undefined) throw new Error('singleResult transaction was undefined')
 			const sender = inputTransaction.signedTransaction.from
@@ -945,8 +946,8 @@ export const getTokenBalancesAfter = async (
 				simulateResultTransaction,
 				sender,
 			)
-		}))
-	}))
+		})
+	})
 
 	return {
 		blocks: tokenBalancesAfterArray.map((block) => ({

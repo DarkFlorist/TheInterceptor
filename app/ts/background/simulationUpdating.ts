@@ -22,6 +22,7 @@ import { getInterceptorTransactionStack, updateSimulationResultsWithCallBack } f
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
+import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -35,13 +36,13 @@ const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) =
 
 export const getAddressesbeingMadeRich = async () => {
 	const currentAddressBeingRich = await getAddressToMakeRich()
-	const makeRichAddressListPromise = await getFixedAddressRichList()
-	return [...makeRichAddressListPromise.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
+	const makeRichAddressList = await getFixedAddressRichList()
+	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
 	const preSimulationBlockTimeManipulation = await getPreSimulationBlockTimeManipulation()
-	const richListPromise = getAddressesbeingMadeRich()
+	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
@@ -101,10 +102,10 @@ export async function getMetadataForSimulation(
 	inputData: readonly EnrichedEthereumInputData[],
 ) {
 	const allEvents = eventsForEachTransaction.flat()
-	const addressBookEntryPromises = getAddressBookEntriesForVisualiserFromTransactions(ethereum, requestAbortController, allEvents, inputData, simulationState)
-	const namedTokenIdPromises = nameTokenIds(ethereum, allEvents)
+	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(ethereum, requestAbortController, allEvents, inputData, simulationState))
+	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(ethereum, allEvents))
 	const addressBookEntries = await addressBookEntryPromises
-	const ensPromise = retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries)
+	const ensPromise = silenceChromeUnCaughtPromise(retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries))
 	const namedTokenIds = await namedTokenIdPromises
 	return {
 		namedTokenIds,
@@ -257,21 +258,21 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
 		try {
-			const eventsForEachBlockAndTransactionPromise = Promise.all(
-				prevState.simulationState.simulatedBlocks.map((block) =>
-					Promise.all(block.simulatedTransactions.map(
+			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+				prevState.simulationState.simulatedBlocks, (block) =>
+					promiseAllMapAbortSafe(block.simulatedTransactions,
 						async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)
-					))
+					)
 				)
 			)
-			const parsedInputDataForEachBlockAndTransactionPromise = Promise.all(
-				prevState.simulationState.simulatedBlocks.map((block) => {
+			const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+				prevState.simulationState.simulatedBlocks, (block) => {
 					const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-					return Promise.all(transactions.map((transaction) =>
+					return promiseAllMapAbortSafe(transactions, (transaction) =>
 						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
-					))
-				})
-			)
+					)
+				}
+			))
 			const events = (await eventsForEachBlockAndTransactionPromise).flat()
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
@@ -311,57 +312,55 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
-	const settingsPromise = getSettings()
-
-	const eventsForEachBlockAndTransactionPromise = Promise.all(
-		simulationState.simulatedBlocks.map((block) =>
-			Promise.all(block.simulatedTransactions.map(
-				async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)
-			))
+	const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+		simulationState.simulatedBlocks, async (block) =>
+			promiseAllMapAbortSafe(block.simulatedTransactions,
+				async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await silenceChromeUnCaughtPromise(parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController))
+			)
 		)
 	)
-	const protectorsForEachBlockAndTransactionPromise = Promise.all(
-		simulationState.simulatedBlocks.map((block, blockIndex) => {
+	const protectorsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+		simulationState.simulatedBlocks, (block, blockIndex) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-			return Promise.all(transactions.map((transaction, transactionIndex) => {
+			return promiseAllMapAbortSafe(transactions, async (transaction, transactionIndex) => {
 				const slicedSimulationState = sliceSimulationState(simulationState, blockIndex, transactionIndex)
-				return runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController)
-			}))
-		})
-	)
+				return await silenceChromeUnCaughtPromise(runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController))
+			})
+		}
+	))
 
-	const parsedInputDataForEachBlockAndTransactionPromise = Promise.all(
-		simulationState.simulatedBlocks.map((block) => {
+	const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
+		simulationState.simulatedBlocks, (block) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-			return Promise.all(transactions.map((transaction) =>
-				parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
-			))
-		})
-	)
-
+			return promiseAllMapAbortSafe(transactions, async (transaction) =>
+				silenceChromeUnCaughtPromise(parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController))
+			)
+		}
+	))
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
 	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
 
-	const tokenPriceEstimatesPromise = weth === undefined ? [] : tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	const tokenPriceEstimatesPromise = weth === undefined ? [] : silenceChromeUnCaughtPromise(tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure)))
 
 	const protectorsForEachBlockAndTransaction = await protectorsForEachBlockAndTransactionPromise
 
 	const tokenPriceEstimates = await tokenPriceEstimatesPromise
 	const settings = await settingsPromise
-	const visualizedBlocks = await Promise.all(simulationState.simulatedBlocks.map(async(block, blockIndex) => {
+
+	const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulatedBlocks, async(block, blockIndex) => {
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
 		const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
 		const protectorsForBlock = protectorsForEachBlockAndTransaction[blockIndex]
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined) throw new Error('Block index overflow')
 		return {
-			visualizedPersonalSignRequests: await Promise.all(block.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
+			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
 			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
-	}))
-
+	})
 	return {
 		namedTokenIds: updatedMetadata.namedTokenIds,
 		addressBookEntries: updatedMetadata.addressBookEntries,

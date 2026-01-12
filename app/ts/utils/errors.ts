@@ -3,7 +3,7 @@ import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 
-class ErrorWithData extends Error {
+export class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
 		super(message)
 		Object.setPrototypeOf(this, ErrorWithData.prototype)

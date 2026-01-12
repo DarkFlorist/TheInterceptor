@@ -12,6 +12,7 @@ import * as funtypes from 'funtypes'
 import { RpcEntry } from '../../types/rpc.js'
 import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import { MessageHashAndSignature } from '../../utils/eip712.js'
+import { getCurrentTimestampString } from '../../components/ui-utils.js'
 
 export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
 	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
@@ -83,13 +84,13 @@ export class EthereumClientService {
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			if (newBlock === null) return
-			console.info(`Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
+			console.info(`${ getCurrentTimestampString() } Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
-			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
+			await this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 		} catch(error: unknown) {
-			return this.onErrorBlockCallback(this, error)
+			return await this.onErrorBlockCallback(this, error)
 		} finally {
 			this.retrievingBlock = false
 		}

@@ -25,6 +25,7 @@ import { EthereumEvent } from '../types/ethSimulate-types.js'
 import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { TokenPriceService } from './services/priceEstimator.js'
+import { promiseAllMapAbortSafe } from '../utils/requests.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -150,7 +151,7 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 }
 
 export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
-	const parsedEvents = await Promise.all(events.map(async (event) => {
+	const parsedEvents = await promiseAllMapAbortSafe(events, async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
 		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
 		const abi = getAbi(loggersAddressBookEntry)
@@ -183,7 +184,7 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 			args: valuesWithTypes,
 			loggersAddressBookEntry,
 		}
-	}))
+	})
 
 	const maybeParsedEvents: EnrichedEthereumEvent[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
@@ -200,8 +201,7 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 }
 
 export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
-	const reasonPromises = PROTECTORS.map(async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState))
-	const reasons: (string | undefined)[] = await Promise.all(reasonPromises)
+	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState))
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {
 		quarantine: filteredReasons.length > 0,

@@ -4,6 +4,7 @@ import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { EnrichedGroupedSolidityType, PureGroupedSolidityType, SignedBigInt, SolidityType } from '../types/solidityType.js'
+import { promiseAllMapAbortSafe } from './requests.js'
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {
@@ -114,7 +115,7 @@ function getSolidityTypeCategory(type: SolidityType) {
 export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {
 	const categorized = getSolidityTypeCategory(type)
 	if (categorized === 'address') {
-		if (isArray) return { type: 'address[]', value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, requestAbortController, value, useLocalStorage))) }
+		if (isArray) return { type: 'address[]', value: await promiseAllMapAbortSafe(funtypes.ReadonlyArray(EthereumAddress).parse(value), (value) => identifyAddress(ethereumClientService, requestAbortController, value, useLocalStorage)) }
 		return { type: 'address', value: await identifyAddress(ethereumClientService, requestAbortController, EthereumAddress.parse(value), useLocalStorage) }
 	}
 	const parsed = parseSolidityValueByTypePure(type, value, isArray)
