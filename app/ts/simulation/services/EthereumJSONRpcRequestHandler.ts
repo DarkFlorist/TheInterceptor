@@ -1,5 +1,5 @@
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../types/JsonRpc-types.js'
-import { JsonRpcResponseError } from '../../utils/errors.js'
+import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { fetchWithTimeout } from '../../utils/requests.js'
@@ -54,8 +54,7 @@ export class EthereumJSONRpcRequestHandler {
 			if (error instanceof Error) {
 				future.reject(error)
 			} else {
-				console.error(error)
-				future.reject(new Error('Unknown error'))
+				future.reject(new ErrorWithData('Unknown error', error))
 			}
 		} finally {
 			this.pendingCache.delete(hash)
