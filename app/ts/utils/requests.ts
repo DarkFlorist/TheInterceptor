@@ -133,10 +133,15 @@ export const getHostWithPort = (urlString: string): string => {
 }
 
 export const silenceChromeUnCaughtPromise = async <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
-	return maybeAwaitedFunction.catch(() => undefined as unknown as ReturnValue)
+	maybeAwaitedFunction.catch(() => undefined)
+	return maybeAwaitedFunction
 }
 
 export async function promiseAllMapAbortSafe<InputType, OutputType>(values: readonly InputType[], mapper: (value: InputType, index: number) => Promise<OutputType>): Promise<OutputType[]> {
-	const guardedPromises = values.map(async (value, index) => await mapper(value, index).catch(() => {}) as unknown as OutputType)
+	const guardedPromises = values.map(async (value, index) => {
+		const promise = mapper(value, index)
+		promise.catch(() => undefined)
+		return await promise
+	})
 	return await silenceChromeUnCaughtPromise(Promise.all(guardedPromises))
 }
