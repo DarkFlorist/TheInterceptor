@@ -181,7 +181,7 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 				simulatedTransactions: [],
 				signedMessages: [],
 				stateOverrides: simulationStateInput.blocks[0]?.stateOverrides || {},
-				blockTimestamp: new Date(getNextBlockTimeStampOverride(new Date(), simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION)),
+				blockTimestamp: new Date(getNextBlockTimeStampOverride(parentBlock.timestamp, simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION)),
 				blockTimeManipulation: simulationStateInput.blocks[0]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 				blockBaseFeePerGas: parentBlock.baseFeePerGas || 0n,
 			})),
