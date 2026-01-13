@@ -26,7 +26,7 @@ export function isFailedToFetchError(error: Error) {
 	return false
 }
 
-export const isNewBlockAbort = (error: Error) => error.message.includes(NEW_BLOCK_ABORT)
+export const isNewBlockAbort = (error: Error) => error.message?.includes(NEW_BLOCK_ABORT)
 
 export function printError(error: unknown) {
 	if (error instanceof Error) {
