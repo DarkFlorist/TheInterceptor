@@ -65,7 +65,7 @@ export async function refreshConfirmTransactionSimulation(
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
-	confirmTransactionAbortController.abort(new Error(NEW_BLOCK_ABORT))
+	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationInput = await getCurrentSimulationInput()

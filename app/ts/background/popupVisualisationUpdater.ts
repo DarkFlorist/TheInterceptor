@@ -26,7 +26,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 			const lastUpdate = (popupVisualisation.simulationState.simulationConductedTimestamp.getTime() - new Date().getTime()) / 1000
 			if (lastUpdate < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
-		abortController.abort(new Error(NEW_BLOCK_ABORT))
+		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
 		if (!((await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' }))?.data.isOpen === true)) return await getPopupVisualisationState()

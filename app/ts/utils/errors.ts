@@ -1,7 +1,6 @@
 import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
-import { NEW_BLOCK_ABORT } from './constants.js'
 
 export class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
@@ -26,7 +25,7 @@ export function isFailedToFetchError(error: Error) {
 	return false
 }
 
-export const isNewBlockAbort = (error: Error) => error.message.includes(NEW_BLOCK_ABORT)
+export const isNewBlockAbort = (error: Error) => error instanceof DOMException && error.name === 'AbortError'
 
 export function printError(error: unknown) {
 	if (error instanceof Error) {
