@@ -10,10 +10,11 @@ import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
-import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { ErrorWithCodeAndOptionalData } from './error.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -24,10 +25,7 @@ const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
 	funtypes.ReadonlyObject({
 		accept: funtypes.Literal(false),
 		chainId: EthereumQuantity,
-		error: funtypes.ReadonlyObject({
-			code: funtypes.Number,
-			message: funtypes.String,
-		})
+		error: ErrorWithCodeAndOptionalData
 	})
 ))
 
@@ -57,7 +55,7 @@ export const InpageScriptRequest = funtypes.Intersect(
 type ErrorReturn = funtypes.Static<typeof ErrorReturn>
 const ErrorReturn = funtypes.ReadonlyObject({
 	method: funtypes.String,
-	error: funtypes.Intersect(CodeMessageError, funtypes.ReadonlyPartial({ data: funtypes.String }))
+	error: ErrorWithCodeAndOptionalData
 })
 
 export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
@@ -403,10 +401,7 @@ export const SignerReply = funtypes.ReadonlyObject({
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(false),
 			forwardRequest: SignerReplyForwardRequest,
-			error: funtypes.Intersect(
-				CodeMessageError,
-				funtypes.ReadonlyPartial({ data: funtypes.Unknown })
-			)
+			error: ErrorWithCodeAndOptionalData
 		})
 
 	)),

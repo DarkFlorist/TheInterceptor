@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactio
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
-import { CodeMessageError } from './rpc.js'
+import { ErrorWithCodeAndOptionalData } from './error.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -153,11 +153,7 @@ export type JsonRpcErrorResponse = funtypes.Static<typeof JsonRpcErrorResponse>
 export const JsonRpcErrorResponse = funtypes.ReadonlyObject({
 	jsonrpc: funtypes.Literal('2.0'),
 	id: funtypes.Union(funtypes.String, funtypes.Number),
-	error: funtypes.ReadonlyObject({
-		code: funtypes.Number,
-		message: funtypes.String,
-		data: funtypes.Unknown,
-	}).asReadonly(),
+	error: ErrorWithCodeAndOptionalData
 }).asReadonly()
 
 export type JsonRpcResponse = funtypes.Static<typeof JsonRpcResponse>
@@ -192,7 +188,7 @@ export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('error'),
 			requestAccounts: funtypes.Boolean,
-			error: CodeMessageError,
+			error: ErrorWithCodeAndOptionalData,
 		})
 	)
 )

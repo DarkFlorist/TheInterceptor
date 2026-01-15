@@ -67,7 +67,7 @@ export type TransactionImportanceBlockParams = {
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
-	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error.decodedErrorMessage }'` } containerStyle = { { margin: '0px' } } />
+	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
 		case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>

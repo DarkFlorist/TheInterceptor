@@ -8,13 +8,14 @@ import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACCESS_DENIED_WITH_SHIELD, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
-import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 import { ReadonlySignal, Signal } from '@preact/signals'
 import { SimulationStackVersion } from './JsonRpc-types.js'
 import { EnrichedRichListElement } from './interceptor-reply-messages.js'
+import { ErrorWithCodeAndOptionalData } from './error.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,
@@ -160,7 +161,7 @@ export const TabState = funtypes.ReadonlyObject({
 	signerConnected: funtypes.Boolean,
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
-	signerAccountError: funtypes.Union(CodeMessageError, funtypes.Undefined),
+	signerAccountError: funtypes.Union(ErrorWithCodeAndOptionalData, funtypes.Undefined),
 	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	tabIconDetails: TabIconDetails,
 	activeSigningAddress: OptionalEthereumAddress,

@@ -1,3 +1,4 @@
+import { ErrorWithCodeAndOptionalData } from './error.js'
 import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -107,11 +108,7 @@ const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
 	  status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
 	  returnData: EthereumData,
 	  gasUsed: EthereumQuantitySmall,
-	  error: funtypes.ReadonlyObject({
-		  code: funtypes.Number,
-		  message: funtypes.String,
-		  data: funtypes.String,
-	  })
+	  error: ErrorWithCodeAndOptionalData
 })
 
 type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>

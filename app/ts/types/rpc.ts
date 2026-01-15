@@ -49,9 +49,3 @@ export const RpcNetwork = funtypes.Union(
 		minimized: funtypes.Literal(true),
 	})
 )
-
-export type CodeMessageError = funtypes.Static<typeof CodeMessageError>
-export const CodeMessageError = funtypes.ReadonlyObject({
-	code: funtypes.Number,
-	message: funtypes.String,
-})

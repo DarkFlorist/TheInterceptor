@@ -14,6 +14,7 @@ import { EthSimulateV1CallResult, EthSimulateV1Params, StateOverrides } from './
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import { ReadonlySignal } from '@preact/signals'
+import { DecodedError, ErrorWithCodeAndOptionalData } from './error.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -89,11 +90,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		}),
 		funtypes.ReadonlyObject({
 			statusCode: funtypes.Literal('failure'),
-			error: funtypes.ReadonlyObject({
-				code: funtypes.Number,
-				message: funtypes.String,
-				decodedErrorMessage: funtypes.String,
-			})
+			error: DecodedError
 		})
 	)
 )
@@ -121,15 +118,6 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	tokenBalancesAfter: TokenBalancesAfter,
 })
 
-export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
-export const EstimateGasError = funtypes.ReadonlyObject({
-	error: funtypes.ReadonlyObject({
-		code: funtypes.Number,
-		message: funtypes.String,
-		data: funtypes.String
-	})
-})
-
 export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
 export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
 	website: Website,
@@ -147,7 +135,7 @@ export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.
 	originalRequestParameters: OriginalSendRequestParameters,
 	transactionIdentifier: EthereumQuantity,
 	success: funtypes.Literal(false),
-	error: EstimateGasError.fields.error
+	error: ErrorWithCodeAndOptionalData
 })
 
 export type WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransactionOrFailed>

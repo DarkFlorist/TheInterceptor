@@ -8,6 +8,7 @@ import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, NamedTokenId, 
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { OriginalSendRequestParameters } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
+import { DecodedError } from './error.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -62,12 +63,7 @@ const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 	data: funtypes.Intersect(
 		ConfirmTransactionSimulationBaseData,
 		funtypes.ReadonlyObject({
-			error: funtypes.ReadonlyObject({
-				code: funtypes.Number,
-				message: funtypes.String,
-				data: funtypes.Unknown,
-				decodedErrorMessage: funtypes.String,
-			}),
+			error: DecodedError,
 			simulationState: funtypes.ReadonlyObject({
 				blockNumber: EthereumQuantity,
 				simulationConductedTimestamp: EthereumTimestamp,
