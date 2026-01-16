@@ -57,7 +57,6 @@ async function singleCallWithFromOverride(ethereumClientService: EthereumClientS
 		type: '1559' as const,
 		from,
 		chainId: ethereumClientService.getChainId(),
-		nonce: await getSimulatedTransactionCount(ethereumClientService, undefined, simulationState, from),
 		maxFeePerGas: gasPrice,
 		maxPriorityFeePerGas: 0n,
 		to: callParams.to === undefined ? null : callParams.to,
