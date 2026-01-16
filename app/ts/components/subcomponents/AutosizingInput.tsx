@@ -115,6 +115,7 @@ export interface IntegerInput {
 	readonly required?: boolean | JSX.SignalLike<boolean>
 	readonly dataList?: string[]
 	readonly onChange?: () => void
+	readonly disabled?: boolean
 }
 export function IntegerInput(model: IntegerInput) {
 	const properties = {
@@ -130,6 +131,7 @@ export function IntegerInput(model: IntegerInput) {
 		...model.placeholder ? { placeholder: model.placeholder } : {},
 		...model.required ? { required: model.required } : {},
 		...model.dataList ? { dataList: model.dataList } : {},
+		disabled: model.disabled,
 	} satisfies (UnparsedInputModel & UnparsedAutosizingInputModel) | (ParsedAutosizingInputModel<bigint> & ParsedInputModel<bigint>)
 	return model.autoSize ? <AutosizingInput { ...properties }  /> : <Input { ...properties }/>
 }
