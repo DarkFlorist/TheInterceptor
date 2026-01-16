@@ -52,7 +52,7 @@ export class EthereumJSONRpcRequestHandler {
 			future.resolve(responseObject)
 		} catch(error: unknown) {
 			if (requestAbortController?.signal.aborted) {
-				future.reject(new Error(requestAbortController?.signal.reason))
+				future.reject(new Error(requestAbortController.signal.reason))
 			}
 			else if (error instanceof Error) {
 				future.reject(error)
