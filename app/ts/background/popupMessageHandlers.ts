@@ -477,8 +477,7 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 }
 
 export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
-	const simulationState = await getUpdatedSimulationState(ethereum)
-	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulationState, ethereum, tokenPriceService)
+	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, await getCurrentSimulationInput(), ethereum, tokenPriceService)
 	await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
@@ -686,6 +685,7 @@ export async function removeWebsiteAccess(simulator: Simulator, websiteTabConnec
 }
 export async function forceSetGasLimitForTransaction(simulator: Simulator, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
+	updatePopupVisualisationIfNeeded(simulator, true, false)
 	await refreshPopupConfirmTransactionSimulation(simulator)
 }
 
@@ -811,7 +811,7 @@ export async function requestCompleteVisualizedSimulation(simulator: Simulator) 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
 	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService) : undefined
-	if (simulationState === undefined) return {
+	if (simulationState === undefined || simulationState.success === false) return {
 		type: 'RequestSimulationMetadata' as const,
 		metadata: {
 			namedTokenIds: [], addressBookEntries: [], ens: { ensNameHashes: [], ensLabelHashes: [] }

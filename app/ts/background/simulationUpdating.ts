@@ -7,7 +7,7 @@ import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/Enri
 import { PendingTransaction } from '../types/accessRequest.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { BlockTimeManipulation, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, SimulationStateSuccess, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -19,10 +19,11 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
-import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getUpdatedSimulationState } from './background.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -91,11 +92,11 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		blockTimeManipulation: previousBlockTimeManipulation,
 		simulateWithZeroBaseFee: false,
 	})
-	return { blocks: inputBlocks }
+	return inputBlocks
 }
 
 export async function getMetadataForSimulation(
-	simulationState: SimulationState,
+	simulationState: SimulationStateSuccess,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
@@ -125,6 +126,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
 		if (fourByte === undefined || fourByteString === undefined) return returnError('Could not identify the 4byte signature')
 		const explanation = FourByteExplanations[fourByte]
+		if (!pendingResults.data.visualizedSimulationState.success) return returnError('Simulation failed')
 		if ((explanation !== 'Cast Vote'
 			&& explanation !== 'Submit Vote'
 			&& explanation !== 'Cast Vote by Signature'
@@ -149,12 +151,26 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const tokenBalancesAfter = await getTokenBalancesAfterForTransaction(
 			ethereum,
 			undefined,
-			{ blocks: [] }, // we are simulating on top of mainnet, not top of our stack. Fix to simulate on right place of the stack
+			[], // we are simulating on top of mainnet, not top of our stack. Fix to simulate on right place of the stack
 			contractExecutionResult.ethSimulateV1CallResult,
 			contractExecutionResult.executingTransaction.from
 		)
 
 		const governanceContractSimulationState: SimulationState = {
+			success: true,
+			simulationStateInput: [{
+				signedMessages: [],
+				stateOverrides: {},
+				transactions: [{
+					signedTransaction: signedExecutionTransaction,
+					website: pendingTransaction.transactionToSimulate.website,
+					created: new Date(),
+					originalRequestParameters: pendingTransaction.originalRequestParameters,
+					transactionIdentifier: pendingTransaction.transactionIdentifier,
+				}],
+				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+				simulateWithZeroBaseFee: false,
+			}],
 			simulatedBlocks: [{
 				signedMessages: [],
 				stateOverrides: {},
@@ -188,7 +204,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	}
 }
 
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationState: SimulationState | undefined, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		const delegateCallExecuteInterface = new ethers.Interface(['function delegateCallExecute(address, bytes memory) payable external returns (bytes memory)'])
@@ -222,6 +238,8 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
+		const simulationState = await getUpdatedSimulationState(ethereumClientService)
+		if (simulationState?.success === false) throw new JsonRpcResponseError(simulationState?.jsonRpcError)
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : {
@@ -245,7 +263,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			}
 		}
 		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationState, [metaTransaction], undefined, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
@@ -257,16 +275,17 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
+		if (prevState.simulationState.success === false) return prevState
 		try {
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-				prevState.simulationState.simulatedBlocks, (block) =>
+				prevState.simulationState.simulatedBlocks, async (block) =>
 					promiseAllMapAbortSafe(block.simulatedTransactions,
 						async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)
 					)
 				)
 			)
 			const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-				prevState.simulationState.simulatedBlocks, (block) => {
+				prevState.simulationState.simulatedBlocks, async (block) => {
 					const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
 					return promiseAllMapAbortSafe(transactions, (transaction) =>
 						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
@@ -289,9 +308,9 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 
 export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = await ethereum.getBlock(undefined)
-	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : { blocks: simulationInput.blocks.map((block) => (
+	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : simulationInput.map((block) => (
 		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
-	))}
+	))
 	const newSimulationState = await createSimulationState(ethereum, undefined, baseFeeFixedInputStateBlocks)
 	// rerun the simulation if nonce issues are found after fixing the nonce issues
 	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, newSimulationState)
@@ -308,37 +327,45 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		return entry
 	}
 	const weth = await getWeth()
+	if (simulationState.success === false) {
+		return {
+			addressBookEntries: [],
+			tokenPriceEstimates: [],
+			tokenPriceQuoteToken: weth,
+			namedTokenIds: [],
+			simulationState,
+			visualizedSimulationState: simulationState,
+		}
+	}
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
-	const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-		simulationState.simulatedBlocks, async (block) =>
-			promiseAllMapAbortSafe(block.simulatedTransactions,
-				async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await silenceChromeUnCaughtPromise(parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController))
-			)
+	const eventsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block) =>
+		await promiseAllMapAbortSafe(block.simulatedTransactions,
+			async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)
 		)
 	)
-	const protectorsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-		simulationState.simulatedBlocks, (block, blockIndex) => {
+	const protectorsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
+		simulationState.simulatedBlocks, async (block, blockIndex) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-			return promiseAllMapAbortSafe(transactions, async (transaction, transactionIndex) => {
+			return await promiseAllMapAbortSafe(transactions, async (transaction, transactionIndex) => {
 				const slicedSimulationState = sliceSimulationState(simulationState, blockIndex, transactionIndex)
-				return await silenceChromeUnCaughtPromise(runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController))
+				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController)
 			})
 		}
-	))
+	)
 
-	const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
-		simulationState.simulatedBlocks, (block) => {
+	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
+		simulationState.simulatedBlocks, async (block) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-			return promiseAllMapAbortSafe(transactions, async (transaction) =>
-				silenceChromeUnCaughtPromise(parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController))
+			return await promiseAllMapAbortSafe(transactions, async (transaction) =>
+				await parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
 			)
 		}
-	))
+	)
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
 	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
@@ -350,7 +377,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	const tokenPriceEstimates = await tokenPriceEstimatesPromise
 	const settings = await settingsPromise
 
-	const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulatedBlocks, async(block, blockIndex) => {
+	const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block, blockIndex) => {
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
 		const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
 		const protectorsForBlock = protectorsForEachBlockAndTransaction[blockIndex]
@@ -367,6 +394,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		tokenPriceEstimates,
 		tokenPriceQuoteToken: weth,
 		simulationState,
-		visualizedSimulationState: { visualizedBlocks },
+		visualizedSimulationState: { success: true, visualizedBlocks },
 	}
 }

@@ -2,7 +2,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
-import { EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
+import { EthNewFilter, EthSubscribeParams, JsonRpcErrorResponse, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -83,6 +83,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
 		parsedInputData: EnrichedEthereumInputData,
 		transactionIdentifier: EthereumQuantity,
+		originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
@@ -162,9 +163,7 @@ export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 })
 
 export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
-export const SimulationStateInput = funtypes.ReadonlyObject({
-	blocks: funtypes.ReadonlyArray(SimulationStateInputBlock)
-})
+export const SimulationStateInput = funtypes.ReadonlyArray(SimulationStateInputBlock)
 
 export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
 export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
@@ -176,9 +175,7 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 })
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
-export const SimulationStateInputMinimalData = funtypes.ReadonlyObject({
-	blocks: funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
-})
+export const SimulationStateInputMinimalData = funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
 
 export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
 export const SimulationStateBlock = funtypes.ReadonlyObject({
@@ -190,8 +187,10 @@ export const SimulationStateBlock = funtypes.ReadonlyObject({
 	blockBaseFeePerGas: EthereumQuantity,
 })
 
-export type SimulationState = funtypes.Static<typeof SimulationState>
-export const SimulationState = funtypes.ReadonlyObject({
+export type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
+export const SimulationStateSuccess = funtypes.ReadonlyObject({
+	success: funtypes.Literal(true),
+	simulationStateInput: SimulationStateInput,
 	simulatedBlocks: funtypes.ReadonlyArray(SimulationStateBlock),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
@@ -199,6 +198,25 @@ export const SimulationState = funtypes.ReadonlyObject({
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
 })
+
+export type SimulationState = funtypes.Static<typeof SimulationState>
+export const SimulationState = funtypes.Union(
+	SimulationStateSuccess,
+	funtypes.ReadonlyObject({
+		success: funtypes.Literal(false),
+		simulationStateInput: SimulationStateInput,
+		jsonRpcError: funtypes.ReadonlyObject({
+			jsonrpc: funtypes.Literal('2.0'),
+			id: funtypes.Union(funtypes.String, funtypes.Number),
+			error: ErrorWithCodeAndOptionalData
+		}),
+		blockNumber: EthereumQuantity,
+		blockTimestamp: EthereumTimestamp,
+		baseFeePerGas: EthereumQuantity,
+		simulationConductedTimestamp: EthereumTimestamp,
+		rpcNetwork: RpcNetwork,
+	})
+)
 
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
 export const TransactionWithAddressBookEntries = funtypes.Intersect(
@@ -286,14 +304,24 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 	tokenIdName: funtypes.String
 })
 
-export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulationState>
-export const VisualizedSimulationState = funtypes.ReadonlyObject({
+export type VisualizedSimulationStateSuccess = funtypes.Static<typeof VisualizedSimulationStateSuccess>
+export const VisualizedSimulationStateSuccess = funtypes.ReadonlyObject({
+	success: funtypes.Literal(true),
 	visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 		blockTimeManipulation: BlockTimeManipulation
 	}))
 })
+
+export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulationState>
+export const VisualizedSimulationState = funtypes.Union(
+	VisualizedSimulationStateSuccess,
+	funtypes.ReadonlyObject({
+		success: funtypes.Literal(false),
+		jsonRpcError: JsonRpcErrorResponse
+	})
+)
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({

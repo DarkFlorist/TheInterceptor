@@ -77,7 +77,7 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
-	const emptyResults = {
+	const emptyResults: CompleteVisualizedSimulation = {
 		simulationUpdatingState: 'done' as const,
 		simulationResultState: 'corrupted' as const,
 		simulationId: 0,
@@ -87,7 +87,7 @@ export async function getPopupVisualisationState() {
 		tokenPriceQuoteToken: undefined,
 		activeAddress: undefined,
 		namedTokenIds: [],
-		visualizedSimulationState: { visualizedBlocks: [] },
+		visualizedSimulationState: { success: true, visualizedBlocks: [] },
 		numberOfAddressesMadeRich: 0,
 	}
 	try {

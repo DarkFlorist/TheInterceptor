@@ -257,6 +257,7 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
+	if (simulationAndVisualisationResults.visualizedSimulationState.success === false) return false
 	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
 		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
 		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
@@ -269,7 +270,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	})
 
 	if (param.simulationAndVisualisationResults.value === undefined || (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined))) {
-		return <CenterToPageTextSpinner/>
+		return <div style = 'padding: 10px'> <CenterToPageTextSpinner/> </div>
 	}
 
 	const definedSimulationResults = useComputed(() => {
@@ -298,29 +299,34 @@ function PopupVisualisation(param: SimulationStateParam) {
 				</button>
 			</div>
 		</div>
-		{ isEmpty.value ?
-			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+
+		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ?
+			<ErrorComponent text = { JSON.stringify(param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
 		: <>
-			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
-				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { definedSimulationResults }
-					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-					activeAddress = { param.simulationAndVisualisationResults.value.activeAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
-					addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
-				/>
-				{ param.removedTransactionOrSignedMessages.length > 0
-					? <></>
-					: <SimulationSummary
+			{ isEmpty.value ?
+				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+			: <>
+				<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
+					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { definedSimulationResults }
-						currentBlockNumber = { param.currentBlockNumber }
+						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+						activeAddress = { param.simulationAndVisualisationResults.value.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						rpcConnectionStatus = { param.rpcConnectionStatus }
+						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+						removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
+						addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
 					/>
-				}
-			</div>
+					{ param.removedTransactionOrSignedMessages.length > 0
+						? <></>
+						: <SimulationSummary
+							simulationAndVisualisationResults = { definedSimulationResults }
+							currentBlockNumber = { param.currentBlockNumber }
+							renameAddressCallBack = { param.renameAddressCallBack }
+							rpcConnectionStatus = { param.rpcConnectionStatus }
+						/>
+					}
+				</div>
+			</> }
 		</> }
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
@@ -388,7 +394,7 @@ export function Home(param: HomeParams) {
 		})
 	}
 
-	if (!isLoaded || param.rpcNetwork.value === undefined) return <> </>
+	if (!isLoaded || param.rpcNetwork.value === undefined) return <></>
 
 	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
 

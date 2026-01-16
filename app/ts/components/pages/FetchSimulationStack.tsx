@@ -88,6 +88,7 @@ export function FetchSimulationStack() {
 
 	const isThereSimulationStack = useComputed(() => {
 		if (completeVisualizedSimulation.value === undefined) return false
+		if (completeVisualizedSimulation.value.visualizedSimulationState.success === false) return false
 		return completeVisualizedSimulation.value.numberOfAddressesMadeRich || completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks.length > 0
 	})
 
