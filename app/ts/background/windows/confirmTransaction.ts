@@ -9,7 +9,7 @@ import { InterceptorTransactionStack, WebsiteCreatedEthereumUnsignedTransaction,
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
@@ -17,7 +17,7 @@ import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { JsonRpcResponseError, handleUnexpectedError, printError } from '../../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
@@ -30,27 +30,33 @@ import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.j
 const pendingConfirmationSemaphore = new Semaphore(1)
 
 export async function updateConfirmTransactionView(simulator: Simulator) {
-	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(simulator))
-	const settings = getSettings()
-	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(simulator.ethereum.getBlockNumber(undefined))
-	const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
-	if (pendingTransactionAndSignableMessages.length === 0) return false
-	const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
-		currentBlockNumber: await currentBlockNumberPromise,
-		visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
-	} }
-	const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-		method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-		data: {
-			pendingTransactionAndSignableMessages,
+	try {
+		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(simulator))
+		const settings = getSettings()
+		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(simulator.ethereum.getBlockNumber(undefined))
+		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+		if (pendingTransactionAndSignableMessages.length === 0) return false
+		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber: await currentBlockNumberPromise,
+			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
+		} }
+		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+			data: {
+				pendingTransactionAndSignableMessages,
+				currentBlockNumber: await currentBlockNumberPromise,
+			}
 		}
+		await Promise.all([
+			sendPopupMessageToOpenWindows(messagePendingTransactions),
+			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+		])
+		return true
+	} catch(error: unknown) {
+		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return false
+		await handleUnexpectedError(error)
 	}
-	await Promise.all([
-		sendPopupMessageToOpenWindows(messagePendingTransactions),
-		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
-	])
-	return true
+	return false
 }
 
 export const isConfirmTransactionFocused = async () => {
@@ -68,7 +74,21 @@ const getPendingTransactionOrMessageByidentifier = async (uniqueRequestIdentifie
 
 export const setGasLimitForTransaction = async (transactionIdentifier: BigInt, gasLimit: bigint) => {
 	const pendingTransaction = (await getPendingTransactionsAndMessages()).find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === transactionIdentifier)
-	if (pendingTransaction === undefined) return
+	if (pendingTransaction === undefined) {
+		const theTransactionIsAlreadyInStack = (await getInterceptorTransactionStack()).operations.some((transaction) => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
+		if (!theTransactionIsAlreadyInStack) return undefined
+		await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+			return { operations: prevStack.operations.map((operation) => {
+				if (operation.type !== 'Transaction') return operation
+				if (operation.preSimulationTransaction.transactionIdentifier !== transactionIdentifier) return operation
+				if (operation.preSimulationTransaction.originalRequestParameters.method !== 'eth_sendTransaction') return operation
+				const originalParams = operation.preSimulationTransaction.originalRequestParameters
+				const originalRequestParameters = modifyObject(originalParams, { params: [modifyObject(originalParams.params[0], { gas: gasLimit })] })
+				return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { originalRequestParameters, signedTransaction: modifyObject(operation.preSimulationTransaction.signedTransaction, { gas: gasLimit })  }) })
+			}) }
+		})
+		return
+	}
 	await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 		if (transaction.originalRequestParameters.method === 'eth_sendTransaction') {
 			const originalRequestParameters = modifyObject(transaction.originalRequestParameters, { params: [modifyObject(transaction.originalRequestParameters.params[0], { gas: gasLimit })] })
