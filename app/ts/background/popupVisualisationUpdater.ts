@@ -61,6 +61,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 					namedTokenIds: [],
 					simulationState: undefined,
 					visualizedSimulationState: {
+						success: true,
 						visualizedBlocks: []
 					},
 					numberOfAddressesMadeRich,

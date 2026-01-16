@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
-import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, VisualizedSimulationState } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, VisualizedSimulationStateSuccess } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
@@ -37,7 +37,7 @@ type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
 }
 
-const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
+const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationStateSuccess, transactionIdentifier: bigint) => {
 	return visualizedSimulationState.visualizedBlocks
 		.flatMap((block) => block.simulatedAndVisualizedTransactions)
 		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
@@ -68,7 +68,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 				<div style = { absoluteStyle }></div>
 			</div>
 			if (pendingTransaction.type === 'Transaction') {
-				if (pendingTransaction.popupVisualisation.statusCode === 'success') {
+				if (pendingTransaction.popupVisualisation.statusCode === 'success' && pendingTransaction.popupVisualisation.data.visualizedSimulationState.success) {
 					const simTx = getResultsForTransaction(pendingTransaction.popupVisualisation.data.visualizedSimulationState, pendingTransaction.transactionIdentifier)
 					if (simTx === undefined) throw new Error('No simulated and visualized transactions')
 					return <div class = 'card' style = { style }>
@@ -102,16 +102,15 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction.value
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
-		currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
 		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
-		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
 		return identifyTransaction(lastTx).title
 	}
 
 	const namesWithCurrentTransaction = useComputed(() => {
-		if (param.completeVisualizedSimulation.value === undefined || param.completeVisualizedSimulation.value.simulationResultState !== 'done') return []
+		if (param.completeVisualizedSimulation.value === undefined || param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.visualizedSimulationState.success === false) return []
 		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
 		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions])
 		const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
@@ -205,7 +204,7 @@ function TransactionCard(param: TransactionCardParams) {
 		visualizedSimulationState: popupVisualisation.data.visualizedSimulationState,
 		namedTokenIds: popupVisualisation.data.namedTokenIds,
 	}))
-
+	if (!popupVisualisation.data.visualizedSimulationState.success) return <p> Error TODO { JSON.stringify(popupVisualisation.data.visualizedSimulationState.jsonRpcError) }</p>
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, param.currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	return <>
@@ -241,7 +240,7 @@ function TransactionCard(param: TransactionCardParams) {
 					addressMetaData = { simulationAndVisualisationResults.value.addressBookEntries }
 				/>
 
-				<RawTransactionDetailsCard transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent } addressMetaData = { simulationAndVisualisationResults.value.addressBookEntries } />
+				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent } addressMetaData = { simulationAndVisualisationResults.value.addressBookEntries } />
 
 				<SenderReceiver
 					from = { simTx.transaction.from }
@@ -292,7 +291,7 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 			}
 		</>
 	}
-	if (params.currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success') return <></>
+	if (params.currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || params.currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false) return <></>
 	const currentResults = getResultsForTransaction(params.currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, params.currentPendingTransactionOrSignableMessage.transactionIdentifier)
 
 	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
@@ -357,7 +356,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
-		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return undefined
 		return identifyTransaction(lastTx)
 	}
@@ -483,6 +482,7 @@ export function ConfirmTransaction() {
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
 			if (pending.popupVisualisation.statusCode !== 'success' ) return undefined
+			if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return undefined
 			const results = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
 			if (results === undefined) return undefined
 			return results.statusCode === 'failure' ? results.error.message : undefined
@@ -513,8 +513,9 @@ export function ConfirmTransaction() {
 		}
 		if (forceSend.value) return false
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return false
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success' ) return false
+		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return false
 		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status === 'WaitingForSigner') return true
+		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return false
 		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined ) return false
 		const success = lastTx.statusCode === 'success'

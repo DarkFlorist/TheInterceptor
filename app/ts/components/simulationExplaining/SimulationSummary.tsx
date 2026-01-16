@@ -24,6 +24,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
+import { ErrorComponent } from '../subcomponents/Error.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -654,6 +655,9 @@ type SimulationSummaryParams = {
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
+	if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) {
+		return <ErrorComponent text = { JSON.stringify(param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
+	}
 	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
 	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
@@ -665,6 +669,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
 	const icon = useComputed(() => {
+		if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return '../img/error-icon.svg'
 		const transactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 		if (transactions.some((transaction) => transaction.statusCode !== 'success')) return '../img/error-icon.svg'
 		if (transactions.some((transaction) => transaction.quarantine)) return '../img/warning-sign.svg'
@@ -768,8 +773,9 @@ type RawTransactionDetailsCardParams = {
 	renameAddressCallBack: RenameAddressCallBack
 	gasSpent: bigint
 	transactionIdentifier: bigint
+	isRawTransaction: boolean,
 }
-export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	const gasLimit = useOptionalSignal<bigint>(transaction.gas)
 
@@ -810,6 +816,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 									autoSize = { true }
 									value = { gasLimit }
 									placeholder = { transaction.gas.toString(10) }
+									disabled = { isRawTransaction }
 								/>
 							</span>
 							&nbsp;gas&nbsp;

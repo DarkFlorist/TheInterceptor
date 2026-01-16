@@ -83,6 +83,16 @@ export async function refreshConfirmTransactionSimulation(
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
 		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
+		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
+			return { statusCode: 'failed' as const, data: {
+				...info,
+				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: '' },
+				simulationState: {
+					blockNumber: 0n,
+					simulationConductedTimestamp: new Date()
+				}
+			} }
+		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 		return {

@@ -32,6 +32,7 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 
 export const getSimulatedStackV2 = (simulationState: SimulationState | undefined): GetSimulationStackReplyV2 => {
 	if (simulationState === undefined) return { stateOverrides: {}, transactions: [] }
+	if (simulationState.success === false) return { stateOverrides: {}, transactions: [] }
 	return {
 		stateOverrides: mergeSimulationOverrides(simulationState.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)),
 		transactions: simulationState.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulationState.baseFeePerGas, simulatedTransaction), simulatedTransaction }))
@@ -39,7 +40,7 @@ export const getSimulatedStackV2 = (simulationState: SimulationState | undefined
 }
 
 export const getSimulatedStackV1 = (simulationState: SimulationState | undefined, addressToMakeRich: EthereumAddress | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
-	if (simulationState === undefined) return []
+	if (simulationState === undefined || simulationState.success === false) return []
 	const simulatedTransactions = simulationState.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)

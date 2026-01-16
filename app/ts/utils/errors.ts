@@ -10,14 +10,19 @@ export class ErrorWithData extends Error {
 	}
 }
 
-export class JsonRpcResponseError extends ErrorWithData {
+export class JsonRpcResponseError extends Error {
 	public readonly id: string | number
 	public readonly code: number
+	public readonly data: string | undefined
 	public constructor(jsonRpcResponse: JsonRpcErrorResponse) {
-		super(jsonRpcResponse.error.message, jsonRpcResponse.error.data)
+		super(jsonRpcResponse.error.message)
 		this.code = jsonRpcResponse.error.code
 		this.id = jsonRpcResponse.id
+		this.data = jsonRpcResponse.error.data
 		Object.setPrototypeOf(this, JsonRpcResponseError.prototype)
+	}
+	public serialize() {
+		return { jsonrpc: '2.0' as const, id: this.id, error: { message: this.message, code: this.code, data: this.data } }
 	}
 }
 

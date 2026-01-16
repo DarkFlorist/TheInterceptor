@@ -1,6 +1,6 @@
 import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
-import { NamedTokenId, SimulationState } from '../types/visualizer-types.js'
+import { NamedTokenId, SimulationStateSuccess } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
@@ -185,7 +185,7 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	}).filter((address): address is bigint => address !== undefined)
 }
 
-export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationState: SimulationState): Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationState: SimulationStateSuccess): Promise<AddressBookEntry[]> {
 	const eventAndTransactionArguments = [...events.flatMap((event) => event.type !== 'NonParsed' ? event.args : []), ...inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])]
 	const addressesInEventsAndInputData = getAddressesForSolidityTypes(eventAndTransactionArguments)
 	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]

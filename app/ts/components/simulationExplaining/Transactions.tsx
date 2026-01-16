@@ -157,7 +157,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 				/>
 				<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 				<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
-				<RawTransactionDetailsCard transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries } />
+				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
@@ -262,6 +262,7 @@ type TransactionsAndSignedMessagesParams = {
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const transactionsAndMessagesInBlock = useComputed(() => {
+		if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return []
 		const visualizedBlocks = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks
 		return visualizedBlocks.map((block) => ({
 			operations: [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions],
