@@ -1,4 +1,4 @@
-import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
+import { addressString } from '../utils/bigint.js'
 import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { Interface } from 'ethers'
@@ -141,7 +141,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 				? {
 					error: {
 						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, { ...simulatedTx.ethSimulateV1CallResult.error, data: dataStringWith0xStart(simulatedTx.ethSimulateV1CallResult.returnData)}).reason,
+						decodedErrorMessage: decodeEthereumError(availableAbis, simulatedTx.ethSimulateV1CallResult.error).reason,
 					},
 					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}

@@ -2,6 +2,7 @@ import { AbiCoder } from 'ethers'
 import { Result } from 'ethers'
 import { ErrorFragment, Interface, ErrorDescription } from 'ethers'
 import { printError } from './errors.js'
+import { ErrorWithCodeAndOptionalData } from '../types/error.js'
 
 const ERROR_STRING_PREFIX = '0x08c379a0' // Error(string)
 const PANIC_CODE_PREFIX = '0x4e487b71' // Panic(uint256)
@@ -12,12 +13,6 @@ enum ErrorType {
 	PanicError = 'PanicError',
 	CustomError = 'CustomError',
 	UnknownError = 'UnknownError',
-}
-
-type EthereumError = {
-    readonly code: number;
-    readonly message: string;
-    readonly data: string;
 }
 
 type DecodedError = {
@@ -69,18 +64,19 @@ const customErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args 
 }
 
 interface ErrorHandler {
-	predicate: (error: EthereumError) => boolean
-	handle: (errorInterface: Interface | undefined, error: EthereumError) => DecodedError
+	predicate: (error: ErrorWithCodeAndOptionalData) => boolean
+	handle: (errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData) => DecodedError
 }
 
 class EmptyErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data === '0x' }
-	public handle(_errorInterface: Interface | undefined, error: EthereumError): DecodedError { return emptyErrorResult({ data: error.data, reason: error.message }) }
+	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data === '0x' }
+	public handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError { return emptyErrorResult({ data: error.data, reason: error.message }) }
 }
 
 class RevertErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data.startsWith(ERROR_STRING_PREFIX) }
-	public handle(_errorInterface: Interface | undefined, error: EthereumError): DecodedError {
+	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data !== undefined && error.data.startsWith(ERROR_STRING_PREFIX) }
+	public handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
+		if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x'})
 		const encodedReason = error.data.slice(ERROR_STRING_PREFIX.length)
 		const abi = new AbiCoder()
 		try {
@@ -95,8 +91,9 @@ class RevertErrorHandler implements ErrorHandler {
 }
 
 class PanicErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data.startsWith(PANIC_CODE_PREFIX) }
-	public handle(_errorInterface: Interface | undefined, error: EthereumError): DecodedError {
+	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data !== undefined && error.data.startsWith(PANIC_CODE_PREFIX) }
+	public handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
+		if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x'})
 		const encodedReason = error.data.slice(PANIC_CODE_PREFIX.length)
 		const abi = new AbiCoder()
 		try {
@@ -111,10 +108,11 @@ class PanicErrorHandler implements ErrorHandler {
 }
 
 class CustomErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data !== '0x' && !error.data.startsWith(ERROR_STRING_PREFIX) && error.data.startsWith(PANIC_CODE_PREFIX) }
-	public handle(errorInterface: Interface | undefined, error: EthereumError): DecodedError {
+	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data !== undefined && error.data !== '0x' && !error.data.startsWith(ERROR_STRING_PREFIX) && !error.data.startsWith(PANIC_CODE_PREFIX) }
+	public handle(errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
 		const result: Parameters<typeof customErrorResult>[0] = { data: error.data, reason: error.message }
 		if (errorInterface === undefined) return customErrorResult(result)
+		if (error.data === undefined) return customErrorResult(result)
 		const customError = errorInterface.parseError(error.data)
 		if (customError === null) return customErrorResult(result)
 		const { fragment, args, name: reason } = customError
@@ -148,7 +146,7 @@ const handlers = [
 ]
 const errorHandlers: ErrorHandler[] = handlers.map((handler) => ({ predicate: handler.predicate, handle: handler.handle }))
 
-export const decodeEthereumError = (errorInterfaces: readonly Interface[], error: EthereumError): DecodedError => {
+export const decodeEthereumError = (errorInterfaces: readonly Interface[], error: ErrorWithCodeAndOptionalData): DecodedError => {
 	try {
 		const errorInterface = new Interface(errorInterfaces.flatMap((iface) => iface.fragments.filter((fragment) => ErrorFragment.isFragment(fragment))))
 		for (const { predicate, handle } of errorHandlers) {

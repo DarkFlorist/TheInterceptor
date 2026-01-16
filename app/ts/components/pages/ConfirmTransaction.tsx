@@ -146,7 +146,7 @@ type TransactionCardParams = {
 function TransactionCard(param: TransactionCardParams) {
 	const popupVisualisation = param.currentPendingTransaction.popupVisualisation
 	const getErrorMesssage = () => {
-		if (popupVisualisation.statusCode === 'failed') return popupVisualisation.data.error.decodedErrorMessage
+		if (popupVisualisation.statusCode === 'failed') return `${ popupVisualisation.data.error.decodedErrorMessage } ${ popupVisualisation.data.error.data !== undefined ? ` (data: '${ (popupVisualisation.data.error.data) }')` : ''} }`
 		if (!popupVisualisation.data.transactionToSimulate.success) return popupVisualisation.data.transactionToSimulate.error.message
 		return 'Unknown error'
 	}
