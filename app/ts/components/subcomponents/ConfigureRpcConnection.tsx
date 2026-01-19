@@ -23,9 +23,10 @@ type ConfigureRpcContext = {
 
 const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undefined)
 
-const improveError = (error: Error) => {
+const throwImprovedError = (error: Error, url: string) => {
 	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
 	if (error.message.startsWith('Failed to fetch')) throw new Error(`Failed to connect to the RPC.`)
+	throw Error
 }
 
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
@@ -38,7 +39,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			const provider = new JsonRpcProvider(fetchRequest)
 			return await provider.getNetwork()
 		} catch(error: unknown) {
-			if (error instanceof Error) return improveError(error)
+			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC chain id error', error)
 			throw new Error('Unable to fetch network information from the RPC.')
 		}
@@ -85,7 +86,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error: unknown) {
 			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
-			if (error instanceof Error) return improveError(error)
+			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC eth_simulateV1 validation error', error)
 			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
 		}
