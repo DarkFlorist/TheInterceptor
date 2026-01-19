@@ -1,4 +1,4 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32 } from '../../types/wire-types.js'
+import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
@@ -18,6 +18,36 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
 	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit))
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
+}
+
+const gasFixTransactions = (transactions: readonly EthereumSendableSignedTransaction[], gasLimit: bigint) => {
+	const reduceGasUntilWithinBlockLimit = (transactions: Array<{ gas: bigint }>) => {
+		// find the highest gas transaction in a block and reduce its gas limit by 10% until we are below the allowed limit
+		const calculateTotalGasUsed = (currentTransactions: Array<{ gas: bigint }>) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
+		while (calculateTotalGasUsed(transactions) > gasLimit) {
+			let highestIndex = 0
+			let highestGasTransaction = transactions[0]
+			if (highestGasTransaction === undefined) throw new Error('transaction index overflow')
+
+			for (let transactionIndex = 1; transactionIndex < transactions.length; transactionIndex++) {
+				const currentTransaction = transactions[transactionIndex]
+				if (currentTransaction === undefined) throw new Error('transaction index overflow')
+				if (currentTransaction.gas > highestGasTransaction.gas) {
+					highestGasTransaction = currentTransaction
+					highestIndex = transactionIndex
+				}
+			}
+			const reducedGas = highestGasTransaction.gas * 9n / 10n
+			transactions[highestIndex] = { ...highestGasTransaction, gas: reducedGas }
+		}
+		return transactions
+	}
+	return reduceGasUntilWithinBlockLimit(transactions.map((transaction) => {
+		const gas = transaction.gas > gasLimit ? gasLimit : transaction.gas
+		if (transaction.type !== '1559') return { ...transaction, gas }
+		const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction
+		return { ...transactionWithoutMaxFee, ...maxFeePerGas === 0n ? {} : { maxFeePerGas }, gas }
+	}))
 }
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
@@ -229,11 +259,6 @@ export class EthereumClientService {
 		}
 
 		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
-			const transactionsWithRemoveZeroPricedOnes = block.transactions.map((transaction) => {
-				if (transaction.signedTransaction.type !== '1559') return transaction.signedTransaction
-				const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction.signedTransaction
-				return { ...transactionWithoutMaxFee, ...maxFeePerGas === 0n ? {} : { maxFeePerGas } }
-			})
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
 
@@ -254,7 +279,7 @@ export class EthereumClientService {
 			}, {} as { [key: string]: bigint } )
 
 			return {
-				calls: transactionsWithRemoveZeroPricedOnes,
+				calls: gasFixTransactions(block.transactions.map((transaction) => transaction.signedTransaction), parentBlock.gasLimit),
 				blockOverrides,
 				stateOverrides: {
 					...block.signedMessages.length > 0 ? {
@@ -278,7 +303,7 @@ export class EthereumClientService {
 		return {
 			method: 'eth_simulateV1',
 			params: [{
-				blockStateCalls: blockStateCalls,
+				blockStateCalls,
 				traceTransfers: true,
 				validation: false,
 			},
