@@ -1,6 +1,6 @@
 import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
-import { NamedTokenId, SimulationStateSuccess } from '../types/visualizer-types.js'
+import { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
@@ -185,14 +185,14 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	}).filter((address): address is bigint => address !== undefined)
 }
 
-export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationState: SimulationStateSuccess): Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
 	const eventAndTransactionArguments = [...events.flatMap((event) => event.type !== 'NonParsed' ? event.args : []), ...inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])]
 	const addressesInEventsAndInputData = getAddressesForSolidityTypes(eventAndTransactionArguments)
 	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
 
-	for (const tx of simulationState.simulatedBlocks.flatMap((block) => block.simulatedTransactions)) {
-		addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.from)
-		if (tx.preSimulationTransaction.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.preSimulationTransaction.signedTransaction.to)
+	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
+		addressesToFetchMetadata.push(tx.signedTransaction.from)
+		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	}
 
 	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])

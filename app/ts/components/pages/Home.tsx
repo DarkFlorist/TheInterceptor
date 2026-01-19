@@ -21,7 +21,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
-import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
+import { Spinner } from '../subcomponents/Spinner.js'
 
 type SignerExplanationParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
@@ -269,8 +269,10 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return isEmptySimulation(param.simulationAndVisualisationResults.value)
 	})
 
-	if (param.simulationAndVisualisationResults.value === undefined || (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined))) {
-		return <div style = 'padding: 10px'> <CenterToPageTextSpinner/> </div>
+	if (param.simulationAndVisualisationResults.value === undefined || param.simulationAndVisualisationResults.value === undefined || (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined))) {
+		return <div style = 'display: grid; place-items: center; height: 250px;'>
+			<Spinner height = '3em'/>
+		</div>
 	}
 
 	const definedSimulationResults = useComputed(() => {
@@ -300,9 +302,18 @@ function PopupVisualisation(param: SimulationStateParam) {
 			</div>
 		</div>
 
-		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ?
-			<ErrorComponent text = { JSON.stringify(param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
-		: <>
+		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ? <>
+			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+			<TransactionsAndSignedMessages
+				simulationAndVisualisationResults = { definedSimulationResults }
+				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+				activeAddress = { param.simulationAndVisualisationResults.value.activeAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+				removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
+				addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
+			/>
+		</> : <>
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>

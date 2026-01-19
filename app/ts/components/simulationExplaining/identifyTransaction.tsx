@@ -1,7 +1,7 @@
 import { get4Byte, get4ByteString } from '../../utils/calldata.js'
 import { BURN_ADDRESSES, FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
-import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
+import { MaybeSimulatedTransaction, SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -230,70 +230,78 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 }
 const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isProxyTokenTransfer(simTx) ? simTx : undefined)
 
-export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
-	const tokenResults = extractTokenEvents(simTx.events)
-	const identifiedSwap = identifySwap(simTx)
-	if (identifiedSwap) {
-		const swapname = getSwapName(identifiedSwap)
-		return {
-			type: 'Swap',
-			title: swapname === undefined ? 'Swap' : swapname,
-			signingAction: 'Swap',
-			simulationAction: 'Simulate Swap',
-			rejectAction: 'Reject Swap',
-		}
-	}
-
-	if (getSimpleTokenTransferOrUndefined(simTx)) {
-		const tokenResult = tokenResults[0]
-		if (tokenResult === undefined) throw new Error('token result were undefined')
-		const symbol = tokenResult.token.symbol
-		return {
-			type: 'SimpleTokenTransfer',
-			title: `${ symbol } Transfer`,
-			signingAction: `Transfer ${ symbol }`,
-			simulationAction: `Simulate ${ symbol } Transfer`,
-			rejectAction: `Reject ${ symbol } Transfer`,
-			identifiedTransaction: simTx,
-		}
-	}
-
-	if (getProxyTokenTransferOrUndefined(simTx)) {
-		const tokenResult = tokenResults[0]
-		if (tokenResult === undefined) throw new Error('token result were undefined')
-		const symbol = tokenResult.token.symbol
-		const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
-		const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
-
-		const transferRoute = deduplicateByFunction(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
-		const netSums = getNetSums(edges)
-		if (transferRoute === undefined) throw new Error('no path found')
-		const texts = deadEnds.size > 1 ? {
-			title: `${ symbol } Transfer to many via Proxy`,
-			signingAction: `Transfer ${ symbol } to many via Proxy`,
-			simulationAction: `Simulate ${ symbol } Transfer to many via Proxy`,
-			rejectAction: `Reject ${ symbol } Transfer via to many Proxy`,
-		} : {
-			title: `${ symbol } Transfer via Proxy`,
-			signingAction: `Transfer ${ symbol } via Proxy`,
-			simulationAction: `Simulate ${ symbol } Transfer via Proxy`,
-			rejectAction: `Reject ${ symbol } Transfer via Proxy`,
-		}
-		return {
-			type: 'ProxyTokenTransfer',
-			...texts,
-			identifiedTransaction: {
-				...simTx,
-				transferRoute,
-				transferedTo: Array.from(netSums).map(([address, amountDelta]) => {
-					const deadEnd = deadEnds.get(address)
-					if (deadEnd === undefined) return undefined
-					const destinationEntry = deadEnd[deadEnd.length - 1]
-					if (destinationEntry === undefined) throw new Error('path was missing')
-					return { entry: destinationEntry.data, amountDelta }
-				}).filter((x): x is EntryAmount => x !== undefined && x.amountDelta !== 0n)
+export function identifyTransaction(simTx: MaybeSimulatedTransaction): IdentifiedTransaction {
+	if (simTx.transactionStatus === 'Transaction Succeeded') {
+		const tokenResults = extractTokenEvents(simTx.events)
+		const identifiedSwap = identifySwap(simTx)
+		if (identifiedSwap) {
+			const swapname = getSwapName(identifiedSwap)
+			return {
+				type: 'Swap',
+				title: swapname === undefined ? 'Swap' : swapname,
+				signingAction: 'Swap',
+				simulationAction: 'Simulate Swap',
+				rejectAction: 'Reject Swap',
 			}
 		}
+
+		if (getSimpleTokenTransferOrUndefined(simTx)) {
+			const tokenResult = tokenResults[0]
+			if (tokenResult === undefined) throw new Error('token result were undefined')
+			const symbol = tokenResult.token.symbol
+			return {
+				type: 'SimpleTokenTransfer',
+				title: `${ symbol } Transfer`,
+				signingAction: `Transfer ${ symbol }`,
+				simulationAction: `Simulate ${ symbol } Transfer`,
+				rejectAction: `Reject ${ symbol } Transfer`,
+				identifiedTransaction: simTx,
+			}
+		}
+
+		if (getProxyTokenTransferOrUndefined(simTx)) {
+			const tokenResult = tokenResults[0]
+			if (tokenResult === undefined) throw new Error('token result were undefined')
+			const symbol = tokenResult.token.symbol
+			const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
+			const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
+
+			const transferRoute = deduplicateByFunction(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
+			const netSums = getNetSums(edges)
+			if (transferRoute === undefined) throw new Error('no path found')
+			const texts = deadEnds.size > 1 ? {
+				title: `${ symbol } Transfer to many via Proxy`,
+				signingAction: `Transfer ${ symbol } to many via Proxy`,
+				simulationAction: `Simulate ${ symbol } Transfer to many via Proxy`,
+				rejectAction: `Reject ${ symbol } Transfer via to many Proxy`,
+			} : {
+				title: `${ symbol } Transfer via Proxy`,
+				signingAction: `Transfer ${ symbol } via Proxy`,
+				simulationAction: `Simulate ${ symbol } Transfer via Proxy`,
+				rejectAction: `Reject ${ symbol } Transfer via Proxy`,
+			}
+			return {
+				type: 'ProxyTokenTransfer',
+				...texts,
+				identifiedTransaction: {
+					...simTx,
+					transferRoute,
+					transferedTo: Array.from(netSums).map(([address, amountDelta]) => {
+						const deadEnd = deadEnds.get(address)
+						if (deadEnd === undefined) return undefined
+						const destinationEntry = deadEnd[deadEnd.length - 1]
+						if (destinationEntry === undefined) throw new Error('path was missing')
+						return { entry: destinationEntry.data, amountDelta }
+					}).filter((x): x is EntryAmount => x !== undefined && x.amountDelta !== 0n)
+				}
+			}
+		}
+
+		const simpleApproval = identifySimpleApproval(simTx)
+		if (simpleApproval !== undefined) return simpleApproval
+
+		const governanceVote = identifyGovernanceVote(simTx)
+		if (governanceVote !== undefined) return governanceVote
 	}
 
 	if (simTx.transaction.to === undefined) {
@@ -305,12 +313,6 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 			rejectAction: 'Reject Contract Deployment',
 		}
 	}
-
-	const simpleApproval = identifySimpleApproval(simTx)
-	if (simpleApproval !== undefined) return simpleApproval
-
-	const governanceVote = identifyGovernanceVote(simTx)
-	if (governanceVote !== undefined) return governanceVote
 
 	const fourByte = get4Byte(simTx.transaction.input)
 	if (fourByte === undefined) return {

@@ -68,29 +68,41 @@ export const BlockTimeManipulationWithNoDelay = funtypes.Union(
 	}),
 )
 
+
+export type NonSimulatedAndVisualizedTransactionBase = funtypes.Static<typeof NonSimulatedAndVisualizedTransactionBase>
+export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject({
+	website: Website,
+	created: EthereumTimestamp,
+	parsedInputData: EnrichedEthereumInputData,
+	transactionIdentifier: EthereumQuantity,
+	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	transactionStatus: funtypes.Literal('Failed To Simulate'),
+	error: DecodedError
+})
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
+		website: Website,
+		created: EthereumTimestamp,
+		parsedInputData: EnrichedEthereumInputData,
+		transactionIdentifier: EthereumQuantity,
+		originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 		tokenBalancesAfter: TokenBalancesAfter,
 		tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 		tokenPriceQuoteToken: funtypes.Union(Erc20TokenEntry, funtypes.Undefined),
-		website: Website,
-		created: EthereumTimestamp,
 		gasSpent: EthereumQuantity,
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
-		parsedInputData: EnrichedEthereumInputData,
-		transactionIdentifier: EthereumQuantity,
-		originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
-			statusCode: funtypes.Literal('success'),
+			transactionStatus: funtypes.Literal('Transaction Succeeded'),
 		}),
 		funtypes.ReadonlyObject({
-			statusCode: funtypes.Literal('failure'),
+			transactionStatus: funtypes.Literal('Transaction Failed'),
 			error: DecodedError
 		})
 	)
@@ -187,8 +199,8 @@ export const SimulationStateBlock = funtypes.ReadonlyObject({
 	blockBaseFeePerGas: EthereumQuantity,
 })
 
-export type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
-export const SimulationStateSuccess = funtypes.ReadonlyObject({
+type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
+const SimulationStateSuccess = funtypes.ReadonlyObject({
 	success: funtypes.Literal(true),
 	simulationStateInput: SimulationStateInput,
 	simulatedBlocks: funtypes.ReadonlyArray(SimulationStateBlock),
@@ -253,6 +265,12 @@ export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
 	funtypes.ReadonlyObject({ transaction: TransactionWithAddressBookEntries })
 )
 
+export type NonSimulatedAndVisualizedTransaction = funtypes.Static<typeof NonSimulatedAndVisualizedTransaction>
+export const NonSimulatedAndVisualizedTransaction = funtypes.Intersect(
+	NonSimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({ transaction: TransactionWithAddressBookEntries })
+)
+
 export type SimulationAndVisualisationResults = {
 	blockNumber: bigint,
 	blockTimestamp: Date,
@@ -266,7 +284,7 @@ export type SimulationAndVisualisationResults = {
 }
 
 export type TransactionVisualizationParameters = {
-	simTx: SimulatedAndVisualizedTransaction
+	simTx: MaybeSimulatedTransaction
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	activeAddress: bigint
@@ -304,22 +322,27 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 	tokenIdName: funtypes.String
 })
 
-export type VisualizedSimulationStateSuccess = funtypes.Static<typeof VisualizedSimulationStateSuccess>
-export const VisualizedSimulationStateSuccess = funtypes.ReadonlyObject({
-	success: funtypes.Literal(true),
-	visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
-		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
-		blockTimeManipulation: BlockTimeManipulation
-	}))
-})
+export type MaybeSimulatedTransaction = funtypes.Static<typeof MaybeSimulatedTransaction>
+export const MaybeSimulatedTransaction = funtypes.Union(NonSimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransaction)
 
 export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulationState>
 export const VisualizedSimulationState = funtypes.Union(
-	VisualizedSimulationStateSuccess,
+	funtypes.ReadonlyObject({
+		success: funtypes.Literal(true),
+		visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+			blockTimeManipulation: BlockTimeManipulation
+		}))
+	}),
 	funtypes.ReadonlyObject({
 		success: funtypes.Literal(false),
-		jsonRpcError: JsonRpcErrorResponse
+		jsonRpcError: JsonRpcErrorResponse,
+		visualizedBlocks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(NonSimulatedAndVisualizedTransaction),
+			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+			blockTimeManipulation: BlockTimeManipulation
+		}))
 	})
 )
 

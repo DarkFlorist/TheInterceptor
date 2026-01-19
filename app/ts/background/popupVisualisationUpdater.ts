@@ -60,10 +60,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 					tokenPriceQuoteToken: undefined,
 					namedTokenIds: [],
 					simulationState: undefined,
-					visualizedSimulationState: {
-						success: true,
-						visualizedBlocks: []
-					},
+					visualizedSimulationState: { success: true, visualizedBlocks: [] },
 					numberOfAddressesMadeRich,
 					simulationResultState: 'corrupted' as const
 				})

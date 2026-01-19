@@ -72,14 +72,18 @@ const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNam
 	}
 }
 
+export const getFromAndToMetadata = (transaction: { from: bigint, to: bigint | null }, addressBookEntries: readonly AddressBookEntry[]) => {
+	const enrichedFrom = addressBookEntries.find((entry) => addressString(entry.address) === addressString(transaction.from))
+	if (enrichedFrom === undefined) throw new Error('missing metadata')
+	const to = transaction.to
+	const enrichedTo = to !== null ? addressBookEntries.find((entry) => addressString(entry.address) === addressString(to)) : undefined
+	if (transaction.to !== null && enrichedTo === undefined) throw new Error('missing metadata')
+	return { from: enrichedFrom, to: enrichedTo }
+}
+
 export function formSimulatedAndVisualizedTransactions(simulatedTransactions: readonly SimulatedTransaction[], eventsForEachTransaction: readonly EnrichedEthereumEvents[], rpcNetwork: RpcNetwork, parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simulatedTransactions.map((simulatedTx, index) => {
-		const from = addressMetaData.get(addressString(simulatedTx.preSimulationTransaction.signedTransaction.from))
-		if (from === undefined) throw new Error('missing metadata')
-
-		const to = simulatedTx.preSimulationTransaction.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.preSimulationTransaction.signedTransaction.to)) : undefined
-		if (simulatedTx.preSimulationTransaction.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
 		const transactionEvents = eventsForEachTransaction[index]
 		if (transactionEvents === undefined) throw new Error('visualizer result was undefined')
 		const protectorResult = protectorResults[index]
@@ -126,9 +130,10 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
 		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ?  new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
+		const toFrom = getFromAndToMetadata(simulatedTx.preSimulationTransaction.signedTransaction, addressBookEntries)
 		return {
-			transaction: { from, to, rpcNetwork, ...otherFields },
-			...(to !== undefined ? { to } : {}),
+			transaction: { ...toFrom, rpcNetwork, ...otherFields },
+			...(toFrom.to !== undefined ? { to: toFrom.to } : {}),
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			events: modifiedTransactionEvents,
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
@@ -143,10 +148,10 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 						...simulatedTx.ethSimulateV1CallResult.error,
 						decodedErrorMessage: decodeEthereumError(availableAbis, simulatedTx.ethSimulateV1CallResult.error).reason,
 					},
-					statusCode: simulatedTx.ethSimulateV1CallResult.status,
+					transactionStatus: 'Transaction Failed',
 				}
 				: {
-					statusCode: simulatedTx.ethSimulateV1CallResult.status,
+					transactionStatus: 'Transaction Succeeded',
 				}
 			),
 			website: simulatedTx.preSimulationTransaction.website,

@@ -1,6 +1,5 @@
-import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
-import { Erc721TokenApprovalChange, ERC20TokenApprovalChange } from '../../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { TokenSymbol, TokenAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
@@ -13,6 +12,8 @@ import { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerN
 import { deduplicateByFunction } from '../../../utils/array.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { useComputed } from '@preact/signals'
+import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
+import { RpcNetwork } from '../../../types/rpc.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -83,7 +84,16 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 	</>
 }
 
-export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
+type CatchAllVisualizerParams = {
+	simTx: SimulatedAndVisualizedTransaction
+	activeAddress: bigint
+	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	addressMetadata: readonly AddressBookEntry[]
+	rpcNetwork: RpcNetwork
+}
+
+export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 	const msgSender = param.simTx.transaction.from.address
 	const tokenResults = extractTokenEvents(param.simTx.events)
 	const ensEvents = extractEnsEvents(param.simTx.events)

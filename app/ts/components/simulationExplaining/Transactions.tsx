@@ -1,4 +1,4 @@
-import { BlockTimeManipulationWithNoDelay, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -57,7 +57,7 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 }
 
 export type TransactionImportanceBlockParams = {
-	simTx: SimulatedAndVisualizedTransaction
+	simTx: MaybeSimulatedTransaction
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
@@ -67,7 +67,8 @@ export type TransactionImportanceBlockParams = {
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
-	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
+	if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
+	if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
 		case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
@@ -89,8 +90,8 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
-		case 'ArbitraryContractExecution': return <CatchAllVisualizer { ...param } />
-		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters }/>
+		case 'ArbitraryContractExecution': return <CatchAllVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } activeAddress = { param.activeAddress } simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetadata = { param.addressMetadata } rpcNetwork = { param.rpcNetwork }/>
+		case 'GovernanceVote': return <GovernanceVoteVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } activeAddress = { param.activeAddress } simTx = { param.simTx } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } renameAddressCallBack = { param.renameAddressCallBack }/>
 		default: assertNever(transactionIdentification)
 	}
 }
@@ -139,25 +140,24 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	}
 	return (
 		<div class = 'card'>
-			<TransactionHeader
-				simTx = { param.simTx }
-				removeTransactionOrSignedMessage = { remove }
-			/>
+			<TransactionHeader simTx = { param.simTx } removeTransactionOrSignedMessage = { remove } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { param.simulationAndVisualisationResults.value.rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
-				<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
-				<TransactionsAccountChangesCard
-					simTx = { param.simTx }
-					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-					renameAddressCallBack = { param.renameAddressCallBack }
-					addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
-					namedTokenIds = { param.simulationAndVisualisationResults.value.namedTokenIds }
-				/>
-				<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
-				<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
-				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries } />
+				{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
+					<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
+					<TransactionsAccountChangesCard
+						simTx = { param.simTx }
+						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						renameAddressCallBack = { param.renameAddressCallBack }
+						addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
+						namedTokenIds = { param.simulationAndVisualisationResults.value.namedTokenIds }
+					/>
+					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
+					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
+				</> }
+				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
@@ -165,7 +165,9 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						<TransactionCreated created = { param.simTx.created } />
 					</div>
 					<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
-						<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.value.rpcNetwork } />
+						{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
+							<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.value.rpcNetwork } />
+						</> }
 					</div>
 				</span>
 			</div>
@@ -175,7 +177,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 
 type TransactionOrMessageWithBlockTimeManipulatorParams = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
-	simTx: SimulatedAndVisualizedTransaction | VisualizedPersonalSignRequest
+	simTx: MaybeSimulatedTransaction | VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
@@ -211,7 +213,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 		}
 	}, [])
 
-	const timeSelectorOnChange = (transactionOrMessage: SimulatedAndVisualizedTransaction | VisualizedPersonalSignRequest) => {
+	const timeSelectorOnChange = (transactionOrMessage: MaybeSimulatedTransaction | VisualizedPersonalSignRequest) => {
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
 		if (blockTimeManipulation === undefined) return
 		const transactionOrMessageIdentifier = 'activeAddress' in transactionOrMessage ?
@@ -262,7 +264,6 @@ type TransactionsAndSignedMessagesParams = {
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const transactionsAndMessagesInBlock = useComputed(() => {
-		if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return []
 		const visualizedBlocks = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks
 		return visualizedBlocks.map((block) => ({
 			operations: [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions],
