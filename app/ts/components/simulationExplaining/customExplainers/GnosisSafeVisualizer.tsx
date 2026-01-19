@@ -40,6 +40,11 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 			<ErrorComponent text = { simulateExecutionReply.data.errorMessage }/>
 		</div>
 	}
+	if (simulateExecutionReply.data.result.visualizedSimulationState.success === false) {
+		return <div style = 'display: grid; grid-template-rows: max-content' >
+			<ErrorComponent text = { JSON.stringify(simulateExecutionReply.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
+		</div>
+	}
 	const simTx = simulateExecutionReply.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	if (simTx === undefined) return <></>
 

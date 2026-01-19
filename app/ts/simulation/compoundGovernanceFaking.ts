@@ -52,13 +52,13 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	]
 	const parentBlock = await ethereumClientService.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	const input = { blocks: [ {
+	const input = [ {
 		stateOverrides: {},
 		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 		simulateWithZeroBaseFee: true,
-	} ] } as const
+	} ] as const
 
 	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
 	if (governanceContractCalls === undefined) throw new Error('simulateTransactionsAndSignatures returned zero length aray')

@@ -78,7 +78,9 @@ export async function main() {
 		rpcNetwork: rpcNetwork,
 		baseFeePerGas: 0n,
 		simulationConductedTimestamp: new Date(0),
-		simulatedBlocks: []
+		success: true,
+		simulatedBlocks: [],
+		simulationStateInput: [],
 	}
 
 	const exampleTransaction = {
@@ -117,7 +119,7 @@ export async function main() {
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
 			if (block === null) throw new Error('Block was null')
-			const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState, [{
+			const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState.simulationStateInput, [{
 				signedTransaction: mockSignTransaction(exampleTransaction),
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 				created: new Date(),

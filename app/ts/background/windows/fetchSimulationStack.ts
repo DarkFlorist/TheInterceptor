@@ -132,11 +132,11 @@ export const openFetchSimulationStackDialog = async (
 
 export const getSimulationStackHash = (simulationState: SimulationStateInput | undefined) => {
 	if (simulationState === undefined) return 'undefined'
-	const messages = stringifyJSONWithBigInts(simulationState.blocks.map((x) => x.signedMessages.map((x) => x.originalRequestParameters)))
-	const overrides = stringifyJSONWithBigInts(simulationState.blocks.map((x) => x.stateOverrides))
-	const transactions = stringifyJSONWithBigInts(simulationState.blocks.map((x) => x.transactions.map((x) => x.originalRequestParameters)))
-	const blockTime = stringifyJSONWithBigInts(simulationState.blocks.map((x) => x.blockTimeManipulation))
-	const baseFee = stringifyJSONWithBigInts(simulationState.blocks.map((x) => x.simulateWithZeroBaseFee))
+	const messages = stringifyJSONWithBigInts(simulationState.map((x) => x.signedMessages.map((x) => x.originalRequestParameters)))
+	const overrides = stringifyJSONWithBigInts(simulationState.map((x) => x.stateOverrides))
+	const transactions = stringifyJSONWithBigInts(simulationState.map((x) => x.transactions.map((x) => x.originalRequestParameters)))
+	const blockTime = stringifyJSONWithBigInts(simulationState.map((x) => x.blockTimeManipulation))
+	const baseFee = stringifyJSONWithBigInts(simulationState.map((x) => x.simulateWithZeroBaseFee))
 	return keccak256(toUtf8Bytes(JSON.stringify([messages, overrides, transactions, blockTime, baseFee])))
 }
 

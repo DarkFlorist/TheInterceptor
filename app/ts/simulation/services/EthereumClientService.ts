@@ -218,7 +218,7 @@ export class EthereumClientService {
 			feeRecipient: parentBlock.miner,
 		}
 
-		for (const inputBlock of simulationStateInput.blocks) {
+		for (const inputBlock of simulationStateInput) {
 			const newBlockOverride = {
 				...previousBlockOverride,
 				baseFeePerGas: inputBlock.simulateWithZeroBaseFee ? 0n : baseFeePerGas,
@@ -269,7 +269,7 @@ export class EthereumClientService {
 			}
 		}
 
-		const blockStateCalls = await Promise.all(simulationStateInput.blocks.map(async (block, index) => {
+		const blockStateCalls = await Promise.all(simulationStateInput.map(async (block, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
 			return await getBlockStateCall(block, blockOverrideForBlock)

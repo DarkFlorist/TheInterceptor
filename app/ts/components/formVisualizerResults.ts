@@ -153,6 +153,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			created: simulatedTx.preSimulationTransaction.created,
 			transactionIdentifier: simulatedTx.preSimulationTransaction.transactionIdentifier,
 			parsedInputData: singleParsedInputData,
+			originalRequestParameters: simulatedTx.preSimulationTransaction.originalRequestParameters,
 		}
 	})
 }
