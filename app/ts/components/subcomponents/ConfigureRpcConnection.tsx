@@ -26,7 +26,7 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 const throwImprovedError = (error: Error, url: string) => {
 	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
 	if (error.message.startsWith('Failed to fetch')) throw new Error(`Failed to connect to the RPC.`)
-	throw Error
+	throw error
 }
 
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
