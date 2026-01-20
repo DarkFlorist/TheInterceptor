@@ -11,8 +11,9 @@ import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
-import { JsonRpcResponseError } from '../../utils/errors.js'
 import { XMarkIcon } from './icons.js'
+import { FetchRequest } from 'ethers'
+import { JsonRpcResponseError } from '../../utils/errors.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url: string) => void
@@ -22,15 +23,25 @@ type ConfigureRpcContext = {
 
 const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undefined)
 
+const throwImprovedError = (error: Error, url: string) => {
+	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
+	if (error.message.startsWith('Failed to fetch')) throw new Error(`Failed to connect to the RPC.`)
+	throw error
+}
+
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
 
 	const checkServerAvailability = async (url: string) => {
 		try {
-			const provider = new JsonRpcProvider(url)
+			const fetchRequest = new FetchRequest(url)
+			fetchRequest.timeout = 10000
+			const provider = new JsonRpcProvider(fetchRequest)
 			return await provider.getNetwork()
-		} catch {
-			throw new Error('Server should be reachable')
+		} catch(error: unknown) {
+			if (error instanceof Error) return throwImprovedError(error, url)
+			console.warn('RPC chain id error', error)
+			throw new Error('Unable to fetch network information from the RPC.')
 		}
 	}
 
@@ -73,18 +84,17 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			const parsedResult = EthSimulateV1Result.safeParse(serializedResult)
 
 			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
-		} catch (error) {
-			let errorMessage = 'RPC eth_simulateV1 validation error'
-			console.warn(errorMessage, error)
-			if (error instanceof Error) errorMessage = `${ errorMessage } (${ error.message })`
-			if (error instanceof JsonRpcResponseError) errorMessage = error.message
+		} catch (error: unknown) {
+			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
+			if (error instanceof Error) return throwImprovedError(error, url)
+			console.warn('RPC eth_simulateV1 validation error', error)
 			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
 		}
 	}
 
 	const queryRpcInfo = (url: string) => waitFor(async () => {
-		const network = await checkServerAvailability(url)
-		await validateEthSimulateSupport(url)
+		const network = await checkServerAvailability(url.trim())
+		await validateEthSimulateSupport(url.trim())
 		return network
 	})
 
@@ -190,16 +200,16 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 	}
 
 	const parseRpcFormData = (formData: FormData) => {
-		const chainIdFromForm = formData.get('chainId')?.toString()
-		const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString()
-		const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString()
+		const chainIdFromForm = formData.get('chainId')?.toString().trim()
+		const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString().trim()
+		const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString().trim()
 		const isBlockExplorerDefined = blockExplorerUrlForm !== undefined && blockExplorerApiKeyForm !== undefined && blockExplorerUrlForm.length > 0 && blockExplorerApiKeyForm.length > 0
 		const newRpcEntry = {
-			name: formData.get('name')?.toString() || '',
+			name: formData.get('name')?.toString().trim() || '',
 			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
-			httpsRpc: formData.get('httpsRpc')?.toString() || '',
-			currencyName: formData.get('currencyName')?.toString() || '',
-			currencyTicker: formData.get('currencyTicker')?.toString() || '',
+			httpsRpc: formData.get('httpsRpc')?.toString().trim() || '',
+			currencyName: formData.get('currencyName')?.toString().trim() || '',
+			currencyTicker: formData.get('currencyTicker')?.toString().trim() || '',
 			...isBlockExplorerDefined ? { blockExplorer: { apiUrl: blockExplorerUrlForm || '', apiKey: blockExplorerApiKeyForm } } : {},
 			minimized: true,
 			primary: false,
@@ -286,8 +296,10 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 
 	const deferredQueryAnRpcUrl = (url: string) => {
 		if (timeout.value) clearTimeout(timeout.value)
+		if (!inputRef.current) return
+		inputRef.current.setCustomValidity('')
 		timeout.value = setTimeout(() => {
-			queryRpcInfo(url)
+			queryRpcInfo(url.trim())
 		}, RPC_URL_FETCH_DEBOUNCE)
 	}
 
@@ -298,7 +310,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 				if (defaultValue) inputRef.current.setCustomValidity('')
 				return
 			case 'pending':
-				inputRef.current.setCustomValidity('RPC is not yet verified')
+				inputRef.current.setCustomValidity('')
 				return
 			case 'rejected':
 				inputRef.current.setCustomValidity(rpcQuery.value.error.message)
