@@ -372,9 +372,12 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		const simulationState = settings.simulationMode ? await getUpdatedSimulationState(simulator.ethereum) : undefined
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
-	} catch (error) {
-		if (error instanceof Error && isFailedToFetchError(error)) {
+	} catch (error: unknown) {
+		if ((error instanceof Error && isFailedToFetchError(error))) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
+		}
+		if (error instanceof JsonRpcResponseError) {
+			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...error.serialize() })
 		}
 		handleUnexpectedError(error)
 		return replyToInterceptedRequest(websiteTabConnections, {
