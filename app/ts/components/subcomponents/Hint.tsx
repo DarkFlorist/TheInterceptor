@@ -1,5 +1,5 @@
 import type { ComponentChild, ComponentChildren } from 'preact'
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 
 interface Props {
 	children: ComponentChild | ComponentChild[]
@@ -12,71 +12,79 @@ const timerAttribute = 'data-hint-clickable-hide-timer-ms'
 export default function Container(props: Props) {
 	const copyAttribute = props.attribute || 'data-hint'
 	const toolTipAttribute = props.attribute || 'data-tooltip'
-	const [content, setContent] = useState<string>('')
-	const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
+
+	const [content, setContent] = useState('')
 	const [clickPosition, setClickPosition] = useState<{ x: number, y: number } | null>(null)
 
-	let copyMessageTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined
-	let toolTipTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined
+	const containerElementRef = useRef<HTMLDivElement | null>(null)
+	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const toolTipTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-	const onRefChange = useCallback( (containerElement: HTMLDivElement | null) => {
-		setContainerElement(containerElement)
-		if (containerElement) {
-			const hide = (e: Event) => {
-				if (!(e.target instanceof Element) || !e.target.hasAttribute(toolTipAttribute)) return
-				clearTimeout(toolTipTimeoutId)
-				if (copyMessageTimeoutId !== undefined) return
+	useEffect(() => {
+		const containerElement = containerElementRef.current
+		if (!containerElement) return
+
+		const hide = (event: Event) => {
+			if (!(event.target instanceof Element) || !event.target.hasAttribute(toolTipAttribute)) return
+
+			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
+
+			if (copyMessageTimeoutIdRef.current !== null) return
+
+			setContent('')
+			setClickPosition(null)
+		}
+
+		const click = (event: MouseEvent) => {
+			if (!(event.target instanceof Element) || !event.target.hasAttribute(copyAttribute) || !event.target.hasAttribute(timerAttribute)) return
+
+			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
+
+			const delayValue = event.target.getAttribute(timerAttribute)
+			if (delayValue === null) return
+
+			clearTimeout(copyMessageTimeoutIdRef.current ?? undefined)
+			copyMessageTimeoutIdRef.current = null
+
+			setContent(event.target.getAttribute(copyAttribute) || '')
+			setClickPosition({ x: event.clientX, y: event.clientY })
+
+			copyMessageTimeoutIdRef.current = setTimeout(() => {
 				setContent('')
 				setClickPosition(null)
-			}
-
-			const click = (e: MouseEvent) => {
-				if (!(e.target instanceof Element) || !e.target.hasAttribute(copyAttribute) || !e.target.hasAttribute(timerAttribute)) return
-				clearTimeout(toolTipTimeoutId)
-				const delay = e.target.getAttribute(timerAttribute)
-				if (delay === null) return
-				clearTimeout(copyMessageTimeoutId)
-				copyMessageTimeoutId = undefined
-
-				// show on click
-				setContent(e.target.getAttribute(copyAttribute) || '')
-				setClickPosition({ x: e.clientX, y: e.clientY })
-
-				copyMessageTimeoutId = setTimeout( () => {
-					// hide after timeout
-					setContent('')
-					setClickPosition(null)
-					copyMessageTimeoutId = undefined
-				}, parseInt(delay))
-			}
-
-			const mouseover = (e: MouseEvent) => {
-				if (!(e.target instanceof Element) || (!e.target.hasAttribute(toolTipAttribute) && !e.target.hasAttribute(timerAttribute))) return
-				clearTimeout(toolTipTimeoutId)
-
-				// show on tooltip on mouseover
-				const content = e.target.getAttribute(toolTipAttribute) || ''
-
-				toolTipTimeoutId = setTimeout( () => {
-					setContent(content)
-					setClickPosition({ x: e.clientX, y: e.clientY })
-				}, 250)
-			}
-
-			containerElement.addEventListener('click', click)
-			containerElement.addEventListener('mouseover', mouseover)
-			containerElement.addEventListener('mouseout', hide)
-			containerElement.addEventListener('focusout', hide)
+				copyMessageTimeoutIdRef.current = null
+			}, parseInt(delayValue))
 		}
-	}, [containerElement])
+
+		const mouseover = (event: MouseEvent) => {
+			if (!(event.target instanceof Element) || (!event.target.hasAttribute(toolTipAttribute) && !event.target.hasAttribute(timerAttribute))) return
+			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
+			const tooltipContent = event.target.getAttribute(toolTipAttribute) || ''
+			toolTipTimeoutIdRef.current = setTimeout(() => {
+				setContent(tooltipContent)
+				setClickPosition({ x: event.clientX, y: event.clientY })
+			}, 250)
+		}
+
+		containerElement.addEventListener('click', click)
+		containerElement.addEventListener('mouseover', mouseover)
+		containerElement.addEventListener('mouseout', hide)
+		containerElement.addEventListener('focusout', hide)
+
+		return () => {
+			containerElement.removeEventListener('click', click)
+			containerElement.removeEventListener('mouseover', mouseover)
+			containerElement.removeEventListener('mouseout', hide)
+			containerElement.removeEventListener('focusout', hide)
+		}
+	}, [copyAttribute, toolTipAttribute])
 
 	return (
-		<div ref = { onRefChange } style = 'position: relative; overflow-x: hidden;'>
-			{ content && containerElement && clickPosition && (
+		<div ref = { containerElementRef } style = 'position: relative; overflow-x: hidden;'>
+			{ content && clickPosition && (
 				<Hint
 					content = { content }
 					template = { props.template }
-					rootBoundingRect = { containerElement.getBoundingClientRect() }
 					clickPosition = { clickPosition }
 				/>
 			) }
@@ -88,13 +96,12 @@ export default function Container(props: Props) {
 interface HintProps {
 	content: string
 	template?: (content: string) => ComponentChildren
-	rootBoundingRect: ClientRect
 	clickPosition: { x: number, y: number }
 }
 
-function calculatePosition(clickPosX: number, clickPosY: number, hintWidth: number) {
-	const positionX = clickPosX - hintWidth / 2
-	const positionY = clickPosY + 10
+function calculatePosition(clickPositionX: number, clickPositionY: number, hintWidth: number) {
+	const positionX = clickPositionX - hintWidth / 2
+	const positionY = clickPositionY + 10
 	const borderPadding = 30
 
 	return {
@@ -104,31 +111,18 @@ function calculatePosition(clickPosX: number, clickPosY: number, hintWidth: numb
 }
 
 function Hint(props: HintProps) {
-	const hint = useRef<HTMLSpanElement>(null)
-	const [dialogPosition, setDialogPosition] = useState<{ left: number, top: number }>({ left: -1000, top: -1000 })
-	// Render way off-screen to prevent rubber banding from initial (and unavoidable) render.
-	const [hintWidth, setHintWidth] = useState(10000)
-
-	const clean = () => {
-		setDialogPosition({ left: -1000, top: -1000 })
-	}
+	const hintElementRef = useRef<HTMLSpanElement>(null)
+	const [dialogPosition, setDialogPosition] = useState({ left: -1000, top: -1000 })
 
 	useEffect(() => {
-		globalThis.addEventListener('resize', clean)
-		return () => {
-			globalThis.removeEventListener('resize', clean)
-		}
-	})
-
-	useEffect(() => {
-		if (hint.current === null) return
-		setHintWidth(hint.current.getBoundingClientRect().width)
-		setDialogPosition(calculatePosition(props.clickPosition.x, props.clickPosition.y, hintWidth))
-	}, [hint, props.clickPosition, hintWidth] )
+		if (hintElementRef.current === null) return
+		const measuredWidth = hintElementRef.current.getBoundingClientRect().width
+		setDialogPosition(calculatePosition(props.clickPosition.x, props.clickPosition.y, measuredWidth))
+	}, [props.clickPosition])
 
 	return (
-		<div class ='preact-hint' style = { dialogPosition }>
-			<span class = 'preact-hint__content' ref = { hint }>
+		<div class = 'preact-hint' style = { dialogPosition }>
+			<span class = 'preact-hint__content' ref = { hintElementRef }>
 				{ props.template ? props.template(props.content) : props.content }
 			</span>
 		</div>
