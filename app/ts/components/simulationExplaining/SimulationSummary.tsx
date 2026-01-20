@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, MaybeSimulatedTransaction } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
@@ -24,7 +24,6 @@ import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
-import { ErrorComponent } from '../subcomponents/Error.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -580,15 +579,20 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 }
 
 type TransactionHeaderParams = {
-	simTx: SimulatedAndVisualizedTransaction
+	simTx: MaybeSimulatedTransaction
 	removeTransactionOrSignedMessage?: () => void
 }
 
 export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : TransactionHeaderParams) {
+	const icon = useComputed(() => {
+		if (simTx.transactionStatus === 'Failed To Simulate' || simTx.transactionStatus === 'Transaction Failed') return '../img/error-icon.svg'
+		if (simTx.quarantine) return '../img/warning-sign.svg'
+		return '../img/success-icon.svg'
+	})
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { simTx.statusCode === 'success' ? ( simTx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+				<img src = { icon.value } />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
@@ -655,9 +659,7 @@ type SimulationSummaryParams = {
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) {
-		return <ErrorComponent text = { JSON.stringify(param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
-	}
+	if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return <></>
 	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
 	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
@@ -671,7 +673,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const icon = useComputed(() => {
 		if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return '../img/error-icon.svg'
 		const transactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
-		if (transactions.some((transaction) => transaction.statusCode !== 'success')) return '../img/error-icon.svg'
+		if (transactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')) return '../img/error-icon.svg'
 		if (transactions.some((transaction) => transaction.quarantine)) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
@@ -771,7 +773,7 @@ type RawTransactionDetailsCardParams = {
 	parsedInputData: EnrichedEthereumInputData
 	transaction: TransactionWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	gasSpent: bigint
+	gasSpent: bigint | undefined
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
 }
@@ -807,8 +809,10 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 						<dd>{ transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack }/> }</dd>
 						<dt>Value</dt>
 						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } fontSize = 'normal'/> }</dd>
-						<dt>Gas used</dt>
-						<dd>{ `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
+						{ gasSpent === undefined ? <></> : <>
+							<dt>Gas used</dt>
+							<dd>{ `${ gasSpent.toString(10) } / ${ transaction.gas.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
+						</> }
 						<dt>Gas limit </dt>
 						<dd style = 'display: flex; align-items: center; justify-content: center;'>
 							<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>

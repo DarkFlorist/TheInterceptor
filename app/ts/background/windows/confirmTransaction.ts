@@ -48,7 +48,7 @@ export async function updateConfirmTransactionView(simulator: Simulator) {
 			}
 		}
 		await Promise.all([
-			sendPopupMessageToOpenWindows(messagePendingTransactions),
+			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)),
 			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
 		])
 		return true

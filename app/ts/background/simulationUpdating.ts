@@ -7,7 +7,7 @@ import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/Enri
 import { PendingTransaction } from '../types/accessRequest.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { BlockTimeManipulation, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, SimulationStateSuccess, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, NonSimulatedAndVisualizedTransaction, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -21,7 +21,7 @@ import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { formSimulatedAndVisualizedTransactions } from '../components/formVisualizerResults.js'
+import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getUpdatedSimulationState } from './background.js'
 
@@ -96,14 +96,14 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 }
 
 export async function getMetadataForSimulation(
-	simulationState: SimulationStateSuccess,
+	simulationState: SimulationState,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
 	inputData: readonly EnrichedEthereumInputData[],
 ) {
 	const allEvents = eventsForEachTransaction.flat()
-	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(ethereum, requestAbortController, allEvents, inputData, simulationState))
+	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(ethereum, requestAbortController, allEvents, inputData, simulationState.simulationStateInput))
 	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(ethereum, allEvents))
 	const addressBookEntries = await addressBookEntryPromises
 	const ensPromise = silenceChromeUnCaughtPromise(retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries))
@@ -120,20 +120,17 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
 		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
-		const pendingResults = pendingTransaction.popupVisualisation
-		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
 		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
 		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
 		if (fourByte === undefined || fourByteString === undefined) return returnError('Could not identify the 4byte signature')
 		const explanation = FourByteExplanations[fourByte]
-		if (!pendingResults.data.visualizedSimulationState.success) return returnError('Simulation failed')
 		if ((explanation !== 'Cast Vote'
 			&& explanation !== 'Submit Vote'
 			&& explanation !== 'Cast Vote by Signature'
 			&& explanation !== 'Cast Vote with Reason'
 			&& explanation !== 'Cast Vote with Reason and Additional Info'
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
-			|| pendingResults.data.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
+		) return returnError('Could not identify the transaction as a vote')
 
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
 		const voteFunction = governanceContractInterface.getFunction(fourByteString)
@@ -327,21 +324,60 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		return entry
 	}
 	const weth = await getWeth()
+	const settings = await getSettings()
+
+	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
+		simulationState.simulationStateInput, async (block) => {
+			return await promiseAllMapAbortSafe(block.transactions, async (transaction) =>
+				await parseInputData({ to: transaction.signedTransaction.to, input: transaction.signedTransaction.input, value: transaction.signedTransaction.value }, ethereum, requestAbortController)
+			)
+		}
+	)
+
 	if (simulationState.success === false) {
+		const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
+		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, [], parsedInputDataForEachBlockAndTransaction.flat())
+
+		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
+			const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
+			if (parsedInputDataForBlock === undefined) throw new Error('Block index overflow')
+
+			return {
+				visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
+				simulatedAndVisualizedTransactions: block.transactions.map((transaction, index): NonSimulatedAndVisualizedTransaction => {
+					const removeFromAndToFromSignedTransaction = () => {
+						const { from, to, ...otherFields } = transaction.signedTransaction
+						return otherFields
+					}
+					const otherFields = removeFromAndToFromSignedTransaction()
+					const parsedInputData = parsedInputDataForBlock[index]
+					if (parsedInputData === undefined) throw new Error('Transaction index overflow')
+					return {
+						...transaction,
+						transactionStatus: 'Failed To Simulate',
+						error: { code: -1000000, message: 'Could not simulate transaction', decodedErrorMessage: 'Could not simulate transaction' },
+						parsedInputData,
+						transaction: { ...getFromAndToMetadata(transaction.signedTransaction, updatedMetadata.addressBookEntries), rpcNetwork: settings.activeRpcNetwork, ...otherFields },
+					}
+				}),
+				blockTimeManipulation: block.blockTimeManipulation,
+			}
+		})
+
 		return {
 			addressBookEntries: [],
 			tokenPriceEstimates: [],
 			tokenPriceQuoteToken: weth,
 			namedTokenIds: [],
 			simulationState,
-			visualizedSimulationState: simulationState,
+			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
 		}
 	}
+
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
 	const eventsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block) =>
 		await promiseAllMapAbortSafe(block.simulatedTransactions,
@@ -358,14 +394,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		}
 	)
 
-	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
-		simulationState.simulatedBlocks, async (block) => {
-			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
-			return await promiseAllMapAbortSafe(transactions, async (transaction) =>
-				await parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
-			)
-		}
-	)
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
 	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
@@ -375,7 +403,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	const protectorsForEachBlockAndTransaction = await protectorsForEachBlockAndTransactionPromise
 
 	const tokenPriceEstimates = await tokenPriceEstimatesPromise
-	const settings = await settingsPromise
 
 	const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block, blockIndex) => {
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
@@ -388,6 +415,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
 	})
+
 	return {
 		namedTokenIds: updatedMetadata.namedTokenIds,
 		addressBookEntries: updatedMetadata.addressBookEntries,
