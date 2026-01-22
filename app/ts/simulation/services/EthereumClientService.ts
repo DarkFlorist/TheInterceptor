@@ -1,4 +1,4 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32 } from '../../types/wire-types.js'
+import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
@@ -6,7 +6,7 @@ import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import { RpcEntry } from '../../types/rpc.js'
@@ -213,12 +213,51 @@ export class EthereumClientService {
 
 		const blockOverrides: BlockOverrides[] = []
 		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
-		let previousBlockOverride = {
-			time: parentBlock.timestamp,
-			feeRecipient: parentBlock.miner,
+
+		const gasLimitTransaction = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+
+		const splitTransactionsByGasLimit = (currentTransactions: EthereumSendableSignedTransaction[], gasLimit: bigint): EthereumSendableSignedTransaction[][] => {
+			const transactionChunks: EthereumSendableSignedTransaction[][] = []
+			let currentChunk: EthereumSendableSignedTransaction[] = []
+			let currentChunkGasSum: bigint = 0n
+			for (const transaction of currentTransactions) {
+				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
+				if (currentChunkGasSum + transaction.gas <= gasLimit) {
+					currentChunk.push(transaction)
+					currentChunkGasSum = currentChunkGasSum + transaction.gas
+				} else {
+					transactionChunks.push(currentChunk)
+					currentChunk = [ transaction ]
+					currentChunkGasSum = transaction.gas
+				}
+			}
+			if (currentChunk.length > 0) transactionChunks.push(currentChunk)
+			return transactionChunks
 		}
 
-		for (const inputBlock of simulationStateInput) {
+		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
+		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.signedTransaction) })) }))
+		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
+		const newBlocks: SimulationStateInputMinimalDataBlock[] = []
+		for (const inputBlock of gasLimitedInput) {
+			const signedTransactions = inputBlock.transactions.map((x) => x.signedTransaction)
+			if (calculateTotalGasUsed(signedTransactions) > parentBlock.gasLimit) {
+				const splitted = splitTransactionsByGasLimit(signedTransactions, parentBlock.gasLimit)
+				for (const [index, newTransactions] of splitted.entries()) {
+					const transactions = newTransactions.map((transaction) => ({ signedTransaction: transaction }))
+					if (index === 0) {
+						newBlocks.push({ ...inputBlock, transactions })
+					} else {
+						newBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+					}
+				}
+			} else {
+				newBlocks.push(inputBlock)
+			}
+		}
+
+		let previousBlockOverride = { time: parentBlock.timestamp, feeRecipient: parentBlock.miner }
+		for (const inputBlock of newBlocks) {
 			const newBlockOverride = {
 				...previousBlockOverride,
 				baseFeePerGas: inputBlock.simulateWithZeroBaseFee ? 0n : baseFeePerGas,
@@ -252,7 +291,6 @@ export class EthereumClientService {
 				acc[current.key] = current.value
 				return acc
 			}, {} as { [key: string]: bigint } )
-
 			return {
 				calls: transactionsWithRemoveZeroPricedOnes,
 				blockOverrides,
@@ -269,7 +307,7 @@ export class EthereumClientService {
 			}
 		}
 
-		const blockStateCalls = await Promise.all(simulationStateInput.map(async (block, index) => {
+		const blockStateCalls = await Promise.all(newBlocks.map(async (block, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
 			return await getBlockStateCall(block, blockOverrideForBlock)
@@ -278,7 +316,7 @@ export class EthereumClientService {
 		return {
 			method: 'eth_simulateV1',
 			params: [{
-				blockStateCalls: blockStateCalls,
+				blockStateCalls,
 				traceTransfers: true,
 				validation: false,
 			},
