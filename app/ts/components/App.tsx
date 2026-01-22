@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation } from '../types/visualizer-types.js'
+import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
@@ -185,6 +185,20 @@ export function App() {
 			})
 		}
 
+		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
+			if (state === undefined) return
+			setSimulationState(
+				state.simulationState,
+				state.addressBookEntries,
+				state.tokenPriceEstimates,
+				state.visualizedSimulationState,
+				state.activeAddress,
+				state.namedTokenIds,
+			)
+			setSimulationUpdatingState(state.simulationUpdatingState)
+			setSimulationResultState(state.simulationResultState)
+		}
+
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
 			setIsSettingsLoaded((isSettingsLoaded) => {
@@ -194,18 +208,7 @@ export function App() {
 				setInterceptorDisabled(data.interceptorDisabled)
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
 				if (isSettingsLoaded === false) setTabConnection(data.tabState.tabIconDetails)
-				if (data.visualizedSimulatorState !== undefined) {
-					setSimulationState(
-						data.visualizedSimulatorState.simulationState,
-						data.visualizedSimulatorState.addressBookEntries,
-						data.visualizedSimulatorState.tokenPriceEstimates,
-						data.visualizedSimulatorState.visualizedSimulationState,
-						data.visualizedSimulatorState.activeAddress,
-						data.visualizedSimulatorState.namedTokenIds,
-					)
-					setSimulationUpdatingState(data.visualizedSimulatorState.simulationUpdatingState)
-					setSimulationResultState(data.visualizedSimulatorState.simulationResultState)
-				}
+				updateVisualizedState(data.visualizedSimulatorState)
 				setTabState(data.tabState)
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
@@ -265,7 +268,7 @@ export function App() {
 				}
 				case 'popup_update_rpc_list': return false
 				case 'popup_simulation_state_changed': {
-					sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+					updateVisualizedState(parsed.data.visualizedSimulatorState)
 					return false
 				}
 				case 'popup_isMainPopupWindowOpen': {
