@@ -21,7 +21,8 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
 		if (invalidateOldState) {
 			const simulationId = popupVisualisation.simulationId + 1
-			await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
+			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
+			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		} else if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState !== undefined) {
 			const lastUpdate = (popupVisualisation.simulationState.simulationConductedTimestamp.getTime() - new Date().getTime()) / 1000
 			if (lastUpdate < TIME_BETWEEN_BLOCKS) return popupVisualisation
@@ -44,16 +45,17 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		if (abortController?.signal.aborted) return
 		const popupVisualisation = await getPopupVisualisationState()
 		const simulationId = popupVisualisation.simulationId + 1
-		await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+		const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 		const simulationState = await getUpdatedSimulationState(ethereum)
-		const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } }))
+		const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress: (await getSettings()).activeSimulationAddress }
 		try {
 			const numberOfAddressesMadeRich =  (await getAddressesbeingMadeRich()).length
-			if (simulationState !== undefined && ethereum.getChainId() === simulationState.rpcNetwork.chainId) {
-				await setPopupVisualisationState({ ...await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, abortController), ...doneState, numberOfAddressesMadeRich })
-			} else {
-				await setPopupVisualisationState({
+			const getUpdatedState = async () => {
+				if (simulationState !== undefined && ethereum.getChainId() === simulationState.rpcNetwork.chainId) {
+					return await setPopupVisualisationState({ ...await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, abortController), ...doneState, numberOfAddressesMadeRich })
+				}
+				return await setPopupVisualisationState({
 					...doneState,
 					addressBookEntries: [],
 					tokenPriceEstimates: [],
@@ -65,14 +67,15 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 					simulationResultState: 'corrupted' as const
 				})
 			}
+			const newVisualizedState = await getUpdatedState()
 			await changedMessagePromise
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
+			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newVisualizedState } })
 		} catch (error) {
 			if (error instanceof Error && isNewBlockAbort(error)) return
 			if (error instanceof Error && isFailedToFetchError(error)) {
 				// if we fail because of connectivity issue, keep the old block results, but try again later
-				await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
-				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId }  })
+				const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 				return
 			}
 			handleUnexpectedError(error)

@@ -456,7 +456,9 @@ const WebsiteIconChanged = funtypes.ReadonlyObject({
 type SimulationUpdateStartedOrEnded = funtypes.Static<typeof SimulationUpdateStartedOrEnded>
 const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulation_state_changed'),
-	data: funtypes.ReadonlyObject({ simulationId: funtypes.Number })
+	data: funtypes.ReadonlyObject({
+		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined)
+	})
 })
 
 type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>

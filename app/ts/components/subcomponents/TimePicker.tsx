@@ -1,4 +1,4 @@
-import { Signal, useSignal } from '@preact/signals'
+import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { DropDownMenu } from './DropDownMenu.js'
 import { JSX } from 'preact/jsx-runtime'
 import { assertNever } from '../../utils/typescript.js'
@@ -62,29 +62,64 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 	const timePickerModeDownOptionsSignal = useSignal<readonly TimePickerMode[]>(removeNoDelayOption ? timePickerModeDownOptionsWithoutNoDelay : timePickerModeDownOptions)
 	const timePickerDeltaOptionsSignal = useSignal<readonly DeltaUnit[]>(timePickerDeltaOptions)
 
+	const temporaryMode = useSignal<'No Delay' | 'Until' | 'For'>(mode.value)
+	const temporaryAbsoluteTime = useSignal<Date | undefined>(absoluteTime.value)
+	const temporaryDeltaValue = useSignal<bigint>(deltaValue.value)
+	const temporaryDeltaUnit = useSignal<'Seconds' | 'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Months' | 'Years'>(deltaUnit.value)
+
+	useSignalEffect(() => {
+		mode.value
+		absoluteTime.value
+		deltaValue.value
+		deltaUnit.value
+
+		const updateValues = () => {
+			temporaryMode.value = mode.value
+			temporaryDeltaUnit.value = deltaUnit.value
+			temporaryAbsoluteTime.value = absoluteTime.value
+			temporaryDeltaValue.value = deltaValue.value
+		}
+		updateValues()
+	})
+
 	const changeMode = (newOption: TimePickerMode) => {
-		mode.value = newOption
-		onChangedCallBack()
+		temporaryMode.value = newOption
 	}
 	const changeDeltaUnit = (newOption: DeltaUnit) => {
-		deltaUnit.value = newOption
-		onChangedCallBack()
+		temporaryDeltaUnit.value = newOption
 	}
 	const absoluteTimeChanged = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
-		absoluteTime.value = new Date(Date.parse(event.currentTarget.value))
-		onChangedCallBack()
+		temporaryAbsoluteTime.value = new Date(Date.parse(event.currentTarget.value))
 	}
 	const changeDeltaValue = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
-		deltaValue.value = BigInt(parseInt(event.currentTarget.value) || deltaValue.value)
+		temporaryDeltaValue.value = BigInt(parseInt(event.currentTarget.value) || deltaValue.value)
+	}
+
+	const hasValuesChanged = useComputed(() => {
+		if (mode.value !== temporaryMode.value) return true
+		if (mode.value === 'For') return deltaUnit.value !== temporaryDeltaUnit.value || deltaValue.value !== temporaryDeltaValue.value
+		if (mode.value === 'Until') return absoluteTime.value !== temporaryAbsoluteTime.value
+		return false
+	})
+
+	const commitOptions = () => {
+		mode.value = temporaryMode.value
+		deltaUnit.value = temporaryDeltaUnit.value
+		absoluteTime.value = temporaryAbsoluteTime.value
+		deltaValue.value = temporaryDeltaValue.value
 		onChangedCallBack()
 	}
 
 	return <div>
 		<div style = 'display: flex; justify-content: space-between'>
 			<p class = 'paragraph' style = 'align-content: center;'> { startText } </p>
-			<div style = 'display: grid; grid-template-columns: auto auto; column-gap: 10px; padding-left: 5px'>
-				<DropDownMenu selected = { mode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' }/>
-				<TimePickerModeViews mode = { mode } absoluteTime = { absoluteTime } deltaValue = { deltaValue } deltaUnit = { deltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue }/>
+			<div style = 'display: grid; grid-template-columns: auto auto auto; column-gap: 10px; padding-left: 5px'>
+				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' }/>
+				<TimePickerModeViews mode = { temporaryMode } absoluteTime = { temporaryAbsoluteTime } deltaValue = { temporaryDeltaValue } deltaUnit = { temporaryDeltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue }/>
+
+				<button class = 'btn btn--outline is-small' onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
+					Commit
+				</button>
 			</div>
 		</div>
 	</div>
