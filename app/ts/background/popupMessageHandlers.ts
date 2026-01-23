@@ -695,7 +695,7 @@ export async function changePreSimulationBlockTimeManipulation(simulator: Simula
 }
 
 export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
-	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+	const newStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
 		const appendAfterIndex = prevStack.operations.findIndex((operation) => {
 			switch(operation.type) {
@@ -720,8 +720,15 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
 		return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...prevStack.operations.slice(indexOfMaybeManipulator)] }
 	})
-
-	updatePopupVisualisationIfNeeded(simulator, true, true)
+	const secondToLastOperation = newStack.operations[newStack.operations.length - 2]
+	if (secondToLastOperation === undefined || secondToLastOperation.type === 'TimeManipulation') {
+		updatePopupVisualisationIfNeeded(simulator, true, true)
+		return
+	}
+	const appendIdentifier = parsedRequest.data.transactionOrMessageIdentifier.type === 'Transaction' ? parsedRequest.data.transactionOrMessageIdentifier.transactionIdentifier : parsedRequest.data.transactionOrMessageIdentifier.messageIdentifier
+	const operationIdentifier = secondToLastOperation.type === 'Transaction' ? secondToLastOperation.preSimulationTransaction.transactionIdentifier : secondToLastOperation.signedMessageTransaction.messageIdentifier
+	const appendedToEnd = appendIdentifier === operationIdentifier
+	updatePopupVisualisationIfNeeded(simulator, !appendedToEnd, true)
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
@@ -801,7 +808,7 @@ export async function importSimulationStack(simulator: Simulator, parsedRequest:
 			}
 		}) }
 	})
-	updatePopupVisualisationIfNeeded(simulator, true, true)
+	updatePopupVisualisationIfNeeded(simulator, false, true)
 }
 
 export async function requestCompleteVisualizedSimulation(simulator: Simulator) {

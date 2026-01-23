@@ -134,7 +134,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				...prevStack.operations,
 				{ type: 'Message' as const, signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }
 			] }))
-			updatePopupVisualisationIfNeeded(simulator, true)
+			updatePopupVisualisationIfNeeded(simulator, false)
 			return reply({ type: 'result', result: simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor).signature })
 		}
 		case 'Transaction': {
@@ -144,7 +144,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
-			updatePopupVisualisationIfNeeded(simulator, true)
+			updatePopupVisualisationIfNeeded(simulator, false)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
