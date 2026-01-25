@@ -28,7 +28,7 @@ export function ErrorComponent(props: ErrorProps) {
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
-				<p className = 'paragraph' style = { `marging-left: 10px; color: ${ textColor }` }> { props.text } </p>
+				<p className = 'paragraph' style = { `margin-left: 10px; color: ${ textColor }` }> { props.text } </p>
 			</div>
 		</div>
 	)
@@ -38,7 +38,7 @@ export function Notice(props: ErrorProps) {
 	return (
 		<div>
 			<div className = 'notification' style = { 'background-color: unset; display: flex; align-items: center; padding: 0px;' }>
-				<p className = 'paragraph' style = 'marging-left: 10px'> { props.text } </p>
+				<p className = 'paragraph' style = 'margin-left: 10px'> { props.text } </p>
 			</div>
 		</div>
 	)
@@ -82,7 +82,7 @@ export const UnexpectedError = ({ unexpectedError, close }: UnexpectedErrorParam
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
-				<p className = 'paragraph' style = { 'marging-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }> An unexpected error occured! <SomeTimeAgo priorTimestamp = { unexpectedError.value?.data.timestamp } /> ago </p>
+				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }> An unexpected error occured! <SomeTimeAgo priorTimestamp = { unexpectedError.value?.data.timestamp } /> ago </p>
 			</div>
 			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
 				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { unexpectedError.value?.data.message } </p>
