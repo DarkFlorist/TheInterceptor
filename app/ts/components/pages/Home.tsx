@@ -269,7 +269,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return isEmptySimulation(param.simulationAndVisualisationResults.value)
 	})
 
-	if (param.simulationAndVisualisationResults.value === undefined || param.simulationAndVisualisationResults.value === undefined || (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined))) {
+	if (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
@@ -314,7 +314,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
 			/>
 		</> : <>
-			{ isEmpty.value ?
+			{ isEmpty.value || param.simulationAndVisualisationResults.value === undefined ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
