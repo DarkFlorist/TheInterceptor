@@ -44,6 +44,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 	return await updateSimulationVisualisationSemaphore.execute(async () => {
 		if (abortController?.signal.aborted) return
 		const popupVisualisation = await getPopupVisualisationState()
+		if (popupVisualisation.simulationState === undefined || popupVisualisation.simulationState.simulationStateInput.length === 0) return
 		const simulationId = popupVisualisation.simulationId + 1
 		const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 		const simulationState = await getUpdatedSimulationState(ethereum)
