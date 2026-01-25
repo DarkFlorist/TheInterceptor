@@ -102,7 +102,7 @@ export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['con
 
 const TimestampParser: funtypes.ParsedValue<funtypes.String, Date>['config'] = {
 	parse: value => {
-		if (!/^0x([a-fA-F0-9]{0,8})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded timestamp.` }
+		if (!/^0x([a-fA-F0-9]*)$/.test(value)) return { success: false, message: `${value} is not a hex string encoded timestamp.` }
 		return { success: true, value: new Date(Number.parseInt(value, 16) * 1000) }
 	},
 	serialize: value => {

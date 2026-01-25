@@ -1,4 +1,4 @@
-import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { Signal, batch, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { DropDownMenu } from './DropDownMenu.js'
 import { JSX } from 'preact/jsx-runtime'
 import { assertNever } from '../../utils/typescript.js'
@@ -26,7 +26,7 @@ export const getTimeManipulatorFromSignals = (timeSelectorMode: TimePickerMode, 
 type TimePickerModeViewsParams = {
 	mode: Signal<TimePickerMode>
 	absoluteTime: Signal<Date | undefined>
-	deltaValue: Signal<bigint>
+	deltaValue: Signal<bigint | undefined>
 	deltaUnit: Signal<DeltaUnit>
 
 	timePickerDeltaOptionsSignal: Signal<readonly DeltaUnit[]>
@@ -36,10 +36,17 @@ type TimePickerModeViewsParams = {
 	changeDeltaValue: (event: JSX.TargetedInputEvent<HTMLInputElement>) => void
 }
 
+const formatDateToLocalDateTimeValue = (date: Date | undefined): string => {
+	if (date === undefined) return ''
+	const timezoneOffsetInMilliseconds = date.getTimezoneOffset() * 60 * 1000
+	const localDate = new Date(date.getTime() - timezoneOffsetInMilliseconds)
+	return localDate.toISOString().slice(0, 16)
+}
+
 const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal, deltaValue, deltaUnit, changeDeltaUnit, absoluteTimeChanged, changeDeltaValue }: TimePickerModeViewsParams) => {
 	switch(mode.value) {
 		case 'No Delay': return <></>
-		case 'Until': return <input type = 'datetime-local' class = 'datetime' value = { absoluteTime.value?.toISOString().slice(0, 19) } onInput = { absoluteTimeChanged } />
+		case 'Until': return <input type = 'datetime-local' class = 'datetime' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
 			<input class = 'input' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
 			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' }/>
@@ -64,7 +71,7 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 
 	const temporaryMode = useSignal<'No Delay' | 'Until' | 'For'>(mode.value)
 	const temporaryAbsoluteTime = useSignal<Date | undefined>(absoluteTime.value)
-	const temporaryDeltaValue = useSignal<bigint>(deltaValue.value)
+	const temporaryDeltaValue = useSignal<bigint | undefined>(deltaValue.value)
 	const temporaryDeltaUnit = useSignal<'Seconds' | 'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Months' | 'Years'>(deltaUnit.value)
 
 	useSignalEffect(() => {
@@ -89,24 +96,43 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 		temporaryDeltaUnit.value = newOption
 	}
 	const absoluteTimeChanged = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
-		temporaryAbsoluteTime.value = new Date(Date.parse(event.currentTarget.value))
+		if (event.currentTarget.value.length === 0) {
+			temporaryAbsoluteTime.value = undefined
+		} else {
+			temporaryAbsoluteTime.value = new Date(event.currentTarget.value)
+		}
 	}
 	const changeDeltaValue = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
-		temporaryDeltaValue.value = BigInt(parseInt(event.currentTarget.value) || deltaValue.value)
+		event.preventDefault()
+		const sanitized = event.currentTarget.value.replace(/[^0-9.]/g, '')
+		if (sanitized.length === 0 || Number.isNaN(parseInt(sanitized))) {
+			temporaryDeltaValue.value = undefined
+			event.currentTarget.value = ''
+			return
+		}
+		temporaryDeltaValue.value = BigInt(parseInt(sanitized))
+		event.currentTarget.value = temporaryDeltaValue.value.toString()
 	}
 
 	const hasValuesChanged = useComputed(() => {
 		if (mode.value !== temporaryMode.value) return true
-		if (mode.value === 'For') return deltaUnit.value !== temporaryDeltaUnit.value || deltaValue.value !== temporaryDeltaValue.value
-		if (mode.value === 'Until') return absoluteTime.value !== temporaryAbsoluteTime.value
+		if (mode.value === 'For') {
+			if (temporaryDeltaValue.value === undefined) return false
+			return deltaUnit.value !== temporaryDeltaUnit.value || deltaValue.value !== temporaryDeltaValue.value
+		}
+		if (mode.value === 'Until') return absoluteTime.value !== temporaryAbsoluteTime.value && temporaryAbsoluteTime.value !== undefined
 		return false
 	})
 
 	const commitOptions = () => {
-		mode.value = temporaryMode.value
-		deltaUnit.value = temporaryDeltaUnit.value
-		absoluteTime.value = temporaryAbsoluteTime.value
-		deltaValue.value = temporaryDeltaValue.value
+		batch(() => {
+			mode.value = temporaryMode.value
+			deltaUnit.value = temporaryDeltaUnit.value
+			absoluteTime.value = temporaryAbsoluteTime.value
+			if (temporaryDeltaValue.value !== undefined) {
+				deltaValue.value = temporaryDeltaValue.value
+			}
+		})
 		onChangedCallBack()
 	}
 
