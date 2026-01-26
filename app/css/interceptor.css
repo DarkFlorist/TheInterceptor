@@ -1065,7 +1065,7 @@ summary:where(details[open] > *) {
 }
 
 /* Fix svg sub-pixel rendering for icons */
-.svg-icon *:where(path, rect) { shape-rendering: geometicprecision }
+.svg-icon *:where(path, rect) { shape-rendering: geometricPrecision }
 
 .svg-icon:where(details:not([open]) .details--arrow) { --icon-rotate: -90deg }
 
