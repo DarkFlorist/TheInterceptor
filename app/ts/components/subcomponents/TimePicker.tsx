@@ -46,7 +46,7 @@ const formatDateToLocalDateTimeValue = (date: Date | undefined): string => {
 const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal, deltaValue, deltaUnit, changeDeltaUnit, absoluteTimeChanged, changeDeltaValue }: TimePickerModeViewsParams) => {
 	switch(mode.value) {
 		case 'No Delay': return <></>
-		case 'Until': return <input type = 'datetime-local' class = 'datetime' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
+		case 'Until': return <input type = 'datetime-local' class = 'timepicker-datetime-local' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
 			<input class = 'input' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
 			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' }/>

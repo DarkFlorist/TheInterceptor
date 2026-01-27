@@ -1905,12 +1905,11 @@ header:has(form[role='search']) h1 {
 	flex-shrink: 0;
 }
 
-.datetime {
+.timepicker-datetime-local {
 	background: unset;
 	color: var(--text-color);
 	border: 1px solid #ffffff20;
-	border-radius: 2px;
-	width: 135px;
+	border-radius: 4px;
 }
 
 .chainSelector {
