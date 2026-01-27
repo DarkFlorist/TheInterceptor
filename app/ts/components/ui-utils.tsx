@@ -123,11 +123,13 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 	try {
 		switch (popupOrTabId.type) {
 			case 'tab': {
-				await browser.tabs.remove(popupOrTabId.id)
+				const tab = await safeGetTab(popupOrTabId.id)
+				if (tab !== undefined) await browser.tabs.remove(popupOrTabId.id)
 				break
 			}
 			case 'popup': {
-				await browser.windows.remove(popupOrTabId.id)
+				const window = await safeGetWindow(popupOrTabId.id)
+				if (window !== undefined) await browser.windows.remove(popupOrTabId.id)
 				break
 			}
 			default: assertNever(popupOrTabId.type)
