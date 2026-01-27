@@ -1,16 +1,11 @@
 import { ethers } from 'ethers'
 
-export function bigintToDecimalString(value: bigint, power: bigint): string {
-	if (value >= 0n) {
-		const integerPart = value / 10n**power
-		const fractionalPart = value % 10n**power
-		if (fractionalPart === 0n) return integerPart.toString(10)
-		return `${ integerPart.toString(10) }.${ fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '') }`
-	}
-	const integerPart = -value / 10n**power
-	const fractionalPart = -value % 10n**power
-	if (fractionalPart === 0n) return `-${ integerPart.toString(10) }`
-	return `-${ integerPart.toString(10) }.${ fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '') }`
+export function bigintToDecimalString(value: bigint, power: bigint) {
+	const integerPart = abs(value / 10n ** power)
+	const fractionalPart = abs(value % 10n ** power)
+	const sign = value < 0n ? '-' : ''
+	if (fractionalPart === 0n) return `${ sign }${ integerPart.toString(10) }`
+	return `${ sign }${ integerPart.toString(10) }.${ fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '') }`
 }
 
 export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
