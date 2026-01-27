@@ -45,10 +45,28 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		if (abortController?.signal.aborted) return
 		const popupVisualisation = await getPopupVisualisationState()
 		const simulationId = popupVisualisation.simulationId + 1
-		const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 		const simulationState = await getUpdatedSimulationState(ethereum)
-		const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress: (await getSettings()).activeSimulationAddress }
+		if (simulationState?.simulationStateInput === undefined || simulationState.simulationStateInput.filter((x) => x.transactions.length > 0).length === 0) {
+			if (popupVisualisation.simulationUpdatingState === 'updating') {
+				const newState = {
+					...doneState,
+					addressBookEntries: [],
+					tokenPriceEstimates: [],
+					tokenPriceQuoteToken: undefined,
+					namedTokenIds: [],
+					simulationState: undefined,
+					visualizedSimulationState: { success: true, visualizedBlocks: [] },
+					numberOfAddressesMadeRich: (await getAddressesbeingMadeRich()).length,
+					simulationResultState: 'done'
+				} as const
+				await setPopupVisualisationState(newState)
+				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
+			}
+			return
+		}
+		const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+		const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 		try {
 			const numberOfAddressesMadeRich =  (await getAddressesbeingMadeRich()).length
 			const getUpdatedState = async () => {
@@ -78,6 +96,8 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 				return
 			}
+			const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
+			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 			handleUnexpectedError(error)
 		}
 	}).catch(() => {})
