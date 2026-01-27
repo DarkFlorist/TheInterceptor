@@ -34,15 +34,15 @@ export function isFailedToFetchError(error: Error) {
 export const isNewBlockAbort = (error: Error) => error.message?.includes(NEW_BLOCK_ABORT)
 
 export function printError(error: unknown) {
+	console.error(error)
 	if (error instanceof Error) {
 		try {
-			if ('data' in error) return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }\n${ error.stack !== undefined ? error.stack : ''}`)
-			return console.error(error)
+			if ('data' in error) console.error('data: ', JSON.stringify(error.data))
+			if ('code' in error) console.error('code: ', JSON.stringify(error.code))
 		} catch(stringifyError) {
 			console.error(stringifyError)
 		}
 	}
-	return console.error(error)
 }
 
 export async function handleUnexpectedError(error: unknown) {
