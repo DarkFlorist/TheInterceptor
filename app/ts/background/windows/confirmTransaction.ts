@@ -154,7 +154,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, simulator: Simulator, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
 	const transactions = await getPendingTransactionsAndMessages()
 	const [firstTransaction] = transactions
-	if (firstTransaction?.popupOrTabId.id !== popupOrTabs.id) return
+	if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
 	await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, simulator, websiteTabConnections)
 }
 

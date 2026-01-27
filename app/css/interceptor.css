@@ -1969,3 +1969,11 @@ header:has(form[role='search']) h1 {
 	border-right: 1px solid #ffffff20;
 	border-bottom: 1px solid #ffffff20;
 }
+
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+input[type="number"]:hover,
+input[type="number"]:focus {
+    -moz-appearance: number-input;
+}
