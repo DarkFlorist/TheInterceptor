@@ -3,6 +3,7 @@
 @font-face {
 	font-family: "Atkinson";
 	src: url("../fonts/Atkinson-Hyperlegible-Regular-102a.woff2") format("woff2");
+	src: url("../fonts/Atkinson-Hyperlegible-Regular-102.woff") format("woff");
 	font-weight: normal;
 	font-style: normal;
 }
@@ -111,14 +112,12 @@ input[type=checkbox]:not([role=switch]) {
 	border-radius: 3px;
 	background-color: var(--unimportant-text-color);
 	border: 1px solid black;
-	align-self: anchor-center;
 }
 
 input[type=checkbox]:not([role=switch])::before {
 	content: '✔';
 	place-content: center;
 	display: flex;
-	margin-bottom: 2;
 	color: black;
 	line-height: 1.15em;
 	width: 1.15em;
@@ -1066,7 +1065,7 @@ summary:where(details[open] > *) {
 }
 
 /* Fix svg sub-pixel rendering for icons */
-.svg-icon *:where(path, rect) { shape-rendering: geometicprecision }
+.svg-icon *:where(path, rect) { shape-rendering: geometricPrecision }
 
 .svg-icon:where(details:not([open]) .details--arrow) { --icon-rotate: -90deg }
 
