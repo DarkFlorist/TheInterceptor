@@ -1975,3 +1975,9 @@ input[type="number"]:hover,
 input[type="number"]:focus {
     -moz-appearance: number-input;
 }
+
+.btn.is-primary {
+	background-color: var(--primary-color);
+	border-color: transparent;
+	color: #fff;
+}
