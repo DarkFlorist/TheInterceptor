@@ -47,7 +47,7 @@ function FirstCardHeader(param: FirstCardParams) {
 	return <>
 		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
 			<div>
-				<ToolTip content = {  param.tabIconDetails.iconReason }>
+				<ToolTip content = { param.tabIconDetails.iconReason }>
 					<img className = 'noselect nopointer' src = { param.tabIconDetails.icon } style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
@@ -240,7 +240,7 @@ function FirstCard(param: FirstCardParams) {
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
-						startText = 'Delay first transaction by'
+						startText = 'Delay first transaction'
 						mode = { timeSelectorMode }
 						absoluteTime = { timeSelectorAbsoluteTime }
 						deltaValue = { timeSelectorDeltaValue }
