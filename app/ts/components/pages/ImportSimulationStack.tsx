@@ -21,7 +21,7 @@ type SimulationInputParams = {
 
 function SimulationInput({ input, disabled, isValid }: SimulationInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current?.focus() }, [])
+	useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input is-spaced'
 		type = 'text'

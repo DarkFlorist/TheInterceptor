@@ -14,12 +14,12 @@ const AccountOverride = funtypes.ReadonlyPartial({
 
 export type BlockOverrides = funtypes.Static<typeof BlockOverrides>
 export const BlockOverrides = funtypes.Partial({
-    number: EthereumQuantity,
-    prevRandao: EthereumBytes32,
-    time: EthereumTimestamp,
-    gasLimit: EthereumQuantitySmall,
-    feeRecipient: EthereumAddress,
-    baseFeePerGas: EthereumQuantity,
+	number: EthereumQuantity,
+	prevRandao: EthereumBytes32,
+	time: EthereumTimestamp,
+	gasLimit: EthereumQuantitySmall,
+	feeRecipient: EthereumAddress,
+	baseFeePerGas: EthereumQuantity,
 }).asReadonly()
 
 type BlockCall = funtypes.Static<typeof BlockCall>
@@ -127,13 +127,13 @@ export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1Call
 
 type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
 const EthSimulateV1BlockResult = funtypes.ReadonlyObject({
-    number: EthereumQuantity,
-    hash: EthereumBytes32,
-    timestamp: EthereumQuantity,
-    gasLimit: EthereumQuantitySmall,
-    gasUsed: EthereumQuantitySmall,
-    baseFeePerGas: EthereumQuantity,
-    calls: EthSimulateV1CallResults,
+	number: EthereumQuantity,
+	hash: EthereumBytes32,
+	timestamp: EthereumQuantity,
+	gasLimit: EthereumQuantitySmall,
+	gasUsed: EthereumQuantitySmall,
+	baseFeePerGas: EthereumQuantity,
+	calls: EthSimulateV1CallResults,
 })
 
 export type EthSimulateV1Result = funtypes.Static<typeof EthSimulateV1Result>
