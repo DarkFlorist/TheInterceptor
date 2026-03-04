@@ -86,7 +86,7 @@ export async function refreshConfirmTransactionSimulation(
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return { statusCode: 'failed' as const, data: {
 				...info,
-				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: '' },
+				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
 				simulationState: {
 					blockNumber: 0n,
 					simulationConductedTimestamp: new Date()

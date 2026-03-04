@@ -23,8 +23,9 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 
 	const [signerAccountsReply] = EthereumAccountsReply.parse(request.params)
 	if (signerAccountsReply.type === 'error') {
+		const stringifiedData = signerAccountsReply.error.data ? JSON.stringify(signerAccountsReply.error.data) : undefined
 		const error = signerAccountsReply.error
-		await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerAccountError: error } ))
+		await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerAccountError: { ...error, data: stringifiedData } } ))
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		return returnValue
 	}

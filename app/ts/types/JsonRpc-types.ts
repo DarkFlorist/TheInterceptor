@@ -188,7 +188,15 @@ export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('error'),
 			requestAccounts: funtypes.Boolean,
-			error: ErrorWithCodeAndOptionalData,
+			error: funtypes.Intersect(
+				funtypes.ReadonlyObject({
+					code: funtypes.Number,
+					message: funtypes.String,
+				}),
+				funtypes.Partial({
+					data: funtypes.Unknown
+				})
+			)
 		})
 	)
 )
