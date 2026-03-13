@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 
 interface PasteProps {
-    onPaste: (text: string) => void,
+	onPaste: (text: string) => void,
 	enabled: boolean,
 }
 
