@@ -1,5 +1,7 @@
 FROM oven/bun:1.3.11-alpine@sha256:d5033b198b338c67e514f404e777ee818e18d1b031b0c4ac0eb1112032ae7bf7 AS builder
 
+RUN apk --no-cache add zip
+
 COPY ./build/package.json /build/package.json
 COPY ./build/bun.lock /build/bun.lock
 WORKDIR /build
