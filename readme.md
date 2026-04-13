@@ -39,10 +39,10 @@ The Interceptor requires websites to be decentralized and only use users' own wa
 ## Setup
 
 Install:
-`npm ci --ignore-scripts`
+`bun install --frozen-lockfile --ignore-scripts`
 
 Build:
-`npm run setup-chrome` for Chrome or `npm run setup-firefox` for firefox
+`bun run setup-chrome` for Chrome or `bun run setup-firefox` for firefox
 
 Then depending on your browser:
 - Chrome: Browse to `chrome://extensions/` and click `Load unpacked` and point to `\app\manifest.json`.
