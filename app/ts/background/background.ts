@@ -258,7 +258,7 @@ async function handleRPCRequest(
 
 export async function resetSimulatorStateFromConfig(simulator: Simulator) {
 	await updateInterceptorTransactionStack(() => ({ operations: [] }))
-	updatePopupVisualisationIfNeeded(simulator, false, false)
+	await updatePopupVisualisationIfNeeded(simulator, false, false)
 }
 
 const keepTrackOfPreviousAddressforRichList = async () => {
