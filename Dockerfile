@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.11-alpine@sha256:d5033b198b338c67e514f404e777ee818e18d1b031b0c4ac0eb1112032ae7bf7 AS builder
+FROM oven/bun:1.3.12-alpine@sha256:26d8996560ca94eab9ce48afc0c7443825553c9a851f40ae574d47d20906826d AS builder
 
 RUN apk --no-cache add zip
 
