@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"test": "bunx tsc --project tsconfig-test.json && bun ./test/js/test/run-all.js",
+		"test": "bun ./node_modules/typescript/lib/tsc.js --project tsconfig-test.json && bun ./test/js/test/run-all.js",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
 		"build-firefox": "bun run firefox",
