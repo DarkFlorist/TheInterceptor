@@ -1,19 +1,14 @@
-FROM node:18.16.0-alpine3.17@sha256:44aaf1ccc80eaed6572a0f2ef7d6b5a2982d54481e4255480041ac92221e2f11
-
-RUN apk --no-cache add bash curl unzip zip
-RUN curl -fsSL https://bun.sh/install | bash
-ENV BUN_INSTALL=/root/.bun
-ENV PATH="${BUN_INSTALL}/bin:${PATH}"
+FROM oven/bun:1.3.11-alpine@sha256:d5033b198b338c67e514f404e777ee818e18d1b031b0c4ac0eb1112032ae7bf7 AS builder
 
 COPY ./build/package.json /build/package.json
 COPY ./build/bun.lock /build/bun.lock
 WORKDIR /build
-RUN bun install --frozen-lockfile --ignore-scripts
+RUN bun install --frozen-lockfile
 
 COPY ./package.json /package.json
 COPY ./bun.lock /bun.lock
 WORKDIR /
-RUN bun install --frozen-lockfile --ignore-scripts
+RUN bun install --frozen-lockfile
 
 COPY tsconfig.json tsconfig-inpage.json /
 COPY app/*.png app/*.jpg app/*.json app/*.ico /app/

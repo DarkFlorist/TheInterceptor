@@ -39,7 +39,7 @@ The Interceptor requires websites to be decentralized and only use users' own wa
 ## Setup
 
 Install:
-`bun install --frozen-lockfile --ignore-scripts`
+`bun install --frozen-lockfile `
 
 Build:
 `bun run setup-chrome` for Chrome or `bun run setup-firefox` for firefox
