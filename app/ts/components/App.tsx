@@ -421,7 +421,7 @@ export function App() {
 						</div>
 					</nav>
 
-					<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
+					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
 					{ !isSettingsLoaded ? <CenterToPageTextSpinner/> : <>

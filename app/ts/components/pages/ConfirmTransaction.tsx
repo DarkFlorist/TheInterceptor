@@ -572,7 +572,7 @@ export function ConfirmTransaction() {
 						: <></> }
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
-						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
+						<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						{ currentPendingTransactionOrSignableMessage.value === undefined ? <></> : <>
 							<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.value.website } websiteSocket = { currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.value.simulationMode }/>
@@ -607,7 +607,7 @@ export function ConfirmTransaction() {
 				</div>
 				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 					<div style = 'position: sticky; top: 0; z-index: 1;'>
-						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
+						<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.value.website } websiteSocket = { currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.value.simulationMode }/>
 						<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }/>
