@@ -142,7 +142,7 @@ type WindowEthereum = InjectFunctions & {
 	networkVersion?: string,
 }
 
-type InpageWindow = Window & {
+interface Window {
 	ethereum?: WindowEthereum
 	web3?: {
 		currentProvider: WindowEthereum
@@ -150,7 +150,7 @@ type InpageWindow = Window & {
 	}
 }
 
-const inpageWindow = window as InpageWindow
+const inpageWindow = window
 
 interface EIP6963ProviderInfo {
 	uuid: string
