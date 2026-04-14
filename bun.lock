@@ -1,0 +1,64 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "interceptor-extension",
+      "dependencies": {
+        "@darkflorist/address-metadata": "0.10.0",
+        "@noble/curves": "0.8.0",
+        "@noble/hashes": "1.4.0",
+        "@preact/signals": "1.1.3",
+        "ethers": "6.14.0",
+        "funtypes": "5.1.0",
+        "preact": "10.24.2",
+        "webextension-polyfill": "0.10.0",
+      },
+      "devDependencies": {
+        "@types/firefox-webext-browser": "120.0.3",
+        "typescript": "5.4.5",
+      },
+    },
+  },
+  "packages": {
+    "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.10.1", "", {}, "sha512-96Z2IP3mYmF1Xg2cDm8f1gWGf/HUVedQ3FMifV4kG/PQ4yEP51xDtRAEfhVNt5f/uzpNkZHwWQuUcu6D6K+Ekw=="],
+
+    "@darkflorist/address-metadata": ["@darkflorist/address-metadata@0.10.0", "", {}, "sha512-IVFWsi3rvAFRLmbM+lNsv5FtVWdR7jVBIIASW6yERUjviTTTgeIwNKay8o2D1/WWczYmR6cuxDWAN2givkoaBw=="],
+
+    "@noble/curves": ["@noble/curves@0.8.0", "", { "dependencies": { "@noble/hashes": "1.2.0" } }, ""],
+
+    "@noble/hashes": ["@noble/hashes@1.4.0", "", {}, "sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg=="],
+
+    "@preact/signals": ["@preact/signals@1.1.3", "", { "dependencies": { "@preact/signals-core": "^1.2.3" }, "peerDependencies": { "preact": "10.x" } }, "sha512-N09DuAVvc90bBZVRwD+aFhtGyHAmJLhS3IFoawO/bYJRcil4k83nBOchpCEoS0s5+BXBpahgp0Mjf+IOqP57Og=="],
+
+    "@preact/signals-core": ["@preact/signals-core@1.3.0", "", {}, "sha512-M+M3ZOtd1dtV/uasyk4SZu1vbfEJ4NeENv0F7F12nijZYedB5wSgbtZcuACyssnTznhF4ctUyrR0dZHuHfyWKA=="],
+
+    "@types/firefox-webext-browser": ["@types/firefox-webext-browser@120.0.3", "", {}, "sha512-APbBSxOvFMbKwXy/4YrEVa5Di6N0C9yl4w0WA0xzdkOrChAfPQ/KlcC8QLyhemHCHpF1CB/zHy52+oUQurViOg=="],
+
+    "@types/node": ["@types/node@22.7.5", "", { "dependencies": { "undici-types": "~6.19.2" } }, "sha512-jML7s2NAzMWc//QSJ1a3prpk78cOPchGvXJsC3C6R6PSMoooztvRVQEz89gmBTBY1SPMaqo5teB4uNHPdetShQ=="],
+
+    "aes-js": ["aes-js@4.0.0-beta.5", "", {}, "sha512-G965FqalsNyrPqgEGON7nIx1e/OVENSgiEIzyC63haUMuvNnwIgIjMs52hlTCKhkBny7A2ORNlfY9Zu+jmGk1Q=="],
+
+    "ethers": ["ethers@6.14.0", "", { "dependencies": { "@adraffy/ens-normalize": "1.10.1", "@noble/curves": "1.2.0", "@noble/hashes": "1.3.2", "@types/node": "22.7.5", "aes-js": "4.0.0-beta.5", "tslib": "2.7.0", "ws": "8.17.1" } }, "sha512-KgHwltNSMdbrGWEyKkM0Rt2s+u1nDH/5BVDQakLinzGEJi4bWindBzZSCC4gKsbZjwDTI6ex/8suR9Ihbmz4IQ=="],
+
+    "funtypes": ["funtypes@5.1.0", "", {}, "sha512-Dg5o5JurgX53F/mTwYnFvV2Y95VZLuXw9emaAGSHnssoWxHciO0ZPwY9TPl2aSqU/LfYfCUHPfw7+1pRZvmqdw=="],
+
+    "preact": ["preact@10.24.2", "", {}, "sha512-1cSoF0aCC8uaARATfrlz4VCBqE8LwZwRfLgkxJOQwAlQt6ayTmi0D9OF7nXid1POI5SZidFuG9CnlXbDfLqY/Q=="],
+
+    "tslib": ["tslib@2.7.0", "", {}, "sha512-gLXCKdN1/j47AiHiOkJN69hJmcbGTHI0ImLmbYLHykhgeN0jVGola9yVjFgzCUklsZQMW55o+dW7IXv3RCXDzA=="],
+
+    "typescript": ["typescript@5.4.5", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ=="],
+
+    "undici-types": ["undici-types@6.19.8", "", {}, "sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw=="],
+
+    "webextension-polyfill": ["webextension-polyfill@0.10.0", "", {}, "sha512-c5s35LgVa5tFaHhrZDnr3FpQpjj1BB+RXhLTYUxGqBVN460HkbM8TBtEqdXWbpTKfzwCcjAZVF7zXCYSKtcp9g=="],
+
+    "ws": ["ws@8.17.1", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-6XQFvXTkbfUOZOKKILFG1PDK2NDQs4azKQl26T0YS5CxqWLgXajbPZ+h4gZekJyRqFU8pvnbAbbs/3TgRPy+GQ=="],
+
+    "@noble/curves/@noble/hashes": ["@noble/hashes@1.2.0", "", {}, "sha512-FZfhjEDbT5GRswV3C6uvLPHMiVD6lQBmpoX5+eSiPaMTXte/IKqI5dykDxzZB/WBeK/CDuQRBWarPdi3FNY2zQ=="],
+
+    "ethers/@noble/curves": ["@noble/curves@1.2.0", "", { "dependencies": { "@noble/hashes": "1.3.2" } }, "sha512-oYclrNgRaM9SsBUBVbb8M6DTV7ZHRTKugureoYEncY5c65HOmRzvSiTE3y5CYaPYJA/GVkrhXEoF0M3Ya9PMnw=="],
+
+    "ethers/@noble/hashes": ["@noble/hashes@1.3.2", "", {}, "sha512-MVC8EAQp7MvEcm30KWENFjgR+Mkmf+D189XJTkFIlwohU5hcBbn1ZkKq7KVTi2Hme3PMGF390DaL52beVrIihQ=="],
+  }
+}
