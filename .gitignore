@@ -5,4 +5,5 @@ node_modules/
 /app/inpage/build/
 /app/inpage/js/
 /app/manifest.json
+/build/*.mjs
 /**/output*/*

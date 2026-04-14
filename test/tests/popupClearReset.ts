@@ -1,4 +1,7 @@
 import * as assert from 'assert'
+import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 
 type RuntimeMessage = {
@@ -181,6 +184,13 @@ function getSimulationStateChangedMessages(messages: RuntimeMessage[]) {
 	return messages.filter((message) => message.method === 'popup_simulation_state_changed')
 }
 
+function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVisualizedSimulation) {
+	return serialize(MessageToPopup, {
+		method: 'popup_simulation_state_changed',
+		data: { visualizedSimulatorState: popupVisualisation },
+	} as any)
+}
+
 export async function main() {
 	const {
 		updatePopupVisualisationIfNeeded,
@@ -222,7 +232,7 @@ export async function main() {
 
 			const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 			assert.equal(changedMessages.length > 0, true)
-			assert.deepEqual(changedMessages.at(-1)?.data, { visualizedSimulatorState: popupVisualisation })
+			assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 		})
 
 		should('clear the interceptor stack and refresh popup state during reset', async () => {
@@ -246,7 +256,7 @@ export async function main() {
 
 			const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 			assert.equal(changedMessages.length > 0, true)
-			assert.deepEqual(changedMessages.at(-1)?.data, { visualizedSimulatorState: popupVisualisation })
+			assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 		})
 	})
 }
