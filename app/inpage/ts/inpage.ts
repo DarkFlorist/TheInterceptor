@@ -143,12 +143,16 @@ type WindowEthereum = InjectFunctions & {
 }
 interface Window {
 	dispatchEvent: (event: Event) => boolean
+	addEventListener: (type: string, listener: (event: unknown) => void) => void
+	postMessage: (message: unknown, targetOrigin: string) => void
 	ethereum?: WindowEthereum
 	web3?: {
 		currentProvider: WindowEthereum
 		accounts: readonly string[]
 	}
 }
+
+declare const window: Window
 
 interface EIP6963ProviderInfo {
 	uuid: string
@@ -180,7 +184,6 @@ class InterceptorMessageListener {
 	private activeChainId = ''
 	private currentSigner: Signer = 'NoSigner'
 
-	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: InterceptorFuture<boolean> | undefined = undefined
 
@@ -214,7 +217,6 @@ class InterceptorMessageListener {
 
 	// sends a message to interceptors background script
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
-		if (this.waitForAccountsFromWallet !== undefined) await this.waitForAccountsFromWallet // wait for wallet to return to us before continuing with other requests
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
@@ -329,16 +331,14 @@ class InterceptorMessageListener {
 		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
+			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
+			this.signerAccounts = reply
 			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
 			return
 		} catch (error: unknown) {
 			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error }] })
 			if (error instanceof Error) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
 			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
-		} finally {
-			if (this.waitForAccountsFromWallet === undefined) return
-			this.waitForAccountsFromWallet.resolve(true)
-			this.waitForAccountsFromWallet = undefined
 		}
 	}
 
@@ -421,7 +421,7 @@ class InterceptorMessageListener {
 			switch (replyRequest.method) {
 				case 'accountsChanged': {
 					const reply = replyRequest.result as readonly string[]
-					const replyAddress = reply.length > 0 ? reply[0] : ''
+					const replyAddress = reply[0] ?? ''
 					if (this.currentAddress === replyAddress) return
 					this.currentAddress = replyAddress
 					if (this.metamaskCompatibilityMode && window.ethereum !== undefined) {
@@ -535,7 +535,7 @@ class InterceptorMessageListener {
 						case 'eth_accounts': {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 							const addrArray = forwardRequest.result as string[]
-							const addr = addrArray.length > 0 ? addrArray[0] : ''
+							const addr = addrArray[0] ?? ''
 							try { window.ethereum.selectedAddress = addr } catch(e) {}
 							if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = addrArray } catch(e) {}
 							this.currentAddress = addr
@@ -634,10 +634,8 @@ class InterceptorMessageListener {
 		}
 
 		if (signerName !== 'NoSigner') {
-			if (this.waitForAccountsFromWallet === undefined && this.signerAccounts.length === 0) this.waitForAccountsFromWallet = new InterceptorFuture()
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 			await this.requestChainIdFromSigner()
-			await this.getAccountsFromSigner()
 		} else {
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 		}

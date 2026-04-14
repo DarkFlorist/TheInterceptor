@@ -250,7 +250,11 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 	const newRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 		if (message.data.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
 		async function getProposedAddress() {
-			if (message.method === 'popup_interceptorAccessRefresh' || message.data.newActiveAddress === 'signer') {
+			if (message.method === 'popup_interceptorAccessRefresh') {
+				const tabState = await getTabState(message.data.socket.tabId)
+				return tabState.signerAccounts[0]
+			}
+			if (message.data.newActiveAddress === 'signer') {
 				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
 				return signerAccounts[0]
 			}

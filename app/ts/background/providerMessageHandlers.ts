@@ -8,7 +8,6 @@ import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
 import { ProviderMessage } from '../utils/requests.js'
-import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
@@ -85,20 +84,11 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 	return returnValue
 }
 
-export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
 	await setDefaultSignerName(signerName)
 	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => modifyObject(previousState, { signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
-	const settings = await getSettings()
-	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		if (approval === 'hasAccess') {
-			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
-		} else {
-			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] })
-		}
-		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_chainId' as const, result: [] })
-	}
 	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode(), activeAddress: activeAddress === undefined ? '' : addressString(activeAddress) } }
 }
 
