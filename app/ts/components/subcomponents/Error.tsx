@@ -69,6 +69,33 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	)
 }
 
+type ErrorNotificationParams = {
+	message: string
+	timestamp?: Date
+	close: () => void
+}
+
+function ErrorNotification({ message, timestamp, close }: ErrorNotificationParams) {
+	return (
+		<div className = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
+			<div style = 'display: flex; padding-bottom: 10px;'>
+				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
+					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
+				</span>
+				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }>
+					An unexpected error occured! { timestamp !== undefined ? <> <SomeTimeAgo priorTimestamp = { timestamp } /> ago</> : <></> }
+				</p>
+			</div>
+			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
+				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { message } </p>
+			</div>
+			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
+				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>
+			</div>
+		</div>
+	)
+}
+
 type ErrorBoundaryState = { error: Error | undefined }
 
 export class ErrorBoundary extends Component<{ children?: ComponentChildren }, ErrorBoundaryState> {
@@ -82,10 +109,10 @@ export class ErrorBoundary extends Component<{ children?: ComponentChildren }, E
 		console.error('Caught rendering error:', error)
 	}
 
+	dismiss = () => this.setState({ error: undefined })
+
 	override render() {
-		if (this.state.error !== undefined) {
-			return <ErrorComponent text = { `Unexpected rendering error: ${ this.state.error.message }` } />
-		}
+		if (this.state.error !== undefined) return <ErrorNotification message = { this.state.error.message } close = { this.dismiss } />
 		return this.props.children
 	}
 }
@@ -96,21 +123,6 @@ type UnexpectedErrorParams = {
 }
 
 export const UnexpectedError = ({ unexpectedError, close }: UnexpectedErrorParams) => {
-	if (unexpectedError.value?.data.message === undefined) return <></>
-	return (
-		<div className = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
-			<div style = 'display: flex; padding-bottom: 10px;'>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
-					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
-				</span>
-				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }> An unexpected error occured! <SomeTimeAgo priorTimestamp = { unexpectedError.value?.data.timestamp } /> ago </p>
-			</div>
-			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
-				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { unexpectedError.value?.data.message } </p>
-			</div>
-			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>
-			</div>
-		</div>
-	)
+	if (unexpectedError.value?.data === undefined) return <></>
+	return <ErrorNotification message = { unexpectedError.value.data.message } timestamp = { unexpectedError.value.data.timestamp } close = { close } />
 }
