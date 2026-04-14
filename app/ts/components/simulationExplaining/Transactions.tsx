@@ -196,10 +196,14 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 		switch(blockTimeManipulation.type) {
 			case 'No Delay': {
 				timeSelectorMode.value = 'No Delay'
+				timeSelectorAbsoluteTime.value = undefined
+				timeSelectorDeltaValue.value = 12n
+				timeSelectorDeltaUnit.value = 'Seconds'
 				break
 			}
 			case 'AddToTimestamp': {
 				timeSelectorMode.value = 'For'
+				timeSelectorAbsoluteTime.value = undefined
 				timeSelectorDeltaValue.value = blockTimeManipulation.deltaToAdd
 				timeSelectorDeltaUnit.value = blockTimeManipulation.deltaUnit
 				break
@@ -207,11 +211,13 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 			case 'SetTimetamp': {
 				timeSelectorMode.value = 'Until'
 				timeSelectorAbsoluteTime.value = bigintSecondsToDate(blockTimeManipulation.timeToSet)
+				timeSelectorDeltaValue.value = 12n
+				timeSelectorDeltaUnit.value = 'Seconds'
 				break
 			}
 			default: assertNever(blockTimeManipulation)
 		}
-	}, [])
+	}, [simTx, blockTimeManipulation])
 
 	const timeSelectorOnChange = (transactionOrMessage: MaybeSimulatedTransaction | VisualizedPersonalSignRequest) => {
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
@@ -274,7 +280,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 	return <ul> {
 		transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
 			const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
-			return block.operations.map((simTx, transactionIndex) => <li>
+			return block.operations.map((simTx, transactionIndex) => <li key = { 'activeAddress' in simTx ? `message-${ simTx.messageIdentifier.toString() }` : `transaction-${ simTx.transactionIdentifier.toString() }` }>
 				<TransactionOrMessageWithBlockTimeManipulator
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					simTx = { simTx }
@@ -286,9 +292,9 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 					blockTimeManipulation = { transactionIndex === block.operations.length - 1 ? nextBlockManipulator : { type: 'No Delay' } as const }
 				/>
 			</li> )
-		})
-	} </ul>
-}
+			})
+		} </ul>
+	}
 
 type TokenLogEventParams = {
 	tokenVisualizerResult: TokenVisualizerResultWithMetadata
