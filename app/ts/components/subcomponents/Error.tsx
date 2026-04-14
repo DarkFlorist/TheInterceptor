@@ -70,7 +70,7 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 
 type ErrorNotificationParams = {
 	message: string
-	timestamp?: Date
+	timestamp: Date
 	close: () => void
 }
 
@@ -82,7 +82,7 @@ function ErrorNotification({ message, timestamp, close }: ErrorNotificationParam
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
 				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }>
-					An unexpected error occured! { timestamp !== undefined ? <> <SomeTimeAgo priorTimestamp = { timestamp } /> ago</> : <></> }
+					An unexpected error occured! <SomeTimeAgo priorTimestamp = { timestamp } /> ago
 				</p>
 			</div>
 			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
@@ -95,13 +95,13 @@ function ErrorNotification({ message, timestamp, close }: ErrorNotificationParam
 	)
 }
 
-type ErrorBoundaryState = { error: Error | undefined }
+type ErrorBoundaryState = { error: Error, timestamp: Date } | { error: undefined, timestamp: undefined }
 
 export class ErrorBoundary extends Component<{ children?: ComponentChildren, onError?: (error: Error) => void }, ErrorBoundaryState> {
-	override state: ErrorBoundaryState = { error: undefined }
+	override state: ErrorBoundaryState = { error: undefined, timestamp: undefined }
 
 	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-		return { error }
+		return { error, timestamp: new Date() }
 	}
 
 	override componentDidCatch(error: Error) {
@@ -114,13 +114,13 @@ export class ErrorBoundary extends Component<{ children?: ComponentChildren, onE
 	override render() {
 		if (this.state.error !== undefined) {
 			if (this.props.onError !== undefined) return null
-			return <ErrorNotification message = { this.state.error.message } close = { this.dismiss } />
+			return <ErrorNotification message = { this.state.error.message } timestamp = { this.state.timestamp } close = { this.dismiss } />
 		}
 		return this.props.children
 	}
 }
 
-export type CaughtError = { message: string, timestamp?: Date }
+export type CaughtError = { message: string, timestamp: Date }
 
 type UnexpectedErrorParams = {
 	unexpectedError: Signal<CaughtError | undefined>

@@ -391,6 +391,7 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
+	function onRenderError(error: Error) { unexpectedError.value = { message: error.message, timestamp: new Date() } }
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
 		setBoundaryResetKey((k) => k + 1)
@@ -453,13 +454,13 @@ export function App() {
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { (e) => { unexpectedError.value = { message: e.message } } }><EditEnsLabelHash
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><EditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { (e) => { unexpectedError.value = { message: e.message } } }><InterceptorAccessList
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><InterceptorAccessList
 								goHome = { goHome }
 								setWebsiteAccess = { setWebsiteAccess }
 								websiteAccess = { websiteAccess }
@@ -468,7 +469,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { (e) => { unexpectedError.value = { message: e.message } } }><ChangeActiveAddress
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><ChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								signerAccounts = { tabState?.signerAccounts ?? [] }
 								close = { goHome }
@@ -479,7 +480,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { (e) => { unexpectedError.value = { message: e.message } } }><AddNewAddress
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
@@ -488,7 +489,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { (e) => { unexpectedError.value = { message: e.message } } }><ImportSimulationStack
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><ImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
 							/></ErrorBoundary>
