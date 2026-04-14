@@ -5,7 +5,7 @@ import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddre
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
-import { ErrorComponent } from '../subcomponents/Error.js'
+import { ErrorBoundary, ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
@@ -435,7 +435,7 @@ export function Home(param: HomeParams) {
 			rpcEntries = { param.rpcEntries }
 		/>
 
-		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <PopupVisualisation
+		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <ErrorBoundary><PopupVisualisation
 			simulationAndVisualisationResults = { simulationAndVisualisationResults }
 			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 			disableReset = { disableReset }
@@ -448,7 +448,7 @@ export function Home(param: HomeParams) {
 			simulationUpdatingState = { simulationUpdatingState }
 			simulationResultState = { simulationResultState }
 			openImportSimulation = { param.openImportSimulation }
-		/> : <> </> }
+		/></ErrorBoundary> : <> </> }
 		{ tabState?.website === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
 			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>

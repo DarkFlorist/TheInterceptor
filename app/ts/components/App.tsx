@@ -19,7 +19,7 @@ import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
-import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
+import { ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
@@ -451,22 +451,22 @@ export function App() {
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<EditEnsLabelHash
+							<ErrorBoundary><EditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<InterceptorAccessList
+							<ErrorBoundary><InterceptorAccessList
 								goHome = { goHome }
 								setWebsiteAccess = { setWebsiteAccess }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 								renameAddressCallBack = { renameAddressCallBack }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ChangeActiveAddress
+							<ErrorBoundary><ChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								signerAccounts = { tabState?.signerAccounts ?? [] }
 								close = { goHome }
@@ -474,22 +474,22 @@ export function App() {
 								signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 								renameAddressCallBack = { renameAddressCallBack }
 								addNewAddress = { addNewAddress }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<AddNewAddress
+							<ErrorBoundary><AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
 								activeAddress = { activeAddress.value }
 								rpcEntries = { rpcEntries }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ImportSimulationStack
+							<ErrorBoundary><ImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 					</div>
 				</div>

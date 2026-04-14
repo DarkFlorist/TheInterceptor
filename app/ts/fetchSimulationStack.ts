@@ -1,9 +1,9 @@
 import * as preact from 'preact'
 import { FetchSimulationStack } from './components/pages/FetchSimulationStack.js'
+import { ErrorBoundary } from './components/subcomponents/Error.js'
 
 function rerender() {
-	const element = preact.createElement(FetchSimulationStack, {})
-	preact.render(element, document.body)
+	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(FetchSimulationStack, {})), document.body)
 }
 
 rerender()

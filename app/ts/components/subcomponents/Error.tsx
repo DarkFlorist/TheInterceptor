@@ -1,4 +1,4 @@
-import type { ComponentChild, JSX } from 'preact'
+import { Component, type ComponentChild, type ComponentChildren, type JSX } from 'preact'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
 import { Signal } from '@preact/signals'
 import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
@@ -67,6 +67,27 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 			</div>
 		</div>
 	)
+}
+
+type ErrorBoundaryState = { error: Error | undefined }
+
+export class ErrorBoundary extends Component<{ children?: ComponentChildren }, ErrorBoundaryState> {
+	override state: ErrorBoundaryState = { error: undefined }
+
+	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+		return { error }
+	}
+
+	override componentDidCatch(error: Error) {
+		console.error('Caught rendering error:', error)
+	}
+
+	override render() {
+		if (this.state.error !== undefined) {
+			return <ErrorComponent text = { `Unexpected rendering error: ${ this.state.error.message }` } />
+		}
+		return this.props.children
+	}
 }
 
 type UnexpectedErrorParams = {
