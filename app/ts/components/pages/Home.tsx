@@ -269,17 +269,21 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return isEmptySimulation(param.simulationAndVisualisationResults.value)
 	})
 
+	const definedSimulationResults = useComputed(() => {
+		const currentResults = param.simulationAndVisualisationResults.value
+		if (currentResults === undefined) throw new Error('Simulation results are required')
+		return currentResults
+	})
+
 	if (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
 	}
 
-	const definedSimulationResults = useComputed(() => {
-		const currentResults = param.simulationAndVisualisationResults.value
-		if (currentResults === undefined) throw new Error('Simulation results are required')
-		return currentResults
-	})
+	if (param.simulationAndVisualisationResults.value === undefined) {
+		return <div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+	}
 
 	return <div>
 		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >

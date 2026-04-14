@@ -1,7 +1,5 @@
-import type { ComponentChild, JSX } from 'preact'
+import { Component, type ComponentChild, type ComponentChildren, type JSX } from 'preact'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
-import { Signal } from '@preact/signals'
-import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 
 interface ErrorProps {
 	text: ComponentChild
@@ -69,23 +67,53 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	)
 }
 
+
+type ErrorBoundaryState = { error: Error, timestamp: Date } | { error: undefined, timestamp: undefined }
+
+export class ErrorBoundary extends Component<{ children?: ComponentChildren, onError?: (error: Error) => void }, ErrorBoundaryState> {
+	override state: ErrorBoundaryState = { error: undefined, timestamp: undefined }
+
+	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+		return { error, timestamp: new Date() }
+	}
+
+	override componentDidCatch(error: Error) {
+		console.error('Caught rendering error:', error)
+		this.props.onError?.(error)
+	}
+
+	dismiss = () => this.setState({ error: undefined })
+
+	override render() {
+		if (this.state.error !== undefined) {
+			if (this.props.onError !== undefined) return null
+			return <UnexpectedError error = { { message: this.state.error.message, timestamp: this.state.timestamp } } close = { this.dismiss } />
+		}
+		return this.props.children
+	}
+}
+
+export type CaughtError = { message: string, timestamp: Date }
+
 type UnexpectedErrorParams = {
-	unexpectedError: Signal<UnexpectedErrorOccured | undefined>
+	error: CaughtError | undefined
 	close: () => void
 }
 
-export const UnexpectedError = ({ unexpectedError, close }: UnexpectedErrorParams) => {
-	if (unexpectedError.value?.data.message === undefined) return <></>
+export function UnexpectedError({ error, close }: UnexpectedErrorParams) {
+	if (error === undefined) return <></>
 	return (
 		<div className = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
 			<div style = 'display: flex; padding-bottom: 10px;'>
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
-				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }> An unexpected error occured! <SomeTimeAgo priorTimestamp = { unexpectedError.value?.data.timestamp } /> ago </p>
+				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }>
+					An unexpected error occured! <SomeTimeAgo priorTimestamp = { error.timestamp } /> ago
+				</p>
 			</div>
 			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
-				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { unexpectedError.value?.data.message } </p>
+				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { error.message } </p>
 			</div>
 			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
 				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>

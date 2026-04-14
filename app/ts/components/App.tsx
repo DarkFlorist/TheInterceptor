@@ -19,14 +19,14 @@ import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
-import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
+import { CaughtError, ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
-import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { EnrichedRichListElement } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 
@@ -89,7 +89,8 @@ export function App() {
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
-	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
+	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
+	const [boundaryResetKey, setBoundaryResetKey] = useState(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
@@ -151,7 +152,7 @@ export function App() {
 	const requestUnexpectedError = async () => {
 		const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
 		if (reply === undefined) return
-		unexpectedError.value = reply.latestUnexpectedError
+		unexpectedError.value = reply.latestUnexpectedError !== undefined ? { message: reply.latestUnexpectedError.data.message, timestamp: reply.latestUnexpectedError.data.timestamp } : undefined
 	}
 
 	useEffect(() => {
@@ -239,7 +240,7 @@ export function App() {
 			const parsed = maybeParsed.value
 			switch(parsed.method) {
 				case 'popup_UnexpectedErrorOccured': {
-					unexpectedError.value = parsed
+					unexpectedError.value = { message: parsed.data.message, timestamp: parsed.data.timestamp }
 					return false
 				}
 				case 'popup_settingsUpdated': {
@@ -390,8 +391,10 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
+	function onRenderError(error: Error) { unexpectedError.value = { message: error.message, timestamp: new Date() } }
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
+		setBoundaryResetKey((k) => k + 1)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
@@ -418,7 +421,7 @@ export function App() {
 						</div>
 					</nav>
 
-					<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
+					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
 					{ !isSettingsLoaded ? <CenterToPageTextSpinner/> : <>
@@ -451,22 +454,22 @@ export function App() {
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<EditEnsLabelHash
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><EditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<InterceptorAccessList
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><InterceptorAccessList
 								goHome = { goHome }
 								setWebsiteAccess = { setWebsiteAccess }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 								renameAddressCallBack = { renameAddressCallBack }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ChangeActiveAddress
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><ChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								signerAccounts = { tabState?.signerAccounts ?? [] }
 								close = { goHome }
@@ -474,22 +477,22 @@ export function App() {
 								signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 								renameAddressCallBack = { renameAddressCallBack }
 								addNewAddress = { addNewAddress }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<AddNewAddress
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
 								activeAddress = { activeAddress.value }
 								rpcEntries = { rpcEntries }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ImportSimulationStack
+							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><ImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
-							/>
+							/></ErrorBoundary>
 						: <></> }
 					</div>
 				</div>
