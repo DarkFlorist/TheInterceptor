@@ -1,7 +1,6 @@
 import { Component, type ComponentChild, type ComponentChildren, type JSX } from 'preact'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
 import { Signal } from '@preact/signals'
-import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 
 interface ErrorProps {
 	text: ComponentChild
@@ -98,7 +97,7 @@ function ErrorNotification({ message, timestamp, close }: ErrorNotificationParam
 
 type ErrorBoundaryState = { error: Error | undefined }
 
-export class ErrorBoundary extends Component<{ children?: ComponentChildren }, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<{ children?: ComponentChildren, onError?: (error: Error) => void }, ErrorBoundaryState> {
 	override state: ErrorBoundaryState = { error: undefined }
 
 	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -107,22 +106,28 @@ export class ErrorBoundary extends Component<{ children?: ComponentChildren }, E
 
 	override componentDidCatch(error: Error) {
 		console.error('Caught rendering error:', error)
+		this.props.onError?.(error)
 	}
 
 	dismiss = () => this.setState({ error: undefined })
 
 	override render() {
-		if (this.state.error !== undefined) return <ErrorNotification message = { this.state.error.message } close = { this.dismiss } />
+		if (this.state.error !== undefined) {
+			if (this.props.onError !== undefined) return null
+			return <ErrorNotification message = { this.state.error.message } close = { this.dismiss } />
+		}
 		return this.props.children
 	}
 }
 
+export type CaughtError = { message: string, timestamp?: Date }
+
 type UnexpectedErrorParams = {
-	unexpectedError: Signal<UnexpectedErrorOccured | undefined>
+	unexpectedError: Signal<CaughtError | undefined>
 	close: () => void
 }
 
 export const UnexpectedError = ({ unexpectedError, close }: UnexpectedErrorParams) => {
-	if (unexpectedError.value?.data === undefined) return <></>
-	return <ErrorNotification message = { unexpectedError.value.data.message } timestamp = { unexpectedError.value.data.timestamp } close = { close } />
+	if (unexpectedError.value === undefined) return <></>
+	return <ErrorNotification message = { unexpectedError.value.message } timestamp = { unexpectedError.value.timestamp } close = { close } />
 }

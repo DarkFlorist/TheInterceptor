@@ -8,7 +8,7 @@ import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
-import { ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
+import { CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
@@ -30,7 +30,6 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
-import { UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 type UnderTransactionsParams = {
@@ -393,7 +392,7 @@ export function ConfirmTransaction() {
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
 	const pendingTransactionAddedNotification = useSignal<boolean>(false)
-	const unexpectedError = useSignal<undefined | UnexpectedErrorOccured>(undefined)
+	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
@@ -415,7 +414,7 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_UnexpectedErrorOccured') {
-				unexpectedError.value = parsed
+				unexpectedError.value = { message: parsed.data.message, timestamp: parsed.data.timestamp }
 				return false
 			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
