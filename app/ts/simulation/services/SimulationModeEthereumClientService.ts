@@ -1,9 +1,10 @@
 import { EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
+import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction, EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import { Interface, ethers, hashMessage, keccak256, } from 'ethers'
-import { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
+import { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -24,6 +25,15 @@ const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
 
 export const DEFAULT_BLOCK_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const
+
+type GroupedEthSimulateV1BlockResult = {
+	inputBlock: SimulationStateInputMinimalDataBlock
+	baseFeePerGas: bigint
+	timestamp: bigint
+	calls: readonly EthSimulateV1CallResult[]
+}
+
+type GroupedEthSimulateV1Result = readonly GroupedEthSimulateV1BlockResult[]
 
 export const getWebsiteCreatedEthereumUnsignedTransactions = (simulatedTransactions: readonly SimulatedTransaction[]) => {
 	return simulatedTransactions.map((simulatedTransaction) => ({
@@ -160,6 +170,25 @@ export const getBlockTimeManipulationSeconds = (deltaToAdd: EthereumQuantity, de
 	}
 }
 
+export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimulateV1Input, result: EthSimulateV1Result): GroupedEthSimulateV1Result => {
+	let rpcBlockIndex = 0
+	const groupedResults = prepared.inputBlocks.map((preparedInputBlock) => {
+		const resultBlocks = result.slice(rpcBlockIndex, rpcBlockIndex + preparedInputBlock.rpcBlockCount)
+		if (resultBlocks.length !== preparedInputBlock.rpcBlockCount) throw new Error('multicall length does not match in createSimulationState')
+		rpcBlockIndex += preparedInputBlock.rpcBlockCount
+		const firstResultBlock = resultBlocks[0]
+		if (firstResultBlock === undefined) throw new Error('grouped result block was undefined')
+		return {
+			inputBlock: preparedInputBlock.inputBlock,
+			baseFeePerGas: firstResultBlock.baseFeePerGas,
+			timestamp: firstResultBlock.timestamp,
+			calls: resultBlocks.flatMap((block) => block.calls),
+		}
+	})
+	if (rpcBlockIndex !== result.length) throw new Error('multicall length does not match in createSimulationState')
+	return groupedResults
+}
+
 export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput): Promise<SimulationState> => {
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
@@ -192,20 +221,19 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 	}
 	try {
-		const ethSimulateV1CallResult = await ethereumClientService.simulate(simulationStateInput, parentBlock.number, requestAbortController)
-		if (ethSimulateV1CallResult === undefined) throw new Error('multicall length does not match in createSimulationState')
-		if (ethSimulateV1CallResult.length !== simulationStateInput.length) throw Error('multicall length does not match in createSimulationState')
-		const baseFeePerGas = ethSimulateV1CallResult[0]?.baseFeePerGas ?? 0n
+		const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared(simulationStateInput, parentBlock.number, requestAbortController)
+		const groupedEthSimulateV1CallResult = groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult)
+		const baseFeePerGas = groupedEthSimulateV1CallResult[0]?.baseFeePerGas ?? 0n
 
 		const tokenBalancesAfter = await getTokenBalancesAfter(
 			ethereumClientService,
 			requestAbortController,
-			ethSimulateV1CallResult,
+			groupedEthSimulateV1CallResult,
 			simulationStateInput,
 		)
 		return {
 			success: true,
-			simulatedBlocks: ethSimulateV1CallResult.map((callResult, blockIndex) => ({
+			simulatedBlocks: groupedEthSimulateV1CallResult.map((callResult, blockIndex) => ({
 				simulatedTransactions: callResult.calls.map((singleResult, transactionIndex) => {
 					const tokenBalancesAfterForIndex = tokenBalancesAfter.blocks[blockIndex]?.transactions[transactionIndex]?.tokenBalancesAfter
 					const signedTx = simulationStateInput[blockIndex]?.transactions[transactionIndex]
@@ -219,10 +247,10 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 						tokenBalancesAfter: tokenBalancesAfterForIndex,
 					}
 				}),
-				signedMessages: simulationStateInput[blockIndex]?.signedMessages || [],
-				stateOverrides: simulationStateInput[blockIndex]?.stateOverrides || {},
+				signedMessages: callResult.inputBlock.signedMessages || [],
+				stateOverrides: callResult.inputBlock.stateOverrides || {},
 				blockTimestamp: bigintSecondsToDate(callResult.timestamp),
-				blockTimeManipulation: simulationStateInput[blockIndex]?.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
+				blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 				blockBaseFeePerGas: callResult.baseFeePerGas,
 			})),
 			...base,
@@ -684,8 +712,8 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 		simulateWithZeroBaseFee,
 	}
 	const simulationStateInputWithNewTransactions = simulationStateInput !== undefined ? [...simulationStateInput, newTransactions] : [newTransactions]
-	const ethSimulateV1CallResult = await ethereumClientService.simulate(simulationStateInputWithNewTransactions, await ethereumClientService.getBlockNumber(requestAbortController), requestAbortController)
-	return ethSimulateV1CallResult.at(-1)?.calls || []
+	const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared(simulationStateInputWithNewTransactions, await ethereumClientService.getBlockNumber(requestAbortController), requestAbortController)
+	return groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult).at(-1)?.calls || []
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
@@ -921,14 +949,14 @@ export const sliceSimulationState = (simulationState: SimulationState, blockInde
 export const getTokenBalancesAfter = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-	ethSimulateV1Result: EthSimulateV1Result,
+	ethSimulateV1Result: GroupedEthSimulateV1Result,
 	simulationStateInput: SimulationStateInput,
 ): Promise<TokenBalancesBlocksAfter> => {
 	const tokenBalancesAfterArray = await promiseAllMapAbortSafe(Array.from(simulationStateInput.entries()), async ([inputBlockIndex, inputBlock]) => {
-		const simulateResultBlock = ethSimulateV1Result[inputBlockIndex]
-		if (simulateResultBlock === undefined) throw new Error('singleResult block was undefined')
+		const groupedResultBlock = ethSimulateV1Result[inputBlockIndex]
+		if (groupedResultBlock === undefined) throw new Error('singleResult block was undefined')
 		return await promiseAllMapAbortSafe(Array.from(inputBlock.transactions.entries()), async ([inputTransactionIndex, inputTransaction]) => {
-			const simulateResultTransaction = simulateResultBlock.calls[inputTransactionIndex]
+			const simulateResultTransaction = groupedResultBlock.calls[inputTransactionIndex]
 			if (simulateResultTransaction === undefined) throw new Error('singleResult transaction was undefined')
 			const sender = inputTransaction.signedTransaction.from
 			const inputStateJustAfterTransaction = sliceSimulationStateInput(simulationStateInput, inputBlockIndex, inputTransactionIndex + 1)

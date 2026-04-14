@@ -4,7 +4,7 @@ import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { BlockCalls, BlockOverrides, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { BlockCalls, BlockOverrides, EthSimulateV1Result, EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { DEFAULT_BLOCK_MANIPULATION, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
@@ -21,6 +21,14 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 }
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
+export type PreparedEthSimulateV1InputBlock = {
+	readonly inputBlock: SimulationStateInputMinimalDataBlock
+	readonly rpcBlockCount: number
+}
+export type PreparedEthSimulateV1Input = {
+	readonly request: EthSimulateV1Params
+	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
+}
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timeout | undefined = undefined
@@ -207,7 +215,7 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(call))
 	}
 
-	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
@@ -238,7 +246,8 @@ export class EthereumClientService {
 		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
 		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.signedTransaction) })) }))
 		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
-		const newBlocks: SimulationStateInputMinimalDataBlock[] = []
+		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
+		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []
 		for (const inputBlock of gasLimitedInput) {
 			const signedTransactions = inputBlock.transactions.map((x) => x.signedTransaction)
 			if (calculateTotalGasUsed(signedTransactions) > parentBlock.gasLimit) {
@@ -246,18 +255,20 @@ export class EthereumClientService {
 				for (const [index, newTransactions] of splitted.entries()) {
 					const transactions = newTransactions.map((transaction) => ({ signedTransaction: transaction }))
 					if (index === 0) {
-						newBlocks.push({ ...inputBlock, transactions })
+						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
-						newBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+						rpcBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
 					}
 				}
+				preparedBlocks.push({ inputBlock, rpcBlockCount: splitted.length })
 			} else {
-				newBlocks.push(inputBlock)
+				rpcBlocks.push(inputBlock)
+				preparedBlocks.push({ inputBlock, rpcBlockCount: 1 })
 			}
 		}
 
 		let previousBlockOverride = { time: parentBlock.timestamp, feeRecipient: parentBlock.miner }
-		for (const inputBlock of newBlocks) {
+		for (const inputBlock of rpcBlocks) {
 			const newBlockOverride = {
 				...previousBlockOverride,
 				baseFeePerGas: inputBlock.simulateWithZeroBaseFee ? 0n : baseFeePerGas,
@@ -307,21 +318,35 @@ export class EthereumClientService {
 			}
 		}
 
-		const blockStateCalls = await Promise.all(newBlocks.map(async (block, index) => {
+		const blockStateCalls = await Promise.all(rpcBlocks.map(async (block, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
 			return await getBlockStateCall(block, blockOverrideForBlock)
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {
-			method: 'eth_simulateV1',
-			params: [{
-				blockStateCalls,
-				traceTransfers: true,
-				validation: false,
+			inputBlocks: preparedBlocks,
+			request: {
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls,
+					traceTransfers: true,
+					validation: false,
+				}, blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber] as const,
 			},
-			blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber
-		] } as const
+		}
+	}
+
+	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		return (await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)).request
+	}
+
+	public readonly simulatePrepared = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+		return {
+			prepared,
+			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
+		}
 	}
 
 	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
