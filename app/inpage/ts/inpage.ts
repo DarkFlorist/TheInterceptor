@@ -141,10 +141,8 @@ type WindowEthereum = InjectFunctions & {
 	chainId?: string,
 	networkVersion?: string,
 }
-interface Window {
-	dispatchEvent: (event: Event) => boolean
-	addEventListener: (type: string, listener: (event: unknown) => void) => void
-	postMessage: (message: unknown, targetOrigin: string) => void
+
+type InpageWindow = Window & {
 	ethereum?: WindowEthereum
 	web3?: {
 		currentProvider: WindowEthereum
@@ -152,7 +150,7 @@ interface Window {
 	}
 }
 
-declare const window: Window
+const inpageWindow = window as InpageWindow
 
 interface EIP6963ProviderInfo {
 	uuid: string
@@ -230,12 +228,12 @@ class InterceptorMessageListener {
 		const fullPayload = typeof payload === 'string' ? { method: payload, id: 1, params: [] } : payload
 		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
-			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
+			if (inpageWindow.ethereum === undefined) throw new Error('window.ethereum is missing')
 			switch (fullPayload.method) {
 				case 'eth_coinbase':
-				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
-				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.networkVersion }
-				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.chainId }
+				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.selectedAddress === undefined || inpageWindow.ethereum.selectedAddress === null ? [] : [inpageWindow.ethereum.selectedAddress] }
+				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.networkVersion }
+				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.chainId }
 				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ fullPayload.method }`)
 			}
 		}
@@ -272,7 +270,7 @@ class InterceptorMessageListener {
 	static exhaustivenessCheck = (_thing: never) => {}
 
 	private readonly WindowEthereumOn = (kind: OnMessage, callback: AnyCallBack) => {
-		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
+		if (inpageWindow.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.add(callback as (accounts: readonly string[]) => void)
@@ -294,11 +292,11 @@ class InterceptorMessageListener {
 				break
 			default: InterceptorMessageListener.exhaustivenessCheck(kind)
 		}
-		return window.ethereum
+		return inpageWindow.ethereum
 	}
 
 	private readonly WindowEthereumRemoveListener = (kind: OnMessage, callback: AnyCallBack) => {
-		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
+		if (inpageWindow.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.delete(callback as (accounts: readonly string[]) => void)
@@ -320,7 +318,7 @@ class InterceptorMessageListener {
 				break
 			default: InterceptorMessageListener.exhaustivenessCheck(kind)
 		}
-		return window.ethereum
+		return inpageWindow.ethereum
 	}
 
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
@@ -424,9 +422,9 @@ class InterceptorMessageListener {
 					const replyAddress = reply[0] ?? ''
 					if (this.currentAddress === replyAddress) return
 					this.currentAddress = replyAddress
-					if (this.metamaskCompatibilityMode && window.ethereum !== undefined) {
-						try { window.ethereum.selectedAddress = replyAddress } catch(error) {}
-						if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = reply } catch(error) {}
+					if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
+						try { inpageWindow.ethereum.selectedAddress = replyAddress } catch(error) {}
+						if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) try { inpageWindow.web3.accounts = reply } catch(error) {}
 					}
 					for (const callback of this.onAccountsChangedCallBacks) {
 						callback(reply)
@@ -453,9 +451,9 @@ class InterceptorMessageListener {
 					const reply = replyRequest.result as string
 					if (this.activeChainId === reply) return
 					this.activeChainId = reply
-					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
-						try { window.ethereum.chainId = reply } catch(error) {}
-						try { window.ethereum.networkVersion = Number(reply).toString(10) } catch(error) {}
+					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
+						try { inpageWindow.ethereum.chainId = reply } catch(error) {}
+						try { inpageWindow.ethereum.networkVersion = Number(reply).toString(10) } catch(error) {}
 					}
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
@@ -518,7 +516,7 @@ class InterceptorMessageListener {
 			|| !('interceptorApproved' in messageEvent.data)
 		) return
 		try {
-			if (!('ethereum' in window) || !window.ethereum) throw new Error('window.ethereum missing')
+			if (!('ethereum' in inpageWindow) || !inpageWindow.ethereum) throw new Error('window.ethereum missing')
 			if (!('method' in messageEvent.data)) throw new Error('missing method field')
 			if (!('type' in messageEvent)) throw new Error('missing type field')
 			const forwardRequest = messageEvent.data as InterceptedRequestForward //use 'as' here as we don't want to inject funtypes here
@@ -529,23 +527,23 @@ class InterceptorMessageListener {
 				return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 			}
 			if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
-				if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
+				if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
 					switch (messageEvent.data.method) {
 						case 'eth_requestAccounts':
 						case 'eth_accounts': {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 							const addrArray = forwardRequest.result as string[]
 							const addr = addrArray[0] ?? ''
-							try { window.ethereum.selectedAddress = addr } catch(e) {}
-							if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = addrArray } catch(e) {}
+							try { inpageWindow.ethereum.selectedAddress = addr } catch(e) {}
+							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) try { inpageWindow.web3.accounts = addrArray } catch(e) {}
 							this.currentAddress = addr
 							break
 						}
 						case 'eth_chainId': {
 							if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
 							const chainId = forwardRequest.result as string
-							try { window.ethereum.chainId = chainId } catch(e) {}
-							try { window.ethereum.networkVersion = Number(chainId).toString(10) } catch(e) {}
+							try { inpageWindow.ethereum.chainId = chainId } catch(e) {}
+							try { inpageWindow.ethereum.networkVersion = Number(chainId).toString(10) } catch(e) {}
 							this.activeChainId = chainId
 							break
 						}
@@ -605,12 +603,12 @@ class InterceptorMessageListener {
 	private enableMetamaskCompatibilityMode(enable: boolean) {
 		this.metamaskCompatibilityMode = enable
 		if (enable) {
-			if (window.ethereum === undefined) return
-			if (!('isMetamask' in window.ethereum)) try { window.ethereum.isMetaMask = true } catch(e) {}
-			if ('web3' in window && window.web3 !== undefined) {
-				try { window.web3.currentProvider = window.ethereum } catch(e) {}
+			if (inpageWindow.ethereum === undefined) return
+			if (!('isMetamask' in inpageWindow.ethereum)) try { inpageWindow.ethereum.isMetaMask = true } catch(e) {}
+			if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
+				try { inpageWindow.web3.currentProvider = inpageWindow.ethereum } catch(e) {}
 			} else {
-				try { window.web3 = { accounts: [], currentProvider: window.ethereum } } catch(e) {}
+				try { inpageWindow.web3 = { accounts: [], currentProvider: inpageWindow.ethereum } } catch(e) {}
 			}
 		}
 	}
@@ -625,8 +623,8 @@ class InterceptorMessageListener {
 				&& 'activeAddress' in connectSignerReply && connectSignerReply.activeAddress !== null
 				&& connectSignerReply.activeAddress !== undefined && typeof connectSignerReply.activeAddress === 'string') {
 					this.currentAddress = connectSignerReply.activeAddress
-					if (connectSignerReply.metamaskCompatibilityMode && window.ethereum !== undefined) {
-						try { window.ethereum.selectedAddress = this.currentAddress } catch(error) { }
+					if (connectSignerReply.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
+						try { inpageWindow.ethereum.selectedAddress = this.currentAddress } catch(error) { }
 					}
 				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string }
 			}
@@ -669,8 +667,8 @@ class InterceptorMessageListener {
 				rdns: 'dark.florist'
 			}
 
-			if (window.ethereum === undefined || !window.ethereum.isInterceptor) interceptorMessageListener.injectEthereumIntoWindow()
-			const provider = window.ethereum
+			if (inpageWindow.ethereum === undefined || !inpageWindow.ethereum.isInterceptor) interceptorMessageListener.injectEthereumIntoWindow()
+			const provider = inpageWindow.ethereum
 			if (provider === undefined) throw new Error('The Interceptor provider was not initialized')
 			window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }))
 		}
@@ -679,48 +677,48 @@ class InterceptorMessageListener {
 	}
 
 	public readonly injectEthereumIntoWindow = () => {
-		if (!('ethereum' in window) || !window.ethereum) {
+		if (!('ethereum' in inpageWindow) || !inpageWindow.ethereum) {
 			// no existing signer found
-			window.ethereum = {
+			inpageWindow.ethereum = {
 				isInterceptor: true,
-				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
-				request: this.WindowEthereumRequest.bind(window.ethereum),
-				send: this.WindowEthereumSend.bind(window.ethereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
-				on: this.WindowEthereumOn.bind(window.ethereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
-				enable: this.WindowEthereumEnable.bind(window.ethereum),
-				...this.unsupportedMethods(window.ethereum),
+				isConnected: this.WindowEthereumIsConnected.bind(inpageWindow.ethereum),
+				request: this.WindowEthereumRequest.bind(inpageWindow.ethereum),
+				send: this.WindowEthereumSend.bind(inpageWindow.ethereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(inpageWindow.ethereum),
+				on: this.WindowEthereumOn.bind(inpageWindow.ethereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(inpageWindow.ethereum),
+				enable: this.WindowEthereumEnable.bind(inpageWindow.ethereum),
+				...this.unsupportedMethods(inpageWindow.ethereum),
 			}
 			this.connected = true
 			this.connectToSigner('NoSigner')
 			return
 		}
-		if (window.ethereum.isInterceptor) return
+		if (inpageWindow.ethereum.isInterceptor) return
 
 		// subscribe for signers events
-		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
+		inpageWindow.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
 			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
 		})
-		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
+		inpageWindow.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 			this.connectToSigner(this.currentSigner)
 		})
-		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
+		inpageWindow.ethereum.on('disconnect', (_error: ProviderRpcError) => {
 			this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, this.currentSigner] })
 		})
-		window.ethereum.on('chainChanged', (chainId: string) => {
+		inpageWindow.ethereum.on('chainChanged', (chainId: string) => {
 			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
 			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
 			this.WindowEthereumRequest({ method: 'signer_chainChanged', params })
 		})
 
-		this.connected = !window.ethereum.isConnected || window.ethereum.isConnected()
-		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
+		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
+		this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
 
-		if (window.ethereum.isBraveWallet || window.ethereum.providerMap || window.ethereum.isCoinbaseWallet) {
-			const signerName = window.ethereum.providerMap || window.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
-			const oldWinEthereum = (window.ethereum.providerMap ? window.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? window.ethereum
-			window.ethereum = {
+		if (inpageWindow.ethereum.isBraveWallet || inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet) {
+			const signerName = inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
+			const oldWinEthereum = (inpageWindow.ethereum.providerMap ? inpageWindow.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? inpageWindow.ethereum
+			inpageWindow.ethereum = {
 				isInterceptor: true,
 				isConnected: this.WindowEthereumIsConnected.bind(oldWinEthereum),
 				request: this.WindowEthereumRequest.bind(oldWinEthereum),
@@ -735,18 +733,18 @@ class InterceptorMessageListener {
 			return
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-		Object.assign(window.ethereum, {
+		Object.assign(inpageWindow.ethereum, {
 			isInterceptor: true,
-			isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
-			request: this.WindowEthereumRequest.bind(window.ethereum),
-			send: this.WindowEthereumSend.bind(window.ethereum),
-			sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
-			on: this.WindowEthereumOn.bind(window.ethereum),
-			removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
-			enable: this.WindowEthereumEnable.bind(window.ethereum),
-			...this.unsupportedMethods(window.ethereum),
+			isConnected: this.WindowEthereumIsConnected.bind(inpageWindow.ethereum),
+			request: this.WindowEthereumRequest.bind(inpageWindow.ethereum),
+			send: this.WindowEthereumSend.bind(inpageWindow.ethereum),
+			sendAsync: this.WindowEthereumSendAsync.bind(inpageWindow.ethereum),
+			on: this.WindowEthereumOn.bind(inpageWindow.ethereum),
+			removeListener: this.WindowEthereumRemoveListener.bind(inpageWindow.ethereum),
+			enable: this.WindowEthereumEnable.bind(inpageWindow.ethereum),
+			...this.unsupportedMethods(inpageWindow.ethereum),
 		})
-		this.connectToSigner(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
+		this.connectToSigner(inpageWindow.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 	}
 }
 
