@@ -40,4 +40,4 @@ WORKDIR /workspace/app
 RUN zip ../interceptor-chrome.zip -r .
 
 WORKDIR /workspace
-RUN mv interceptor-*.zip app/
+RUN mv interceptor-firefox.zip /interceptor-firefox.zip && mv interceptor-chrome.zip /interceptor-chrome.zip
