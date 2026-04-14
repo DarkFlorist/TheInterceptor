@@ -150,10 +150,11 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
+const normalizeConsecutiveTimeManipulations = (operations: readonly InterceptorStackOperation[]) => {
+	return operations.filter((operation, operationIndex) => !(operationIndex > 0 && operation.type === 'TimeManipulation' && operations[operationIndex - 1]?.type === 'TimeManipulation'))
+}
+
 export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction) {
-	const removeConsequtiveTimeManipulations = (operations: readonly InterceptorStackOperation[]) => {
-		return operations.filter((operation, operationIndex) => !(operationIndex > 0 && operation.type === 'TimeManipulation' && operations[operationIndex - 1]?.type === 'TimeManipulation'))
-	}
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		switch (params.data.type) {
 			case 'Transaction': {
@@ -186,12 +187,12 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 					}
 					newOperations.push(operation)
 				}
-				return { operations: removeConsequtiveTimeManipulations(newOperations) }
+				return { operations: normalizeConsecutiveTimeManipulations(newOperations) }
 			}
 			case 'Message': {
 				const messageIdentifier = params.data.messageIdentifier
 				return {
-					operations: removeConsequtiveTimeManipulations(prevStack.operations)
+					operations: normalizeConsecutiveTimeManipulations(prevStack.operations)
 						.filter((operation) => !(operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier))
 				}
 			}
@@ -696,8 +697,9 @@ export async function changePreSimulationBlockTimeManipulation(simulator: Simula
 
 export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
 	const newStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+		const normalizedPrevStack = { operations: normalizeConsecutiveTimeManipulations(prevStack.operations) }
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
-		const appendAfterIndex = prevStack.operations.findIndex((operation) => {
+		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => {
 			switch(operation.type) {
 				case 'Transaction': return identifier.type === operation.type && identifier.transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier
 				case 'Message': return identifier.type === operation.type && identifier.messageIdentifier === operation.signedMessageTransaction.messageIdentifier
@@ -705,20 +707,20 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 				default: assertNever(operation)
 			}
 		})
-		if (appendAfterIndex < 0) return prevStack
+		if (appendAfterIndex < 0) return normalizedPrevStack
 		const indexOfMaybeManipulator = appendAfterIndex + 1
-		const maybeExistingManipulator = prevStack.operations[indexOfMaybeManipulator]
+		const maybeExistingManipulator = normalizedPrevStack.operations[indexOfMaybeManipulator]
 		if (maybeExistingManipulator?.type === 'TimeManipulation') {
 			// no delay, so we can remove the manipulator
-			if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), ...prevStack.operations.slice(indexOfMaybeManipulator + 1)] }
+			if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return { operations: normalizeConsecutiveTimeManipulations([...normalizedPrevStack.operations.slice(0, indexOfMaybeManipulator), ...normalizedPrevStack.operations.slice(indexOfMaybeManipulator + 1)]) }
 			const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
 			// replace manipulator
-			return { operations: prevStack.operations.map((operation, index) => index === indexOfMaybeManipulator ? newManipulator : operation) }
+			return { operations: normalizeConsecutiveTimeManipulations(normalizedPrevStack.operations.map((operation, index) => index === indexOfMaybeManipulator ? newManipulator : operation)) }
 		}
 		// insert new manipulator
-		if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return prevStack
+		if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return normalizedPrevStack
 		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
-		return { operations: [...prevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...prevStack.operations.slice(indexOfMaybeManipulator)] }
+		return { operations: normalizeConsecutiveTimeManipulations([...normalizedPrevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...normalizedPrevStack.operations.slice(indexOfMaybeManipulator)]) }
 	})
 	const secondToLastOperation = newStack.operations[newStack.operations.length - 2]
 	if (secondToLastOperation === undefined || secondToLastOperation.type === 'TimeManipulation') {
@@ -799,14 +801,14 @@ export async function importSimulationStack(simulator: Simulator, parsedRequest:
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
 		// generate new ids for operations to prevent duplicated ids
-		return { operations: newOperations.map((operation) => {
+		return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
 			switch(operation.type) {
 				case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
 				case 'TimeManipulation': return operation
 				case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
 				default: assertNever(operation)
 			}
-		}) }
+		})) }
 	})
 	updatePopupVisualisationIfNeeded(simulator, false, true)
 }
