@@ -10,10 +10,9 @@
 		"build-chrome": "bun run bundle && bun run chrome",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",
-		"firefox": "bun -e \"import { copyFileSync } from 'fs'; copyFileSync('app/manifestV2.json', 'app/manifest.json');\"",
-		"chrome": "bun -e \"import { copyFileSync } from 'fs'; copyFileSync('app/manifestV3.json', 'app/manifest.json');\"",
-		"inpage": "bun --bun tsc --project tsconfig-inpage.json",
-		"cleanup": "bunx knip@5.1.6 --fix",
+        "firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",
+        "chrome": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV3.json`))'",
+		"inpage": "bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json",
 		"cleanup:dryrun": "bunx knip@5.1.6",
 		"lint": "bunx -p @biomejs/biome@1.6.1 biome lint ."
 	},
