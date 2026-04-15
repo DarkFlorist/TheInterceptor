@@ -42,14 +42,17 @@ export const getAddressesbeingMadeRich = async () => {
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
-	const preSimulationBlockTimeManipulation = await getPreSimulationBlockTimeManipulation()
+	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
+		getSettings(),
+		getPreSimulationBlockTimeManipulation()
+	])
 	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
-	let previousBlockTimeManipulation = preSimulationBlockTimeManipulation
+	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
