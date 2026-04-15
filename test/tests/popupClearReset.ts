@@ -118,7 +118,6 @@ type TestModules = Awaited<ReturnType<typeof loadModules>>
 
 function buildStalePopupVisualisationState(
 	rpcNetwork: TestModules['defaultRpcs'][number],
-	activeAddress: bigint,
 	defaultBlockManipulation: TestModules['DEFAULT_BLOCK_MANIPULATION'],
 ) {
 	const simulationState = {
@@ -151,7 +150,6 @@ function buildStalePopupVisualisationState(
 		tokenPriceQuoteToken: undefined,
 		namedTokenIds: [],
 		simulationState,
-		activeAddress,
 		simulationUpdatingState: 'done' as const,
 		simulationResultState: 'done' as const,
 		simulationId: 7,
@@ -224,7 +222,7 @@ export async function main() {
 	const rpcNetwork = defaultRpcs[0]
 	if (activeAddress === undefined || rpcNetwork === undefined) throw new Error('test defaults are missing')
 
-	const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, activeAddress, DEFAULT_BLOCK_MANIPULATION)
+	const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 	const fakeSimulator = { ethereum: createFakeEthereum(rpcNetwork), tokenPriceService: {} }
 	const typedPopupSimulator = fakeSimulator as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 	const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
@@ -300,12 +298,12 @@ export async function main() {
 
 			const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 			assert.ok(popupVisualisation)
-			assert.equal(popupVisualisation.activeAddress, nextActiveAddress)
+			assert.equal('activeAddress' in popupVisualisation, false)
 			assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
 
 			const homePageMessage = browserMock.sentMessages.find((message) => message.method === 'popup_UpdateHomePage')
 			assert.ok(homePageMessage)
-			assert.equal((homePageMessage as { data: { visualizedSimulatorState: CompleteVisualizedSimulation } }).data.visualizedSimulatorState.activeAddress, nextActiveAddress)
+			assert.equal((homePageMessage as { data: { settings: { activeSimulationAddress: bigint | undefined } } }).data.settings.activeSimulationAddress, nextActiveAddress)
 		})
 
 		should('publish an empty popup visualisation even when previous state was done', async () => {

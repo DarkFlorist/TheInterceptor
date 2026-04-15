@@ -11,7 +11,6 @@ import { modifyObject } from '../utils/typescript.js'
 import { getUpdatedSimulationState } from './background.js'
 import { sendPopupMessageWithReply, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
-import { getSettings } from './settings.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 
@@ -19,7 +18,6 @@ let abortController = new AbortController()
 
 function buildEmptyVisualizedState(
 	simulationId: number,
-	activeAddress: bigint | undefined,
 	numberOfAddressesMadeRich: number,
 	simulationResultState: 'done' | 'corrupted' = 'done',
 ): CompleteVisualizedSimulation {
@@ -31,7 +29,6 @@ function buildEmptyVisualizedState(
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
-		activeAddress,
 		namedTokenIds: [],
 		visualizedSimulationState: { success: true, visualizedBlocks: [] },
 		numberOfAddressesMadeRich,
@@ -77,10 +74,9 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		const popupVisualisation = await getPopupVisualisationState()
 		const simulationId = popupVisualisation.simulationId + 1
 		const simulationState = await getUpdatedSimulationState(ethereum)
-		const activeAddress = (await getSettings()).activeSimulationAddress
-		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
+		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
 		if (simulationState?.simulationStateInput === undefined || simulationState.simulationStateInput.filter((x) => x.transactions.length > 0).length === 0) {
-			const newState = buildEmptyVisualizedState(simulationId, activeAddress, (await getAddressesbeingMadeRich()).length)
+			const newState = buildEmptyVisualizedState(simulationId, (await getAddressesbeingMadeRich()).length)
 			await setPopupVisualisationState(newState)
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
 			return
@@ -94,7 +90,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 					const refreshed = await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, abortController)
 					return await setPopupVisualisationState({ ...refreshed, ...doneState, numberOfAddressesMadeRich })
 				}
-				return await setPopupVisualisationState(buildEmptyVisualizedState(simulationId, activeAddress, numberOfAddressesMadeRich, 'corrupted'))
+				return await setPopupVisualisationState(buildEmptyVisualizedState(simulationId, numberOfAddressesMadeRich, 'corrupted'))
 			}
 			const newVisualizedState = await getUpdatedState()
 			await changedMessagePromise

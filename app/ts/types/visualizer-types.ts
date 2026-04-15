@@ -1,6 +1,6 @@
 
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { EthNewFilter, EthSubscribeParams, JsonRpcErrorResponse, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
@@ -353,7 +353,6 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
 	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
-	activeAddress: OptionalEthereumAddress,
 	simulationUpdatingState: SimulationUpdatingState,
 	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,

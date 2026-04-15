@@ -187,14 +187,14 @@ export function App() {
 			}
 		}
 
-			const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
-				if (state === undefined) return
-				setSimulationState(
-					state.simulationState,
-					state.addressBookEntries,
-					state.tokenPriceEstimates,
-					state.visualizedSimulationState,
-				state.activeAddress,
+		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
+			if (state === undefined) return
+			setSimulationState(
+				state.simulationState,
+				state.addressBookEntries,
+				state.tokenPriceEstimates,
+				state.visualizedSimulationState,
+				activeSimulationAddress.value,
 				state.namedTokenIds,
 			)
 			simulationUpdatingState.value = state.simulationUpdatingState
