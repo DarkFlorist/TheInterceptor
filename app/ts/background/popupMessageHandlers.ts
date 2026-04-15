@@ -384,13 +384,14 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 }
 
 export async function requestNewHomeData(simulator: Simulator, requestAbortController: AbortController | undefined) {
-	const settings = await getSettings()
-	if (settings.simulationMode) await updateSimulationMetadata(simulator.ethereum, requestAbortController)
-	await refreshHomeData(simulator)
+	// Metadata edits only need the cached visualisation metadata to be refreshed.
+	await refreshHomeData(simulator, false, requestAbortController)
 }
 
-export async function refreshHomeData(simulator: Simulator) {
-	await updatePopupVisualisationIfNeeded(simulator, false, false, true)
+export async function refreshHomeData(simulator: Simulator, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
+	const currentSettings = await getSettings()
+	if (currentSettings.simulationMode) await updateSimulationMetadata(simulator.ethereum, requestAbortController)
+	if (refreshSimulation) await updatePopupVisualisationIfNeeded(simulator, false, false, true)
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
