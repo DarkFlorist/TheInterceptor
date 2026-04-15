@@ -32,24 +32,21 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 type TimestampedPopupVisualisation = {
 	statusCode: 'success' | 'failed'
 	data: {
+		simulationStartedTimestamp: Date
 		simulationState: {
 			simulationConductedTimestamp: Date
 		}
 	}
 }
 
-const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => {
-	if (popupVisualisation.statusCode === 'failed') return popupVisualisation.data.simulationState.simulationConductedTimestamp
-	if (popupVisualisation.statusCode === 'success') return popupVisualisation.data.simulationState.simulationConductedTimestamp
-	return undefined
-}
+const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
 
 const shouldReplacePopupVisualisation = (
 	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
 	nextPopupVisualisation: TimestampedPopupVisualisation,
 ) => {
-	const currentTimestamp = currentPopupVisualisation === undefined ? undefined : getSimulationConductedTimestamp(currentPopupVisualisation)
-	const nextTimestamp = getSimulationConductedTimestamp(nextPopupVisualisation)
+	const currentTimestamp = currentPopupVisualisation === undefined ? undefined : getSimulationStartedTimestamp(currentPopupVisualisation)
+	const nextTimestamp = getSimulationStartedTimestamp(nextPopupVisualisation)
 	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }

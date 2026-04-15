@@ -275,6 +275,8 @@ function PopupVisualisation(param: SimulationStateParam) {
 		if (currentResults === undefined) throw new Error('Simulation results are required')
 		return currentResults
 	})
+	const computedActiveAddress = useComputed(() => definedSimulationResults.value.activeAddress)
+	const computedAddressBookEntries = useComputed(() => definedSimulationResults.value.addressBookEntries)
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
@@ -312,11 +314,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<TransactionsAndSignedMessages
 					simulationAndVisualisationResults = { definedSimulationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-					activeAddress = { useComputed(() => definedSimulationResults.value.activeAddress) }
+					activeAddress = { computedActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages.value }
-					addressMetaData = { useComputed(() => definedSimulationResults.value.addressBookEntries) }
+					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
+					addressMetaData = { computedAddressBookEntries }
 				/>
 		</> : <>
 			{ isEmpty.value || param.simulationAndVisualisationResults.value === undefined ?
@@ -326,13 +328,13 @@ function PopupVisualisation(param: SimulationStateParam) {
 						<TransactionsAndSignedMessages
 							simulationAndVisualisationResults = { definedSimulationResults }
 							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-							activeAddress = { useComputed(() => definedSimulationResults.value.activeAddress) }
+							activeAddress = { computedActiveAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-							removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages.value }
-							addressMetaData = { useComputed(() => definedSimulationResults.value.addressBookEntries) }
+							removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
+							addressMetaData = { computedAddressBookEntries }
 						/>
-					{ param.removedTransactionOrSignedMessages.value.length > 0
+					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
 							simulationAndVisualisationResults = { definedSimulationResults }
@@ -415,7 +417,7 @@ export function Home(param: HomeParams) {
 			currentBlockNumber = { param.currentBlockNumber }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages }
+			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
 			rpcConnectionStatus = { param.rpcConnectionStatus }
 			simulationUpdatingState = { param.simulationUpdatingState }
 			simulationResultState = { param.simulationResultState }

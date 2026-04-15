@@ -48,7 +48,6 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService)
 }
 
 let confirmTransactionAbortController = new AbortController()
-
 export async function refreshConfirmTransactionSimulation(
 	simulator: Simulator,
 	activeAddress: bigint,
@@ -68,6 +67,7 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
+	const simulationStartedTimestamp = new Date()
 	const simulationInput = await getCurrentSimulationInput()
 	try {
 		const getNewVisualizedSimulationState = async () => {
@@ -82,31 +82,26 @@ export async function refreshConfirmTransactionSimulation(
 			return await visualizeSimulatorState(updatedSimulationState, simulator.ethereum, simulator.tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
-		const refreshedSimulationState = visualizedSimulatorState.visualizedSimulationState.success === true ? {
-			...visualizedSimulatorState,
-			simulationState: {
-				...visualizedSimulatorState.simulationState,
-				simulationConductedTimestamp: new Date(),
-			},
-		} : visualizedSimulatorState
 		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
-		if (refreshedSimulationState.visualizedSimulationState.success === false) {
+		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return { statusCode: 'failed' as const, data: {
 				...info,
-				error: { ...refreshedSimulationState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: refreshedSimulationState.visualizedSimulationState.jsonRpcError.error.message },
+				simulationStartedTimestamp,
+				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
 				simulationState: {
-					blockNumber: 0n,
-					simulationConductedTimestamp: new Date()
+					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
+					simulationConductedTimestamp: new Date(),
 				}
 			} }
 		}
-		const blocks = refreshedSimulationState.visualizedSimulationState.visualizedBlocks
+		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 		return {
 			statusCode: 'success' as const,
 			data: {
 				...info,
-				...refreshedSimulationState,
+				simulationStartedTimestamp,
+				...visualizedSimulatorState,
 				transactionToSimulate: {
 					...transactionToSimulate,
 					...transactionToSimulate.success ? {
@@ -141,6 +136,7 @@ export async function refreshConfirmTransactionSimulation(
 		}
 		return { statusCode: 'failed' as const, data: {
 			...info,
+			simulationStartedTimestamp,
 			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
 			simulationState: {
 				blockNumber: 0n,

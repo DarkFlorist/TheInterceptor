@@ -92,7 +92,7 @@ export type SimulationStateParam = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	disableReset: Signal<boolean>
 	resetSimulation: () => void
-	removedTransactionOrSignedMessages: Signal<readonly TransactionOrMessageIdentifier[]>
+	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>
 	simulationResultState: Signal<SimulationResultState | undefined>

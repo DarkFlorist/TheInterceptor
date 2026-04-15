@@ -581,14 +581,14 @@ export function ConfirmTransaction() {
 		}
 	}
 
-		const getLoadingText = (current: PendingTransactionOrSignableMessage | undefined) => {
-			if (current === undefined) return 'Initializing...'
-			if (current.transactionOrMessageCreationStatus === 'Crafting') return 'Crafting Transaction...'
-			if (current.transactionOrMessageCreationStatus === 'Simulating') return 'Simulating Transaction...'
-			if ('popupVisualisation' in current && current.popupVisualisation?.statusCode === 'failed') return 'Failed to simulate. Retrying...'
-			return 'Loading...'
-		}
-		const loadingText = useComputed(() => getLoadingText(currentPendingTransactionOrSignableMessage.value))
+	const getLoadingText = (current: PendingTransactionOrSignableMessage | undefined) => {
+		if (current === undefined) return 'Initializing...'
+		if (current.transactionOrMessageCreationStatus === 'Crafting') return 'Crafting Transaction...'
+		if (current.transactionOrMessageCreationStatus === 'Simulating') return 'Simulating Transaction...'
+		if ('popupVisualisation' in current && current.popupVisualisation?.statusCode === 'failed') return 'Failed to simulate. Retrying...'
+		return 'Loading...'
+	}
+	const loadingText = useComputed(() => getLoadingText(currentPendingTransactionOrSignableMessage.value))
 
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
