@@ -88,6 +88,7 @@ export type SimulationStateParam = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
+	activeSimulationAddress: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	disableReset: Signal<boolean>

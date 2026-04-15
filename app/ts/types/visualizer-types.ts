@@ -279,7 +279,6 @@ export type SimulationAndVisualisationResults = {
 	visualizedSimulationState: VisualizedSimulationState,
 	rpcNetwork: RpcNetwork,
 	tokenPriceEstimates: readonly TokenPriceEstimate[],
-	activeAddress: bigint,
 	namedTokenIds: readonly NamedTokenId[],
 }
 

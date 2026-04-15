@@ -181,7 +181,6 @@ export function App() {
 				visualizedSimulationState,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPriceEstimates,
-				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
 			}

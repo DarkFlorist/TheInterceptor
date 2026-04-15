@@ -332,11 +332,12 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 type SummarizeAddressParams = {
 	balanceSummary: SummaryOutcome,
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
+	activeAddress: ReadonlySignal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function SummarizeAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = useComputed(() => param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.value.activeAddress)
+	const isOwnAddress = useComputed(() => param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.activeAddress.value)
 	const positiveNegativeColors = isOwnAddress
 		? {
 			textColor: 'var(--text-color)',
@@ -476,7 +477,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	</>
 }
 
-function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint) {
+function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint | undefined) {
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
 		balanceSummary.summaryFor.useAsActiveAddress || balanceSummary.summaryFor.address === activeAddress
 	)
@@ -489,17 +490,18 @@ function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAdd
 type AccountChangesCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
+	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	namedTokenIds: ReadonlySignal<readonly NamedTokenId[]>
 }
 
-export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds }: AccountChangesCardParams) {
+export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds, activeAddress }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.value.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds.value)
 	const showSummary = useSignal<boolean>(false)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.value.activeAddress)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, activeAddress.value)
 
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
@@ -523,6 +525,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
 									simulationAndVisualisationResults = { simulationAndVisualisationResults }
+									activeAddress = { activeAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
@@ -539,6 +542,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
 									simulationAndVisualisationResults = { simulationAndVisualisationResults }
+									activeAddress = { activeAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 								<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
@@ -654,6 +658,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 type SimulationSummaryParams = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
 	currentBlockNumber: Signal<bigint | undefined>,
+	activeAddress: ReadonlySignal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 }
@@ -665,7 +670,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.value.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.value.activeAddress)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
@@ -704,6 +709,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
 									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+									activeAddress = { param.activeAddress }
 									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
 								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
@@ -728,6 +734,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 									<SummarizeAddress
 										balanceSummary = { balanceSummary }
 										simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+										activeAddress = { param.activeAddress }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
 									<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>

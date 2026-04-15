@@ -275,7 +275,6 @@ function PopupVisualisation(param: SimulationStateParam) {
 		if (currentResults === undefined) throw new Error('Simulation results are required')
 		return currentResults
 	})
-	const computedActiveAddress = useComputed(() => definedSimulationResults.value.activeAddress)
 	const computedAddressBookEntries = useComputed(() => definedSimulationResults.value.addressBookEntries)
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
@@ -314,7 +313,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<TransactionsAndSignedMessages
 					simulationAndVisualisationResults = { definedSimulationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-					activeAddress = { computedActiveAddress }
+					activeAddress = { param.activeSimulationAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					addressMetaData = { computedAddressBookEntries }
@@ -327,16 +326,17 @@ function PopupVisualisation(param: SimulationStateParam) {
 						<TransactionsAndSignedMessages
 							simulationAndVisualisationResults = { definedSimulationResults }
 							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-							activeAddress = { computedActiveAddress }
+							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 							addressMetaData = { computedAddressBookEntries }
 						/>
-					{ param.removedTransactionOrSignedMessages.length > 0
+						{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
 							simulationAndVisualisationResults = { definedSimulationResults }
 							currentBlockNumber = { param.currentBlockNumber }
+							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
@@ -413,6 +413,7 @@ export function Home(param: HomeParams) {
 			disableReset = { disableReset }
 			resetSimulation = { resetSimulation }
 			currentBlockNumber = { param.currentBlockNumber }
+			activeSimulationAddress = { param.activeSimulationAddress }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
