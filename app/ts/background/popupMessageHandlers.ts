@@ -390,6 +390,7 @@ export async function requestNewHomeData(simulator: Simulator, requestAbortContr
 }
 
 export async function refreshHomeData(simulator: Simulator) {
+	await updatePopupVisualisationIfNeeded(simulator, false, false, true)
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
