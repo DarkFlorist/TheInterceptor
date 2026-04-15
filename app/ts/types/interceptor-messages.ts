@@ -324,11 +324,6 @@ const RefreshSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshSimulation')
 }).asReadonly()
 
-type WakeUpIfNeeded = funtypes.Static<typeof WakeUpIfNeeded>
-const WakeUpIfNeeded = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_wakeUpIfNeeded')
-}).asReadonly()
-
 export type ChangeInterceptorAccess = funtypes.Static<typeof ChangeInterceptorAccess>
 export const ChangeInterceptorAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeInterceptorAccess'),
@@ -914,7 +909,6 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
-	WakeUpIfNeeded,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),

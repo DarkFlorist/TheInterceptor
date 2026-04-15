@@ -17,32 +17,18 @@ export function getPopupVisualisationFingerprint(simulationStateInput: Simulatio
 }
 
 function normalizeRpcNetworkForFingerprint(rpcNetwork: RpcNetwork) {
-	const normalizedRpcNetwork = rpcNetwork as unknown as {
-		name: string
-		chainId: bigint
-		httpsRpc: string | undefined
-		currencyName: string
-		currencyTicker: string
-		currencyLogoUri?: string
-		blockExplorer?: {
-			apiUrl: string
-			apiKey: string
-		}
-		primary: boolean
-		minimized: boolean
-	}
 	return {
-		name: normalizedRpcNetwork.name,
-		chainId: normalizedRpcNetwork.chainId,
-		httpsRpc: normalizedRpcNetwork.httpsRpc,
-		currencyName: normalizedRpcNetwork.currencyName,
-		currencyTicker: normalizedRpcNetwork.currencyTicker,
-		currencyLogoUri: normalizedRpcNetwork.currencyLogoUri,
-		blockExplorer: normalizedRpcNetwork.blockExplorer === undefined ? undefined : {
-			apiUrl: normalizedRpcNetwork.blockExplorer.apiUrl,
-			apiKey: normalizedRpcNetwork.blockExplorer.apiKey,
-		},
-		primary: normalizedRpcNetwork.primary,
-		minimized: normalizedRpcNetwork.minimized,
+		name: rpcNetwork.name,
+		chainId: rpcNetwork.chainId,
+		httpsRpc: rpcNetwork.httpsRpc,
+		currencyName: rpcNetwork.currencyName,
+		currencyTicker: rpcNetwork.currencyTicker,
+		currencyLogoUri: 'currencyLogoUri' in rpcNetwork ? rpcNetwork.currencyLogoUri : undefined,
+		blockExplorer: 'blockExplorer' in rpcNetwork && rpcNetwork.blockExplorer !== undefined ? {
+			apiUrl: rpcNetwork.blockExplorer.apiUrl,
+			apiKey: rpcNetwork.blockExplorer.apiKey,
+		} : undefined,
+		primary: rpcNetwork.primary,
+		minimized: rpcNetwork.minimized,
 	}
 }

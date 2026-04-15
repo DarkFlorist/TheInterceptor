@@ -447,10 +447,6 @@ export async function popupMessageHandler(
 					await updatePopupVisualisationIfNeeded(simulator, false, false, true)
 					return
 				}
-				case 'popup_wakeUpIfNeeded': {
-					makeSureInterceptorIsNotSleeping(simulator.ethereum)
-					return
-				}
 				case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator)
 				case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator, confirmTransactionAbortController, simulator.tokenPriceService)
 				case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)

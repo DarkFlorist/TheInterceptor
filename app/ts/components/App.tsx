@@ -296,7 +296,6 @@ export function App() {
 	}, [])
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_wakeUpIfNeeded' })
 		sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 	}, [])
 
