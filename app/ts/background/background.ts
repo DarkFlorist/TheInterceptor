@@ -64,7 +64,7 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
@@ -82,24 +82,31 @@ export async function refreshConfirmTransactionSimulation(
 			return await visualizeSimulatorState(updatedSimulationState, simulator.ethereum, simulator.tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
+		const refreshedSimulationState = visualizedSimulatorState.visualizedSimulationState.success === true ? {
+			...visualizedSimulatorState,
+			simulationState: {
+				...visualizedSimulatorState.simulationState,
+				simulationConductedTimestamp: new Date(),
+			},
+		} : visualizedSimulatorState
 		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
-		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
+		if (refreshedSimulationState.visualizedSimulationState.success === false) {
 			return { statusCode: 'failed' as const, data: {
 				...info,
-				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
+				error: { ...refreshedSimulationState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: refreshedSimulationState.visualizedSimulationState.jsonRpcError.error.message },
 				simulationState: {
 					blockNumber: 0n,
 					simulationConductedTimestamp: new Date()
 				}
 			} }
 		}
-		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
+		const blocks = refreshedSimulationState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 		return {
 			statusCode: 'success' as const,
 			data: {
 				...info,
-				...visualizedSimulatorState,
+				...refreshedSimulationState,
 				transactionToSimulate: {
 					...transactionToSimulate,
 					...transactionToSimulate.success ? {
@@ -437,7 +444,11 @@ export async function popupMessageHandler(
 				case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator)
 				case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, parsedRequest)
 				case 'popup_refreshSimulation': {
-					updatePopupVisualisationIfNeeded(simulator, false, true)
+					await updatePopupVisualisationIfNeeded(simulator, false, false, true)
+					return
+				}
+				case 'popup_wakeUpIfNeeded': {
+					makeSureInterceptorIsNotSleeping(simulator.ethereum)
 					return
 				}
 				case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator)

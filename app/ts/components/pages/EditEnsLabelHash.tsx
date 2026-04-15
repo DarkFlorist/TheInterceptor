@@ -3,7 +3,8 @@ import { Notice } from '../subcomponents/Error.js'
 import { bytes32String, bytesToUnsigned } from '../../utils/bigint.js'
 import { EditEnsNamedHashWindowState } from '../../types/visualizer-types.js'
 import { ComponentChildren, createRef } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
+import { useSignal } from '@preact/signals'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { isValidName, namehash } from 'ethers'
@@ -21,9 +22,9 @@ const CellElement = (param: { element: ComponentChildren }) => {
 }
 
 export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
-	const [inputDisabled, setInputDisabled] = useState<boolean>(false)
-	const [name, setName] = useState<string | undefined>(undefined)
-	const [errorString, setErrorString] = useState<string>('')
+	const inputDisabled = useSignal<boolean>(false)
+	const name = useSignal<string | undefined>(undefined)
+	const errorString = useSignal<string>('')
 
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
@@ -37,20 +38,29 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		disabled: boolean,
 		placeholder: string,
 	}
-	async function validateAndSetName(name: string) {
-		setName(name)
+	async function validateAndSetName(nameInput: string) {
+		name.value = nameInput
 		if (param.editEnsNamedHashWindowState.type === 'labelHash') {
-			const hash = bytesToUnsigned(keccak_256(name))
-			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`)
-			setErrorString('Correct label found!')
+			const hash = bytesToUnsigned(keccak_256(nameInput))
+			if (hash !== param.editEnsNamedHashWindowState.nameHash) {
+				errorString.value = `The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`
+				return
+			}
+			errorString.value = 'Correct label found!'
 		} else {
-			if (!isValidName(name)) return setErrorString('Not a valid ENS name.')
-			const hash = BigInt(namehash(name))
-			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The name corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`)
-			setErrorString('Correct name found!')
+			if (!isValidName(nameInput)) {
+				errorString.value = 'Not a valid ENS name.'
+				return
+			}
+			const hash = BigInt(namehash(nameInput))
+			if (hash !== param.editEnsNamedHashWindowState.nameHash) {
+				errorString.value = `The name corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`
+				return
+			}
+			errorString.value = 'Correct name found!'
 		}
-		setInputDisabled(true)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_setEnsNameForHash', data: { ...param.editEnsNamedHashWindowState, name } } )
+		inputDisabled.value = true
+		await sendPopupMessageToBackgroundPage({ method: 'popup_setEnsNameForHash', data: { ...param.editEnsNamedHashWindowState, name: nameInput } } )
 	}
 
 	function TextInput({ value, setInput, disabled, placeholder }: TextInputParams) {
@@ -93,13 +103,13 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 								<CellElement element = { <Text text = { 'Hash: ' }/> }/>
 								<CellElement element = { <TextInput value = { bytes32String(param.editEnsNamedHashWindowState.nameHash) } setInput = {() => {} } disabled = { true } placeholder = {''}/> } />
 								<CellElement element = { <Text text = { 'Name: ' }/> }/>
-								<CellElement element = { <TextInput value = { param.editEnsNamedHashWindowState.name ? param.editEnsNamedHashWindowState.name : name } disabled = { param.editEnsNamedHashWindowState.name !== undefined || inputDisabled } setInput = { validateAndSetName } placeholder = { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'ENS label, eg. "vitalik"' : 'ENS name, eg "vitalik.eth"' }/> } />
+								<CellElement element = { <TextInput value = { param.editEnsNamedHashWindowState.name ? param.editEnsNamedHashWindowState.name : name.value } disabled = { param.editEnsNamedHashWindowState.name !== undefined || inputDisabled.value } setInput = { validateAndSetName } placeholder = { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'ENS label, eg. "vitalik"' : 'ENS name, eg "vitalik.eth"' }/> } />
 							</span>
 						</div>
 					</div>
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
-					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
+					{ errorString.value === '' ? <></> : <Notice text = { errorString.value } /> }
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>

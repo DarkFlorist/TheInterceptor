@@ -1,5 +1,5 @@
 import { InterceptorAccessListParams } from '../../types/user-interface-types.js'
-import { useEffect, useState } from 'preact/hooks'
+import { useSignal, useSignalEffect } from '@preact/signals'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
@@ -33,79 +33,79 @@ interface AccessChanges {
 }
 
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
-	const [editableAccessList, setEditableAccessList] = useState<readonly EditableAccess[] | undefined>(undefined)
-	const [metadata, setMetadata] = useState<Map<string, AddressBookEntry>>(new Map())
+	const editableAccessList = useSignal<readonly EditableAccess[] | undefined>(undefined)
+	const metadata = useSignal<Map<string, AddressBookEntry>>(new Map())
 
 	function updateEditableAccessList(newList: WebsiteAccessArray | undefined) {
-		if (newList === undefined) return setEditableAccessList(undefined)
-		setEditableAccessList((editableAccessList) => {
-			if (editableAccessList === undefined) {
-				return newList.map((x) => ({
-					websiteAccess: x,
-					addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
-					addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => ({
+		if (newList === undefined) { editableAccessList.value = undefined; return }
+		const current = editableAccessList.value
+		if (current === undefined) {
+			editableAccessList.value = newList.map((x) => ({
+				websiteAccess: x,
+				addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
+				addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => ({
+					address: addr.address,
+					access: addr.access,
+					removed: false,
+				})),
+				access: x.access,
+				interceptorDisabled: x.interceptorDisabled,
+				removed: false,
+				declarativeNetRequestBlockMode: x.declarativeNetRequestBlockMode,
+			}))
+			return
+		}
+		// update only the changed entities
+		const merge = (newAccess: WebsiteAccess): EditableAccess => {
+			const previousEntity = current.find((x) => x.websiteAccess.website.websiteOrigin === newAccess.website.websiteOrigin)
+			if (previousEntity === undefined) {
+				return {
+					websiteAccess: newAccess,
+					addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
+					addressAccessModified: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => ({
 						address: addr.address,
 						access: addr.access,
 						removed: false,
 					})),
-					access: x.access,
-					interceptorDisabled: x.interceptorDisabled,
+					access: newAccess.access,
+					interceptorDisabled: newAccess.interceptorDisabled,
 					removed: false,
-					declarativeNetRequestBlockMode: x.declarativeNetRequestBlockMode,
-				}))
+					declarativeNetRequestBlockMode: newAccess.declarativeNetRequestBlockMode,
+				}
 			}
-			// update only the changed entities
-			const merge = (newAccess: WebsiteAccess): EditableAccess => {
-				const previousEntity = editableAccessList.find((x) => x.websiteAccess.website.websiteOrigin === newAccess.website.websiteOrigin)
-				if (previousEntity === undefined) {
-					return {
-						websiteAccess: newAccess,
-						addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
-						addressAccessModified: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => ({
-							address: addr.address,
-							access: addr.access,
-							removed: false,
-						})),
-						access: newAccess.access,
-						interceptorDisabled: newAccess.interceptorDisabled,
-						removed: false,
-						declarativeNetRequestBlockMode: newAccess.declarativeNetRequestBlockMode,
-					}
+			// we need to merge edited and new updated access rights together
+			const mergeAddressAccess = (addr: WebsiteAddressAccess, modifiedAddressAccess: readonly ModifiedAddressAccess[], previousEntity: readonly WebsiteAddressAccess[]) => {
+				const previousModifiedAccess = modifiedAddressAccess.find((x) => x.address === addr.address)
+				const previousAccess = previousEntity.find((x) => x.address === addr.address)
+				return {
+					address: addr.address,
+					access: previousModifiedAccess === undefined || previousAccess === undefined ? addr.access : (previousModifiedAccess.access === previousAccess.access ? addr.access : previousModifiedAccess.access),
+					removed: previousModifiedAccess === undefined ? false : previousModifiedAccess.removed,
 				}
-				// we need to merge edited and new updated access rights together
-				const mergeAddressAccess = (addr: WebsiteAddressAccess, modifiedAddressAccess: readonly ModifiedAddressAccess[], previousEntity: readonly WebsiteAddressAccess[]) => {
-					const previousModifiedAccess = modifiedAddressAccess.find((x) => x.address === addr.address)
-					const previousAccess = previousEntity.find((x) => x.address === addr.address)
-					return {
-						address: addr.address,
-						access: previousModifiedAccess === undefined || previousAccess === undefined ? addr.access : (previousModifiedAccess.access === previousAccess.access ? addr.access : previousModifiedAccess.access),
-						removed: previousModifiedAccess === undefined ? false : previousModifiedAccess.removed,
-					}
-				}
+			}
 
-				const addressAccessModified = newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => mergeAddressAccess(addr, previousEntity.addressAccessModified, previousEntity.addressAccess))
-				return modifyObject(previousEntity, {
-					websiteAccess: newAccess,
-					addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
-					addressAccessModified: addressAccessModified,
-					access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access,
-				})
-			}
-			return newList.map((x) => merge(x))
-		})
+			const addressAccessModified = newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => mergeAddressAccess(addr, previousEntity.addressAccessModified, previousEntity.addressAccess))
+			return modifyObject(previousEntity, {
+				websiteAccess: newAccess,
+				addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
+				addressAccessModified: addressAccessModified,
+				access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access,
+			})
+		}
+		editableAccessList.value = newList.map((x) => merge(x))
 	}
 
-	useEffect( () => {
-		updateEditableAccessList(param.websiteAccess)
-	}, [param.websiteAccess])
+	useSignalEffect(() => {
+		updateEditableAccessList(param.websiteAccess.value)
+	})
 
-	useEffect( () => {
-		setMetadata(new Map(param.websiteAccessAddressMetadata.map((x) => [addressString(x.address), x])))
-	}, [param.websiteAccessAddressMetadata])
+	useSignalEffect(() => {
+		metadata.value = new Map(param.websiteAccessAddressMetadata.value.map((x) => [addressString(x.address), x]))
+	})
 
 	function setWebsiteAccess(index: number, changes: AccessChanges) {
-		if (editableAccessList === undefined) return
-		setEditableAccessList(editableAccessList.map((x , i) => {
+		if (editableAccessList.value === undefined) return
+		editableAccessList.value = editableAccessList.value.map((x, i) => {
 			if (index === i) {
 				return {
 					websiteAccess: x.websiteAccess,
@@ -118,13 +118,13 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				}
 			}
 			return x
-		}))
+		})
 	}
 
-	function setAddressAccess(index: number, addressIndex: number, changes: AccessChanges ) {
-		if (editableAccessList === undefined) return
-		setEditableAccessList(editableAccessList.map((x , i) => {
-			if(index === i ) {
+	function setAddressAccess(index: number, addressIndex: number, changes: AccessChanges) {
+		if (editableAccessList.value === undefined) return
+		editableAccessList.value = editableAccessList.value.map((x, i) => {
+			if (index === i) {
 				return {
 					websiteAccess: x.websiteAccess,
 					addressAccess: x.addressAccess,
@@ -140,7 +140,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				}
 			}
 			return x
-		}))
+		})
 	}
 
 	function hasChanged(state: EditableAccess) {
@@ -159,8 +159,8 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		return false
 	}
 	function areThereChanges() {
-		if (editableAccessList === undefined) return false
-		for (const state of editableAccessList) {
+		if (editableAccessList.value === undefined) return false
+		for (const state of editableAccessList.value) {
 			if (hasChanged(state)) return true
 		}
 		return false
@@ -168,7 +168,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	function saveChanges() {
 		if (!areThereChanges()) return param.goHome()
-		if (editableAccessList === undefined) return param.goHome()
+		if (editableAccessList.value === undefined) return param.goHome()
 		const changedEntry = (editable: EditableAccess) => {
 			return {
 				oldEntry: editable.websiteAccess,
@@ -185,11 +185,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				removed: editable.removed,
 			}
 		}
-		const changedEntries = editableAccessList.filter((access) => hasChanged(access)).map((x) => changedEntry(x))
+		const changedEntries = editableAccessList.value.filter((access) => hasChanged(access)).map((x) => changedEntry(x))
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeInterceptorAccess', data: changedEntries })
-		const newEntries = editableAccessList.filter((state) => !state.removed).map((x) => changedEntry(x).newEntry)
+		const newEntries = editableAccessList.value.filter((state) => !state.removed).map((x) => changedEntry(x).newEntry)
 		updateEditableAccessList(newEntries)
-		param.setWebsiteAccess(newEntries)
+		param.websiteAccess.value = newEntries
 		return param.goHome()
 	}
 
@@ -213,7 +213,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 			</header>
 			<section class = 'modal-card-body'>
 				<ul>
-					{ editableAccessList !== undefined && editableAccessList.length === 0 ?
+					{ editableAccessList.value !== undefined && editableAccessList.value.length === 0 ?
 						<li>
 							<div class = 'card'>
 								<div class = 'card-content'>
@@ -226,7 +226,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 							</div>
 						</li>
 					: <></> }
-					{ editableAccessList === undefined ? <></> : editableAccessList.map((access, accessListIndex) => (
+					{ editableAccessList.value === undefined ? <></> : editableAccessList.value.map((access, accessListIndex) => (
 						<li>
 							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
@@ -269,10 +269,10 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 											{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
 													<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-														{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
+														{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
 															<div style = 'display: flex; width: 100%; overflow: hidden;'>
 																<SmallAddress
-																	addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
+																	addressBookEntry = { metadata.value.get(addressString(websiteAccessAddress.address)) || {
 																		type: 'contact',
 																		useAsActiveAddress: true,
 																		name: checksummedAddress(websiteAccessAddress.address),

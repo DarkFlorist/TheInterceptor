@@ -29,9 +29,34 @@ import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.j
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
-export async function updateConfirmTransactionView(simulator: Simulator) {
+type TimestampedPopupVisualisation = {
+	statusCode: 'success' | 'failed'
+	data: {
+		simulationState: {
+			simulationConductedTimestamp: Date
+		}
+	}
+}
+
+const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => {
+	if (popupVisualisation.statusCode === 'failed') return popupVisualisation.data.simulationState.simulationConductedTimestamp
+	if (popupVisualisation.statusCode === 'success') return popupVisualisation.data.simulationState.simulationConductedTimestamp
+	return undefined
+}
+
+const shouldReplacePopupVisualisation = (
+	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
+	nextPopupVisualisation: TimestampedPopupVisualisation,
+) => {
+	const currentTimestamp = currentPopupVisualisation === undefined ? undefined : getSimulationConductedTimestamp(currentPopupVisualisation)
+	const nextTimestamp = getSimulationConductedTimestamp(nextPopupVisualisation)
+	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
+	return nextTimestamp.getTime() >= currentTimestamp.getTime()
+}
+
+export async function updateConfirmTransactionView(simulator: Simulator, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(simulator))
+		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(simulator, false, onlyIfNotAlreadyUpdating))
 		const settings = getSettings()
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(simulator.ethereum.getBlockNumber(undefined))
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
@@ -48,8 +73,8 @@ export async function updateConfirmTransactionView(simulator: Simulator) {
 			}
 		}
 		await Promise.all([
-			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)),
-			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
+			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 		])
 		return true
 	} catch(error: unknown) {
@@ -134,7 +159,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				...prevStack.operations,
 				{ type: 'Message' as const, signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }
 			] }))
-			updatePopupVisualisationIfNeeded(simulator, false)
+			await updatePopupVisualisationIfNeeded(simulator, false)
 			return reply({ type: 'result', result: simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor).signature })
 		}
 		case 'Transaction': {
@@ -144,7 +169,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
-			updatePopupVisualisationIfNeeded(simulator, false)
+			await updatePopupVisualisationIfNeeded(simulator, false)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
@@ -386,6 +411,9 @@ export async function openConfirmTransactionDialogForTransaction(
 				if (transaction.type !== 'Transaction') return transaction
 				const popupVisualisation = await simulationResultsPromise
 				if (popupVisualisation === undefined) return transaction
+				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
+					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
+				}
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 			})

@@ -324,6 +324,11 @@ const RefreshSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshSimulation')
 }).asReadonly()
 
+type WakeUpIfNeeded = funtypes.Static<typeof WakeUpIfNeeded>
+const WakeUpIfNeeded = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_wakeUpIfNeeded')
+}).asReadonly()
+
 export type ChangeInterceptorAccess = funtypes.Static<typeof ChangeInterceptorAccess>
 export const ChangeInterceptorAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeInterceptorAccess'),
@@ -460,6 +465,12 @@ const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined)
 	})
 })
+
+type MessageToPopupRole = funtypes.Static<typeof MessageToPopupRole>
+const MessageToPopupRole = funtypes.Union(
+	funtypes.Literal('all'),
+	funtypes.Literal('confirmTransaction'),
+)
 
 type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 const MessageToPopupSimple = funtypes.ReadonlyObject({
@@ -845,6 +856,33 @@ export const ImportSimulationStack = funtypes.ReadonlyObject({
 	data: InterceptorSimulationExport,
 })
 
+export type MessageToPopupPayload = funtypes.Static<typeof MessageToPopupPayload>
+export const MessageToPopupPayload = funtypes.Union(
+	MessageToPopupSimple,
+	WebsiteIconChanged,
+	GetAddressBookDataReply,
+	ChangeChainRequest,
+	InterceptorAccessDialog,
+	NewBlockArrivedOrFailedToArrive,
+	SettingsUpdated,
+	UpdateConfirmTransactionDialogPartial,
+	UpdateConfirmTransactionDialogPendingTransactionsPartial,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
+	ImportSettingsReply,
+	ActiveSigningAddressChanged,
+	UpdateRPCList,
+	SimulationUpdateStartedOrEnded,
+	PartialUpdateHomePage,
+	PartiallyParsedSimulateExecutionReply,
+	SettingsOpenedReply,
+	PopupAddOrModifyAddressWindowStateInfomation,
+	DisableInterceptorReply,
+	UnexpectedErrorOccured,
+	RetrieveWebsiteAccessReply,
+	FetchSimulationStackRequest,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
+)
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	PopupMessageReplyRequests,
@@ -876,6 +914,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
+	WakeUpIfNeeded,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
@@ -905,27 +944,8 @@ export const PopupMessage = funtypes.Union(
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
-	MessageToPopupSimple,
-	WebsiteIconChanged,
-	GetAddressBookDataReply,
-	ChangeChainRequest,
-	InterceptorAccessDialog,
-	NewBlockArrivedOrFailedToArrive,
-	SettingsUpdated,
-	UpdateConfirmTransactionDialogPartial,
-	UpdateConfirmTransactionDialogPendingTransactionsPartial,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
-	ImportSettingsReply,
-	ActiveSigningAddressChanged,
-	UpdateRPCList,
-	SimulationUpdateStartedOrEnded,
-	PartialUpdateHomePage,
-	PartiallyParsedSimulateExecutionReply,
-	SettingsOpenedReply,
-	PopupAddOrModifyAddressWindowStateInfomation,
-	DisableInterceptorReply,
-	UnexpectedErrorOccured,
-	RetrieveWebsiteAccessReply,
-	FetchSimulationStackRequest,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
+	funtypes.Intersect(
+		funtypes.ReadonlyObject({ role: MessageToPopupRole }),
+		MessageToPopupPayload
+	)
 )

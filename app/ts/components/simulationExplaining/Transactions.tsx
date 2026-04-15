@@ -29,6 +29,7 @@ import { ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { useEffect } from 'preact/hooks'
+import { type SignalOrValue } from '../../utils/signals.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -58,11 +59,11 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 
 export type TransactionImportanceBlockParams = {
 	simTx: MaybeSimulatedTransaction
-	activeAddress: bigint
+	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	addressMetadata: readonly AddressBookEntry[]
-	rpcNetwork: RpcNetwork
+	addressMetadata: ReadonlySignal<readonly AddressBookEntry[]>
+	rpcNetwork: ReadonlySignal<RpcNetwork>
 }
 
 // showcases the most important things the transaction does
@@ -90,7 +91,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
-		case 'ArbitraryContractExecution': return <CatchAllVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } activeAddress = { param.activeAddress } simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetadata = { param.addressMetadata } rpcNetwork = { param.rpcNetwork }/>
+		case 'ArbitraryContractExecution': return <CatchAllVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetadata = { param.addressMetadata } rpcNetwork = { param.rpcNetwork }/>
 		case 'GovernanceVote': return <GovernanceVoteVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } activeAddress = { param.activeAddress } simTx = { param.simTx } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } renameAddressCallBack = { param.renameAddressCallBack }/>
 		default: assertNever(transactionIdentification)
 	}
@@ -138,12 +139,15 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
 		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
 	}
+	const rpcNetwork = useComputed(() => param.simulationAndVisualisationResults.value.rpcNetwork)
+	const addressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.addressBookEntries)
+	const namedTokenIds = useComputed(() => param.simulationAndVisualisationResults.value.namedTokenIds)
 	return (
 		<div class = 'card'>
 			<TransactionHeader simTx = { param.simTx } removeTransactionOrSignedMessage = { remove } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
-					<TransactionImportanceBlock { ...param } rpcNetwork = { param.simulationAndVisualisationResults.value.rpcNetwork } addressMetadata = { param.addressMetaData }/>
+					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
 				{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
 					<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
@@ -151,13 +155,13 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						simTx = { param.simTx }
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
-						namedTokenIds = { param.simulationAndVisualisationResults.value.namedTokenIds }
+						addressMetaData = { addressBookEntries }
+						namedTokenIds = { namedTokenIds }
 					/>
 					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
 				</> }
-				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries } />
+				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { addressBookEntries } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
@@ -166,7 +170,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					</div>
 					<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
 						{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-							<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.value.rpcNetwork } />
+							<GasFee tx = { param.simTx } rpcNetwork = { rpcNetwork } />
 						</> }
 					</div>
 				</span>
@@ -181,8 +185,8 @@ type TransactionOrMessageWithBlockTimeManipulatorParams = {
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
-	activeAddress: bigint
-	addressMetaData: readonly AddressBookEntry[]
+	activeAddress: ReadonlySignal<bigint>
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	blockTimeManipulation: BlockTimeManipulationWithNoDelay
 }
 
@@ -261,11 +265,11 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 type TransactionsAndSignedMessagesParams = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
-	activeAddress: bigint
+	activeAddress: ReadonlySignal<bigint>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
@@ -382,7 +386,7 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 
 type NonTokenLogEventParams = {
 	nonTokenLog: EnrichedEthereumEventWithMetadata
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	renameAddressCallBack: RenameAddressCallBack
 	readonly editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
@@ -394,7 +398,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		return <>
 			<div class = 'log-cell' style = { cellStyle }>
 				<SmallAddress
-					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.address) }
+					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData.value, params.nonTokenLog.address) }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>
@@ -407,11 +411,11 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		</>
 	}
 	return <>
-		<div class = 'log-cell' style = { cellStyle }>
-			<SmallAddress
-				addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.address) }
-				renameAddressCallBack = { params.renameAddressCallBack }
-			/>
+			<div class = 'log-cell' style = { cellStyle }>
+				<SmallAddress
+					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData.value, params.nonTokenLog.address) }
+					renameAddressCallBack = { params.renameAddressCallBack }
+				/>
 		</div>
 		<div style = 'display: contents;'/>
 		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
@@ -455,7 +459,7 @@ export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 
 type ParsedInputDataParams = {
 	inputData: EnrichedEthereumInputData
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: SignalOrValue<readonly AddressBookEntry[]>
 	renameAddressCallBack: RenameAddressCallBack
 }
 

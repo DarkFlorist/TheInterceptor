@@ -37,6 +37,16 @@ import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/ser
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 
+type TimestampedPopupVisualisation = {
+	data: {
+		simulationState: {
+			simulationConductedTimestamp: Date
+		}
+	}
+}
+
+const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
+
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
 }
@@ -98,7 +108,7 @@ export async function modifyMakeMeRich(simulator: Simulator, makeMeRichChange: M
 			await setFixedMakeMeRichList(currentList.filter((element) => element.address !== makeMeRichChange.data.address))
 		}
 	}
-	updatePopupVisualisationIfNeeded(simulator, false, true)
+	await updatePopupVisualisationIfNeeded(simulator, false, true)
 }
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -200,7 +210,7 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 		}
 	})
 
-	updatePopupVisualisationIfNeeded(simulator, true, false)
+	await updatePopupVisualisationIfNeeded(simulator, true, false)
 }
 
 export async function refreshPopupConfirmTransactionMetadata(simulator: Simulator, requestAbortController: AbortController | undefined, tokenPriceService: TokenPriceService) {
@@ -233,8 +243,8 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 				}
 			}
 			await Promise.all([
-				sendPopupMessageToOpenWindows(messagePendingTransactions),
-				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+				sendPopupMessageToOpenWindows(messagePendingTransactions, 'confirmTransaction'),
+				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 			])
 			return
 		}
@@ -265,8 +275,8 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 					}
 				}
 				await Promise.all([
-					sendPopupMessageToOpenWindows(messagePendingTransactions),
-					sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+					sendPopupMessageToOpenWindows(messagePendingTransactions, 'confirmTransaction'),
+					sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 				])
 				return
 			} catch(error: unknown) {
@@ -289,16 +299,29 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
+				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
+				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
+				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
+				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
 				if (transactionToSimulate.success) {
-					return { ...transactionOrMessage, transactionToSimulate, popupVisualisation: refreshMessage, transactionOrMessageCreationStatus: 'Simulated' }
-				} else {
-					return { ...transactionOrMessage, transactionToSimulate, popupVisualisation: refreshMessage, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+					return {
+						...transactionOrMessage,
+						transactionToSimulate,
+						popupVisualisation: refreshMessage,
+						transactionOrMessageCreationStatus: 'Simulated' as const,
+					}
+				}
+				return {
+					...transactionOrMessage,
+					transactionToSimulate,
+					popupVisualisation: refreshMessage,
+					transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
 				}
 			}
 			default: assertNever(transactionOrMessage)
 		}
 	})
-	await updateConfirmTransactionView(simulator)
+	await updateConfirmTransactionView(simulator, true)
 }
 
 export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
@@ -686,13 +709,13 @@ export async function removeWebsiteAccess(simulator: Simulator, websiteTabConnec
 }
 export async function forceSetGasLimitForTransaction(simulator: Simulator, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
-	updatePopupVisualisationIfNeeded(simulator, true, false)
+	await updatePopupVisualisationIfNeeded(simulator, true, false)
 	await refreshPopupConfirmTransactionSimulation(simulator)
 }
 
 export async function changePreSimulationBlockTimeManipulation(simulator: Simulator, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
 	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
-	updatePopupVisualisationIfNeeded(simulator, true, true)
+	await updatePopupVisualisationIfNeeded(simulator, true, true)
 }
 
 export async function setTransactionOrMessageBlockTimeManipulator(simulator: Simulator, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
@@ -724,13 +747,13 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 	})
 	const secondToLastOperation = newStack.operations[newStack.operations.length - 2]
 	if (secondToLastOperation === undefined || secondToLastOperation.type === 'TimeManipulation') {
-		updatePopupVisualisationIfNeeded(simulator, true, true)
+		await updatePopupVisualisationIfNeeded(simulator, true, true)
 		return
 	}
 	const appendIdentifier = parsedRequest.data.transactionOrMessageIdentifier.type === 'Transaction' ? parsedRequest.data.transactionOrMessageIdentifier.transactionIdentifier : parsedRequest.data.transactionOrMessageIdentifier.messageIdentifier
 	const operationIdentifier = secondToLastOperation.type === 'Transaction' ? secondToLastOperation.preSimulationTransaction.transactionIdentifier : secondToLastOperation.signedMessageTransaction.messageIdentifier
 	const appendedToEnd = appendIdentifier === operationIdentifier
-	updatePopupVisualisationIfNeeded(simulator, !appendedToEnd, true)
+	await updatePopupVisualisationIfNeeded(simulator, !appendedToEnd, true)
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
@@ -810,11 +833,12 @@ export async function importSimulationStack(simulator: Simulator, parsedRequest:
 			}
 		})) }
 	})
-	updatePopupVisualisationIfNeeded(simulator, false, true)
+	await updatePopupVisualisationIfNeeded(simulator, false, true)
 }
 
 export async function requestCompleteVisualizedSimulation(simulator: Simulator) {
-	return { type: 'RequestCompleteVisualizedSimulationReply' as const, visualizedSimulatorState: await updatePopupVisualisationIfNeeded(simulator) }
+	const visualizedSimulatorState = await updatePopupVisualisationIfNeeded(simulator, false, false, true)
+	return { type: 'RequestCompleteVisualizedSimulationReply' as const, visualizedSimulatorState }
 }
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {

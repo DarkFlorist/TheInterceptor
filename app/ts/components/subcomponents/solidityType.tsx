@@ -7,6 +7,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import { SmallAddress } from './address.js'
 import { insertBetweenElements } from './misc.js'
+import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
 export const StringElement = ({ text }: { text: string }) => <p class = 'paragraph' style = { textStyle }>{ text }</p>
@@ -37,10 +38,10 @@ function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolid
 	}
 }
 
-export function EnrichedSolidityTypeComponentWithAddressBook({ valueType, addressMetaData, renameAddressCallBack }: { valueType: PureGroupedSolidityType, addressMetaData: readonly AddressBookEntry[], renameAddressCallBack: RenameAddressCallBack }) {
+export function EnrichedSolidityTypeComponentWithAddressBook({ valueType, addressMetaData, renameAddressCallBack }: { valueType: PureGroupedSolidityType, addressMetaData: SignalOrValue<readonly AddressBookEntry[]>, renameAddressCallBack: RenameAddressCallBack }) {
 	switch(valueType.type) {
-		case 'address': return <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressMetaData, valueType.value) } renameAddressCallBack = { renameAddressCallBack } />
-		case 'address[]': return <JsxArray array = { valueType.value.map((value) => <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressMetaData, value) } renameAddressCallBack = { renameAddressCallBack } />) }/>
+		case 'address': return <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(resolveSignal(addressMetaData), valueType.value) } renameAddressCallBack = { renameAddressCallBack } />
+		case 'address[]': return <JsxArray array = { valueType.value.map((value) => <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(resolveSignal(addressMetaData), value) } renameAddressCallBack = { renameAddressCallBack } />) }/>
 		default: return <PureSolidityTypeComponent valueType = { valueType } />
 	}
 }

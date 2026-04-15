@@ -4,6 +4,7 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
@@ -50,7 +51,7 @@ export function AddressIcon(param: AddressIconParams) {
 
 
 type BigAddressParams = {
-	readonly addressBookEntry: AddressBookEntry | undefined
+	readonly addressBookEntry: SignalOrValue<AddressBookEntry | undefined>
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
@@ -58,12 +59,13 @@ type BigAddressParams = {
 }
 
 export function BigAddress(params: BigAddressParams) {
-	const addressString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
-	const labelText = params.addressBookEntry?.name || addressString || 'No address found'
+	const addressBookEntry = resolveSignal(params.addressBookEntry)
+	const addressString = addressBookEntry && checksummedAddress(addressBookEntry.address)
+	const labelText = addressBookEntry?.name || addressString || 'No address found'
 	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
 
 	const configPartialWithEditOnClick  = {
-		onClick: () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry),
+		onClick: () => addressBookEntry && params.renameAddressCallBack(addressBookEntry),
 		buttonLabel: 'Edit',
 		buttonIcon: () => <EditIcon />
 	}
@@ -85,7 +87,7 @@ export function BigAddress(params: BigAddressParams) {
 	}
 
 	const iconConfig: ActionableIconProps = {
-		icon: () => params.addressBookEntry ? <Blockie address = { params.addressBookEntry.address } /> : <></>,
+		icon: () => addressBookEntry ? <Blockie address = { addressBookEntry.address } /> : <></>,
 		...(!params.noCopying && addressString) ? configPartialWithCopyOnClick : { onClick: undefined }
 	}
 
@@ -93,7 +95,7 @@ export function BigAddress(params: BigAddressParams) {
 }
 
 type ActiveAddressParams = {
-	readonly activeAddress: AddressBookEntry | undefined
+	readonly activeAddress: SignalOrValue<AddressBookEntry | undefined>
 	readonly disableButton: boolean
 	readonly changeActiveAddress: () => void
 	readonly renameAddressCallBack: RenameAddressCallBack
@@ -119,24 +121,29 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 }
 
 type SmallAddressParams = {
-	readonly addressBookEntry: AddressBookEntry
+	readonly addressBookEntry: SignalOrValue<AddressBookEntry | undefined>
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly style?: JSX.CSSProperties
 }
 
 export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }: SmallAddressParams) {
-	const addressString = checksummedAddress(addressBookEntry.address)
+	const currentAddressBookEntry = resolveSignal(addressBookEntry)
+	if (currentAddressBookEntry === undefined) return <></>
+	const addressString = checksummedAddress(currentAddressBookEntry.address)
 
 	const generateIcon = () => {
-		if (addressBookEntry?.logoUri !== undefined) return <img src = { addressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
-		return <Blockie address = { addressBookEntry.address } />
+		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
+		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
-	return <InlineCard label = { addressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(addressBookEntry) } style = { style } />
+	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(currentAddressBookEntry) } style = { style } />
 }
 
-export function WebsiteOriginText({ icon, websiteOrigin, title }: Website) {
+export function WebsiteOriginText({ website }: { website: SignalOrValue<Website | undefined> }) {
+	const currentWebsite = resolveSignal(website)
+	if (currentWebsite === undefined) return <></>
+	const { icon, websiteOrigin, title } = currentWebsite
 	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;' /> }

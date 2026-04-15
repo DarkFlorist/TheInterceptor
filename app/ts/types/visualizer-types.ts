@@ -287,9 +287,9 @@ export type TransactionVisualizationParameters = {
 	simTx: MaybeSimulatedTransaction
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
-	activeAddress: bigint
+	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 

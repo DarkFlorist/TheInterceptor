@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
 import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
@@ -19,26 +19,27 @@ import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
-import { CaughtError, ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
+import { ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
-import { EnrichedRichListElement } from '../types/interceptor-reply-messages.js'
+import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 
 type ProviderErrorsParam = {
-	tabState: TabState | undefined
+	tabState: Signal<TabState | undefined>
 }
 
 function ProviderErrors({ tabState } : ProviderErrorsParam) {
-	if (tabState === undefined || tabState.signerAccountError === undefined) return <></>
-	if (tabState.signerAccountError.code === METAMASK_ERROR_USER_REJECTED_REQUEST) return <ErrorComponent warning = { true } text = { <>Could not get an account from <SignersLogoName signerName = { tabState.signerName } /> as user denied the request.</> }/>
-	if (tabState.signerAccountError.code === METAMASK_ERROR_ALREADY_PENDING.error.code) return <ErrorComponent warning = { true } text = { <>There's a connection request pending on <SignersLogoName signerName = { tabState.signerName } />. Please review the request.</> }/>
-	return <ErrorComponent warning = { true } text = { <><SignersLogoName signerName = { tabState.signerName } /> returned error: "{ tabState.signerAccountError.message }".</> }/>
+	if (tabState.value === undefined || tabState.value.signerAccountError === undefined) return <></>
+	if (tabState.value.signerAccountError.code === METAMASK_ERROR_USER_REJECTED_REQUEST) return <ErrorComponent warning = { true } text = { <>Could not get an account from <SignersLogoName signerName = { tabState.value.signerName } /> as user denied the request.</> }/>
+	if (tabState.value.signerAccountError.code === METAMASK_ERROR_ALREADY_PENDING.error.code) return <ErrorComponent warning = { true } text = { <>There's a connection request pending on <SignersLogoName signerName = { tabState.value.signerName } />. Please review the request.</> }/>
+	return <ErrorComponent warning = { true } text = { <><SignersLogoName signerName = { tabState.value.signerName } /> returned error: "{ tabState.value.signerAccountError.message }".</> }/>
 }
 
 type NetworkErrorParams = {
@@ -74,23 +75,23 @@ export function App() {
 	const activeAddresses = useSignal<AddressBookEntries>(defaultActiveAddresses)
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
 	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
-	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
-	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
-	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
-	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<AddressBookEntries>([])
+	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
+	const simVisResults = useSignal<SimulationAndVisualisationResults | undefined>(undefined)
+	const websiteAccess = useSignal<WebsiteAccessArray | undefined>(undefined)
+	const websiteAccessAddressMetadata = useSignal<AddressBookEntries>([])
 	const rpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
-	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
-	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
-	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
+	const tabIconDetails = useSignal<TabIconDetails>(DEFAULT_TAB_CONNECTION)
+	const isSettingsLoaded = useSignal<boolean>(false)
+	const currentBlockNumber = useSignal<bigint | undefined>(undefined)
+	const tabState = useSignal<TabState | undefined>(undefined)
 	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
-	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
+	const currentTabId = useSignal<number | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
-	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
-	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
-	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
-	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
-	const [boundaryResetKey, setBoundaryResetKey] = useState(0)
+	const simulationUpdatingState = useSignal<SimulationUpdatingState | undefined>(undefined)
+	const simulationResultState = useSignal<SimulationResultState | undefined>(undefined)
+	const interceptorDisabled = useSignal<boolean>(false)
+	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
+	const boundaryResetKey = useSignal(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
@@ -98,14 +99,14 @@ export function App() {
 	const simulationMode = useSignal<boolean>(false)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
-		setUseSignersAddressAsActiveAddress(address === 'signer')
+		useSignersAddressAsActiveAddress.value = address === 'signer'
 		if (address === 'signer') {
 			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode.value } })
 			if (simulationMode.value) {
-				activeSimulationAddress.value = tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined
+				activeSimulationAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
 				return
 			}
-			activeSigningAddress.value = tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined
+			activeSigningAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
 			return
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode.value } })
@@ -117,10 +118,10 @@ export function App() {
 	}
 
 	function isSignerConnected() {
-		return tabState !== undefined && tabState.signerAccounts.length > 0
+		return tabState.value !== undefined && tabState.value.signerAccounts.length > 0
 			&& (
-				simulationMode.value && activeSimulationAddress.value !== undefined && tabState.signerAccounts[0] === activeSimulationAddress.value
-				|| !simulationMode.value && activeSigningAddress.value !== undefined && tabState.signerAccounts[0] === activeSigningAddress.value
+				simulationMode.value && activeSimulationAddress.value !== undefined && tabState.value.signerAccounts[0] === activeSimulationAddress.value
+				|| !simulationMode.value && activeSigningAddress.value !== undefined && tabState.value.signerAccounts[0] === activeSigningAddress.value
 			)
 	}
 
@@ -152,7 +153,7 @@ export function App() {
 	const requestUnexpectedError = async () => {
 		const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
 		if (reply === undefined) return
-		unexpectedError.value = reply.latestUnexpectedError !== undefined ? { message: reply.latestUnexpectedError.data.message, timestamp: reply.latestUnexpectedError.data.timestamp } : undefined
+		unexpectedError.value = reply.latestUnexpectedError
 	}
 
 	useEffect(() => {
@@ -171,9 +172,10 @@ export function App() {
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
 		) => {
-			if (activeSimulationAddress === undefined) return setSimVisResults(undefined)
-			if (simState === undefined) return setSimVisResults(undefined)
-			setSimVisResults({
+			if (activeSimulationAddress === undefined) return (simVisResults.value = undefined)
+			if (simState === undefined) return (simVisResults.value = undefined)
+			if (simVisResults.value !== undefined && simVisResults.value.simulationConductedTimestamp.getTime() === simState.simulationConductedTimestamp.getTime()) return
+			simVisResults.value = {
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
@@ -183,42 +185,41 @@ export function App() {
 				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
-			})
+			}
 		}
 
-		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
-			if (state === undefined) return
-			setSimulationState(
-				state.simulationState,
-				state.addressBookEntries,
-				state.tokenPriceEstimates,
-				state.visualizedSimulationState,
+			const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
+				if (state === undefined) return
+				setSimulationState(
+					state.simulationState,
+					state.addressBookEntries,
+					state.tokenPriceEstimates,
+					state.visualizedSimulationState,
 				state.activeAddress,
 				state.namedTokenIds,
 			)
-			setSimulationUpdatingState(state.simulationUpdatingState)
-			setSimulationResultState(state.simulationResultState)
+			simulationUpdatingState.value = state.simulationUpdatingState
+			simulationResultState.value = state.simulationResultState
 		}
 
 		const updateHomePage = ({ data }: UpdateHomePage) => {
-			if (data.tabId !== currentTabId && currentTabId !== undefined) return
-			setIsSettingsLoaded((isSettingsLoaded) => {
-				rpcEntries.value = data.rpcEntries
-				setCurrentTabId(data.tabId)
-				activeSigningAddress.value = data.activeSigningAddressInThisTab
-				setInterceptorDisabled(data.interceptorDisabled)
-				updateHomePageSettings(data.settings, !isSettingsLoaded)
-				if (isSettingsLoaded === false) setTabConnection(data.tabState.tabIconDetails)
-				updateVisualizedState(data.visualizedSimulatorState)
-				setTabState(data.tabState)
-				setCurrentBlockNumber(data.currentBlockNumber)
-				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
-				rpcConnectionStatus.value = data.rpcConnectionStatus
-				if (!isSettingsLoaded) {
-					preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
-				}
-				return true
-			})
+			if (data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
+			const wasLoaded = isSettingsLoaded.value
+			isSettingsLoaded.value = true
+			rpcEntries.value = data.rpcEntries
+			currentTabId.value = data.tabId
+			activeSigningAddress.value = data.activeSigningAddressInThisTab
+			interceptorDisabled.value = data.interceptorDisabled
+			updateHomePageSettings(data.settings, !wasLoaded)
+			if (!wasLoaded) tabIconDetails.value = data.tabState.tabIconDetails
+			updateVisualizedState(data.visualizedSimulatorState)
+			tabState.value = data.tabState
+			currentBlockNumber.value = data.currentBlockNumber
+			websiteAccessAddressMetadata.value = data.websiteAccessAddressMetadata
+			rpcConnectionStatus.value = data.rpcConnectionStatus
+			if (!wasLoaded) {
+				preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
+			}
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery && appPage.value.page === 'Unknown') {
@@ -230,67 +231,72 @@ export function App() {
 			}
 			rpcNetwork.value = settings.activeRpcNetwork
 			activeSimulationAddress.value = settings.activeSimulationAddress
-			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-			setWebsiteAccess(settings.websiteAccess)
+			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
+			websiteAccess.value = settings.websiteAccess
 		}
 
-		const replyPopupMessageListener = async (msg: unknown) => {
+		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
+			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
+			if (maybeRequest.success && maybeRequest.value.method === 'popup_isMainPopupWindowOpen') {
+				sendResponse({ type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } })
+				return true
+			}
+
 			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
+			if (!maybeParsed.success) return undefined // not a message we are interested in
 			const parsed = maybeParsed.value
+			if (parsed.role === 'confirmTransaction') return undefined
 			switch(parsed.method) {
-				case 'popup_UnexpectedErrorOccured': {
-					unexpectedError.value = { message: parsed.data.message, timestamp: parsed.data.timestamp }
-					return false
-				}
+					case 'popup_UnexpectedErrorOccured': {
+						unexpectedError.value = parsed
+						return undefined
+					}
 				case 'popup_settingsUpdated': {
 					requestRichData()
 					updateHomePageSettings(parsed.data, true)
-					return false
+					return undefined
 				}
 				case 'popup_activeSigningAddressChanged': {
-					if (parsed.data.tabId !== currentTabId) return false
+					if (parsed.data.tabId !== currentTabId.value) return undefined
 					activeSigningAddress.value = parsed.data.activeSigningAddress
-					return false
+					return undefined
 				}
 				case 'popup_websiteIconChanged': {
-					setTabConnection(parsed.data)
-					return false
+					tabIconDetails.value = parsed.data
+					return undefined
 				}
 				case 'popup_new_block_arrived': {
-					sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
-					sendPopupMessageToBackgroundPage({ method: 'popup_refreshSimulation' })
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					return false
+					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+					return undefined
 				}
 				case 'popup_failed_to_get_block': {
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					return false
+					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+					return undefined
 				}
-				case 'popup_update_rpc_list': return false
+				case 'popup_update_rpc_list': return undefined
 				case 'popup_simulation_state_changed': {
 					updateVisualizedState(parsed.data.visualizedSimulatorState)
-					return false
-				}
-				case 'popup_isMainPopupWindowOpen': {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+					return undefined
 				}
 			}
 			if (parsed.method !== 'popup_UpdateHomePage') {
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-				return false
+				return undefined
 			}
-			return updateHomePage(UpdateHomePage.parse(parsed))
+			const { role: _role, ...popupUpdateHomePage } = parsed
+			return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
 		}
 
 		browser.runtime.onMessage.addListener(replyPopupMessageListener)
 		return () => {
 			browser.runtime.onMessage.removeListener(replyPopupMessageListener)
 		}
-	})
+	}, [])
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshSimulation' })
+		sendPopupMessageToBackgroundPage({ method: 'popup_wakeUpIfNeeded' })
 		sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 	}, [])
 
@@ -391,10 +397,10 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
-	function onRenderError(error: Error) { unexpectedError.value = { message: error.message, timestamp: new Date() } }
+	function onRenderError(error: Error) { unexpectedError.value = { method: 'popup_UnexpectedErrorOccured', data: { message: error.message, timestamp: new Date() } } }
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
-		setBoundaryResetKey((k) => k + 1)
+		boundaryResetKey.value += 1
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
@@ -421,10 +427,10 @@ export function App() {
 						</div>
 					</nav>
 
-					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
+				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
-					{ !isSettingsLoaded ? <CenterToPageTextSpinner/> : <>
+					{ !isSettingsLoaded.value ? <CenterToPageTextSpinner/> : <>
 						<Home
 							setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 							rpcNetwork = { rpcNetwork }
@@ -450,37 +456,37 @@ export function App() {
 							fixedAddressRichList = { fixedAddressRichList }
 							openImportSimulation = { () => { appPage.value = { page: 'ImportSimulation', state: new Signal('') } } }
 						/>
+
 					</> }
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><EditEnsLabelHash
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><EditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><InterceptorAccessList
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><InterceptorAccessList
 								goHome = { goHome }
-								setWebsiteAccess = { setWebsiteAccess }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 								renameAddressCallBack = { renameAddressCallBack }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><ChangeActiveAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								signerAccounts = { tabState?.signerAccounts ?? [] }
+								signerAccounts = { tabState.value?.signerAccounts ?? [] }
 								close = { goHome }
 								activeAddresses = { activeAddresses }
-								signerName = { tabState?.signerName ?? 'NoSignerDetected' }
+								signerName = { tabState.value?.signerName ?? 'NoSignerDetected' }
 								renameAddressCallBack = { renameAddressCallBack }
 								addNewAddress = { addNewAddress }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><AddNewAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
@@ -489,7 +495,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ErrorBoundary key = { boundaryResetKey } onError = { onRenderError }><ImportSimulationStack
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
 							/></ErrorBoundary>
