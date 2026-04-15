@@ -174,7 +174,6 @@ export function App() {
 		) => {
 			if (activeSimulationAddress === undefined) return (simVisResults.value = undefined)
 			if (simState === undefined) return (simVisResults.value = undefined)
-			if (simVisResults.value !== undefined && simVisResults.value.simulationConductedTimestamp.getTime() === simState.simulationConductedTimestamp.getTime()) return
 			simVisResults.value = {
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
