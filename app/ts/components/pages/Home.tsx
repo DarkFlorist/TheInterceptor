@@ -317,7 +317,6 @@ function PopupVisualisation(param: SimulationStateParam) {
 					activeAddress = { computedActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
 					addressMetaData = { computedAddressBookEntries }
 				/>
 		</> : <>
@@ -331,7 +330,6 @@ function PopupVisualisation(param: SimulationStateParam) {
 							activeAddress = { computedActiveAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-							removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
 							addressMetaData = { computedAddressBookEntries }
 						/>
 					{ param.removedTransactionOrSignedMessages.length > 0

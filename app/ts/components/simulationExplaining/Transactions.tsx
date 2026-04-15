@@ -268,7 +268,6 @@ type TransactionsAndSignedMessagesParams = {
 	activeAddress: ReadonlySignal<bigint>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 }
 
