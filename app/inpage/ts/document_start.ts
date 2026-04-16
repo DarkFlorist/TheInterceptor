@@ -1,3 +1,6 @@
+import { createPageErrorRequestEnvelope, createPageRequestEnvelope, parsePageToPageEnvelope } from '../../ts/messages/page.js'
+import { RawInterceptedRequest } from '../../ts/utils/requests.js'
+
 function injectScript(_content: string) {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
 	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
@@ -43,9 +46,14 @@ function injectScript(_content: string) {
 				|| !('interceptorRequest' in messageEvent.data)
 			) return
 			try {
-				// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
-				if (!('data' in messageEvent) || !(typeof messageEvent['data'] === 'object' && messageEvent['data'] !== null) || !('interceptorRequest' in messageEvent['data'])) return
-				extensionPort.postMessage({ kind: 'request', id: messageEvent.data.requestId, action: 'rpc.request', payload: messageEvent.data })
+				const parsedMessage = RawInterceptedRequest.safeParse(messageEvent.data)
+				if (!parsedMessage.success || parsedMessage.value.interceptorRequest !== true) return
+				extensionPort.postMessage(createPageRequestEnvelope(parsedMessage.value.requestId, {
+					method: parsedMessage.value.method,
+					...('params' in parsedMessage.value ? { params: parsedMessage.value.params } : {}),
+					interceptorRequest: true,
+					usingInterceptorWithoutSigner: parsedMessage.value.usingInterceptorWithoutSigner,
+				}))
 				checkAndThrowRuntimeLastError()
 			} catch (error) {
 				if (error instanceof Error) {
@@ -55,7 +63,7 @@ function injectScript(_content: string) {
 					}
 					if (error.message?.includes('User denied')) return // user denied signature
 				}
-				extensionPort.postMessage({ kind: 'request', id: -1, action: 'rpc.request', payload: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
+				extensionPort.postMessage(createPageErrorRequestEnvelope(-1, JSON.stringify(error)))
 				throw error
 			}
 		})
@@ -66,16 +74,16 @@ function injectScript(_content: string) {
 
 			// forward all messages we get from the background script to the window so the page script can filter and process them
 			extensionPort.onMessage.addListener(messageEvent => {
-				const payload = typeof messageEvent === 'object' && messageEvent !== null && 'payload' in messageEvent ? messageEvent.payload : messageEvent
-				if (typeof payload !== 'object' || payload === null || !('interceptorApproved' in payload)) {
+				const parsedMessage = parsePageToPageEnvelope(messageEvent)
+				if (parsedMessage === undefined || (parsedMessage.kind === 'response' && parsedMessage.ok === false)) {
 					console.error('Malformed message:')
 					console.error(messageEvent)
 					if (extensionPort === undefined) return
-					extensionPort.postMessage({ kind: 'request', id: -1, action: 'rpc.request', payload: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
+					extensionPort.postMessage(createPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
 					return
 				}
 				try {
-					globalThis.postMessage(payload, '*')
+					globalThis.postMessage(parsedMessage.payload, '*')
 					checkAndThrowRuntimeLastError()
 				} catch (error) {
 					console.error(error)

@@ -29,7 +29,7 @@ import { refreshHomeData, settingsOpened } from './popupMessageHandlers.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { PAGE_RPC_REQUEST, isPagePortEnvelope, isPageRequestPayload } from '../messages/page.js'
+import { PAGE_RPC_REQUEST, PageRequestPayload, parsePageRequestEnvelope } from '../messages/page.js'
 import { createRouter } from '../messaging/router.js'
 import { PageSessionStore, createPageSessionStore } from './pageSessions.js'
 
@@ -110,9 +110,9 @@ const pageRequestRouter = createRouter<{
 	requestId: number
 }>()
 
-pageRequestRouter.register(PAGE_RPC_REQUEST, async (context, payload) => {
+pageRequestRouter.register<PageRequestPayload>(PAGE_RPC_REQUEST, async (context, payload) => {
 	const socket = context.socket
-	if (socket === undefined || !isPageRequestPayload(payload)) return
+	if (socket === undefined) return
 	await pendingRequestLimiter.execute(async () => {
 		const request = {
 			method: payload.method,
@@ -157,18 +157,17 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 
 	port.onMessage.addListener((payload) => {
 		catchAllErrorsAndCall(async () => {
-			if (isPagePortEnvelope(payload) && payload.kind === 'request' && payload.action === PAGE_RPC_REQUEST) {
-				await pageRequestRouter.dispatch(payload.action, {
-					port,
-					socket,
-					websiteOrigin,
-					websitePromise,
-					simulator,
-					pageSessions,
-					requestId: payload.id,
-				}, payload.payload)
-				return
-			}
+			const message = parsePageRequestEnvelope(payload)
+			if (message === undefined) return
+			await pageRequestRouter.dispatch(message.action, {
+				port,
+				socket,
+				websiteOrigin,
+				websitePromise,
+				simulator,
+				pageSessions,
+				requestId: message.id,
+			}, message.payload)
 		})
 	})
 

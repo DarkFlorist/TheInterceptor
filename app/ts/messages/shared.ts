@@ -39,13 +39,29 @@ export type TransportEnvelope<Action extends string = string, Payload = unknown>
 	| TransportEventEnvelope<Action, Payload>
 
 const ObjectRecord = funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown)
-const MessageErrorRuntype = funtypes.Intersect(
+export const MessageErrorRuntype = funtypes.Intersect(
 	funtypes.ReadonlyObject({ message: funtypes.String }),
 	funtypes.Partial({
 		code: funtypes.Number,
 		data: funtypes.Unknown,
 	}),
 )
+
+export function createTransportRequestEnvelope<Action extends string, Payload>(id: number, action: Action, payload: Payload): TransportRequestEnvelope<Action, Payload> {
+	return { kind: 'request', id, action, payload }
+}
+
+export function createTransportSuccessResponseEnvelope<Action extends string, Payload>(id: number, action: Action, payload: Payload): TransportResponseEnvelope<Action, Payload> {
+	return { kind: 'response', id, action, ok: true, payload }
+}
+
+export function createTransportErrorResponseEnvelope<Action extends string>(id: number, action: Action, error: MessageError): TransportResponseEnvelope<Action> {
+	return { kind: 'response', id, action, ok: false, error }
+}
+
+export function createTransportEventEnvelope<Action extends string, Payload>(action: Action, payload: Payload): TransportEventEnvelope<Action, Payload> {
+	return { kind: 'event', action, payload }
+}
 const TransportEnvelopeRuntype = funtypes.Union(
 	funtypes.ReadonlyObject({
 		kind: funtypes.Literal('request'),

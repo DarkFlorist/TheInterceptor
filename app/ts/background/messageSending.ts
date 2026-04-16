@@ -1,17 +1,14 @@
 import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from "../types/interceptor-messages.js"
 import { WebsiteSocket, checkAndPrintRuntimeLastError } from "../utils/requests.js"
-import { serialize } from "../types/wire-types.js"
-import { PAGE_RPC_EVENT, PAGE_RPC_RESPONSE } from "../messages/page.js"
-import { TransportEventEnvelope, TransportResponseEnvelope } from "../messages/shared.js"
+import { PAGE_RPC_EVENT, PAGE_RPC_RESPONSE, createPageEventEnvelope, createPageResponseEnvelope } from "../messages/page.js"
 import { PageSessionStore } from "./pageSessions.js"
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, action: typeof PAGE_RPC_RESPONSE | typeof PAGE_RPC_EVENT, id: number | undefined, message: InterceptorMessageToInpage) {
 	try {
 		checkAndPrintRuntimeLastError()
-		const payload = serialize(InterceptorMessageToInpage, message)
-		const envelope: TransportResponseEnvelope<typeof PAGE_RPC_RESPONSE, typeof payload> | TransportEventEnvelope<typeof PAGE_RPC_EVENT, typeof payload> = action === PAGE_RPC_RESPONSE && id !== undefined
-			? { kind: 'response', action, id, ok: true, payload }
-			: { kind: 'event', action: PAGE_RPC_EVENT, payload }
+		const envelope = action === PAGE_RPC_RESPONSE && id !== undefined
+			? createPageResponseEnvelope(id, message)
+			: createPageEventEnvelope(message)
 		port.postMessage(envelope)
 	} catch (error) {
 		if (error instanceof Error) {

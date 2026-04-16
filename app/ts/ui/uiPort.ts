@@ -1,7 +1,8 @@
-import { UI_COMMAND_ACTION, UI_EVENT_ACTION, UI_QUERY_ACTION, UI_SNAPSHOT_ACTION, UiCommandPayload, UiQueryPayload, UiRole, createUiCommandPayload, createUiQueryPayload, getUiPortName, parseUiPopupEventPayload, parseUiPopupReply } from '../messages/ui.js'
-import { TransportRequestEnvelope, isTransportEnvelope, toMessageError } from '../messages/shared.js'
+import { UiRole, createUiCommandRequestEnvelope, createUiQueryRequestEnvelope, createUiSnapshotRequestEnvelope, getUiPortName, parseUiPopupEventEnvelope, parseUiPopupReply, parseUiResponseEnvelope } from '../messages/ui.js'
+import { toMessageError } from '../messages/shared.js'
 import { MessageToPopup, PopupMessage } from '../types/interceptor-messages.js'
-import { PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import { PopupReplyOption, PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import * as funtypes from 'funtypes'
 
 type EventHandler = (message: MessageToPopup) => void
 
@@ -9,7 +10,7 @@ type UiPortState = {
 	role: UiRole
 	port: browser.runtime.Port | undefined
 	nextRequestId: number
-	pending: Map<number, { resolve: (value: unknown) => void, reject: (reason: Error) => void }>
+	pending: Map<number, { resolve: (value: funtypes.Static<typeof PopupReplyOption>) => void, reject: (reason: Error) => void }>
 	listeners: Set<EventHandler>
 }
 
@@ -25,23 +26,30 @@ function createUiPortClient(role: UiRole) {
 	}
 
 	const onMessage = (message: unknown) => {
-		if (!isTransportEnvelope(message)) return
-		if (message.kind === 'event' && message.action === UI_EVENT_ACTION) {
-			const popupMessage = parseUiPopupEventPayload(message.payload)
-			if (popupMessage === undefined) return
+		const popupMessage = parseUiPopupEventEnvelope(message)
+		if (popupMessage !== undefined) {
 			for (const listener of state.listeners) listener(popupMessage)
 			return
 		}
-		if (message.kind !== 'response') return
-		const pending = state.pending.get(message.id)
+		const response = parseUiResponseEnvelope(message)
+		if (response === undefined) return
+		const pending = state.pending.get(response.id)
 		if (pending === undefined) return
-		state.pending.delete(message.id)
-		if (message.ok) {
-			pending.resolve(message.payload)
+		state.pending.delete(response.id)
+		if (response.ok) {
+			pending.resolve(response.payload)
 			return
 		}
-		pending.reject(new Error(message.error.message))
+		pending.reject(new Error(response.error.message))
 	}
+
+	const postRequest = (
+		port: browser.runtime.Port,
+		envelope: ReturnType<typeof createUiCommandRequestEnvelope> | ReturnType<typeof createUiQueryRequestEnvelope> | ReturnType<typeof createUiSnapshotRequestEnvelope>,
+	) => new Promise<funtypes.Static<typeof PopupReplyOption>>((resolve, reject) => {
+		state.pending.set(envelope.id, { resolve, reject })
+		port.postMessage(envelope)
+	})
 
 	const ensurePort = () => {
 		if (state.port !== undefined) return state.port
@@ -51,29 +59,21 @@ function createUiPortClient(role: UiRole) {
 			state.port = undefined
 		})
 		state.port = port
-		void request(UI_SNAPSHOT_ACTION, undefined)
+		void postRequest(port, createUiSnapshotRequestEnvelope(state.nextRequestId++))
 		return port
 	}
 
-	function request(action: typeof UI_COMMAND_ACTION, payload: UiCommandPayload): Promise<unknown>
-	function request(action: typeof UI_QUERY_ACTION, payload: UiQueryPayload): Promise<unknown>
-	function request(action: typeof UI_SNAPSHOT_ACTION, payload: undefined): Promise<unknown>
-	function request(action: string, payload: unknown) {
-		const port = ensurePort()
-		const id = state.nextRequestId++
-		return new Promise<unknown>((resolve, reject) => {
-			state.pending.set(id, { resolve, reject })
-			port.postMessage({ kind: 'request', id, action, payload } satisfies TransportRequestEnvelope)
-		})
+	const request = (envelope: ReturnType<typeof createUiCommandRequestEnvelope> | ReturnType<typeof createUiQueryRequestEnvelope> | ReturnType<typeof createUiSnapshotRequestEnvelope>) => {
+		return postRequest(ensurePort(), envelope)
 	}
 
 	return {
 		sendCommand(message: PopupMessage) {
-			return request(UI_COMMAND_ACTION, createUiCommandPayload(message))
+			return request(createUiCommandRequestEnvelope(state.nextRequestId++, message))
 		},
 
 		async sendQuery<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
-			const result = await request(UI_QUERY_ACTION, createUiQueryPayload(message))
+			const result = await request(createUiQueryRequestEnvelope(state.nextRequestId++, message))
 			if (result === undefined) return undefined
 			return parseUiPopupReply(message, result)
 		},
