@@ -5,6 +5,7 @@ import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import { UiPopupEventTarget } from '../messages/ui.js'
 import { hasUiSession, publishUiPopupEvent } from './uiSessions.js'
 import { sendUiPopupCommand, sendUiPopupQuery } from '../ui/uiPort.js'
 
@@ -26,7 +27,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
 }
 
-export async function publishPopupMessageToOpenUiPorts(message: MessageToPopupPayload, role: 'all' | 'confirmTransaction' = 'all') {
+export async function publishPopupMessageToOpenUiPorts(message: MessageToPopupPayload, role: UiPopupEventTarget = 'all') {
 	try {
 		publishUiPopupEvent(message, role)
 	} catch (error) {

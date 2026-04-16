@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as assert from 'assert'
+import type { MainOrConfirmUiRole } from '../../app/ts/messages/ui.js'
 import { Interface } from 'ethers'
 import { run, runIfRoot, should } from '../micro-should.js'
 
@@ -72,7 +73,7 @@ function createBrowserMock() {
 	return {
 		sentMessages,
 		storageState,
-		async attachUiSession(role: 'main' | 'confirmTransaction') {
+		async attachUiSession(role: MainOrConfirmUiRole) {
 			const { registerUiPort } = await import('../../app/ts/background/uiSessions.js')
 			const { getUiPortName } = await import('../../app/ts/messages/ui.js')
 			const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')

@@ -1,4 +1,5 @@
 import * as assert from 'assert'
+import type { MainOrConfirmUiRole } from '../../app/ts/messages/ui.js'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
@@ -13,7 +14,7 @@ type RuntimeMessage = {
 
 type BrowserMock = {
 	reset: () => void
-	attachUiSession: (role: 'main' | 'confirmTransaction') => Promise<void>
+	attachUiSession: (role: MainOrConfirmUiRole) => Promise<void>
 	sentMessages: RuntimeMessage[]
 }
 
@@ -78,7 +79,7 @@ function createBrowserMock(): BrowserMock {
 
 	return {
 		sentMessages,
-		async attachUiSession(role: 'main' | 'confirmTransaction') {
+		async attachUiSession(role: MainOrConfirmUiRole) {
 			const { registerUiPort } = await import('../../app/ts/background/uiSessions.js')
 			const { getUiPortName } = await import('../../app/ts/messages/ui.js')
 			const port = {
