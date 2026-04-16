@@ -7,10 +7,10 @@ import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransacti
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getHtmlFile, publishPopupMessageToOpenUiPorts } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddresses, identifyAddress } from './metadataUtils.js'
-import { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { PageSessionStore } from './pageSessions.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
@@ -47,12 +47,12 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
-export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
+export async function confirmDialog(simulator: Simulator, pageSessions: PageSessionStore, confirmation: TransactionConfirmation) {
+	await resolvePendingTransactionOrMessage(simulator, pageSessions, confirmation)
 }
 
-export async function confirmRequestAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
-	await resolveInterceptorAccess(simulator, websiteTabConnections, confirmation.data)
+export async function confirmRequestAccess(simulator: Simulator, pageSessions: PageSessionStore, confirmation: InterceptorAccess) {
+	await resolveInterceptorAccess(simulator, pageSessions, confirmation.data)
 }
 
 export async function getLastKnownCurrentTabId() {
@@ -72,21 +72,21 @@ async function getSignerAccount() {
 	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
 }
 
-export async function changeActiveAddress(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
+export async function changeActiveAddress(simulator: Simulator, pageSessions: PageSessionStore, addressChange: ChangeActiveAddress) {
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.data.activeAddress === 'signer') {
 		const signerAccount = await getSignerAccount()
 		await setUseSignersAddressAsActiveAddress(addressChange.data.activeAddress === 'signer', signerAccount)
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_to_eth_accounts', result: [] })
+		sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_chainId', result: [] })
 
-		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, pageSessions, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: signerAccount,
 		})
 	} else {
 		await setUseSignersAddressAsActiveAddress(false)
-		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, pageSessions, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: addressChange.data.activeAddress,
 		})
@@ -111,27 +111,27 @@ export async function modifyMakeMeRich(simulator: Simulator, makeMeRichChange: M
 	await updatePopupVisualisationIfNeeded(simulator, false, true)
 }
 
-export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
+export async function removeAddressBookEntry(simulator: Simulator, pageSessions: PageSessionStore, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
-	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses') updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressBookEntry(simulator: Simulator, pageSessions: PageSessionStore, entry: AddOrEditAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => {
 		if (previousContacts.find((previous) => previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n)) ) {
 			return previousContacts.map((previous) => previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n) ? entry.data : previous)
 		}
 		return previousContacts.concat([entry.data])
 	})
-	if (entry.data.useAsActiveAddress) updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	if (entry.data.useAsActiveAddress) updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function changeInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
+export async function changeInterceptorAccess(simulator: Simulator, pageSessions: PageSessionStore, accessChange: ChangeInterceptorAccess) {
 	await updateWebsiteAccess((previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
@@ -144,19 +144,19 @@ export async function changeInterceptorAccess(simulator: Simulator, websiteTabCo
 	const interceptorDisablesChanged = accessChange.data.filter((x) => x.newEntry.interceptorDisabled !== x.oldEntry.interceptorDisabled).map((x) => x)
 	await Promise.all(interceptorDisablesChanged.map(async (disable) => {
 		if (disable.newEntry.interceptorDisabled === undefined) return
-		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
+		return await disableInterceptorForPage(pageSessions, disable.newEntry.website, disable.newEntry.interceptorDisabled)
 	}))
 
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
+	updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_interceptor_access_changed' })
 }
 
 export const changePage = async (page: ChangePage) => await setPage(page.data)
 
-export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, params: RequestAccountsFromSigner) {
+export async function requestAccountsFromSigner(pageSessions: PageSessionStore, params: RequestAccountsFromSigner) {
 	if (params.data) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_chainId', result: [] })
 	}
 }
 
@@ -243,8 +243,8 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 				}
 			}
 			await Promise.all([
-				sendPopupMessageToOpenWindows(messagePendingTransactions, 'confirmTransaction'),
-				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
+				publishPopupMessageToOpenUiPorts(messagePendingTransactions, 'confirmTransaction'),
+				publishPopupMessageToOpenUiPorts(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 			])
 			return
 		}
@@ -275,8 +275,8 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 					}
 				}
 				await Promise.all([
-					sendPopupMessageToOpenWindows(messagePendingTransactions, 'confirmTransaction'),
-					sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
+					publishPopupMessageToOpenUiPorts(messagePendingTransactions, 'confirmTransaction'),
+					publishPopupMessageToOpenUiPorts(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 				])
 				return
 			} catch(error: unknown) {
@@ -324,31 +324,31 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	await updateConfirmTransactionView(simulator, true)
 }
 
-export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	return await changeActiveRpc(simulator, websiteTabConnections, params.data, settings.simulationMode)
+export async function popupChangeActiveRpc(simulator: Simulator, pageSessions: PageSessionStore, params: ChangeActiveChain, settings: Settings) {
+	return await changeActiveRpc(simulator, pageSessions, params.data, settings.simulationMode)
 }
 
-export async function changeChainDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
-	await resolveChainChange(simulator, websiteTabConnections, chainChange)
+export async function changeChainDialog(simulator: Simulator, pageSessions: PageSessionStore, chainChange: ChainChangeConfirmation) {
+	await resolveChainChange(simulator, pageSessions, chainChange)
 }
 
-export async function enableSimulationMode(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
+export async function enableSimulationMode(simulator: Simulator, pageSessions: PageSessionStore, params: EnableSimulationMode) {
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_to_eth_accounts', result: [] })
+		sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_chainId', result: [] })
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
-		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, pageSessions, {
 			simulationMode: params.data,
 			activeAddress: await getSignerAccount(),
 			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
 		})
 	} else {
 		const selectedNetworkToSwitch = settings.activeRpcNetwork.httpsRpc !== undefined ? settings.activeRpcNetwork : (await getRpcList())[0]
-		await changeActiveAddressAndChain(simulator, websiteTabConnections, {
+		await changeActiveAddressAndChain(simulator, pageSessions, {
 			simulationMode: params.data,
 			...settings.activeRpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
 		})
@@ -357,7 +357,7 @@ export async function enableSimulationMode(simulator: Simulator, websiteTabConne
 
 export async function getAddressBookData(parsed: GetAddressBookData) {
 	const data = await getMetadataForAddressBookData(parsed.data)
-	await sendPopupMessageToOpenWindows({
+	await publishPopupMessageToOpenUiPorts({
 		method: 'popup_getAddressBookDataReply',
 		data: {
 			data: parsed.data,
@@ -420,7 +420,7 @@ export async function refreshHomeData(simulator: Simulator, refreshSimulation = 
 			preSimulationBlockTimeManipulation: await preSimulationBlockTimeManipulationPromise
 		}
 	}
-	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
+	await publishPopupMessageToOpenUiPorts(serialize(UpdateHomePage, updatedPage))
 }
 
 export async function settingsOpened() {
@@ -429,7 +429,7 @@ export async function settingsOpened() {
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
-	await sendPopupMessageToOpenWindows({
+	await publishPopupMessageToOpenUiPorts({
 		method: 'popup_requestSettingsReply' as const,
 		data: {
 			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
@@ -440,8 +440,8 @@ export async function settingsOpened() {
 	})
 }
 
-export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
-	await requestAddressChange(websiteTabConnections, params)
+export async function interceptorAccessChangeAddressOrRefresh(pageSessions: PageSessionStore, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
+	await requestAddressChange(pageSessions, params)
 }
 
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
@@ -452,7 +452,7 @@ export async function changeSettings(simulator: Simulator, parsedRequest: Change
 
 export async function importSettings(settingsData: ImportSettings) {
 	if (!isJSON(settingsData.data.fileContents)) {
-		await sendPopupMessageToOpenWindows({
+		await publishPopupMessageToOpenUiPorts({
 			method: 'popup_initiate_export_settings_reply',
 			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' }
 		})
@@ -460,14 +460,14 @@ export async function importSettings(settingsData: ImportSettings) {
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		await sendPopupMessageToOpenWindows({
+		await publishPopupMessageToOpenUiPorts({
 			method: 'popup_initiate_export_settings_reply',
 			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' }
 		})
 		return
 	}
 	await importSettingsAndAddressBook(parsed.value)
-	await sendPopupMessageToOpenWindows({
+	await publishPopupMessageToOpenUiPorts({
 		method: 'popup_initiate_export_settings_reply',
 		data: { success: true }
 	})
@@ -475,7 +475,7 @@ export async function importSettings(settingsData: ImportSettings) {
 
 export async function exportSettings() {
 	const exportedSettings = await exportSettingsAndAddressBook()
-	await sendPopupMessageToOpenWindows({
+	await publishPopupMessageToOpenUiPorts({
 		method: 'popup_initiate_export_settings',
 		data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings), undefined, 4) }
 	})
@@ -483,7 +483,7 @@ export async function exportSettings() {
 
 export async function setNewRpcList(simulator: Simulator, request: SetRpcList, settings: Settings) {
 	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
 	if (primary !== undefined) {
 		// reset to primary on update
@@ -496,7 +496,7 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
 	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
 	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
-	await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
+	await publishPopupMessageToOpenUiPorts(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }
 	}))
@@ -504,7 +504,7 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 
 export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
 	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, await getCurrentSimulationInput(), ethereum, tokenPriceService)
-	await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
+	await publishPopupMessageToOpenUiPorts(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
 	}))
@@ -553,7 +553,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
-	await sendPopupMessageToOpenWindows({
+	await publishPopupMessageToOpenUiPorts({
 		method: 'popup_addOrModifyAddressWindowStateInformation',
 		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState }
 	})
@@ -601,8 +601,8 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 }
 
 // reload all connected tabs of the same origin and the current webpage
-async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefesh = Array.from(websiteTabConnections.entries()).map(([tabId]) => tabId)
+async function reloadConnectedTabs(pageSessions: PageSessionStore) {
+	const tabIdsToRefesh = pageSessions.getAll().map((session) => session.socket.tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
 	for (const tabId of new Set(withCurrentTabid)) {
@@ -616,18 +616,18 @@ async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections)
 	}
 }
 
-async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
+async function disableInterceptorForPage(pageSessions: PageSessionStore, website: Website, interceptorDisabled: boolean) {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
 
-	await reloadConnectedTabs(websiteTabConnections)
+	await reloadConnectedTabs(pageSessions)
 }
 
-export async function disableInterceptor(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
+export async function disableInterceptor(simulator: Simulator, pageSessions: PageSessionStore, parsedRequest: DisableInterceptor) {
+	await disableInterceptorForPage(pageSessions, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
+	updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
 export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
@@ -636,7 +636,7 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 	} else {
 		await addEnsNodeHash(parsedRequest.data.name)
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_addressBookEntriesChanged' })
 }
 
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
@@ -644,7 +644,7 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
 	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess)
 
-	await sendPopupMessageToOpenWindows({
+	await publishPopupMessageToOpenUiPorts({
 		method: 'popup_retrieveWebsiteAccessReply',
 		data: {
 			websiteAccess,
@@ -653,7 +653,7 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	})
 }
 
-async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) {
+async function blockOrAllowWebsiteExternalRequests(pageSessions: PageSessionStore, website: Website, shouldBlock: boolean) {
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== website.websiteOrigin) return access
@@ -661,13 +661,13 @@ async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: Websit
 		})
 	})
 
-	await reloadConnectedTabs(websiteTabConnections)
+	await reloadConnectedTabs(pageSessions)
 }
 
-export async function blockOrAllowExternalRequests(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
-	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+export async function blockOrAllowExternalRequests(simulator: Simulator, pageSessions: PageSessionStore, parsedRequest: BlockOrAllowExternalRequests) {
+	await blockOrAllowWebsiteExternalRequests(pageSessions, parsedRequest.data.website, parsedRequest.data.shouldBlock)
+	updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_websiteAccess_changed' })
 }
 
 async function removeAddressAccessByAddress(websiteOrigin: string, address: EthereumAddress) {
@@ -680,11 +680,11 @@ async function removeAddressAccessByAddress(websiteOrigin: string, address: Ethe
 	})
 }
 
-export async function removeWebsiteAddressAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
+export async function removeWebsiteAddressAccess(simulator: Simulator, pageSessions: PageSessionStore, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	await reloadConnectedTabs(websiteTabConnections)
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	await reloadConnectedTabs(pageSessions)
+	updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_websiteAccess_changed' })
 }
 
 async function setAdressAccessForWebsite(websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
@@ -697,17 +697,17 @@ async function setAdressAccessForWebsite(websiteOrigin: string, address: Ethereu
 	})
 }
 
-export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
+export async function allowOrPreventAddressAccessForWebsite(pageSessions: PageSessionStore, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
 	await setAdressAccessForWebsite(website.websiteOrigin, address, allowAccess)
-	await reloadConnectedTabs(websiteTabConnections)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	await reloadConnectedTabs(pageSessions)
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_websiteAccess_changed' })
 }
 
-export async function removeWebsiteAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
+export async function removeWebsiteAccess(simulator: Simulator, pageSessions: PageSessionStore, parsedRequest: RemoveWebsiteAccess) {
 	await updateWebsiteAccess((previousAccess) => previousAccess.filter(access => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	updateWebsiteApprovalAccesses(simulator, pageSessions, await getSettings())
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_websiteAccess_changed' })
 }
 export async function forceSetGasLimitForTransaction(simulator: Simulator, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
@@ -777,9 +777,9 @@ export const requestSimulationMode = async () => ({ type: 'RequestSimulationMode
 
 export const requestLatestUnexpectedError = async () => ({ type: 'RequestLatestUnexpectedErrorReply' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
-export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, pageSessions: PageSessionStore, confirmation: FetchSimulationStackRequestConfirmation) {
 	const simulationState = await getUpdatedSimulationState(ethereumClientService)
-	await resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, confirmation)
+	await resolveFetchSimulationStackRequest(simulationState, pageSessions, confirmation)
 }
 
 export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {

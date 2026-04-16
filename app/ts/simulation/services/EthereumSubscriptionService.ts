@@ -1,9 +1,9 @@
 import { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
+import { PageSessionStore } from '../../background/pageSessions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
 import { EthereumSubscriptionsAndFilters, SimulationState } from '../../types/visualizer-types.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlock, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 import { WebsiteSocket } from '../../utils/requests.js'
@@ -32,10 +32,10 @@ export async function removeEthereumSubscription(socket: WebsiteSocket, subscrip
 	return false
 }
 
-export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, isSimulation: boolean, websiteTabConnections: WebsiteTabConnections) {
+export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, isSimulation: boolean, pageSessions: PageSessionStore) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
-		if (websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
+		if (pageSessions.get(subscriptionOrFilter.subscriptionCreatorSocket) === undefined) { // connection removed
 			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
 			break
 		}
@@ -43,7 +43,7 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 			case 'newHeads': {
 				const newBlock = await ethereumClientService.getBlock(undefined, blockNumber, false)
 
-				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
+				sendSubscriptionReplyOrCallBack(pageSessions, subscriptionOrFilter.subscriptionCreatorSocket, {
 					type: 'result',
 					method: 'newHeads' as const,
 					result: { subscription: subscriptionOrFilter.type, result: newBlock } as const,
@@ -54,7 +54,7 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 					const simulationState = await getUpdatedSimulationState(ethereumClientService)
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, undefined, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
-					sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
+					sendSubscriptionReplyOrCallBack(pageSessions, subscriptionOrFilter.subscriptionCreatorSocket, {
 						type: 'result',
 						method: 'newHeads' as const,
 						result: { subscription: subscriptionOrFilter.type, result: simulatedBlock },

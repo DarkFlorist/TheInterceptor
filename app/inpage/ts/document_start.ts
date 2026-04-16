@@ -45,7 +45,7 @@ function injectScript(_content: string) {
 			try {
 				// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
 				if (!('data' in messageEvent) || !(typeof messageEvent['data'] === 'object' && messageEvent['data'] !== null) || !('interceptorRequest' in messageEvent['data'])) return
-				extensionPort.postMessage({ data: messageEvent.data })
+				extensionPort.postMessage({ kind: 'request', id: messageEvent.data.requestId, action: 'rpc.request', payload: messageEvent.data })
 				checkAndThrowRuntimeLastError()
 			} catch (error) {
 				if (error instanceof Error) {
@@ -55,7 +55,7 @@ function injectScript(_content: string) {
 					}
 					if (error.message?.includes('User denied')) return // user denied signature
 				}
-				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
+				extensionPort.postMessage({ kind: 'request', id: -1, action: 'rpc.request', payload: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
 				throw error
 			}
 		})
@@ -66,15 +66,16 @@ function injectScript(_content: string) {
 
 			// forward all messages we get from the background script to the window so the page script can filter and process them
 			extensionPort.onMessage.addListener(messageEvent => {
-				if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
+				const payload = typeof messageEvent === 'object' && messageEvent !== null && 'payload' in messageEvent ? messageEvent.payload : messageEvent
+				if (typeof payload !== 'object' || payload === null || !('interceptorApproved' in payload)) {
 					console.error('Malformed message:')
 					console.error(messageEvent)
 					if (extensionPort === undefined) return
-					extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
+					extensionPort.postMessage({ kind: 'request', id: -1, action: 'rpc.request', payload: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
 					return
 				}
 				try {
-					globalThis.postMessage(messageEvent, '*')
+					globalThis.postMessage(payload, '*')
 					checkAndThrowRuntimeLastError()
 				} catch (error) {
 					console.error(error)

@@ -4,33 +4,63 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 import { installDomMock } from './someTimeAgo.js'
+import { UI_EVENT_ACTION } from '../../app/ts/messages/ui.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
 function createBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
+	const disconnectListeners: (() => void)[] = []
+	const respondToRequest = (message: unknown) => {
+		if (typeof message !== 'object' || message === null || !('kind' in message) || message.kind !== 'request' || !('id' in message) || typeof message.id !== 'number' || !('action' in message) || typeof message.action !== 'string') return
+		for (const listener of [...listeners]) {
+			listener({
+				kind: 'response',
+				action: message.action,
+				id: message.id,
+				ok: true,
+				payload: undefined,
+			})
+		}
+	}
+	const port = {
+		name: 'ui:confirmTransaction',
+		onMessage: {
+			addListener(listener: RuntimeMessageListener) {
+				listeners.push(listener)
+			},
+			removeListener(listener: RuntimeMessageListener) {
+				const index = listeners.indexOf(listener)
+				if (index >= 0) listeners.splice(index, 1)
+			},
+		},
+		onDisconnect: {
+			addListener(listener: () => void) {
+				disconnectListeners.push(listener)
+			},
+			removeListener(listener: () => void) {
+				const index = disconnectListeners.indexOf(listener)
+				if (index >= 0) disconnectListeners.splice(index, 1)
+			},
+		},
+		postMessage(message: unknown) {
+			respondToRequest(message)
+		},
+		disconnect() {
+			for (const listener of [...disconnectListeners]) listener()
+		},
+	} as unknown as browser.runtime.Port
 
 	// @ts-expect-error test shim intentionally overrides extension globals
 	globalThis.browser = {
 		runtime: {
 			lastError: null,
-			async sendMessage(message: any) {
-				for (const listener of [...listeners]) listener(message)
-				if (message?.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
-				}
-				return undefined
+			async sendMessage() { return undefined },
+			connect() {
+				return port
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: {
-				addListener(listener: RuntimeMessageListener) {
-					listeners.push(listener)
-				},
-				removeListener(listener: RuntimeMessageListener) {
-					const index = listeners.indexOf(listener)
-					if (index >= 0) listeners.splice(index, 1)
-				},
-			},
+			onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
@@ -69,7 +99,15 @@ function createBrowserMock() {
 
 	return {
 		dispatch(message: unknown) {
-			for (const listener of [...listeners]) listener(message)
+			if (typeof message !== 'object' || message === null || !('role' in message) || typeof message.role !== 'string') return
+			const { role, ...popupMessage } = message as { role: string }
+			for (const listener of [...listeners]) {
+				listener({
+					kind: 'event',
+					action: UI_EVENT_ACTION,
+					payload: { role, message: popupMessage },
+				})
+			}
 		},
 	}
 }
@@ -232,10 +270,12 @@ async function main() {
 	const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 	const { serialize } = await import('../../app/ts/types/wire-types.js')
 	const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { initializeUiPort } = await import('../../app/ts/ui/uiPort.js')
 	describe('ConfirmTransaction', () => {
 		should('updates the simulation age when a refreshed pending transaction arrives', async () => {
 			const dom = installDomMock()
 			const browser = createBrowserMock()
+			initializeUiPort('confirmTransaction')
 			const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 			const newerPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:09.000Z'))
 
@@ -274,6 +314,7 @@ async function main() {
 		should('updates the simulation age when the real refresh flow runs', async () => {
 			const dom = installDomMock()
 			const browser = createBrowserMock()
+			initializeUiPort('confirmTransaction')
 			const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 			const { EthereumClientService, mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 			const { defaultActiveAddresses } = await import('../../app/ts/background/settings.js')

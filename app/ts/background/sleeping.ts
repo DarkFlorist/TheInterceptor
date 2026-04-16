@@ -1,7 +1,7 @@
 import { EthereumClientService } from "../simulation/services/EthereumClientService.js"
 import { TIME_BETWEEN_BLOCKS } from "../utils/constants.js"
 import { modifyObject } from "../utils/typescript.js"
-import { sendPopupMessageToOpenWindows } from "./backgroundUtils.js"
+import { publishPopupMessageToOpenUiPorts } from "./backgroundUtils.js"
 import { updateExtensionBadge } from "./iconHandler.js"
 import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp, setRpcConnectionStatus } from "./storageVariables.js"
 import { isConfirmTransactionFocused } from "./windows/confirmTransaction.js"
@@ -12,7 +12,7 @@ const updateConnectionStatusRetry = async (ethereumClientService: EthereumClient
 	const rpcConnectionStatus = modifyObject(status, { retrying: ethereumClientService.isBlockPolling() })
 	await setRpcConnectionStatus(rpcConnectionStatus)
 	await updateExtensionBadge()
-	await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 }
 
 export const makeSureInterceptorIsNotSleeping = async (ethereumClientService: EthereumClientService) => {

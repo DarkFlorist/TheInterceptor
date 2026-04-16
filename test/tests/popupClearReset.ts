@@ -5,6 +5,7 @@ import { serialize } from '../../app/ts/types/wire-types.js'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 
 type RuntimeMessage = {
+	role?: string
 	method?: string
 	type?: string
 	data?: unknown
@@ -12,6 +13,7 @@ type RuntimeMessage = {
 
 type BrowserMock = {
 	reset: () => void
+	attachUiSession: (role: 'main' | 'confirmTransaction') => Promise<void>
 	sentMessages: RuntimeMessage[]
 }
 
@@ -34,13 +36,7 @@ function createBrowserMock(): BrowserMock {
 	globalThis.browser = {
 		runtime: {
 			lastError: null,
-			async sendMessage(message: RuntimeMessage) {
-				sentMessages.push(message)
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
-				}
-				return undefined
-			},
+			async sendMessage() { return undefined },
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
@@ -81,13 +77,33 @@ function createBrowserMock(): BrowserMock {
 	(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 
 	return {
-			sentMessages,
-			reset() {
-				for (const key of Object.keys(storageState)) delete storageState[key]
-				sentMessages.length = 0;
-				(globalThis.browser.runtime as unknown as { lastError: undefined }).lastError = undefined
-			},
-		}
+		sentMessages,
+		async attachUiSession(role: 'main' | 'confirmTransaction') {
+			const { registerUiPort } = await import('../../app/ts/background/uiSessions.js')
+			const { getUiPortName } = await import('../../app/ts/messages/ui.js')
+			const port = {
+				name: getUiPortName(role),
+				postMessage(message: unknown) {
+					if (typeof message !== 'object' || message === null || !('kind' in message) || message.kind !== 'event') return
+					if (!('payload' in message) || typeof message.payload !== 'object' || message.payload === null) return
+					const { payload } = message
+					if (!('role' in payload) || typeof payload.role !== 'string' || !('message' in payload) || typeof payload.message !== 'object' || payload.message === null) return
+					const maybePopupMessage = MessageToPopup.safeParse({ role: payload.role, ...payload.message })
+					if (!maybePopupMessage.success) return
+					sentMessages.push(maybePopupMessage.value)
+				},
+				onDisconnect: { addListener: () => undefined, removeListener: () => undefined },
+				onMessage: { addListener: () => undefined, removeListener: () => undefined },
+				disconnect() {},
+			} as unknown as browser.runtime.Port
+			registerUiPort(port)
+		},
+		reset() {
+			for (const key of Object.keys(storageState)) delete storageState[key]
+			sentMessages.length = 0;
+			(globalThis.browser.runtime as unknown as { lastError: undefined }).lastError = undefined
+		},
+	}
 	}
 
 const browserMock = createBrowserMock()
@@ -208,6 +224,7 @@ function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVi
 }
 
 export async function main() {
+	await browserMock.attachUiSession('main')
 	const {
 		updatePopupVisualisationIfNeeded,
 		browserStorageLocalGet,

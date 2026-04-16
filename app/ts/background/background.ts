@@ -6,19 +6,16 @@ import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMak
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack } from './simulationModeHanders.js'
 import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress } from './popupMessageHandlers.js'
 import { SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
-import { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
+import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
-import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveAddress, publishPopupMessageToOpenUiPorts } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput, mockSignTransaction } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
-import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
-import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
@@ -31,9 +28,9 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { PageSessionStore } from './pageSessions.js'
 
 let simulationAbortController = new AbortController()
 
@@ -63,7 +60,7 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const, 'confirmTransaction')
+	publishPopupMessageToOpenUiPorts({ method: 'popup_confirm_transaction_simulation_started' } as const, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
@@ -149,7 +146,7 @@ export async function refreshConfirmTransactionSimulation(
 async function handleRPCRequest(
 	simulator: Simulator,
 	simulationState: SimulationState | undefined,
-	websiteTabConnections: WebsiteTabConnections,
+	pageSessions: PageSessionStore,
 	socket: WebsiteSocket,
 	website: Website,
 	request: InterceptedRequest,
@@ -204,15 +201,15 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, simulator.ethereum, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, websiteTabConnections, simulator.ethereum, parsedRequest, request, settings.simulationMode, website)
+		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, simulator.ethereum, parsedRequest, request, website, pageSessions, !forwardToSigner)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, pageSessions, simulator.ethereum, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()
 		case 'eth_accounts': return await getAccounts(activeAddress)
 		case 'eth_requestAccounts': return await getAccounts(activeAddress)
 		case 'eth_gasPrice': return await gasPrice(simulator.ethereum)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator.ethereum, simulationState, parsedRequest)
-		case 'interceptor_getSimulationStack': return await requestInterceptorSimulatorStack(simulationState, websiteTabConnections, parsedRequest, website, request, socket)
+		case 'interceptor_getSimulationStack': return await requestInterceptorSimulatorStack(simulationState, pageSessions, parsedRequest, website, request, socket)
 		case 'eth_simulateV1': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
@@ -227,7 +224,7 @@ async function handleRPCRequest(
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
 			if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			return await sendTransaction(simulator, activeAddress, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
+			return await sendTransaction(simulator, activeAddress, parsedRequest, request, website, pageSessions, !forwardToSigner)
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(simulator.ethereum)
 		case 'eth_feeHistory': return await feeHistory(simulator.ethereum, parsedRequest)
@@ -274,7 +271,7 @@ const keepTrackOfPreviousAddressforRichList = async () => {
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChain(
 	simulator: Simulator,
-	websiteTabConnections: WebsiteTabConnections,
+	pageSessions: PageSessionStore,
 	change: {
 		simulationMode: boolean,
 		activeAddress?: bigint,
@@ -291,28 +288,28 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
-	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, updatedSettings)
-	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	publishPopupMessageToOpenUiPorts({ method: 'popup_settingsUpdated', data: updatedSettings })
+	updateWebsiteApprovalAccesses(simulator, pageSessions, updatedSettings)
+	publishPopupMessageToOpenUiPorts({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
 			if (change.rpcNetwork.httpsRpc !== undefined) simulator.reset(change.rpcNetwork)
-			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.rpcNetwork.chainId })
-			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+			sendMessageToApprovedWebsitePorts(pageSessions, { method: 'chainChanged' as const, result: change.rpcNetwork.chainId })
+			publishPopupMessageToOpenUiPorts({ method: 'popup_chain_update' })
 
 			// reset simulation if chain id was changed
 			if (updatedSettings.simulationMode) await resetSimulatorStateFromConfig(simulator)
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+		sendActiveAccountChangeToApprovedWebsitePorts(pageSessions, await getSettings())
 	})
 }
 
-export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
+export async function changeActiveRpc(simulator: Simulator, pageSessions: PageSessionStore, rpcNetwork: RpcNetwork, simulationMode: boolean) {
 	// allow switching RPC only if we are in simulation mode, or that chain id would not change
-	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChain(simulator, websiteTabConnections, { simulationMode, rpcNetwork })
-	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
-	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
+	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChain(simulator, pageSessions, { simulationMode, rpcNetwork })
+	sendMessageToApprovedWebsitePorts(pageSessions, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
+	await publishPopupMessageToOpenUiPorts({ method: 'popup_settingsUpdated', data: await getSettings() })
 	await promoteRpcAsPrimary(rpcNetwork)
 }
 
@@ -327,63 +324,109 @@ function getProviderHandler(method: string) {
 	}
 }
 
-export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulator: Simulator, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections): Promise<unknown> => {
-	const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
-	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, await getSettings())
-	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...ERROR_INTERCEPTOR_DISABLED })
-	const providerHandler = getProviderHandler(request.method)
-	const identifiedMethod = providerHandler.method
-	if (identifiedMethod !== 'notProviderMethod') {
-		if (port === undefined) return
-		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access, activeAddress?.address)
-		if (providerHandlerReturn.type === 'doNotReply') return
-		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
-		return replyToInterceptedRequest(websiteTabConnections, message)
-	}
-	if (access === 'hasAccess' && activeAddress === undefined && request.method === 'eth_requestAccounts') {
-		// user has granted access to the site, but not to this account and the application is requesting accounts
-		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket)
-		if (account.length === 0) return refuseAccess(websiteTabConnections, request)
-		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
-		return result
-	}
+export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulator: Simulator, socket: WebsiteSocket, request: InterceptedRequest, pageSessions: PageSessionStore): Promise<unknown> => {
+	return await handlePageRequest({
+		port,
+		websiteOrigin,
+		websitePromise,
+		simulator,
+		socket,
+		request,
+		pageSessions,
+	})
+}
 
-	if (access === 'noAccess' || activeAddress === undefined) {
-		switch (request.method) {
-			case 'eth_accounts': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-			// if user has not given access, assume we are on chain 1
-			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-			default: break
-		}
-	}
+type HandlePageRequestContext = {
+	port: browser.runtime.Port | undefined
+	websiteOrigin: string
+	websitePromise: Promise<Website> | Website
+	simulator: Simulator
+	socket: WebsiteSocket
+	request: InterceptedRequest
+	pageSessions: PageSessionStore
+}
 
-	switch (access) {
-		case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress?.address, await getSettings())
-		case 'noAccess': return refuseAccess(websiteTabConnections, request)
-		case 'hasAccess': {
-			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
-			return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress?.address)
-		}
-		default: assertNever(access)
+type PageAccessContext = HandlePageRequestContext & {
+	settings: Settings
+	activeAddress: Awaited<ReturnType<typeof getActiveAddress>>
+	access: ReturnType<typeof verifyAccess>
+}
+
+async function createPageAccessContext(context: HandlePageRequestContext): Promise<PageAccessContext> {
+	const settings = await getSettings()
+	const activeAddress = await getActiveAddress(settings, context.socket.tabId)
+	const access = verifyAccess(context.pageSessions, context.socket, context.request.method === 'eth_requestAccounts' || context.request.method === 'eth_call', context.websiteOrigin, activeAddress, settings)
+	return { ...context, settings, activeAddress, access }
+}
+
+async function handleProviderRequest(context: PageAccessContext) {
+	const providerHandler = getProviderHandler(context.request.method)
+	if (providerHandler.method === 'notProviderMethod') return false
+	if (context.port === undefined) return true
+	const providerHandlerReturn = await providerHandler.func(context.simulator, context.pageSessions, context.port, context.request, context.access, context.activeAddress?.address)
+	if (providerHandlerReturn.type === 'doNotReply') return true
+	const message: InpageScriptRequest = { uniqueRequestIdentifier: context.request.uniqueRequestIdentifier, ...providerHandlerReturn }
+	replyToInterceptedRequest(context.pageSessions, message)
+	return true
+}
+
+function replyToUnauthorizedPublicMethod(context: PageAccessContext) {
+	switch (context.request.method) {
+		case 'eth_accounts':
+			return replyToInterceptedRequest(context.pageSessions, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: context.request.uniqueRequestIdentifier })
+		case 'eth_chainId':
+			return replyToInterceptedRequest(context.pageSessions, { type: 'result', method: 'eth_chainId' as const, result: 1n, uniqueRequestIdentifier: context.request.uniqueRequestIdentifier })
+		case 'net_version':
+			return replyToInterceptedRequest(context.pageSessions, { type: 'result', method: 'net_version' as const, result: 1n, uniqueRequestIdentifier: context.request.uniqueRequestIdentifier })
+		default:
+			return undefined
 	}
 }
 
-async function handleContentScriptMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
+async function handleAuthorizedPageRequest(context: PageAccessContext): Promise<unknown> {
+	if (context.access === 'interceptorDisabled') {
+		return replyToInterceptedRequest(context.pageSessions, { type: 'result', ...context.request, ...ERROR_INTERCEPTOR_DISABLED })
+	}
+	if (await handleProviderRequest(context)) return
+	if (context.access === 'hasAccess' && context.activeAddress === undefined && context.request.method === 'eth_requestAccounts') {
+		const account = await askForSignerAccountsFromSignerIfNotAvailable(context.pageSessions, context.socket)
+		if (account.length === 0) return refuseAccess(context.pageSessions, context.request)
+		return await handlePageRequest(context)
+	}
+	const unauthenticatedReply = (context.access === 'noAccess' || context.activeAddress === undefined) ? replyToUnauthorizedPublicMethod(context) : undefined
+	if (unauthenticatedReply !== undefined) return unauthenticatedReply
+	switch (context.access) {
+		case 'askAccess':
+			return await gateKeepRequestBehindAccessDialog(context.simulator, context.pageSessions, context.socket, context.request, await context.websitePromise, context.activeAddress?.address, context.settings)
+		case 'noAccess':
+			return refuseAccess(context.pageSessions, context.request)
+		case 'hasAccess':
+			if (context.activeAddress === undefined) return refuseAccess(context.pageSessions, context.request)
+			return await handleContentScriptMessage(context.simulator, context.pageSessions, context.request, await context.websitePromise, context.activeAddress.address)
+		default:
+			return assertNever(context.access)
+	}
+}
+
+async function handlePageRequest(context: HandlePageRequestContext): Promise<unknown> {
+	return await handleAuthorizedPageRequest(await createPageAccessContext(context))
+}
+
+async function handleContentScriptMessage(simulator: Simulator, pageSessions: PageSessionStore, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
 		const settings = await getSettings()
 		const simulationState = settings.simulationMode ? await getUpdatedSimulationState(simulator.ethereum) : undefined
-		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
-		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
+		const resolved = await handleRPCRequest(simulator, simulationState, pageSessions, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
+		return replyToInterceptedRequest(pageSessions, { ...request, ...resolved })
 	} catch (error: unknown) {
 		if ((error instanceof Error && isFailedToFetchError(error))) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
+			return replyToInterceptedRequest(pageSessions, { type: 'result', ...request, ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
 		}
 		if (error instanceof JsonRpcResponseError) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...error.serialize() })
+			return replyToInterceptedRequest(pageSessions, { type: 'result', ...request, ...error.serialize() })
 		}
 		handleUnexpectedError(error)
-		return replyToInterceptedRequest(websiteTabConnections, {
+		return replyToInterceptedRequest(pageSessions, {
 			type: 'result',
 			...request,
 			error: {
@@ -394,8 +437,8 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 	}
 }
 
-export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	return replyToInterceptedRequest(websiteTabConnections, {
+export function refuseAccess(pageSessions: PageSessionStore, request: InterceptedRequest) {
+	return replyToInterceptedRequest(pageSessions, {
 		type: 'result',
 		...request,
 		error: {
@@ -405,13 +448,13 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, reque
 	})
 }
 
-async function gateKeepRequestBehindAccessDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, currentActiveAddress: bigint | undefined, settings: Settings) {
+async function gateKeepRequestBehindAccessDialog(simulator: Simulator, pageSessions: PageSessionStore, socket: WebsiteSocket, request: InterceptedRequest, website: Website, currentActiveAddress: bigint | undefined, settings: Settings) {
 	const activeAddress = currentActiveAddress !== undefined ? await getActiveAddressEntry(currentActiveAddress) : undefined
-	return await requestAccessFromUser(simulator, websiteTabConnections, socket, website, request, activeAddress, settings, currentActiveAddress)
+	return await requestAccessFromUser(simulator, pageSessions, socket, website, request, activeAddress, settings, currentActiveAddress)
 }
 
 export async function popupMessageHandler(
-	websiteTabConnections: WebsiteTabConnections,
+	pageSessions: PageSessionStore,
 	simulator: Simulator,
 	request: unknown,
 	settings: Settings
@@ -432,11 +475,11 @@ export async function popupMessageHandler(
 	try {
 		const processRequest = async (): Promise<PopupReplyOption | void> => {
 			switch (parsedRequest.method) {
-				case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
+				case 'popup_confirmDialog': return await confirmDialog(simulator, pageSessions, parsedRequest)
+				case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, pageSessions, parsedRequest)
 				case 'popup_modifyMakeMeRich': return await modifyMakeMeRich(simulator, parsedRequest)
 				case 'popup_changePage': return await changePage(parsedRequest)
-				case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
+				case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(pageSessions, parsedRequest)
 				case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator)
 				case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, parsedRequest)
 				case 'popup_refreshSimulation': {
@@ -445,27 +488,21 @@ export async function popupMessageHandler(
 				}
 				case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator)
 				case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator, confirmTransactionAbortController, simulator.tokenPriceService)
-				case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)
-				case 'popup_changeChainDialog': return await changeChainDialog(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
+				case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, pageSessions, parsedRequest)
+				case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, pageSessions, parsedRequest)
+				case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, pageSessions, parsedRequest, settings)
+				case 'popup_changeChainDialog': return await changeChainDialog(simulator, pageSessions, parsedRequest)
+				case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, pageSessions, parsedRequest)
+				case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, pageSessions, parsedRequest)
 				case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
-				case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
+				case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, pageSessions, parsedRequest)
 				case 'popup_openAddressBook': return await openNewTab('addressBook')
-				case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
-				case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
-				case 'popup_confirmTransactionReadyAndListening': {
-					await updateConfirmTransactionView(simulator)
-					return
-				}
 				case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
 				case 'popup_refreshHomeData': return await refreshHomeData(simulator)
 				case 'popup_requestSettings': return await settingsOpened()
 				case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
-				case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-				case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
+				case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(pageSessions, parsedRequest)
+				case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(pageSessions, parsedRequest)
 				case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
 				case 'popup_openSettings': return await openNewTab('settingsView')
 				case 'popup_import_settings': return await importSettings(parsedRequest)
@@ -476,15 +513,15 @@ export async function popupMessageHandler(
 				case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
 				case 'popup_requestAbiAndNameFromBlockExplorer': return await requestAbiAndNameFromBlockExplorer(parsedRequest)
 				case 'popup_openWebPage': return await openWebPage(parsedRequest)
-				case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
+				case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, pageSessions, parsedRequest)
 				case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
 				case 'popup_setEnsNameForHash': return await setEnsNameForHash(parsedRequest)
 				case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
 				case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess(parsedRequest)
-				case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(websiteTabConnections, parsedRequest)
-				case 'popup_removeWebsiteAccess': return await removeWebsiteAccess(simulator, websiteTabConnections, parsedRequest)
-				case 'popup_removeWebsiteAddressAccess': return await removeWebsiteAddressAccess(simulator, websiteTabConnections, parsedRequest)
+				case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(simulator, pageSessions, parsedRequest)
+				case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(pageSessions, parsedRequest)
+				case 'popup_removeWebsiteAccess': return await removeWebsiteAccess(simulator, pageSessions, parsedRequest)
+				case 'popup_removeWebsiteAddressAccess': return await removeWebsiteAddressAccess(simulator, pageSessions, parsedRequest)
 				case 'popup_forceSetGasLimitForTransaction': return await forceSetGasLimitForTransaction(simulator, parsedRequest)
 				case 'popup_changePreSimulationBlockTimeManipulation': return await changePreSimulationBlockTimeManipulation(simulator, parsedRequest)
 				case 'popup_setTransactionOrMessageBlockTimeManipulator': return await setTransactionOrMessageBlockTimeManipulator(simulator, parsedRequest)
@@ -492,8 +529,7 @@ export async function popupMessageHandler(
 				case 'popup_requestActiveAddresses': return await requestActiveAddresses()
 				case 'popup_requestSimulationMode': return await requestSimulationMode()
 				case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
-				case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(simulator.ethereum, websiteTabConnections, parsedRequest)
-				case 'popup_fetchSimulationStackRequestReadyAndListening': return await updateFetchSimulationStackRequestWithPendingRequest()
+				case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(simulator.ethereum, pageSessions, parsedRequest)
 				case 'popup_UnexpectedErrorOccured': return await handleUnexpectedErrorInWindow(parsedRequest)
 				case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(simulator.ethereum)
 				case 'popup_importSimulationStack': return await importSimulationStack(simulator, parsedRequest)
@@ -503,7 +539,6 @@ export async function popupMessageHandler(
 				}
 				case 'popup_requestSimulationMetadata': return await requestSimulationMetadata(simulator.ethereum)
 				case 'popup_requestIdentifyAddress': return await requestIdentifyAddress(simulator.ethereum, parsedRequest)
-				case 'popup_isMainPopupWindowOpen': return
 				default: assertUnreachable(parsedRequest)
 			}
 		}

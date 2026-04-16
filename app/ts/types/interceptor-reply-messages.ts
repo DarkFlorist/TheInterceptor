@@ -108,14 +108,6 @@ const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-type RequestIsMainWindowOpen = funtypes.Static<typeof RequestIsMainWindowOpen>
-const RequestIsMainWindowOpen = funtypes.ReadonlyObject({
-	type: funtypes.Literal('RequestIsMainPopupWindowOpenReply'),
-	data: funtypes.ReadonlyObject({
-		isOpen: funtypes.Boolean,
-	})
-}).asReadonly()
-
 export const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
@@ -126,11 +118,11 @@ export const PopupRequestsReplies = {
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
-	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 }
 
-export type PopupRequestsReplies = {
-	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<typeof PopupRequestsReplies[Key]>
+export type PopupRequestMethod = keyof typeof PopupRequestsReplies
+export type PopupRequestsReplyByMethod = {
+	[Key in PopupRequestMethod]: funtypes.Static<typeof PopupRequestsReplies[Key]>
 }
 
 export type RequestAbiAndNameFromBlockExplorer = funtypes.Static<typeof RequestAbiAndNameFromBlockExplorer>
@@ -149,11 +141,10 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulationInput') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') }),
 )
 
 export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
-export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof PopupRequestsReplies ? PopupRequestsReplies[Request['method']] : undefined
+export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends PopupRequestMethod ? PopupRequestsReplyByMethod[Request['method']] | undefined : undefined
 
 export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
 export const PopupReplyOption = funtypes.Union(
@@ -166,6 +157,5 @@ export const PopupReplyOption = funtypes.Union(
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
-	RequestIsMainWindowOpen,
 	funtypes.Undefined,
 )

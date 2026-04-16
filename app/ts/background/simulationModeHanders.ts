@@ -1,8 +1,8 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { PageSessionStore } from './pageSessions.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedTransactionCount } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
-import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
@@ -39,10 +39,10 @@ export async function sendTransaction(
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	request: InterceptedRequest,
 	website: Website,
-	websiteTabConnections: WebsiteTabConnections,
+	pageSessions: PageSessionStore,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForTransaction(simulator, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(simulator, request, transactionParams, simulationMode, activeAddress, website, pageSessions)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
@@ -117,20 +117,20 @@ export async function personalSign(
 	transactionParams: SignMessageParams,
 	request: InterceptedRequest,
 	website: Website,
-	websiteTabConnections: WebsiteTabConnections,
+	pageSessions: PageSessionStore,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, pageSessions)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
 
-export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+export async function switchEthereumChain(simulator: Simulator, pageSessions: PageSessionStore, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}
-	const change = await openChangeChainDialog(simulator, websiteTabConnections, request, simulationMode, website, params)
+	const change = await openChangeChainDialog(simulator, pageSessions, request, simulationMode, website, params)
 	return { type: 'result' as const, method: params.method, ...change }
 }
 
@@ -186,8 +186,8 @@ export async function handleIterceptorError(request: InterceptorError) {
 	return { type: 'doNotReply' as const }
 }
 
-export async function requestInterceptorSimulatorStack(simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
-	const result = await openFetchSimulationStackDialogOrGetCachedResult(simulationState, websiteTabConnections, params, website, request, socket)
+export async function requestInterceptorSimulatorStack(simulationState: SimulationState | undefined, pageSessions: PageSessionStore, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+	const result = await openFetchSimulationStackDialogOrGetCachedResult(simulationState, pageSessions, params, website, request, socket)
 	if ('error' in result && result.error !== undefined) return { type: 'result' as const, method: params.method, error: result.error }
 	return { type: 'result' as const, method: params.method, ...result }
 }

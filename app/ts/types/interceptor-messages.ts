@@ -578,17 +578,6 @@ const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	})
 })
 
-type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
-const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
-	method: funtypes.Literal('window_signer_accounts_changed'),
-	data: funtypes.ReadonlyObject({
-		socket: WebsiteSocket,
-	})
-})
-
-export type WindowMessage = funtypes.Static<typeof WindowMessage>
-export const WindowMessage = WindowMessageSignerAccountsChanged
-
 export type ChangeSettings = funtypes.Static<typeof ChangeSettings>
 export const ChangeSettings = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeSettings'),
@@ -875,7 +864,6 @@ export const MessageToPopupPayload = funtypes.Union(
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,
 	FetchSimulationStackRequest,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
 )
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
@@ -903,10 +891,6 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_fetchSimulationStackRequestReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),

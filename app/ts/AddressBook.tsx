@@ -230,8 +230,8 @@ export function AddressBook() {
 			return false
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
+		const removeListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		return () => { removeListener() }
 	}, [])
 
 	function changeFilter(activeFilter: FilterKey) {
