@@ -1,5 +1,99 @@
-import { createPageErrorRequestEnvelope, createPageRequestEnvelope, parsePageToPageEnvelope } from '../../ts/messages/page.js'
-import { RawInterceptedRequest } from '../../ts/utils/requests.js'
+type ListenPageRequestPayload = {
+	method: string
+	params?: readonly unknown[]
+	usingInterceptorWithoutSigner: boolean
+	interceptorRequest: true
+}
+
+type ListenPageRequestEnvelope = {
+	kind: 'request'
+	id: number
+	action: 'rpc.request'
+	payload: ListenPageRequestPayload
+}
+
+type ListenPageIncomingEnvelope = {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: true
+	payload: { interceptorApproved: true }
+} | {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: false
+	error: { message: string }
+} | {
+	kind: 'event'
+	action: 'rpc.event'
+	payload: { interceptorApproved: true }
+}
+
+function isListenObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function isListenRawInterceptedRequest(value: unknown): value is {
+	requestId: number
+	method: string
+	params?: readonly unknown[]
+	interceptorRequest: true
+	usingInterceptorWithoutSigner: boolean
+} {
+	if (!isListenObject(value)) return false
+	if (value.interceptorRequest !== true) return false
+	if (typeof value.requestId !== 'number') return false
+	if (typeof value.method !== 'string') return false
+	if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
+	if ('params' in value && value.params !== undefined && !Array.isArray(value.params)) return false
+	return true
+}
+
+function createListenPageRequestEnvelope(id: number, payload: ListenPageRequestPayload): ListenPageRequestEnvelope {
+	return { kind: 'request', id, action: 'rpc.request', payload }
+}
+
+function createListenPageErrorRequestEnvelope(id: number, message: string): ListenPageRequestEnvelope {
+	return createListenPageRequestEnvelope(id, {
+		interceptorRequest: true,
+		usingInterceptorWithoutSigner: false,
+		method: 'InterceptorError',
+		params: [message],
+	})
+}
+
+function parseListenPageIncomingEnvelope(value: unknown): ListenPageIncomingEnvelope | undefined {
+	if (!isListenObject(value) || typeof value.kind !== 'string' || typeof value.action !== 'string') return undefined
+	if (value.kind === 'event' && value.action === 'rpc.event' && isListenObject(value.payload) && value.payload.interceptorApproved === true) {
+		return {
+			kind: 'event',
+			action: 'rpc.event',
+			payload: { interceptorApproved: true },
+		}
+	}
+	if (value.kind === 'response' && value.action === 'rpc.response' && typeof value.id === 'number') {
+		if (value.ok === true && isListenObject(value.payload) && value.payload.interceptorApproved === true) {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: true,
+				payload: { interceptorApproved: true },
+			}
+		}
+		if (value.ok === false && isListenObject(value.error) && typeof value.error.message === 'string') {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: false,
+				error: { message: value.error.message },
+			}
+		}
+	}
+	return undefined
+}
 
 function listenContentScript(connectionName: string | undefined) {
 	const checkAndThrowRuntimeLastError = () => {
@@ -37,13 +131,12 @@ function listenContentScript(connectionName: string | undefined) {
 			|| !('interceptorRequest' in messageEvent.data)
 		) return
 		try {
-			const parsedMessage = RawInterceptedRequest.safeParse(messageEvent.data)
-			if (!parsedMessage.success || parsedMessage.value.interceptorRequest !== true) return
-			extensionPort.postMessage(createPageRequestEnvelope(parsedMessage.value.requestId, {
-				method: parsedMessage.value.method,
-				...('params' in parsedMessage.value ? { params: parsedMessage.value.params } : {}),
+			if (!isListenRawInterceptedRequest(messageEvent.data)) return
+			extensionPort.postMessage(createListenPageRequestEnvelope(messageEvent.data.requestId, {
+				method: messageEvent.data.method,
+				...('params' in messageEvent.data ? { params: messageEvent.data.params } : {}),
 				interceptorRequest: true,
-				usingInterceptorWithoutSigner: parsedMessage.value.usingInterceptorWithoutSigner,
+				usingInterceptorWithoutSigner: messageEvent.data.usingInterceptorWithoutSigner,
 			}))
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
@@ -54,7 +147,7 @@ function listenContentScript(connectionName: string | undefined) {
 				}
 				if (error.message?.includes('User denied')) return // user denied signature
 			}
-			extensionPort.postMessage(createPageErrorRequestEnvelope(-1, JSON.stringify(error)))
+			extensionPort.postMessage(createListenPageErrorRequestEnvelope(-1, JSON.stringify(error)))
 			throw error
 		}
 	})
@@ -65,12 +158,12 @@ function listenContentScript(connectionName: string | undefined) {
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		extensionPort.onMessage.addListener(messageEvent => {
-			const parsedMessage = parsePageToPageEnvelope(messageEvent)
+			const parsedMessage = parseListenPageIncomingEnvelope(messageEvent)
 			if (parsedMessage === undefined || (parsedMessage.kind === 'response' && parsedMessage.ok === false)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
 				if (extensionPort === undefined) return
-				extensionPort.postMessage(createPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
+				extensionPort.postMessage(createListenPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
 				return
 			}
 			try {

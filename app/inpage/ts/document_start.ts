@@ -1,5 +1,99 @@
-import { createPageErrorRequestEnvelope, createPageRequestEnvelope, parsePageToPageEnvelope } from '../../ts/messages/page.js'
-import { RawInterceptedRequest } from '../../ts/utils/requests.js'
+type DocumentStartPageRequestPayload = {
+	method: string
+	params?: readonly unknown[]
+	usingInterceptorWithoutSigner: boolean
+	interceptorRequest: true
+}
+
+type DocumentStartPageRequestEnvelope = {
+	kind: 'request'
+	id: number
+	action: 'rpc.request'
+	payload: DocumentStartPageRequestPayload
+}
+
+type DocumentStartPageIncomingEnvelope = {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: true
+	payload: { interceptorApproved: true }
+} | {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: false
+	error: { message: string }
+} | {
+	kind: 'event'
+	action: 'rpc.event'
+	payload: { interceptorApproved: true }
+}
+
+function isDocumentStartObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function isDocumentStartRawInterceptedRequest(value: unknown): value is {
+	requestId: number
+	method: string
+	params?: readonly unknown[]
+	interceptorRequest: true
+	usingInterceptorWithoutSigner: boolean
+} {
+	if (!isDocumentStartObject(value)) return false
+	if (value.interceptorRequest !== true) return false
+	if (typeof value.requestId !== 'number') return false
+	if (typeof value.method !== 'string') return false
+	if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
+	if ('params' in value && value.params !== undefined && !Array.isArray(value.params)) return false
+	return true
+}
+
+function createDocumentStartPageRequestEnvelope(id: number, payload: DocumentStartPageRequestPayload): DocumentStartPageRequestEnvelope {
+	return { kind: 'request', id, action: 'rpc.request', payload }
+}
+
+function createDocumentStartPageErrorRequestEnvelope(id: number, message: string): DocumentStartPageRequestEnvelope {
+	return createDocumentStartPageRequestEnvelope(id, {
+		interceptorRequest: true,
+		usingInterceptorWithoutSigner: false,
+		method: 'InterceptorError',
+		params: [message],
+	})
+}
+
+function parseDocumentStartPageIncomingEnvelope(value: unknown): DocumentStartPageIncomingEnvelope | undefined {
+	if (!isDocumentStartObject(value) || typeof value.kind !== 'string' || typeof value.action !== 'string') return undefined
+	if (value.kind === 'event' && value.action === 'rpc.event' && isDocumentStartObject(value.payload) && value.payload.interceptorApproved === true) {
+		return {
+			kind: 'event',
+			action: 'rpc.event',
+			payload: { interceptorApproved: true },
+		}
+	}
+	if (value.kind === 'response' && value.action === 'rpc.response' && typeof value.id === 'number') {
+		if (value.ok === true && isDocumentStartObject(value.payload) && value.payload.interceptorApproved === true) {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: true,
+				payload: { interceptorApproved: true },
+			}
+		}
+		if (value.ok === false && isDocumentStartObject(value.error) && typeof value.error.message === 'string') {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: false,
+				error: { message: value.error.message },
+			}
+		}
+	}
+	return undefined
+}
 
 function injectScript(_content: string) {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
@@ -46,13 +140,12 @@ function injectScript(_content: string) {
 				|| !('interceptorRequest' in messageEvent.data)
 			) return
 			try {
-				const parsedMessage = RawInterceptedRequest.safeParse(messageEvent.data)
-				if (!parsedMessage.success || parsedMessage.value.interceptorRequest !== true) return
-				extensionPort.postMessage(createPageRequestEnvelope(parsedMessage.value.requestId, {
-					method: parsedMessage.value.method,
-					...('params' in parsedMessage.value ? { params: parsedMessage.value.params } : {}),
+				if (!isDocumentStartRawInterceptedRequest(messageEvent.data)) return
+				extensionPort.postMessage(createDocumentStartPageRequestEnvelope(messageEvent.data.requestId, {
+					method: messageEvent.data.method,
+					...('params' in messageEvent.data ? { params: messageEvent.data.params } : {}),
 					interceptorRequest: true,
-					usingInterceptorWithoutSigner: parsedMessage.value.usingInterceptorWithoutSigner,
+					usingInterceptorWithoutSigner: messageEvent.data.usingInterceptorWithoutSigner,
 				}))
 				checkAndThrowRuntimeLastError()
 			} catch (error) {
@@ -63,7 +156,7 @@ function injectScript(_content: string) {
 					}
 					if (error.message?.includes('User denied')) return // user denied signature
 				}
-				extensionPort.postMessage(createPageErrorRequestEnvelope(-1, JSON.stringify(error)))
+				extensionPort.postMessage(createDocumentStartPageErrorRequestEnvelope(-1, JSON.stringify(error)))
 				throw error
 			}
 		})
@@ -74,12 +167,12 @@ function injectScript(_content: string) {
 
 			// forward all messages we get from the background script to the window so the page script can filter and process them
 			extensionPort.onMessage.addListener(messageEvent => {
-				const parsedMessage = parsePageToPageEnvelope(messageEvent)
+				const parsedMessage = parseDocumentStartPageIncomingEnvelope(messageEvent)
 				if (parsedMessage === undefined || (parsedMessage.kind === 'response' && parsedMessage.ok === false)) {
 					console.error('Malformed message:')
 					console.error(messageEvent)
 					if (extensionPort === undefined) return
-					extensionPort.postMessage(createPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
+					extensionPort.postMessage(createDocumentStartPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
 					return
 				}
 				try {

@@ -257,6 +257,26 @@ function parsePopupReplyByMethod<Method extends PopupRequestMethod>(method: Meth
 	return popupReplyParsers[method](payload)
 }
 
-export function parseUiPopupReply<Request extends PopupRequests>(message: Request, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyReturn<Request> {
-	return parsePopupReplyByMethod(message.method, payload)
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestMakeMeRichData' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestMakeMeRichData']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestActiveAddresses' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestActiveAddresses']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestSimulationMode' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestSimulationMode']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestLatestUnexpectedError' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestLatestUnexpectedError']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestInterceptorSimulationInput' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestInterceptorSimulationInput']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestCompleteVisualizedSimulation' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestCompleteVisualizedSimulation']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestSimulationMetadata' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestSimulationMetadata']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestAbiAndNameFromBlockExplorer' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestAbiAndNameFromBlockExplorer']
+export function parseUiPopupReply(message: Extract<PopupRequests, { method: 'popup_requestIdentifyAddress' }>, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyByMethod['popup_requestIdentifyAddress']
+export function parseUiPopupReply<Request extends PopupRequests>(message: Request, payload: Exclude<ParsedUiReplyMessage, undefined>): PopupRequestsReplyReturn<Request>
+export function parseUiPopupReply(message: PopupRequests, payload: Exclude<ParsedUiReplyMessage, undefined>) {
+	switch (message.method) {
+		case 'popup_requestMakeMeRichData': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestActiveAddresses': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestSimulationMode': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestLatestUnexpectedError': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestInterceptorSimulationInput': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestCompleteVisualizedSimulation': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestSimulationMetadata': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestAbiAndNameFromBlockExplorer': return parsePopupReplyByMethod(message.method, payload)
+		case 'popup_requestIdentifyAddress': return parsePopupReplyByMethod(message.method, payload)
+	}
 }
