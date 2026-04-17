@@ -85,7 +85,6 @@ export async function getPopupVisualisationState() {
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
-		activeAddress: undefined,
 		namedTokenIds: [],
 		visualizedSimulationState: { success: true, visualizedBlocks: [] },
 		numberOfAddressesMadeRich: 0,

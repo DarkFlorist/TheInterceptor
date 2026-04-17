@@ -174,7 +174,6 @@ export function App() {
 		) => {
 			if (activeSimulationAddress === undefined) return (simVisResults.value = undefined)
 			if (simState === undefined) return (simVisResults.value = undefined)
-			if (simVisResults.value !== undefined && simVisResults.value.simulationConductedTimestamp.getTime() === simState.simulationConductedTimestamp.getTime()) return
 			simVisResults.value = {
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
@@ -182,20 +181,19 @@ export function App() {
 				visualizedSimulationState,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPriceEstimates,
-				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
 			}
 		}
 
-			const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
-				if (state === undefined) return
-				setSimulationState(
-					state.simulationState,
-					state.addressBookEntries,
-					state.tokenPriceEstimates,
-					state.visualizedSimulationState,
-				state.activeAddress,
+		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
+			if (state === undefined) return
+			setSimulationState(
+				state.simulationState,
+				state.addressBookEntries,
+				state.tokenPriceEstimates,
+				state.visualizedSimulationState,
+				activeSimulationAddress.value,
 				state.namedTokenIds,
 			)
 			simulationUpdatingState.value = state.simulationUpdatingState

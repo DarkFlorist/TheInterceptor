@@ -227,7 +227,6 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		addressBookEntries: popupVisualisation.data.addressBookEntries,
 		rpcNetwork: popupVisualisation.data.simulationState.rpcNetwork,
 		tokenPriceEstimates: popupVisualisation.data.tokenPriceEstimates,
-		activeAddress: popupVisualisation.data.activeAddress,
 		visualizedSimulationState: popupVisualisation.data.visualizedSimulationState,
 		namedTokenIds: popupVisualisation.data.namedTokenIds,
 	})
@@ -239,7 +238,6 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 			addressBookEntries: popupVisualisation.data.addressBookEntries,
 			rpcNetwork: popupVisualisation.data.simulationState.rpcNetwork,
 			tokenPriceEstimates: popupVisualisation.data.tokenPriceEstimates,
-			activeAddress: popupVisualisation.data.activeAddress,
 			visualizedSimulationState: popupVisualisation.data.visualizedSimulationState,
 			namedTokenIds: popupVisualisation.data.namedTokenIds,
 		}
@@ -266,6 +264,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 					<TransactionsAccountChangesCard
 						simTx = { simTx }
 						simulationAndVisualisationResults = { simulationAndVisualisationResults }
+						activeAddress = { activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetaData = { addressMetaData }
 						namedTokenIds = { namedTokenIds }

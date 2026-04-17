@@ -154,6 +154,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<TransactionsAccountChangesCard
 						simTx = { param.simTx }
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						activeAddress = { param.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetaData = { addressBookEntries }
 						namedTokenIds = { namedTokenIds }
@@ -185,7 +186,7 @@ type TransactionOrMessageWithBlockTimeManipulatorParams = {
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
-	activeAddress: ReadonlySignal<bigint>
+	activeAddress: ReadonlySignal<bigint | undefined>
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	blockTimeManipulation: BlockTimeManipulationWithNoDelay
 }
@@ -265,7 +266,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 type TransactionsAndSignedMessagesParams = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
-	activeAddress: ReadonlySignal<bigint>
+	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
