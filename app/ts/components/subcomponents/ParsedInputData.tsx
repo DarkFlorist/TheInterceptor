@@ -5,6 +5,7 @@ import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { ParsedInputData } from '../simulationExplaining/Transactions.js'
 import { ViewSelector } from './ViewSelector.js'
 import { SmallAddress } from './address.js'
+import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
 	if (to?.abi === undefined) {
@@ -20,18 +21,19 @@ export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBo
 }
 
 type TransactionInputParams = {
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: SignalOrValue<readonly AddressBookEntry[]>
 	parsedInputData: EnrichedEthereumInputData
 	input: Uint8Array
 	to: AddressBookEntry | undefined
 	renameAddressCallBack: RenameAddressCallBack
 }
 export function TransactionInput({ parsedInputData, input, to, addressMetaData, renameAddressCallBack }: TransactionInputParams) {
+	const resolvedAddressMetaData = resolveSignal(addressMetaData)
 	return <ViewSelector id = 'transaction_input'>
 		{ parsedInputData?.type === 'Parsed' ? ( <>
 			<ViewSelector.List>
 				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { true }>
-					<ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
+					<ParsedInputData inputData = { parsedInputData } addressMetaData = { resolvedAddressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
 				</ViewSelector.View>
 				<ViewSelector.View title = 'View Raw' value = 'raw' isActive = { false }>
 					<pre>{ dataStringWith0xStart(input) }</pre>

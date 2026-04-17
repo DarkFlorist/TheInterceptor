@@ -1,15 +1,17 @@
 import { Component, type ComponentChild, type ComponentChildren, type JSX } from 'preact'
+import { Signal } from '@preact/signals'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
+import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 interface ErrorProps {
-	text: ComponentChild
+	text: SignalOrValue<ComponentChild>
 	warning?: boolean,
 	containerStyle?: JSX.CSSProperties
 }
 
 export function ErrorText(props: ErrorProps) {
 	const textColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
-	return <p className = 'paragraph' style = { `color: ${ textColor }` }> { props.text } </p>
+	return <p className = 'paragraph' style = { `color: ${ textColor }` }> { resolveSignal(props.text) } </p>
 }
 
 export function ErrorComponent(props: ErrorProps) {
@@ -26,7 +28,7 @@ export function ErrorComponent(props: ErrorProps) {
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
-				<p className = 'paragraph' style = { `margin-left: 10px; color: ${ textColor }` }> { props.text } </p>
+				<p className = 'paragraph' style = { `margin-left: 10px; color: ${ textColor }` }> { resolveSignal(props.text) } </p>
 			</div>
 		</div>
 	)
@@ -36,16 +38,15 @@ export function Notice(props: ErrorProps) {
 	return (
 		<div>
 			<div className = 'notification' style = { 'background-color: unset; display: flex; align-items: center; padding: 0px;' }>
-				<p className = 'paragraph' style = 'margin-left: 10px'> { props.text } </p>
+				<p className = 'paragraph' style = 'margin-left: 10px'> { resolveSignal(props.text) } </p>
 			</div>
 		</div>
 	)
 }
 
 interface ErrorCheckboxProps {
-	text: string
-	checked: boolean
-	onInput: (checked: boolean) => void
+	text: SignalOrValue<string>
+	checked: Signal<boolean>
 	warning?: boolean,
 }
 
@@ -57,10 +58,10 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 			<div className = 'notification' style = { `background-color: ${ boxColor }; padding: 10px;` }>
 				<label class = 'form-control' style = { `color: ${ textColor }; font-size: 1em;` }>
 					<input type = 'checkbox'
-						checked = { props.checked }
-						onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { props.onInput(e.target.checked) } } }
+						checked = { props.checked.value }
+						onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { props.checked.value = e.target.checked } } }
 					/>
-					<p class = 'paragraph checkbox-text' style = { `color: ${ textColor };` }> { props.text } </p>
+					<p class = 'paragraph checkbox-text' style = { `color: ${ textColor };` }> { resolveSignal(props.text) } </p>
 				</label>
 			</div>
 		</div>

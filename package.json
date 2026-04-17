@@ -7,7 +7,7 @@
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
 		"build-firefox": "bun run firefox",
-		"build-chrome": "bun run bundle && bun run chrome",
+		"build-chrome": "bun --bun tsc --project tsconfig.json && bun run bundle && bun run chrome",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",
         "firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",

@@ -189,15 +189,18 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
-		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 		if (isNewBlock) {
 			const settings = await getSettings()
 			if (settings.simulationMode) {
-				updatePopupVisualisationIfNeeded(simulator, false, false)
+				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(simulator, false, false)
+				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
+				await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections)
 			}
+			await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections)
 		}
+		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
 		if (error instanceof Error && isNewBlockAbort(error)) return
 		await handleUnexpectedError(error)

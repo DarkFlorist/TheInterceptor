@@ -9,7 +9,6 @@ import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponent
 import { addressString, bytes32String, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
-import { useState } from 'preact/hooks'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { EthereumTimestamp } from '../../types/wire-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
@@ -23,7 +22,8 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
-import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
+import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
+import { type SignalOrValue } from '../../utils/signals.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -415,7 +415,7 @@ type TokenLogAnalysisCardParams = {
 }
 
 export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogAnalysisCardParams) {
-	const [showLogs, setShowLogs] = useState<boolean>(false)
+	const showLogs = useSignal<boolean>(false)
 	const identifiedSwap = identifySwap(simTx)
 	if (simTx === undefined) return <></>
 	const tokenEventsPlural = 'token events or ETH transactions'
@@ -423,7 +423,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const tokenResults = extractTokenEvents(simTx.events)
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
+			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
@@ -431,7 +431,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 					<span class = 'icon'><ChevronIcon /></span>
 				</div>
 			</header>
-			{ !showLogs
+			{ !showLogs.value
 				? <></>
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<TokenLogAnalysis
@@ -449,16 +449,16 @@ type NonTokenLogAnalysisCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 }
 
 export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressCallBack, editEnsNamedHashCallBack }: NonTokenLogAnalysisCardParams) {
-	const [showLogs, setShowLogs] = useState<boolean>(false)
+	const showLogs = useSignal<boolean>(false)
 	if (simTx === undefined) return <></>
 	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
+			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ nonTokenLogs.length === 0 ? 'No non-token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(nonTokenLogs.length)) } non-token event${ nonTokenLogs.length > 1 ? 's' : '' }` }
 				</p>
@@ -466,7 +466,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 					<span class = 'icon'><ChevronIcon /></span>
 				</div>
 			</header>
-			{ !showLogs
+			{ !showLogs.value
 				? <></>
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
@@ -490,22 +490,22 @@ type AccountChangesCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
 	renameAddressCallBack: RenameAddressCallBack
-	addressMetaData: readonly AddressBookEntry[]
-	namedTokenIds: readonly NamedTokenId[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
+	namedTokenIds: ReadonlySignal<readonly NamedTokenId[]>
 }
 
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
-	const addressMetaDataMap = new Map(addressMetaData.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds)
-	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const addressMetaDataMap = new Map(addressMetaData.value.map((x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds.value)
+	const showSummary = useSignal<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.value.activeAddress)
 
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 				{ numberOfChanges === 0 ? 'No changes in accounts' : `${  upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(numberOfChanges)) } account${ numberOfChanges > 1 ? 's' : '' } changing` }
 			</p>
@@ -513,7 +513,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
-		{ !showSummary
+		{ !showSummary.value
 			? <></>
 			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
@@ -556,7 +556,7 @@ export type TransactionGasses = {
 	realizedGasPrice: bigint
 }
 
-export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: RpcNetwork } ) {
+export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: SignalOrValue<RpcNetwork> } ) {
 	return <>
 		<div class = 'log-cell'>
 			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> Gas fee:</p>
@@ -601,7 +601,7 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : 
 		{ simTx.transaction.to === undefined
 			? <></>
 			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
-				<WebsiteOriginText { ...simTx.website } />
+				<WebsiteOriginText website = { simTx.website } />
 			</p>
 		}
 		{ removeTransactionOrSignedMessage !== undefined
@@ -620,7 +620,7 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
 		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
-			<WebsiteOriginText { ...website } />
+			<WebsiteOriginText website = { website } />
 		</p>
 	</header>
 }
@@ -632,7 +632,7 @@ export function TransactionCreated({ created } : { created: EthereumTimestamp })
 	</p>
 }
 
-export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date, rpcConnectionStatus: Signal<RpcConnectionStatus> }) {
+export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: Signal<bigint | undefined>, simulationConductedTimestamp: Date, rpcConnectionStatus: Signal<RpcConnectionStatus> }) {
 	return <CopyToClipboard
 		content = { simulationBlockNumber.toString() }
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
@@ -641,8 +641,8 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline; text-overflow: ellipsis; overflow: hidden;'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
-				simulationBlockNumber === currentBlockNumber && (rpcConnectionStatus.value?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
-					currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+				simulationBlockNumber === currentBlockNumber.value && (rpcConnectionStatus.value?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
+					currentBlockNumber.value !== undefined && simulationBlockNumber + 1n === currentBlockNumber.value ? 'var(--warning-color)' : 'var(--negative-color)'
 			} ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
 			</span>
@@ -653,7 +653,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 
 type SimulationSummaryParams = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
-	currentBlockNumber: bigint | undefined,
+	currentBlockNumber: Signal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 }
@@ -666,7 +666,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.value.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.value.activeAddress)
-	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
+	const showOtherAccountChanges = useSignal<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
@@ -712,7 +712,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 				<div class = 'card'>
-					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowOtherAccountChange((prevValue) => !prevValue) }>
+					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
 						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 							{ notOwnAddresses.length === 0 ? 'No changes in other accounts' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(notOwnAddresses.length)) } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
 						</p>
@@ -720,7 +720,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							<span class = 'icon'><ChevronIcon /></span>
 						</div>
 					</header>
-					{ !showOtherAccountChanges
+					{ !showOtherAccountChanges.value
 						? <></>
 						: <div class = 'card-content'>
 							<div class = 'container'>
@@ -769,7 +769,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 }
 
 type RawTransactionDetailsCardParams = {
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	parsedInputData: EnrichedEthereumInputData
 	transaction: TransactionWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
@@ -778,7 +778,7 @@ type RawTransactionDetailsCardParams = {
 	isRawTransaction: boolean,
 }
 export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
-	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const showSummary = useSignal<boolean>(false)
 	const gasLimit = useOptionalSignal<bigint>(transaction.gas)
 
 	async function forceSetGasLimitForTransaction() {
@@ -788,7 +788,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Raw transaction information
 			</p>
@@ -796,7 +796,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
-		{ !showSummary
+		{ !showSummary.value
 			? <></>
 			: <div class = 'card-content'>
 				<div style = { { display: 'flex', flexDirection: 'column', rowGap: '1rem' } } >

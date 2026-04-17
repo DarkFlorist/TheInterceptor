@@ -1,9 +1,8 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, TabIconDetails, TabState, RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { useEffect, useState } from 'preact/hooks'
-import { SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
+import { SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
-import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
+import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -15,7 +14,7 @@ import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, ImportIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
-import { Signal, useComputed, useSignal } from '@preact/signals'
+import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
@@ -25,19 +24,21 @@ import { Spinner } from '../subcomponents/Spinner.js'
 
 type SignerExplanationParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
-	tabState: TabState | undefined
+	tabState: Signal<TabState | undefined>
 }
 
 function SignerExplanation(param: SignerExplanationParams) {
-	if (param.activeAddress.value !== undefined || param.tabState === undefined || param.tabState.signerAccountError !== undefined) return <></>
-	if (!param.tabState.signerConnected) {
-		if (param.tabState.signerName === 'NoSignerDetected' || param.tabState.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
+	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
+	if (!param.tabState.value.signerConnected) {
+		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
 	}
-	return <ErrorComponent text = { `No account connected (or wallet is locked) in ${ param.tabState.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.signerName) }.` }/>
+	return <ErrorComponent text = { `No account connected (or wallet is locked) in ${ param.tabState.value.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.value.signerName) }.` }/>
 }
 
 function FirstCardHeader(param: FirstCardParams) {
+	const tabIconReason = useComputed(() => param.tabIconDetails.value.iconReason)
+	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
 
 	function enableSimulationMode(enabled: boolean ) {
 		param.simulationMode.value = enabled
@@ -47,8 +48,8 @@ function FirstCardHeader(param: FirstCardParams) {
 	return <>
 		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
 			<div>
-				<ToolTip content = { param.tabIconDetails.iconReason }>
-					<img className = 'noselect nopointer' src = { param.tabIconDetails.icon } style = { { display: 'block', width: '3rem', height: '3rem' } } />
+				<ToolTip content = { tabIconReason }>
+					<img className = 'noselect nopointer' src = { param.tabIconDetails.value.icon } style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
 			<div>
@@ -65,7 +66,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
 						disabled = { !param.simulationMode.value }
 						onClick = { () => enableSimulationMode(false) }>
-						<SignerLogoText signerName = { param.tabState?.signerName ?? 'NoSignerDetected' } text = { 'Signing' } />
+						<SignerLogoText signerName = { signerName } text = { 'Signing' } />
 					</button>
 				</div>
 			</div>
@@ -76,13 +77,13 @@ function FirstCardHeader(param: FirstCardParams) {
 
 type InterceptorDisabledButtonParams = {
 	disableInterceptorToggle: (disabled: boolean) => void,
-	interceptorDisabled: boolean,
-	website: Website | undefined
+	interceptorDisabled: Signal<boolean>,
+	website: ReadonlySignal<Website | undefined>
 }
 
 function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
-	return <button disabled = { website === undefined } className = { `button is-small ${ interceptorDisabled ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled) } >
-		{ interceptorDisabled ? <>
+	return <button disabled = { website.value === undefined } className = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
+		{ interceptorDisabled.value ? <>
 			<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
 			<span> Enable</span>
 		</> : <>
@@ -144,7 +145,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
 						<input type = 'checkbox' checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
-						<SmallAddress addressBookEntry = { activeAddress.value } renameAddressCallBack = { renameAddressCallBack } />
+						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } />
 					</label>
 				</div>
 			</> } </>
@@ -175,7 +176,7 @@ function FirstCard(param: FirstCardParams) {
 		return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
 	}
 
-	useEffect(() => {
+	useSignalEffect(() => {
 		const value = param.preSimulationBlockTimeManipulation.value
 		switch(value?.type) {
 			case 'AddToTimestamp': {
@@ -192,9 +193,9 @@ function FirstCard(param: FirstCardParams) {
 			case undefined: break
 			default: assertNever(value)
 		}
-	}, [param.preSimulationBlockTimeManipulation])
+	})
 
-	if (param.tabState?.signerName === 'NoSigner' && param.simulationMode.value === false) {
+	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
 		return <>
 			<section class = 'card' style = 'margin: 10px;'>
 				<FirstCardHeader { ...param }/>
@@ -209,32 +210,32 @@ function FirstCard(param: FirstCardParams) {
 		<section class = 'card' style = 'margin: 10px;'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
-				{ param.useSignersAddressAsActiveAddress || !param.simulationMode.value ?
+				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
-						{ param.tabState === undefined || param.tabState?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.signerName } /></> }
-						{ param.tabState?.signerConnected ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
+						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
+						{ param.tabState.value?.signerConnected ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
 					</p>
 					: <></>
 				}
 
 				<ActiveAddressComponent
-					activeAddress = { param.activeAddress.value }
+					activeAddress = { param.activeAddress }
 					buttonText = { 'Change' }
 					disableButton = { !param.simulationMode.value }
 					changeActiveAddress = { param.changeActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 				{ !param.simulationMode.value ? <>
-					{ (param.tabState?.signerAccounts.length === 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
+					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
 							<button className = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
 								<SignerLogoText
-									signerName = { param.tabState.signerName }
-									text = { `Connect to ${ getPrettySignerName(param.tabState.signerName) }` }
+									signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }
+									text = { `Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
 								/>
 							</button>
 						</div>
-						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState?.signerName ?? 'NoSignerDetected') }` } </p>
+						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
@@ -274,8 +275,10 @@ function PopupVisualisation(param: SimulationStateParam) {
 		if (currentResults === undefined) throw new Error('Simulation results are required')
 		return currentResults
 	})
+	const computedActiveAddress = useComputed(() => definedSimulationResults.value.activeAddress)
+	const computedAddressBookEntries = useComputed(() => definedSimulationResults.value.addressBookEntries)
 
-	if (isEmpty.value && (param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === undefined)) {
+	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
@@ -297,7 +300,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					</span>
 					<span>Import Simulation Stack</span>
 				</button>
-				<button className = 'btn is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
+				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<BroomIcon />
 					</span>
@@ -308,29 +311,27 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ? <>
 			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
-			<TransactionsAndSignedMessages
-				simulationAndVisualisationResults = { definedSimulationResults }
-				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-				activeAddress = { param.simulationAndVisualisationResults.value.activeAddress }
-				renameAddressCallBack = { param.renameAddressCallBack }
-				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-				removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
-				addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
-			/>
+				<TransactionsAndSignedMessages
+					simulationAndVisualisationResults = { definedSimulationResults }
+					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+					activeAddress = { computedActiveAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					addressMetaData = { computedAddressBookEntries }
+				/>
 		</> : <>
 			{ isEmpty.value || param.simulationAndVisualisationResults.value === undefined ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
-				<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
-					<TransactionsAndSignedMessages
-						simulationAndVisualisationResults = { definedSimulationResults }
-						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.simulationAndVisualisationResults.value.activeAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-						removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
-						addressMetaData = { param.simulationAndVisualisationResults.value.addressBookEntries }
-					/>
+				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
+						<TransactionsAndSignedMessages
+							simulationAndVisualisationResults = { definedSimulationResults }
+							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+							activeAddress = { computedActiveAddress }
+							renameAddressCallBack = { param.renameAddressCallBack }
+							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+							addressMetaData = { computedAddressBookEntries }
+						/>
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
@@ -348,70 +349,41 @@ function PopupVisualisation(param: SimulationStateParam) {
 }
 
 export function Home(param: HomeParams) {
-	const activeSimulationAddress = useSignal<AddressBookEntry | undefined>(undefined)
-	const activeSigningAddress = useSignal<AddressBookEntry | undefined>(undefined)
-	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
-	const simulationAndVisualisationResults = useSignal<SimulationAndVisualisationResults | undefined>(undefined)
-	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
-	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
-	const [isLoaded, setLoaded] = useState<boolean>(false)
-	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [disableReset, setDisableReset] = useState<boolean>(false)
-	const [removedTransactionOrSignedMessages, setRemovedTransactionOrSignedMessages] = useState<readonly TransactionOrMessageIdentifier[]>([])
-	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
-	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
-	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
+	const disableReset = useSignal<boolean>(false)
+	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
+	const tabWebsite = useComputed(() => param.tabState.value?.website)
 
-	useEffect(() => {
-		simulationAndVisualisationResults.value = param.simVisResults
-		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
-		activeSimulationAddress.value = param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
-		activeSigningAddress.value = param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
-		setTabConnection(param.tabIconDetails)
-		setTabState(param.tabState)
-		setCurrentBlockNumber(param.currentBlockNumber)
-		setLoaded(true)
-		setDisableReset(false)
-		setRemovedTransactionOrSignedMessages([])
-		setSimulationUpdatingState(param.simulationUpdatingState)
-		setSimulationResultState(param.simulationResultState)
-		setInterceptorDisabled(param.interceptorDisabled)
-	}, [param.activeSigningAddress,
-		param.activeSimulationAddress,
-		param.tabState,
-		param.useSignersAddressAsActiveAddress,
-		param.rpcNetwork.value,
-		param.tabIconDetails,
-		param.currentBlockNumber,
-		param.simVisResults,
-		param.rpcConnectionStatus,
-		param.simulationUpdatingState,
-		param.simulationResultState,
-		param.interceptorDisabled,
-	])
+	const activeSimulationAddress = useComputed(() =>
+		param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
+	)
+	const activeSigningAddress = useComputed(() =>
+		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
+	)
+	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+
+	useSignalEffect(() => {
+		param.simVisResults.value
+		disableReset.value = false
+		removedTransactionOrSignedMessages.value = []
+	})
 
 	function resetSimulation() {
-		setDisableReset(true)
+		disableReset.value = true
 		sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
 	}
 
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
-		setRemovedTransactionOrSignedMessages((transactionOrMessageIdentifiers) => transactionOrMessageIdentifiers.concat(transactionOrMessageIdentifier))
+		removedTransactionOrSignedMessages.value = [...removedTransactionOrSignedMessages.value, transactionOrMessageIdentifier]
 		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 	}
 
 	async function disableInterceptorToggle() {
-		setInterceptorDisabled((previousValue) => {
-			if (tabState?.website === undefined) return previousValue
-			const newValue = !previousValue
-			sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: tabState.website } })
-			return previousValue
-		})
+		if (param.tabState.value?.website === undefined) return
+		const newValue = !param.interceptorDisabled.value
+		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
 	}
 
-	if (!isLoaded || param.rpcNetwork.value === undefined) return <></>
-
-	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
 		{ param.rpcNetwork.value.httpsRpc === undefined ?
@@ -421,7 +393,7 @@ export function Home(param: HomeParams) {
 		<FirstCard
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
-			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
+			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
 			activeAddress = { currentActiveAddress }
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
@@ -429,35 +401,35 @@ export function Home(param: HomeParams) {
 			changeActiveAddress = { param.changeActiveAddress }
 			makeCurrentAddressRich = { param.makeCurrentAddressRich }
 			richList = { param.fixedAddressRichList }
-			tabState = { tabState }
-			tabIconDetails = { tabIconDetails }
+			tabState = { param.tabState }
+			tabIconDetails = { param.tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
 		/>
 
 		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <PopupVisualisation
-			simulationAndVisualisationResults = { simulationAndVisualisationResults }
+			simulationAndVisualisationResults = { param.simVisResults }
 			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 			disableReset = { disableReset }
 			resetSimulation = { resetSimulation }
-			currentBlockNumber = { currentBlockNumber }
+			currentBlockNumber = { param.currentBlockNumber }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages }
+			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
 			rpcConnectionStatus = { param.rpcConnectionStatus }
-			simulationUpdatingState = { simulationUpdatingState }
-			simulationResultState = { simulationResultState }
+			simulationUpdatingState = { param.simulationUpdatingState }
+			simulationResultState = { param.simulationResultState }
 			openImportSimulation = { param.openImportSimulation }
 		/> : <> </> }
-		{ tabState?.website === undefined ? <></> : <>
+		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
 			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
 				<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 					<div class = 'log-cell' style = 'justify-content: left;'>
-						<WebsiteOriginText { ...tabState?.website } />
+						<WebsiteOriginText website = { tabWebsite } />
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right; padding-left: 20px'>
-						<InterceptorDisabledButton website = { tabState.website } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { interceptorDisabled }/>
+						<InterceptorDisabledButton website = { tabWebsite } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }/>
 					</div>
 				</div>
 			</div>

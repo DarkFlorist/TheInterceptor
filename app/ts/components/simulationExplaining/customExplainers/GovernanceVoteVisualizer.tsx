@@ -1,8 +1,8 @@
-import { useComputed } from '@preact/signals'
+import { Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { MessageToPopup, GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
-import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
@@ -11,7 +11,8 @@ import { ErrorComponent } from '../../subcomponents/Error.js'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
+import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
 
 type MissingAbiParams = {
 	errorMessage: string
@@ -33,7 +34,9 @@ function MissingAbi(params: MissingAbiParams) {
 }
 
 
-function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters }) {
+function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteInputParameters | undefined> }) {
+	const resolvedInputParams = resolveSignal(inputParams)
+	if (resolvedInputParams === undefined) return <></>
 	const interpretSupport = (support: bigint | boolean) => {
 		if (support === true || support === 1n) return 'For'
 		if (support === false || support === 0n) return 'Against'
@@ -45,29 +48,29 @@ function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters
 		<div class = 'notification transaction-importance-box'>
 			<div style = 'display: flex; justify-content: center;' >
 				<p style = { { 'font-size': 'var(--big-font-size)' } } >
-					Vote&nbsp;<b>{ interpretSupport(inputParams.support) }</b>&nbsp;{`for proposal: ${ inputParams.proposalId } `}
+					Vote&nbsp;<b>{ interpretSupport(resolvedInputParams.support) }</b>&nbsp;{`for proposal: ${ resolvedInputParams.proposalId } `}
 				</p>
 			</div>
 		</div>
 
-		{ inputParams.reason !== undefined || inputParams.signature !== undefined || inputParams.voter !== undefined || inputParams.params !== undefined ? <>
+		{ resolvedInputParams.reason !== undefined || resolvedInputParams.signature !== undefined || resolvedInputParams.voter !== undefined || resolvedInputParams.params !== undefined ? <>
 			<div class = 'container'>
 				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
-					{ inputParams.reason !== undefined ? <>
+					{ resolvedInputParams.reason !== undefined ? <>
 						<CellElement text = 'Reason:'/>
-						<CellElement text =  { inputParams.reason }/>
+						<CellElement text =  { resolvedInputParams.reason }/>
 					</> : <></> }
-					{ inputParams.signature !== undefined ? <>
+					{ resolvedInputParams.signature !== undefined ? <>
 						<CellElement text = 'Signature:'/>
-						<CellElement text = { dataStringWith0xStart(inputParams.signature) } />
+						<CellElement text = { dataStringWith0xStart(resolvedInputParams.signature) } />
 					</> : <></> }
-					{ inputParams.voter !== undefined ? <>
+					{ resolvedInputParams.voter !== undefined ? <>
 						<CellElement text = 'Voter:'/>
-						<CellElement text = { checksummedAddress(inputParams.voter) } />
+						<CellElement text = { checksummedAddress(resolvedInputParams.voter) } />
 					</> : <></> }
-					{ inputParams.params !== undefined ? <>
+					{ resolvedInputParams.params !== undefined ? <>
 						<CellElement text = 'Additional Data Included With Your Vote: '/>
-						<CellElement text = { dataStringWith0xStart(inputParams.params) } />
+						<CellElement text = { dataStringWith0xStart(resolvedInputParams.params) } />
 					</> : <></> }
 				</span>
 			</div>
@@ -76,11 +79,9 @@ function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters
 }
 
 type ShowSuccessOrFailureParams = {
-	simTx: SimulatedAndVisualizedTransaction
-	currentBlockNumber: undefined | bigint
-	rpcConnectionStatus: RpcConnectionStatus
-	activeAddress: bigint
-	simulateExecutionReply: SimulateExecutionReply | undefined
+	simTx: Signal<SimulatedAndVisualizedTransaction | undefined>
+	activeAddress: ReadonlySignal<bigint | undefined>
+	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
@@ -89,116 +90,117 @@ const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => send
 
 const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack }: ShowSuccessOrFailureParams) => {
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
-	if (simulateExecutionReply === undefined) {
+	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
+	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
+	const govSimTx = useComputed(() => simulateExecutionReply.value?.data.success === true ? simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1) : undefined)
+	const addressMetaData = useComputed(() => {
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		return simulateExecutionReply.value.data.result.addressBookEntries
+	})
+	const results = useComputed(() => {
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		return {
+			blockNumber: simulateExecutionReply.value.data.result.simulationState.blockNumber,
+			blockTimestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
+			simulationConductedTimestamp: simulateExecutionReply.value.data.result.simulationState.simulationConductedTimestamp,
+			addressBookEntries: simulateExecutionReply.value.data.result.addressBookEntries,
+			rpcNetwork: simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
+			tokenPriceEstimates: simulateExecutionReply.value.data.result.tokenPriceEstimates,
+			activeAddress: activeAddress.value!,
+			visualizedSimulationState: simulateExecutionReply.value.data.result.visualizedSimulationState,
+			namedTokenIds: simulateExecutionReply.value.data.result.namedTokenIds,
+		}
+	})
+
+	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
+	if (simulateExecutionReply.value === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
-			{ simTx.transaction.to !== undefined && 'abi' in simTx.transaction.to && simTx.transaction.to.abi !== undefined ?
+			{ simTx.value.transaction.to !== undefined && 'abi' in simTx.value.transaction.to && simTx.value.transaction.to.abi !== undefined ?
 				<button
 					class = { 'button is-primary' }
-					onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }
+					onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }
 					disabled = { false }
 				>
 					Simulate execution on a passing vote
 				</button>
 			: <> <MissingAbi
 					errorMessage = { missingAbiText }
-					addressBookEntry = { simTx.transaction.to }
+					addressBookEntry = { simTx.value.transaction.to }
 					renameAddressCallBack = { renameAddressCallBack }
 				/>
 			</> }
 		</div>
 	}
-	if (simulateExecutionReply.data.success === false) {
+	if (simulateExecutionReply.value.data.success === false) {
 		return <div style = 'display: grid; grid-template-rows: max-content' >
-			{ simulateExecutionReply.data.errorType === 'MissingAbi' ? <MissingAbi
+			{ simulateExecutionReply.value.data.errorType === 'MissingAbi' ? <MissingAbi
 				errorMessage = { missingAbiText }
-				addressBookEntry = { simulateExecutionReply.data.errorAddressBookEntry }
+				addressBookEntry = { simulateExecutionReply.value.data.errorAddressBookEntry }
 				renameAddressCallBack = { renameAddressCallBack }
-			/> : <ErrorComponent text = { simulateExecutionReply.data.errorMessage }/> }
+			/> : <ErrorComponent text = { errorText }/> }
 		</div>
 	}
-	if (simulateExecutionReply.data.result.visualizedSimulationState.success === false) {
+	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
 		return <div style = 'display: grid; grid-template-rows: max-content' >
-			<ErrorComponent text = { JSON.stringify(simulateExecutionReply.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
+			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
-	const govSimTx = simulateExecutionReply.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
-	if (govSimTx === undefined) return <></>
-
-	const results = useComputed(() => {
-		if (simulateExecutionReply.data.success === false) throw new Error('failed simulation')
-		return {
-			blockNumber: simulateExecutionReply.data.result.simulationState.blockNumber,
-			blockTimestamp: simulateExecutionReply.data.result.simulationState.blockTimestamp,
-			simulationConductedTimestamp: simulateExecutionReply.data.result.simulationState.simulationConductedTimestamp,
-			addressBookEntries: simulateExecutionReply.data.result.addressBookEntries,
-			rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
-			tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
-			activeAddress: activeAddress,
-			visualizedSimulationState: simulateExecutionReply.data.result.visualizedSimulationState,
-			namedTokenIds: simulateExecutionReply.data.result.namedTokenIds,
-		}
-	})
+	if (govSimTx.value === undefined) return <></>
 
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
-			simTx = { govSimTx }
+			simTx = { govSimTx.value }
 			simulationAndVisualisationResults = { results }
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-			addressMetaData = { simulateExecutionReply.data.result.addressBookEntries }
+			addressMetaData = { addressMetaData }
 		/>
 	</div>
 }
 
 type GovernanceVoteVisualizerParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	activeAddress: bigint
+	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	governanceVoteInputParameters: GovernanceVoteInputParameters
 }
 
 export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) {
-	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
-	const [simulateExecutionReply, setSimulateExecutionReply] = useState<SimulateExecutionReply | undefined>(undefined)
-
-	const [governanceVoteInputParameters, setGovernanceVoteInputParameters] = useState<GovernanceVoteInputParameters | undefined>(undefined)
-	const [simTx, setSimTx] = useState<SimulatedAndVisualizedTransaction | undefined>(undefined)
-	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
+	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
+	const governanceVoteInputParameters = useSignal<GovernanceVoteInputParameters | undefined>(undefined)
+	const simTx = useSignal<SimulatedAndVisualizedTransaction | undefined>(undefined)
+	const activeAddress = useSignal<bigint | undefined>(undefined)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') {
-				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-				setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
-				return false
-			}
+			if (parsed.method === 'popup_new_block_arrived') return false
 			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const reply = SimulateExecutionReply.parse(parsed)
+			const { role: _role, ...popupSimulateExecutionReply } = parsed
+			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
 			if (reply.data.transactionOrMessageIdentifier !== param.simTx.transactionIdentifier) return false
-			setSimulateExecutionReply(reply)
+			simulateExecutionReply.value = reply
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
+	}, [])
 
 	useEffect(() => {
-		setGovernanceVoteInputParameters(param.governanceVoteInputParameters)
-		setSimTx(param.simTx)
-		setActiveAddress(param.activeAddress)
-		setSimulateExecutionReply(undefined)
-	}, [param.simTx.transactionIdentifier])
+		governanceVoteInputParameters.value = param.governanceVoteInputParameters
+		simTx.value = param.simTx
+		activeAddress.value = param.activeAddress.value
+		simulateExecutionReply.value = undefined
+	}, [param.simTx.transactionIdentifier, param.governanceVoteInputParameters, param.activeAddress.value])
 
-	if (governanceVoteInputParameters === undefined || simTx === undefined || activeAddress === undefined) return <></>
+	if (governanceVoteInputParameters.value === undefined || simTx.value === undefined || activeAddress.value === undefined) return <></>
 	return <>
-		<VotePanel inputParams = { governanceVoteInputParameters } />
+	<VotePanel inputParams = { governanceVoteInputParameters } />
 
 		<div style = 'display: grid; grid-template-rows: max-content max-content'>
 			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
@@ -206,8 +208,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 					<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ simulateExecutionReply === undefined ? <></> :
-						<button class = { 'button is-primary is-small' } onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }>Refresh</button>
+					{ simulateExecutionReply.value === undefined ? <></> :
+						<button class = { 'button is-primary is-small' } onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }>Refresh</button>
 					}
 				</div>
 			</span>
@@ -215,8 +217,6 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 
 		<div class = 'notification dashed-notification'>
 			<ShowSuccessOrFailure
-				currentBlockNumber = { currentBlockNumber }
-				rpcConnectionStatus = { rpcConnectionStatus }
 				simulateExecutionReply = { simulateExecutionReply }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }

@@ -1,4 +1,4 @@
-import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
+import { MessageToPopup, MessageToPopupPayload, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
 import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
@@ -24,9 +24,9 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
 }
 
-export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
+export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
 	try {
-		await browser.runtime.sendMessage(serialize(MessageToPopup, message))
+		await browser.runtime.sendMessage(serialize(MessageToPopup, { role, ...message }))
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		if (error instanceof Error) {
