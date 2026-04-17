@@ -261,14 +261,14 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 					</div>
 					<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 
-						<TransactionsAccountChangesCard
-							simTx = { simTx }
-							simulationAndVisualisationResults = { simulationAndVisualisationResults }
-							activeAddress = { activeAddress }
-							renameAddressCallBack = { param.renameAddressCallBack }
-							addressMetaData = { addressMetaData }
-							namedTokenIds = { namedTokenIds }
-						/>
+					<TransactionsAccountChangesCard
+						simTx = { simTx }
+						simulationAndVisualisationResults = { simulationAndVisualisationResults }
+						activeAddress = { activeAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
+						addressMetaData = { addressMetaData }
+						namedTokenIds = { namedTokenIds }
+					/>
 
 					<TokenLogAnalysisCard simTx = { simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 
