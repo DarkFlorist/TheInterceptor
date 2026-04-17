@@ -17,7 +17,7 @@ import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/content
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab, updateConfirmTransactionView } from './windows/confirmTransaction.js'
-import { modifyObject } from '../utils/typescript.js'
+import { assertNever, modifyObject } from '../utils/typescript.js'
 import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
@@ -263,13 +263,13 @@ async function startup() {
 			case 'fetchSimulationStack':
 				await updateFetchSimulationStackRequestWithPendingRequest()
 				return
-			case 'interceptorAccess':
-				await updateInterceptorAccessViewWithPendingRequests()
-				return
-			default:
-				return
+				case 'interceptorAccess':
+					await updateInterceptorAccessViewWithPendingRequests()
+					return
+				default:
+					return assertNever(role)
+			}
 		}
-	}
 	installDefaultUiRouter(
 		async (message) => await popupMessageHandler(pageSessions, simulator, message, await getSettings()),
 		pushSnapshotForRole,

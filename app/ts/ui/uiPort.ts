@@ -15,6 +15,14 @@ type UiPortState = {
 }
 
 type UiPortClient = ReturnType<typeof createUiPortClient>
+const logConfirmTransactionUiPort = (role: UiRole, message: string, data?: unknown) => {
+	if (role !== 'confirmTransaction') return
+	if (data === undefined) {
+		console.info(`[confirm-tx-debug] uiPort ${ message }`)
+		return
+	}
+	console.info(`[confirm-tx-debug] uiPort ${ message }`, data)
+}
 
 function createUiPortClient(role: UiRole) {
 	const state: UiPortState = {
@@ -28,6 +36,13 @@ function createUiPortClient(role: UiRole) {
 	const onMessage = (message: unknown) => {
 		const popupMessage = parseUiPopupEventEnvelope(message)
 		if (popupMessage !== undefined) {
+			if (
+				role === 'confirmTransaction'
+				&& (popupMessage.method === 'popup_update_confirm_transaction_dialog'
+					|| popupMessage.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+			) {
+				logConfirmTransactionUiPort(role, 'received event', { method: popupMessage.method })
+			}
 			for (const listener of state.listeners) listener(popupMessage)
 			return
 		}
@@ -54,11 +69,14 @@ function createUiPortClient(role: UiRole) {
 	const ensurePort = () => {
 		if (state.port !== undefined) return state.port
 		const port = browser.runtime.connect({ name: getUiPortName(state.role) })
+		logConfirmTransactionUiPort(state.role, 'connected')
 		port.onMessage.addListener((message: unknown) => onMessage(message))
 		port.onDisconnect.addListener(() => {
+			logConfirmTransactionUiPort(state.role, 'disconnected')
 			state.port = undefined
 		})
 		state.port = port
+		logConfirmTransactionUiPort(state.role, 'sending snapshot request', { requestId: state.nextRequestId })
 		void postRequest(port, createUiSnapshotRequestEnvelope(state.nextRequestId++))
 		return port
 	}

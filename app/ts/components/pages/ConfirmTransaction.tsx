@@ -473,11 +473,16 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
+				console.info('[confirm-tx-debug] popup received event', { method: parsed.method })
 				const { role: _role, ...popupUpdateConfirmTransactionDialog } = parsed
 				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(popupUpdateConfirmTransactionDialog))
 				return false
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
+				console.info('[confirm-tx-debug] popup received event', {
+					method: parsed.method,
+					pendingCount: parsed.data.pendingTransactionAndSignableMessages.length,
+				})
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
 				pendingTransactionsAndSignableMessages.value = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages

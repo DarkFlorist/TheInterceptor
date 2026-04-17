@@ -107,6 +107,7 @@ async function loadModules() {
 	const [
 		simulationModeEthereumClientService,
 		constants,
+		confirmTransactionWindow,
 		settings,
 		popupMessageHandlers,
 		storageVariables,
@@ -116,6 +117,7 @@ async function loadModules() {
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/utils/constants.js'),
+		import('../../app/ts/background/windows/confirmTransaction.js'),
 		import('../../app/ts/background/settings.js'),
 		import('../../app/ts/background/popupMessageHandlers.js'),
 		import('../../app/ts/background/storageVariables.js'),
@@ -128,6 +130,7 @@ async function loadModules() {
 		EthereumClientService: simulationModeEthereumClientService.EthereumClientService,
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
+		updateConfirmTransactionView: confirmTransactionWindow.updateConfirmTransactionView,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
@@ -329,6 +332,27 @@ async function main() {
 		if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
 		const refreshedTimestamp = pendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp
 		assert.ok(refreshedTimestamp.getTime() > oldTimestamp.getTime())
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+	})
+
+	should('confirm transaction view still publishes pending transactions when block number fetch fails', async () => {
+		browserMock.sentMessages.length = 0
+		const failingSimulator = {
+			...simulator,
+			ethereum: {
+				...simulator.ethereum,
+				async getBlockNumber() {
+					throw new Error('block number unavailable')
+				},
+				getCachedBlock() {
+					return { number: 999n }
+				},
+			},
+		}
+
+		// @ts-expect-error test shim uses a minimal simulator object
+		await modules.updateConfirmTransactionView(failingSimulator)
+
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
 	})
 

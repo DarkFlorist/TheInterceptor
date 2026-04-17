@@ -17,6 +17,13 @@ type UiRouterContext = {
 
 type UiPopupRequestHandler = (message: PopupMessage | PopupRequests) => Promise<SerializedUiReplyMessage>
 type UiSnapshotHandler = (role: UiRole) => Promise<void>
+const logConfirmTransactionUiSession = (message: string, data?: unknown) => {
+	if (data === undefined) {
+		console.info(`[confirm-tx-debug] uiSessions ${ message }`)
+		return
+	}
+	console.info(`[confirm-tx-debug] uiSessions ${ message }`, data)
+}
 
 let nextSessionId = 1
 const sessions = new Map<number, UiSession>()
@@ -28,8 +35,10 @@ export function registerUiPort(port: browser.runtime.Port) {
 	const role = getUiRoleFromPortName(port.name)
 	if (role === undefined) return undefined
 	const session: UiSession = { id: nextSessionId++, role, port }
+	if (role === 'confirmTransaction') logConfirmTransactionUiSession('registered port', { sessionId: session.id })
 	sessions.set(session.id, session)
 	port.onDisconnect.addListener(() => {
+		if (session.role === 'confirmTransaction') logConfirmTransactionUiSession('removed port', { sessionId: session.id })
 		sessions.delete(session.id)
 	})
 	return session
@@ -49,9 +58,15 @@ export function hasAnyUiSession() {
 
 export function publishUiPopupEvent(message: MessageToPopupPayload, role: UiPopupEventTarget = 'all') {
 	const envelope: TransportEventEnvelope<typeof UI_EVENT_ACTION, UiPopupEventPayload> = createUiPopupEventEnvelope(role, message)
-	getAllUiSessions()
+	const targetSessions = getAllUiSessions()
 		.filter((session) => role === 'all' || session.role === role)
-		.forEach((session) => {
+	if (
+		(role === 'confirmTransaction' || targetSessions.some((session) => session.role === 'confirmTransaction'))
+		&& (message.method === 'popup_update_confirm_transaction_dialog' || message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+	) {
+		logConfirmTransactionUiSession('publishing event', { method: message.method, targetRole: role, sessionCount: targetSessions.length })
+	}
+	targetSessions.forEach((session) => {
 			try {
 				session.port.postMessage(envelope)
 			} catch (error) {
@@ -95,6 +110,9 @@ export async function onUiPortConnected(port: browser.runtime.Port) {
 						return
 					}
 					case UI_SNAPSHOT_ACTION: {
+						if (session.role === 'confirmTransaction') {
+							logConfirmTransactionUiSession('received snapshot request', { sessionId: session.id, requestId: message.id })
+						}
 						const payload = await uiRequestRouter.dispatch(message.action, { role: session.role, port }, undefined)
 						port.postMessage(createUiSuccessResponseEnvelope(message.id, message.action, payload))
 						return

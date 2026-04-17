@@ -50,31 +50,83 @@ const shouldReplacePopupVisualisation = (
 	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
+const logConfirmTransactionView = (message: string, data?: unknown) => {
+	if (data === undefined) {
+		console.info(`[confirm-tx-debug] confirmView ${ message }`)
+		return
+	}
+	console.info(`[confirm-tx-debug] confirmView ${ message }`, data)
+}
+
+const getFallbackCurrentBlockNumber = (simulator: Simulator, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) => {
+	const [firstPendingTransactionOrMessage] = pendingTransactionAndSignableMessages
+	if (
+		firstPendingTransactionOrMessage?.type === 'Transaction'
+		&& (firstPendingTransactionOrMessage.transactionOrMessageCreationStatus === 'Simulated' || firstPendingTransactionOrMessage.transactionOrMessageCreationStatus === 'FailedToSimulate')
+		&& firstPendingTransactionOrMessage.popupVisualisation !== undefined
+		&& firstPendingTransactionOrMessage.popupVisualisation.statusCode === 'success'
+	) {
+		return firstPendingTransactionOrMessage.popupVisualisation.data.simulationState.blockNumber
+	}
+	return simulator.ethereum.getCachedBlock()?.number ?? 0n
+}
+
+const getCurrentBlockNumberForConfirmTransactionView = async (simulator: Simulator, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) => {
+	try {
+		return await simulator.ethereum.getBlockNumber(undefined)
+	} catch (error: unknown) {
+		logConfirmTransactionView('getBlockNumber failed, using fallback', error)
+		if (!(error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error)))) {
+			await handleUnexpectedError(error)
+		}
+		return getFallbackCurrentBlockNumber(simulator, pendingTransactionAndSignableMessages)
+	}
+}
+
+const getVisualizedSimulatorStateForConfirmTransactionView = async (simulator: Simulator, onlyIfNotAlreadyUpdating: boolean) => {
+	try {
+		const settings = await getSettings()
+		if (!settings.simulationMode) return undefined
+		return await updatePopupVisualisationIfNeeded(simulator, false, onlyIfNotAlreadyUpdating)
+	} catch (error: unknown) {
+		logConfirmTransactionView('popup visualisation refresh failed, using undefined', error)
+		if (!(error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error)))) {
+			await handleUnexpectedError(error)
+		}
+		return undefined
+	}
+}
 
 export async function updateConfirmTransactionView(simulator: Simulator, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(simulator, false, onlyIfNotAlreadyUpdating))
-		const settings = getSettings()
-		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(simulator.ethereum.getBlockNumber(undefined))
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+		logConfirmTransactionView('update requested', { pendingCount: pendingTransactionAndSignableMessages.length, onlyIfNotAlreadyUpdating })
 		if (pendingTransactionAndSignableMessages.length === 0) return false
+		const currentBlockNumber = await getCurrentBlockNumberForConfirmTransactionView(simulator, pendingTransactionAndSignableMessages)
+		const visualizedSimulatorState = await getVisualizedSimulatorStateForConfirmTransactionView(simulator, onlyIfNotAlreadyUpdating)
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
-			currentBlockNumber: await currentBlockNumberPromise,
-			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
+			currentBlockNumber,
+			visualizedSimulatorState,
 		} }
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 			data: {
 				pendingTransactionAndSignableMessages,
-				currentBlockNumber: await currentBlockNumberPromise,
+				currentBlockNumber,
 			}
 		}
+		logConfirmTransactionView('publishing confirm transaction state', {
+			currentBlockNumber,
+			pendingCount: pendingTransactionAndSignableMessages.length,
+			hasVisualizedSimulatorState: visualizedSimulatorState !== undefined,
+		})
 		await Promise.all([
 			publishPopupMessageToOpenUiPorts(messagePendingTransactions, 'confirmTransaction'),
 			publishPopupMessageToOpenUiPorts(message, 'confirmTransaction')
 		])
 		return true
 	} catch(error: unknown) {
+		logConfirmTransactionView('update failed', error)
 		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return false
 		await handleUnexpectedError(error)
 	}
