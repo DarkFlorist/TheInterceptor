@@ -31,7 +31,9 @@ async function vendorDependencies(files: string[]) {
 	for (const { packageName, packageToVendor, subfolderToVendor } of dependencyPaths) {
 		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageToVendor || packageName, subfolderToVendor)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageToVendor || packageName)
+		await fs.rm(destinationDirectoryPath, { recursive: true, force: true })
 		async function inclusionPredicate(path: string, fileType: FileType) {
+			if (path.endsWith('cryptoNode.js') || path.endsWith('cryptoNode.js.map') || path.endsWith('cryptoNode.d.ts') || path.endsWith('cryptoNode.d.ts.map')) return false
 			if (path.endsWith('.js')) return true
 			if (path.endsWith('.ts')) return true
 			if (path.endsWith('.mjs')) return true

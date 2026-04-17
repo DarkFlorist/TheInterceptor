@@ -33,18 +33,21 @@ function getRelativePath(from: string, to: string) {
 	return relativePath
 }
 
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 export function replaceImport(filePath: string, text: string) {
 	let replaced = text
 	for (const dependency of dependencyPaths) {
 		const newLocation = path.join(directoryOfThisFile, '..', 'app', 'vendor', dependency.packageToVendor === undefined ? dependency.packageName : dependency.packageToVendor, dependency.entrypointFile)
 		const fileFolder = path.dirname(filePath)
 		const newSource = getRelativePath(fileFolder, newLocation).replace(/\\/g, '/')
-		replaced = replaced.replaceAll(`import '${ dependency.packageName }'`, `import '${ newSource }'`)
-		replaced = replaced.replaceAll(` from '${ dependency.packageName }'`, ` from '${ newSource }'`)
-		replaced = replaced.replaceAll(` from "${ dependency.packageName }"`, ` from '${ newSource }'`)
-		replaced = replaced.replaceAll(`from'${ dependency.packageName }'`, ` from '${ newSource }'`)
-		replaced = replaced.replaceAll(`from"${ dependency.packageName }"`, ` from '${ newSource }'`)
-		replaced = replaced.replaceAll(`require("${ dependency.packageName }")`, `require('${ newSource}')`)
+		const escapedPackageName = escapeRegExp(dependency.packageName)
+		replaced = replaced.replace(new RegExp(`(\\bfrom\\s*['"])${ escapedPackageName }(['"])`, 'g'), `$1${ newSource }$2`)
+		replaced = replaced.replace(new RegExp(`(\\bimport\\s*['"])${ escapedPackageName }(['"])`, 'g'), `$1${ newSource }$2`)
+		replaced = replaced.replace(new RegExp(`(\\bimport\\s*\\(\\s*['"])${ escapedPackageName }(['"]\\s*\\))`, 'g'), `$1${ newSource }$2`)
+		replaced = replaced.replace(new RegExp(`(\\brequire\\s*\\(\\s*['"])${ escapedPackageName }(['"]\\s*\\))`, 'g'), `$1${ newSource }$2`)
 	}
 	return replaced
 }
