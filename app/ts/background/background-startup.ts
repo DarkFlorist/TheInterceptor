@@ -25,7 +25,7 @@ import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { installDefaultUiRouter, isUiPort, onUiPortConnected } from './uiSessions.js'
 import { UiRole } from '../messages/ui.js'
-import { refreshHomeData, settingsOpened } from './popupMessageHandlers.js'
+import { refreshHomeData, refreshPopupConfirmTransactionSimulation, settingsOpened } from './popupMessageHandlers.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -205,6 +205,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
 		if (isNewBlock) {
+			silenceChromeUnCaughtPromise(refreshPopupConfirmTransactionSimulation(simulator))
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(simulator, false, false)

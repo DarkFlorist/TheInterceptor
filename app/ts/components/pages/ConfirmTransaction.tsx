@@ -441,6 +441,7 @@ export function ConfirmTransaction() {
 		currentBlockNumber.value = message.data.currentBlockNumber
 	}
 	useEffect(() => {
+		console.info('[confirm-tx-debug] popup listener effect mounted')
 		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in

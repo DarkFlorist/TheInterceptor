@@ -24,7 +24,13 @@ const logConfirmTransactionUiPort = (role: UiRole, message: string, data?: unkno
 	console.info(`[confirm-tx-debug] uiPort ${ message }`, data)
 }
 
-function createUiPortClient(role: UiRole) {
+function requestSnapshot(state: UiPortState, port: browser.runtime.Port) {
+	logConfirmTransactionUiPort(state.role, 'sending snapshot request', { requestId: state.nextRequestId })
+	state.pending.set(state.nextRequestId, { resolve: () => undefined, reject: () => undefined })
+	port.postMessage(createUiSnapshotRequestEnvelope(state.nextRequestId++))
+}
+
+export function createUiPortClient(role: UiRole) {
 	const state: UiPortState = {
 		role,
 		port: undefined,
@@ -34,6 +40,7 @@ function createUiPortClient(role: UiRole) {
 	}
 
 	const onMessage = (message: unknown) => {
+		logConfirmTransactionUiPort(role, 'received raw port message', message)
 		const popupMessage = parseUiPopupEventEnvelope(message)
 		if (popupMessage !== undefined) {
 			if (
@@ -48,6 +55,7 @@ function createUiPortClient(role: UiRole) {
 		}
 		const response = parseUiResponseEnvelope(message)
 		if (response === undefined) return
+		logConfirmTransactionUiPort(role, 'parsed response', { action: response.action, ok: response.ok, id: response.id })
 		const pending = state.pending.get(response.id)
 		if (pending === undefined) return
 		state.pending.delete(response.id)
@@ -76,8 +84,6 @@ function createUiPortClient(role: UiRole) {
 			state.port = undefined
 		})
 		state.port = port
-		logConfirmTransactionUiPort(state.role, 'sending snapshot request', { requestId: state.nextRequestId })
-		void postRequest(port, createUiSnapshotRequestEnvelope(state.nextRequestId++))
 		return port
 	}
 
@@ -97,8 +103,10 @@ function createUiPortClient(role: UiRole) {
 		},
 
 		addListener(listener: EventHandler) {
+			const shouldRequestSnapshot = state.listeners.size === 0
 			state.listeners.add(listener)
-			ensurePort()
+			const port = ensurePort()
+			if (shouldRequestSnapshot) requestSnapshot(state, port)
 			return () => {
 				state.listeners.delete(listener)
 			}

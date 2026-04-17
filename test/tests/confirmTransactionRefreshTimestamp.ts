@@ -335,6 +335,34 @@ async function main() {
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
 	})
 
+	should('refreshing a simulating confirm transaction finalizes it', async () => {
+		browserMock.sentMessages.length = 0
+		await modules.browserStorageLocalSet2({
+			pendingTransactionsAndMessages: [{
+				type: 'Transaction',
+				popupOrTabId: { type: 'popup', id: 1 },
+				originalRequestParameters: popupVisualisation.data.transactionToSimulate.originalRequestParameters,
+				uniqueRequestIdentifier,
+				simulationMode: true,
+				activeAddress,
+				created,
+				transactionIdentifier: 1n,
+				website: popupVisualisation.data.transactionToSimulate.website,
+				approvalStatus: { status: 'WaitingForUser' },
+				transactionOrMessageCreationStatus: 'Simulating',
+				transactionToSimulate: popupVisualisation.data.transactionToSimulate,
+			}],
+		})
+
+		// @ts-expect-error test shim uses a minimal simulator object
+		await modules.refreshPopupConfirmTransactionSimulation(simulator)
+		const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
+		if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
+		assert.equal(pendingTransaction.transactionOrMessageCreationStatus, 'Simulated')
+		if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+	})
+
 	should('confirm transaction view still publishes pending transactions when block number fetch fails', async () => {
 		browserMock.sentMessages.length = 0
 		const failingSimulator = {
