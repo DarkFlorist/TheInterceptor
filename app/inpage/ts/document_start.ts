@@ -17,7 +17,7 @@ type DocumentStartPageIncomingEnvelope = {
 	id: number
 	action: 'rpc.response'
 	ok: true
-	payload: { interceptorApproved: true }
+	payload: DocumentStartInpagePayload
 } | {
 	kind: 'response'
 	id: number
@@ -27,11 +27,20 @@ type DocumentStartPageIncomingEnvelope = {
 } | {
 	kind: 'event'
 	action: 'rpc.event'
-	payload: { interceptorApproved: true }
+	payload: DocumentStartInpagePayload
+}
+
+type DocumentStartInpagePayload = {
+	interceptorApproved: true
+	[key: string]: unknown
 }
 
 function isDocumentStartObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
+}
+
+function isDocumentStartInpagePayload(value: unknown): value is DocumentStartInpagePayload {
+	return isDocumentStartObject(value) && value.interceptorApproved === true
 }
 
 function isDocumentStartRawInterceptedRequest(value: unknown): value is {
@@ -65,21 +74,21 @@ function createDocumentStartPageErrorRequestEnvelope(id: number, message: string
 
 function parseDocumentStartPageIncomingEnvelope(value: unknown): DocumentStartPageIncomingEnvelope | undefined {
 	if (!isDocumentStartObject(value) || typeof value.kind !== 'string' || typeof value.action !== 'string') return undefined
-	if (value.kind === 'event' && value.action === 'rpc.event' && isDocumentStartObject(value.payload) && value.payload.interceptorApproved === true) {
+	if (value.kind === 'event' && value.action === 'rpc.event' && isDocumentStartInpagePayload(value.payload)) {
 		return {
 			kind: 'event',
 			action: 'rpc.event',
-			payload: { interceptorApproved: true },
+			payload: value.payload,
 		}
 	}
 	if (value.kind === 'response' && value.action === 'rpc.response' && typeof value.id === 'number') {
-		if (value.ok === true && isDocumentStartObject(value.payload) && value.payload.interceptorApproved === true) {
+		if (value.ok === true && isDocumentStartInpagePayload(value.payload)) {
 			return {
 				kind: 'response',
 				id: value.id,
 				action: 'rpc.response',
 				ok: true,
-				payload: { interceptorApproved: true },
+				payload: value.payload,
 			}
 		}
 		if (value.ok === false && isDocumentStartObject(value.error) && typeof value.error.message === 'string') {

@@ -17,7 +17,7 @@ type ListenPageIncomingEnvelope = {
 	id: number
 	action: 'rpc.response'
 	ok: true
-	payload: { interceptorApproved: true }
+	payload: ListenInpagePayload
 } | {
 	kind: 'response'
 	id: number
@@ -27,11 +27,20 @@ type ListenPageIncomingEnvelope = {
 } | {
 	kind: 'event'
 	action: 'rpc.event'
-	payload: { interceptorApproved: true }
+	payload: ListenInpagePayload
+}
+
+type ListenInpagePayload = {
+	interceptorApproved: true
+	[key: string]: unknown
 }
 
 function isListenObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
+}
+
+function isListenInpagePayload(value: unknown): value is ListenInpagePayload {
+	return isListenObject(value) && value.interceptorApproved === true
 }
 
 function isListenRawInterceptedRequest(value: unknown): value is {
@@ -65,21 +74,21 @@ function createListenPageErrorRequestEnvelope(id: number, message: string): List
 
 function parseListenPageIncomingEnvelope(value: unknown): ListenPageIncomingEnvelope | undefined {
 	if (!isListenObject(value) || typeof value.kind !== 'string' || typeof value.action !== 'string') return undefined
-	if (value.kind === 'event' && value.action === 'rpc.event' && isListenObject(value.payload) && value.payload.interceptorApproved === true) {
+	if (value.kind === 'event' && value.action === 'rpc.event' && isListenInpagePayload(value.payload)) {
 		return {
 			kind: 'event',
 			action: 'rpc.event',
-			payload: { interceptorApproved: true },
+			payload: value.payload,
 		}
 	}
 	if (value.kind === 'response' && value.action === 'rpc.response' && typeof value.id === 'number') {
-		if (value.ok === true && isListenObject(value.payload) && value.payload.interceptorApproved === true) {
+		if (value.ok === true && isListenInpagePayload(value.payload)) {
 			return {
 				kind: 'response',
 				id: value.id,
 				action: 'rpc.response',
 				ok: true,
-				payload: { interceptorApproved: true },
+				payload: value.payload,
 			}
 		}
 		if (value.ok === false && isListenObject(value.error) && typeof value.error.message === 'string') {
