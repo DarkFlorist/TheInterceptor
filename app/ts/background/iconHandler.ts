@@ -1,10 +1,11 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
+import { PageSessionStore } from './pageSessions.js'
 import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
-import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
+import { getActiveAddress, publishPopupMessageToOpenUiPorts, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
-import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { RpcConnectionStatus, TabIcon, TabState } from '../types/user-interface-types.js'
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
@@ -15,7 +16,7 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	const tabIconDetails = { icon, iconReason }
 	if (!(await doesTabExist(tabId))) return
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { tabIconDetails }))
-	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
+	if (await getLastKnownCurrentTabId() === tabId) await publishPopupMessageToOpenUiPorts({ method: 'popup_websiteIconChanged', data: tabIconDetails })
 	try {
 		await setExtensionIcon({ path: { 128: icon }, tabId })
 		await setExtensionTitle({ title: iconReason, tabId })
@@ -25,12 +26,12 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	}
 }
 
-export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
+export async function updateExtensionIcon(pageSessions: PageSessionStore, tabId: number, websiteOrigin: string) {
 	if (!(await doesTabExist(tabId))) {
 		await removeTabState(tabId)
 		return
 	}
-	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
+	const blockingWebsitePromise = areWeBlocking(pageSessions, tabId, websiteOrigin)
 	silenceChromeUnCaughtPromise(blockingWebsitePromise)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)

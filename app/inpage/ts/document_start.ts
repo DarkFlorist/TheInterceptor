@@ -1,3 +1,109 @@
+type DocumentStartPageRequestPayload = {
+	method: string
+	params?: readonly unknown[]
+	usingInterceptorWithoutSigner: boolean
+	interceptorRequest: true
+}
+
+type DocumentStartPageRequestEnvelope = {
+	kind: 'request'
+	id: number
+	action: 'rpc.request'
+	payload: DocumentStartPageRequestPayload
+}
+
+type DocumentStartPageIncomingEnvelope = {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: true
+	payload: DocumentStartInpagePayload
+} | {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: false
+	error: { message: string }
+} | {
+	kind: 'event'
+	action: 'rpc.event'
+	payload: DocumentStartInpagePayload
+}
+
+type DocumentStartInpagePayload = {
+	interceptorApproved: true
+	[key: string]: unknown
+}
+
+function isDocumentStartObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function isDocumentStartInpagePayload(value: unknown): value is DocumentStartInpagePayload {
+	return isDocumentStartObject(value) && value.interceptorApproved === true
+}
+
+function isDocumentStartRawInterceptedRequest(value: unknown): value is {
+	requestId: number
+	method: string
+	params?: readonly unknown[]
+	interceptorRequest: true
+	usingInterceptorWithoutSigner: boolean
+} {
+	if (!isDocumentStartObject(value)) return false
+	if (value.interceptorRequest !== true) return false
+	if (typeof value.requestId !== 'number') return false
+	if (typeof value.method !== 'string') return false
+	if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
+	if ('params' in value && value.params !== undefined && !Array.isArray(value.params)) return false
+	return true
+}
+
+function createDocumentStartPageRequestEnvelope(id: number, payload: DocumentStartPageRequestPayload): DocumentStartPageRequestEnvelope {
+	return { kind: 'request', id, action: 'rpc.request', payload }
+}
+
+function createDocumentStartPageErrorRequestEnvelope(id: number, message: string): DocumentStartPageRequestEnvelope {
+	return createDocumentStartPageRequestEnvelope(id, {
+		interceptorRequest: true,
+		usingInterceptorWithoutSigner: false,
+		method: 'InterceptorError',
+		params: [message],
+	})
+}
+
+function parseDocumentStartPageIncomingEnvelope(value: unknown): DocumentStartPageIncomingEnvelope | undefined {
+	if (!isDocumentStartObject(value) || typeof value.kind !== 'string' || typeof value.action !== 'string') return undefined
+	if (value.kind === 'event' && value.action === 'rpc.event' && isDocumentStartInpagePayload(value.payload)) {
+		return {
+			kind: 'event',
+			action: 'rpc.event',
+			payload: value.payload,
+		}
+	}
+	if (value.kind === 'response' && value.action === 'rpc.response' && typeof value.id === 'number') {
+		if (value.ok === true && isDocumentStartInpagePayload(value.payload)) {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: true,
+				payload: value.payload,
+			}
+		}
+		if (value.ok === false && isDocumentStartObject(value.error) && typeof value.error.message === 'string') {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: false,
+				error: { message: value.error.message },
+			}
+		}
+	}
+	return undefined
+}
+
 function injectScript(_content: string) {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
 	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
@@ -43,9 +149,13 @@ function injectScript(_content: string) {
 				|| !('interceptorRequest' in messageEvent.data)
 			) return
 			try {
-				// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
-				if (!('data' in messageEvent) || !(typeof messageEvent['data'] === 'object' && messageEvent['data'] !== null) || !('interceptorRequest' in messageEvent['data'])) return
-				extensionPort.postMessage({ data: messageEvent.data })
+				if (!isDocumentStartRawInterceptedRequest(messageEvent.data)) return
+				extensionPort.postMessage(createDocumentStartPageRequestEnvelope(messageEvent.data.requestId, {
+					method: messageEvent.data.method,
+					...('params' in messageEvent.data ? { params: messageEvent.data.params } : {}),
+					interceptorRequest: true,
+					usingInterceptorWithoutSigner: messageEvent.data.usingInterceptorWithoutSigner,
+				}))
 				checkAndThrowRuntimeLastError()
 			} catch (error) {
 				if (error instanceof Error) {
@@ -55,7 +165,7 @@ function injectScript(_content: string) {
 					}
 					if (error.message?.includes('User denied')) return // user denied signature
 				}
-				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
+				extensionPort.postMessage(createDocumentStartPageErrorRequestEnvelope(-1, JSON.stringify(error)))
 				throw error
 			}
 		})
@@ -66,15 +176,16 @@ function injectScript(_content: string) {
 
 			// forward all messages we get from the background script to the window so the page script can filter and process them
 			extensionPort.onMessage.addListener(messageEvent => {
-				if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
+				const parsedMessage = parseDocumentStartPageIncomingEnvelope(messageEvent)
+				if (parsedMessage === undefined || (parsedMessage.kind === 'response' && parsedMessage.ok === false)) {
 					console.error('Malformed message:')
 					console.error(messageEvent)
 					if (extensionPort === undefined) return
-					extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
+					extensionPort.postMessage(createDocumentStartPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
 					return
 				}
 				try {
-					globalThis.postMessage(messageEvent, '*')
+					globalThis.postMessage(parsedMessage.payload, '*')
 					checkAndThrowRuntimeLastError()
 				} catch (error) {
 					console.error(error)

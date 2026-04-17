@@ -27,9 +27,9 @@ import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
+import { addUiPopupEventListener } from '../ui/uiPort.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -233,13 +233,7 @@ export function App() {
 			websiteAccess.value = settings.websiteAccess
 		}
 
-		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
-			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
-			if (maybeRequest.success && maybeRequest.value.method === 'popup_isMainPopupWindowOpen') {
-				sendResponse({ type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } })
-				return true
-			}
-
+		const replyPopupMessageListener = (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return undefined // not a message we are interested in
 			const parsed = maybeParsed.value
@@ -287,9 +281,9 @@ export function App() {
 			return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
 		}
 
-		browser.runtime.onMessage.addListener(replyPopupMessageListener)
+		const removeListener = addUiPopupEventListener(replyPopupMessageListener)
 		return () => {
-			browser.runtime.onMessage.removeListener(replyPopupMessageListener)
+			removeListener()
 		}
 	}, [])
 

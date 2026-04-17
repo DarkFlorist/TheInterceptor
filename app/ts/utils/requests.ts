@@ -17,10 +17,10 @@ export const UniqueRequestIdentifier = funtypes.ReadonlyObject({
 export type RawInterceptedRequest = funtypes.Static<typeof RawInterceptedRequest>
 export const RawInterceptedRequest = funtypes.Intersect(
 	funtypes.Union(
-		funtypes.ReadonlyObject({
-			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
-		}).asReadonly(),
+			funtypes.ReadonlyObject({
+				method: funtypes.String,
+				params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			}).asReadonly(),
 		funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 	),
 	funtypes.ReadonlyObject({
@@ -33,10 +33,10 @@ export const RawInterceptedRequest = funtypes.Intersect(
 export type InterceptedRequest = funtypes.Static<typeof InterceptedRequest>
 export const InterceptedRequest = funtypes.Intersect(
 	funtypes.Union(
-		funtypes.ReadonlyObject({
-			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
-		}).asReadonly(),
+			funtypes.ReadonlyObject({
+				method: funtypes.String,
+				params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			}).asReadonly(),
 		funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 	),
 	funtypes.ReadonlyObject({

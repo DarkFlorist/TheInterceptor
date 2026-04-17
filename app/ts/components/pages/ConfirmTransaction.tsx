@@ -441,6 +441,7 @@ export function ConfirmTransaction() {
 		currentBlockNumber.value = message.data.currentBlockNumber
 	}
 	useEffect(() => {
+		console.info('[confirm-tx-debug] popup listener effect mounted')
 		function popupMessageListener(msg: unknown): false {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
@@ -473,11 +474,16 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
+				console.info('[confirm-tx-debug] popup received event', { method: parsed.method })
 				const { role: _role, ...popupUpdateConfirmTransactionDialog } = parsed
 				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(popupUpdateConfirmTransactionDialog))
 				return false
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
+				console.info('[confirm-tx-debug] popup received event', {
+					method: parsed.method,
+					pendingCount: parsed.data.pendingTransactionAndSignableMessages.length,
+				})
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
 				pendingTransactionsAndSignableMessages.value = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages
@@ -490,12 +496,11 @@ export function ConfirmTransaction() {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		const removeListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		return () => removeListener()
 	}, [])
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' })
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 

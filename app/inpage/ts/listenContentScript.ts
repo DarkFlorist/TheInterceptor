@@ -1,3 +1,109 @@
+type ListenPageRequestPayload = {
+	method: string
+	params?: readonly unknown[]
+	usingInterceptorWithoutSigner: boolean
+	interceptorRequest: true
+}
+
+type ListenPageRequestEnvelope = {
+	kind: 'request'
+	id: number
+	action: 'rpc.request'
+	payload: ListenPageRequestPayload
+}
+
+type ListenPageIncomingEnvelope = {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: true
+	payload: ListenInpagePayload
+} | {
+	kind: 'response'
+	id: number
+	action: 'rpc.response'
+	ok: false
+	error: { message: string }
+} | {
+	kind: 'event'
+	action: 'rpc.event'
+	payload: ListenInpagePayload
+}
+
+type ListenInpagePayload = {
+	interceptorApproved: true
+	[key: string]: unknown
+}
+
+function isListenObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function isListenInpagePayload(value: unknown): value is ListenInpagePayload {
+	return isListenObject(value) && value.interceptorApproved === true
+}
+
+function isListenRawInterceptedRequest(value: unknown): value is {
+	requestId: number
+	method: string
+	params?: readonly unknown[]
+	interceptorRequest: true
+	usingInterceptorWithoutSigner: boolean
+} {
+	if (!isListenObject(value)) return false
+	if (value.interceptorRequest !== true) return false
+	if (typeof value.requestId !== 'number') return false
+	if (typeof value.method !== 'string') return false
+	if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
+	if ('params' in value && value.params !== undefined && !Array.isArray(value.params)) return false
+	return true
+}
+
+function createListenPageRequestEnvelope(id: number, payload: ListenPageRequestPayload): ListenPageRequestEnvelope {
+	return { kind: 'request', id, action: 'rpc.request', payload }
+}
+
+function createListenPageErrorRequestEnvelope(id: number, message: string): ListenPageRequestEnvelope {
+	return createListenPageRequestEnvelope(id, {
+		interceptorRequest: true,
+		usingInterceptorWithoutSigner: false,
+		method: 'InterceptorError',
+		params: [message],
+	})
+}
+
+function parseListenPageIncomingEnvelope(value: unknown): ListenPageIncomingEnvelope | undefined {
+	if (!isListenObject(value) || typeof value.kind !== 'string' || typeof value.action !== 'string') return undefined
+	if (value.kind === 'event' && value.action === 'rpc.event' && isListenInpagePayload(value.payload)) {
+		return {
+			kind: 'event',
+			action: 'rpc.event',
+			payload: value.payload,
+		}
+	}
+	if (value.kind === 'response' && value.action === 'rpc.response' && typeof value.id === 'number') {
+		if (value.ok === true && isListenInpagePayload(value.payload)) {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: true,
+				payload: value.payload,
+			}
+		}
+		if (value.ok === false && isListenObject(value.error) && typeof value.error.message === 'string') {
+			return {
+				kind: 'response',
+				id: value.id,
+				action: 'rpc.response',
+				ok: false,
+				error: { message: value.error.message },
+			}
+		}
+	}
+	return undefined
+}
+
 function listenContentScript(connectionName: string | undefined) {
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
@@ -34,9 +140,13 @@ function listenContentScript(connectionName: string | undefined) {
 			|| !('interceptorRequest' in messageEvent.data)
 		) return
 		try {
-			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
-			if (!('data' in messageEvent) || !(typeof messageEvent['data'] === 'object' && messageEvent['data'] !== null) || !('interceptorRequest' in messageEvent['data'])) return
-			extensionPort.postMessage({ data: messageEvent.data })
+			if (!isListenRawInterceptedRequest(messageEvent.data)) return
+			extensionPort.postMessage(createListenPageRequestEnvelope(messageEvent.data.requestId, {
+				method: messageEvent.data.method,
+				...('params' in messageEvent.data ? { params: messageEvent.data.params } : {}),
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: messageEvent.data.usingInterceptorWithoutSigner,
+			}))
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
 			if (error instanceof Error) {
@@ -46,7 +156,7 @@ function listenContentScript(connectionName: string | undefined) {
 				}
 				if (error.message?.includes('User denied')) return // user denied signature
 			}
-			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
+			extensionPort.postMessage(createListenPageErrorRequestEnvelope(-1, JSON.stringify(error)))
 			throw error
 		}
 	})
@@ -57,15 +167,16 @@ function listenContentScript(connectionName: string | undefined) {
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		extensionPort.onMessage.addListener(messageEvent => {
-			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
+			const parsedMessage = parseListenPageIncomingEnvelope(messageEvent)
+			if (parsedMessage === undefined || (parsedMessage.kind === 'response' && parsedMessage.ok === false)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
 				if (extensionPort === undefined) return
-				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
+				extensionPort.postMessage(createListenPageErrorRequestEnvelope(-1, JSON.stringify(messageEvent)))
 				return
 			}
 			try {
-				globalThis.postMessage(messageEvent, '*')
+				globalThis.postMessage(parsedMessage.payload, '*')
 				checkAndThrowRuntimeLastError()
 			} catch (error) {
 				console.error(error)

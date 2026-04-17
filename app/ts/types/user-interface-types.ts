@@ -2,7 +2,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -115,14 +115,6 @@ export type NonLogAnalysisParams = {
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
-type SocketConnection = {
-	port: browser.runtime.Port,
-	socket: WebsiteSocket,
-	websiteOrigin: string,
-	approved: boolean, // if user has approved connection
-	wantsToConnect: boolean,
-}
-
 export type TabIcon = funtypes.Static<typeof TabIcon>
 export const TabIcon = funtypes.Union(
 	funtypes.Literal(ICON_ACTIVE),
@@ -146,12 +138,6 @@ export const TabIconDetails = funtypes.ReadonlyObject({
 	icon: TabIcon,
 	iconReason: funtypes.String,
 })
-
-export type TabConnection = {
-	connections: Record<string, SocketConnection> // socket as string
-}
-
-export type WebsiteTabConnections = Map<number, TabConnection>
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({

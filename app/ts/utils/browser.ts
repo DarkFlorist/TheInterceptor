@@ -1,8 +1,9 @@
+import { addUiPopupEventListener } from '../ui/uiPort.js'
+
 export const noReplyExpectingBrowserRuntimeOnMessageListener = (callback: (msg: unknown) => false | Promise<false>) => {
-	return browser.runtime.onMessage.addListener((message: unknown) => {
+	return addUiPopupEventListener((message: unknown) => {
 		void Promise.resolve(callback(message)).catch((error: unknown) => {
 			console.error(error)
 		})
-		return undefined
 	})
 }

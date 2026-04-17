@@ -9,10 +9,11 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getUpdatedSimulationState } from './background.js'
-import { sendPopupMessageWithReply, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { publishPopupMessageToOpenUiPorts } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+import { hasAnyUiSession } from './uiSessions.js'
 
 let abortController = new AbortController()
 
@@ -43,8 +44,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
-		const isMainPopupWindowOpenReply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
-		if (!(isMainPopupWindowOpenReply?.data.isOpen === true)) return popupVisualisation
+			if (!hasAnyUiSession()) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(simulator)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
@@ -57,7 +57,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 		if (invalidateOldState) {
 			const simulationId = popupVisualisation.simulationId + 1
 			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
+			await publishPopupMessageToOpenUiPorts({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
 		await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, thisAbortController)
 	} catch(error: unknown) {
@@ -78,11 +78,11 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		if (simulationState?.simulationStateInput === undefined || simulationState.simulationStateInput.filter((x) => x.transactions.length > 0).length === 0) {
 			const newState = buildEmptyVisualizedState(simulationId, (await getAddressesbeingMadeRich()).length)
 			await setPopupVisualisationState(newState)
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
+			await publishPopupMessageToOpenUiPorts({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
 			return
 		}
 		const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
-		const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
+		const changedMessagePromise = silenceChromeUnCaughtPromise(publishPopupMessageToOpenUiPorts({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 		try {
 			const numberOfAddressesMadeRich =  (await getAddressesbeingMadeRich()).length
 			const getUpdatedState = async () => {
@@ -94,16 +94,16 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			}
 			const newVisualizedState = await getUpdatedState()
 			await changedMessagePromise
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newVisualizedState } })
+			await publishPopupMessageToOpenUiPorts({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newVisualizedState } })
 		} catch (error) {
 			if (error instanceof Error && isNewBlockAbort(error)) return
 			if (error instanceof Error && isFailedToFetchError(error)) {
 				const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
-				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
+				await publishPopupMessageToOpenUiPorts({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 				return
 			}
 			const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
+			await publishPopupMessageToOpenUiPorts({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 			handleUnexpectedError(error)
 		}
 	}).catch(() => {})

@@ -1,8 +1,7 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs } from './backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
@@ -13,15 +12,14 @@ import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../ut
 import { modifyObject } from '../utils/typescript.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
+import { PageSession, PageSessionStore } from './pageSessions.js'
 
-function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const identifier = websiteSocketToString(socket)
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	return tabConnection?.connections[identifier]
+function getConnectionDetails(pageSessions: PageSessionStore, socket: WebsiteSocket) {
+	return pageSessions.get(socket)
 }
 
-function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+function setWebsitePortApproval(pageSessions: PageSessionStore, socket: WebsiteSocket, approved: boolean) {
+	const connection = getConnectionDetails(pageSessions, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
@@ -29,40 +27,28 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+export function verifyAccess(pageSessions: PageSessionStore, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
+	const connection = getConnectionDetails(pageSessions, socket)
 	if (connection?.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress?.address) ? 'hasAccess' : 'noAccess'
+	if (access === 'hasAccess') return connectToPort(pageSessions, socket, websiteOrigin, settings, requestAccessForAddress?.address) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
 
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
-		}
+export function sendMessageToApprovedWebsitePorts(pageSessions: PageSessionStore, message: InpageScriptCallBack) {
+	for (const connection of pageSessions.getApproved()) {
+		sendSubscriptionReplyOrCallBack(pageSessions, connection.socket, { type: 'result' as const, ...message })
 	}
 }
-export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
-				type: 'result' as const,
-				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress.address] : []
-			})
-		}
+export async function sendActiveAccountChangeToApprovedWebsitePorts(pageSessions: PageSessionStore, settings: Settings) {
+	for (const connection of pageSessions.getApproved()) {
+		const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
+		sendSubscriptionReplyOrCallBack(pageSessions, connection.socket, {
+			type: 'result' as const,
+			method: 'accountsChanged',
+			result: activeAddress !== undefined ? [activeAddress.address] : []
+		})
 	}
 }
 
@@ -151,23 +137,23 @@ async function getActiveAddressForDomain(websiteOrigin: string, settings: Settin
 	return undefined
 }
 
-function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
-	setWebsitePortApproval(websiteTabConnections, socket, true)
-	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
+function connectToPort(pageSessions: PageSessionStore, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
+	setWebsitePortApproval(pageSessions, socket, true)
+	updateExtensionIcon(pageSessions, socket.tabId, websiteOrigin)
 
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(pageSessions, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
+	sendSubscriptionReplyOrCallBack(pageSessions, socket, { type: 'result' as const, method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
 
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+	sendSubscriptionReplyOrCallBack(pageSessions, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
 	return true
 }
 
-function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
-	setWebsitePortApproval(websiteTabConnections, socket, false)
-	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
+function disconnectFromPort(pageSessions: PageSessionStore, socket: WebsiteSocket, websiteOrigin: string): false {
+	setWebsitePortApproval(pageSessions, socket, false)
+	updateExtensionIcon(pageSessions, socket.tabId, websiteOrigin)
+	sendSubscriptionReplyOrCallBack(pageSessions, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
 
@@ -178,50 +164,40 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
-	const details = getConnectionDetails(websiteTabConnections, socket)
+async function askUserForAccessOnConnectionUpdate(simulator: Simulator, pageSessions: PageSessionStore, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
+	const details = getConnectionDetails(pageSessions, socket)
 	if (details === undefined) return
 
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }
-	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
+	await requestAccessFromUser(simulator, pageSessions, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
-async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
-	for (const key in tabConnection.connections) {
-		const connection = tabConnection.connections[key]
-		if (connection === undefined) throw new Error('missing connection')
-		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
-		updateExtensionIcon(websiteTabConnections, connection.socket.tabId, connection.websiteOrigin)
-		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
+async function updatePageSession(simulator: Simulator, pageSessions: PageSessionStore, connection: PageSession, promptForAccessesIfNeeded: boolean, settings: Settings) {
+	const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
+	updateExtensionIcon(pageSessions, connection.socket.tabId, connection.websiteOrigin)
+	const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
-		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
-		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress?.address)
-		}
+	if (access !== 'hasAccess' && connection.approved) {
+		disconnectFromPort(pageSessions, connection.socket, connection.websiteOrigin)
+	} else if (access === 'hasAccess' && !connection.approved) {
+		connectToPort(pageSessions, connection.socket, connection.websiteOrigin, settings, currentActiveAddress?.address)
+	}
 
-		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
-			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
-		}
+	if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
+		const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
+		askUserForAccessOnConnectionUpdate(simulator, pageSessions, connection.socket, connection.websiteOrigin, activeAddress, settings)
 	}
 }
 
-const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
+const getApprovedTabs = (pageSessions: PageSessionStore) => {
 	const approvedTabs = new Set<number>()
-	for (const [tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection?.approved) {
-				approvedTabs.add(tab)
-				continue
-			}
-		}
+	for (const connection of pageSessions.getApproved()) {
+		approvedTabs.add(connection.socket.tabId)
 	}
 	return approvedTabs
 }
-const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
-	const approvedTabIds = getApprovedTabs(websiteTabConnections)
+const getTabsAndAddressesToBlock = async (pageSessions: PageSessionStore) => {
+	const approvedTabIds = getApprovedTabs(pageSessions)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 	return {
@@ -233,9 +209,9 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
 let previousDecralativeNetRequestBlockIdentifier = ''
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
-export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
+export async function updateDeclarativeNetRequestBlocks(pageSessions: PageSessionStore) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
-		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
+		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(pageSessions)
 		// check if the rules would change, if not, just bail out
 		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
@@ -291,17 +267,16 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
-export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
-	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
+export const areWeBlocking = async (pageSessions: PageSessionStore, tabId: number, websiteOrigin: string) => {
+	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(pageSessions)
 	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
 
-export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
-	updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	// update port connections and disconnect from ports that should not have access anymore
-	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
-		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
+export function updateWebsiteApprovalAccesses(simulator: Simulator, pageSessions: PageSessionStore, settings: Settings, promptForAccessesIfNeeded = true) {
+	updateDeclarativeNetRequestBlocks(pageSessions)
+	for (const session of pageSessions.getAll()) {
+		updatePageSession(simulator, pageSessions, session, promptForAccessesIfNeeded, settings)
 	}
 }

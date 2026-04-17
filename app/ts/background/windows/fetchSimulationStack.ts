@@ -2,8 +2,7 @@ import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabBy
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
+import { getHtmlFile, publishPopupMessageToOpenUiPorts, websiteSocketToString } from '../backgroundUtils.js'
 import { getSimulationInputHash } from '../popupSimulationFingerprint.js'
 import { getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
@@ -15,6 +14,7 @@ import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/Simul
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getCurrentSimulationInput } from '../simulationUpdating.js'
+import { PageSessionStore } from '../pageSessions.js'
 
 let pendForUserReply: Future<FetchSimulationStackRequestConfirmation> | undefined = undefined
 
@@ -24,7 +24,7 @@ let simulationStackDecisions: { identifier: string, hash: string, accept: boolea
 
 export async function updateFetchSimulationStackRequestWithPendingRequest() {
 	const promise = await getFetchSimulationStackRequestPromise()
-	if (promise) await sendPopupMessageToOpenWindows({ method: 'popup_fetchSimulationStackRequest', data: promise })
+	if (promise) await publishPopupMessageToOpenUiPorts({ method: 'popup_fetchSimulationStackRequest', data: promise })
 	return
 }
 
@@ -40,7 +40,7 @@ export async function getSimulationStack(simulationState: SimulationState | unde
 	}
 }
 
-export async function resolveFetchSimulationStackRequest(simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+export async function resolveFetchSimulationStackRequest(simulationState: SimulationState | undefined, pageSessions: PageSessionStore, confirmation: FetchSimulationStackRequestConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
 		return
@@ -48,7 +48,7 @@ export async function resolveFetchSimulationStackRequest(simulationState: Simula
 	const data = await getFetchSimulationStackRequestPromise()
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 	const resolved = await getSimulationStack(simulationState, data.simulationStackVersion)
-	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, result: resolved, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
+	replyToInterceptedRequest(pageSessions, { type: 'result', method: 'interceptor_getSimulationStack' as const, result: resolved, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
 	if (openedDialog) await closePopupOrTabById(openedDialog)
 	openedDialog = undefined
 }
@@ -73,7 +73,7 @@ const userDeniedChange = {
 
 export const openFetchSimulationStackDialog = async (
 	simulationState: SimulationState | undefined,
-	websiteTabConnections: WebsiteTabConnections,
+	pageSessions: PageSessionStore,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	params: GetSimulationStack,
 	website: Website,
@@ -86,7 +86,7 @@ export const openFetchSimulationStackDialog = async (
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, rejectMessage)
+		resolveFetchSimulationStackRequest(simulationState, pageSessions, rejectMessage)
 	}
 	const onCloseWindow = async (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id })
 	const onCloseTab = async (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id })
@@ -113,7 +113,7 @@ export const openFetchSimulationStackDialog = async (
 				uniqueRequestIdentifier: uniqueRequestIdentifier,
 			})
 		} else {
-			await resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, rejectMessage)
+			await resolveFetchSimulationStackRequest(simulationState, pageSessions, rejectMessage)
 		}
 		const reply = await pendForUserReply
 		await setFetchSimulationStackRequestPromise(undefined)
@@ -134,7 +134,7 @@ export const getSimulationStackHash = (simulationState: SimulationStateInput | u
 	return getSimulationInputHash(simulationState)
 }
 
-export async function openFetchSimulationStackDialogOrGetCachedResult(simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+export async function openFetchSimulationStackDialogOrGetCachedResult(simulationState: SimulationState | undefined, pageSessions: PageSessionStore, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
 	const input = await getCurrentSimulationInput()
 	const identifier = websiteSocketToString(socket)
 	const newHash = getSimulationStackHash(input)
@@ -143,7 +143,7 @@ export async function openFetchSimulationStackDialogOrGetCachedResult(simulation
 		if (previousDecision.accept) return { result: await getSimulationStack(simulationState, params.params[0]) }
 		return { type: 'result' as const, method: params.method, error: userDeniedChange.error }
 	}
-	const result = await openFetchSimulationStackDialog(simulationState, websiteTabConnections, request.uniqueRequestIdentifier, params, website)
+	const result = await openFetchSimulationStackDialog(simulationState, pageSessions, request.uniqueRequestIdentifier, params, website)
 	simulationStackDecisions = simulationStackDecisions.filter((x) => x.identifier !== identifier)
 	simulationStackDecisions.push({ identifier, hash: newHash, accept: !('error' in result) })
 	if (simulationStackDecisions.length > MAX_DECISION_CACHE) simulationStackDecisions.shift()

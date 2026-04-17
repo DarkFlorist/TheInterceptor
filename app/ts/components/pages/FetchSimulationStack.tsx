@@ -52,8 +52,8 @@ export function FetchSimulationStack() {
 			changeRequest.value = parsed.data
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		const removeListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		return () => removeListener()
 	}, [])
 
 	const updateSimulation = async () => {
@@ -68,7 +68,6 @@ export function FetchSimulationStack() {
 	}
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestReadyAndListening' })
 		updateSimulation()
 		updateMetaData()
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })

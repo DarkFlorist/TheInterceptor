@@ -29,12 +29,7 @@ const makeMockBrowser = () => {
 		runtime: {
 			lastError: undefined,
 			getManifest: () => ({ manifest_version: 3 }),
-			sendMessage: async (message: { method?: string }) => {
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
-				}
-				return undefined
-			},
+			sendMessage: async () => undefined,
 		},
 		tabs: {
 			onRemoved: { addListener: () => {}, removeListener: () => {} },

@@ -1,6 +1,9 @@
 import * as preact from 'preact'
 import { ChangeChain } from './components/pages/ChangeChain.js'
 import { ErrorBoundary } from './components/subcomponents/Error.js'
+import { initializeUiPort } from './ui/uiPort.js'
+
+initializeUiPort('changeChain')
 
 function rerender() {
 	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(ChangeChain, {})), document.body)

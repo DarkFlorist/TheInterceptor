@@ -1,4 +1,4 @@
-import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
+import { publishPopupMessageToOpenUiPorts } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
@@ -56,5 +56,5 @@ export async function handleUnexpectedError(error: unknown) {
 		}
 	}
 	await setLatestUnexpectedError(errorMessage)
-	await sendPopupMessageToOpenWindows(errorMessage)
+	await publishPopupMessageToOpenUiPorts(errorMessage)
 }

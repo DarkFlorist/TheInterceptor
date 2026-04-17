@@ -4,27 +4,36 @@ import { handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { TabState } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getSocketFromPort, publishPopupMessageToOpenUiPorts } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
-import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
-import { modifyObject } from '../utils/typescript.js'
+import { onCloseWindowOrTab, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { assertNever, modifyObject } from '../utils/typescript.js'
 import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { installDefaultUiRouter, isUiPort, onUiPortConnected } from './uiSessions.js'
+import { UiRole } from '../messages/ui.js'
+import { refreshHomeData, refreshPopupConfirmTransactionSimulation, settingsOpened } from './popupMessageHandlers.js'
+import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
+import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
+import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
+import { PAGE_RPC_REQUEST, PageRequestPayload, parsePageRequestEnvelope } from '../messages/page.js'
+import { createRouter } from '../messaging/router.js'
+import { PageSessionStore, createPageSessionStore } from './pageSessions.js'
 
-const websiteTabConnections = new Map<number, TabConnection>()
+const pageSessions = createPageSessionStore()
 
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	try {
@@ -91,29 +100,46 @@ async function migrateAddressBook() {
 migrateAddressBook()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
+const pageRequestRouter = createRouter<{
+	port: browser.runtime.Port
+	socket: ReturnType<typeof getSocketFromPort>
+	websiteOrigin: string
+	websitePromise: Promise<{ websiteOrigin: string, icon: string | undefined, title: string | undefined }>
+	simulator: Simulator
+	pageSessions: PageSessionStore
+	requestId: number
+}>()
 
-async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+pageRequestRouter.register<PageRequestPayload>(PAGE_RPC_REQUEST, async (context, payload) => {
+	const socket = context.socket
+	if (socket === undefined) return
+	await pendingRequestLimiter.execute(async () => {
+		const request = {
+			method: payload.method,
+			...'params' in payload ? { params: payload.params } : {},
+			interceptorRequest: payload.interceptorRequest,
+			usingInterceptorWithoutSigner: payload.usingInterceptorWithoutSigner,
+			uniqueRequestIdentifier: { requestId: context.requestId, requestSocket: socket },
+		}
+		return await handleInterceptedRequest(context.port, context.websiteOrigin, context.websitePromise, context.simulator, socket, request, context.pageSessions)
+	})
+})
+
+async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, pageSessions: PageSessionStore) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
 	const websiteOrigin = getHostWithPort(port.sender.url)
-	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+	pageSessions.upsert({ port, socket, websiteOrigin, approved: false, wantsToConnect: false })
 
 	port.onDisconnect.addListener(() => {
 		catchAllErrorsAndCall(async () => {
-			const tabConnection = websiteTabConnections.get(socket.tabId)
-			if (tabConnection === undefined) return
-			delete tabConnection.connections[websiteSocketToString(socket)]
-			if (Object.keys(tabConnection).length === 0) {
-				websiteTabConnections.delete(socket.tabId)
-			}
+			pageSessions.remove(socket)
 		})
 		try {
 			checkAndThrowRuntimeLastError()
@@ -131,39 +157,28 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 
 	port.onMessage.addListener((payload) => {
 		catchAllErrorsAndCall(async () => {
-			if (!(
-				'data' in payload
-				&& typeof payload.data === 'object'
-				&& payload.data !== null
-				&& 'interceptorRequest' in payload.data
-			)) return
-			await pendingRequestLimiter.execute(async () => {
-				const rawMessage = RawInterceptedRequest.parse(payload.data)
-				const request = {
-					method: rawMessage.method,
-					...'params' in rawMessage ? { params: rawMessage.params } : {},
-					interceptorRequest: rawMessage.interceptorRequest,
-					usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-					uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-				}
-				return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
-			})
+			const message = parsePageRequestEnvelope(payload)
+			if (message === undefined) return
+			await pageRequestRouter.dispatch(message.action, {
+				port,
+				socket,
+				websiteOrigin,
+				websitePromise,
+				simulator,
+				pageSessions,
+				requestId: message.id,
+			}, message.payload)
 		})
 	})
 
-	if (tabConnection === undefined) {
-		websiteTabConnections.set(socket.tabId, {
-			connections: { [identifier]: newConnection },
-		})
+	if (pageSessions.getByTabId(socket.tabId).length === 1) {
 		await updateTabState(socket.tabId, (previousState: TabState) => {
 			return modifyObject(previousState, {
 				website: { websiteOrigin, icon: undefined, title: undefined },
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
-	} else {
-		tabConnection.connections[identifier] = newConnection
+		updateExtensionIcon(pageSessions, socket.tabId, websiteOrigin)
 	}
 	try {
 		const website = await websitePromise
@@ -190,17 +205,18 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
 		if (isNewBlock) {
+			silenceChromeUnCaughtPromise(refreshPopupConfirmTransactionSimulation(simulator))
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(simulator, false, false)
 				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
-				await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
-				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections)
+				await publishPopupMessageToOpenUiPorts({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, pageSessions)
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
-			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections)
+			await publishPopupMessageToOpenUiPorts({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, pageSessions)
 		}
-		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+		await publishPopupMessageToOpenUiPorts({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
 		if (error instanceof Error && isNewBlockAbort(error)) return
 		await handleUnexpectedError(error)
@@ -218,7 +234,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
-		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+		await publishPopupMessageToOpenUiPorts({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	} catch(error) {
 		await handleUnexpectedError(error)
 	}
@@ -229,6 +245,36 @@ async function startup() {
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
 	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	const pushSnapshotForRole = async (role: UiRole) => {
+		switch (role) {
+			case 'main':
+				await refreshHomeData(simulator, false)
+				return
+			case 'settingsView':
+			case 'addressBook':
+			case 'websiteAccess':
+				await settingsOpened()
+				return
+			case 'changeChain':
+				await updateChainChangeViewWithPendingRequest()
+				return
+			case 'confirmTransaction':
+				await updateConfirmTransactionView(simulator)
+				return
+			case 'fetchSimulationStack':
+				await updateFetchSimulationStackRequestWithPendingRequest()
+				return
+				case 'interceptorAccess':
+					await updateInterceptorAccessViewWithPendingRequests()
+					return
+				default:
+					return assertNever(role)
+			}
+		}
+	installDefaultUiRouter(
+		async (message) => await popupMessageHandler(pageSessions, simulator, message, await getSettings()),
+		pushSnapshotForRole,
+	)
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 		await catchAllErrorsAndCall(async () => {
 			if (changeInfo.status !== 'complete') return
@@ -236,12 +282,17 @@ async function startup() {
 			const websiteOrigin = getHostWithPort(tab.url)
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
-			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
+			await updateDeclarativeNetRequestBlocks(pageSessions)
+			await updateExtensionIcon(pageSessions, tabId, websiteOrigin)
 		})
 	})
-	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
-	browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings()))))
+	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
+			if (isUiPort(port)) {
+				await onUiPortConnected(port)
+				return
+			}
+		await onContentScriptConnected(simulator, port, pageSessions)
+	}))
 
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))
@@ -252,10 +303,10 @@ async function startup() {
 
 	await updateExtensionBadge()
 
-	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections))
-	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections))
+	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, pageSessions))
+	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, pageSessions))
 	addWindowTabListeners(onCloseWindow, onCloseTab)
-	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	await updateDeclarativeNetRequestBlocks(pageSessions)
 }
 
 startup()

@@ -1,9 +1,11 @@
 // @ts-nocheck
 import * as assert from 'assert'
+import type { MainOrConfirmUiRole } from '../../app/ts/messages/ui.js'
 import { Interface } from 'ethers'
 import { run, runIfRoot, should } from '../micro-should.js'
 
 type RuntimeMessage = {
+	role?: string
 	method?: string
 	type?: string
 	data?: unknown
@@ -29,13 +31,7 @@ function createBrowserMock() {
 	globalThis.browser = {
 		runtime: {
 			lastError: null,
-			async sendMessage(message: RuntimeMessage) {
-				sentMessages.push(message)
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
-				}
-				return undefined
-			},
+			async sendMessage() { return undefined },
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
@@ -77,6 +73,27 @@ function createBrowserMock() {
 	return {
 		sentMessages,
 		storageState,
+		async attachUiSession(role: MainOrConfirmUiRole) {
+			const { registerUiPort } = await import('../../app/ts/background/uiSessions.js')
+			const { getUiPortName } = await import('../../app/ts/messages/ui.js')
+			const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+			const port = {
+				name: getUiPortName(role),
+				postMessage(message: unknown) {
+					if (typeof message !== 'object' || message === null || !('kind' in message) || message.kind !== 'event') return
+					if (!('payload' in message) || typeof message.payload !== 'object' || message.payload === null) return
+					const { payload } = message
+					if (!('role' in payload) || typeof payload.role !== 'string' || !('message' in payload) || typeof payload.message !== 'object' || payload.message === null) return
+					const maybePopupMessage = MessageToPopup.safeParse({ role: payload.role, ...payload.message })
+					if (!maybePopupMessage.success) return
+					sentMessages.push(maybePopupMessage.value)
+				},
+				onDisconnect: { addListener: () => undefined, removeListener: () => undefined },
+				onMessage: { addListener: () => undefined, removeListener: () => undefined },
+				disconnect() {},
+			} as unknown as browser.runtime.Port
+			registerUiPort(port)
+		},
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
@@ -90,6 +107,7 @@ async function loadModules() {
 	const [
 		simulationModeEthereumClientService,
 		constants,
+		confirmTransactionWindow,
 		settings,
 		popupMessageHandlers,
 		storageVariables,
@@ -99,6 +117,7 @@ async function loadModules() {
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/utils/constants.js'),
+		import('../../app/ts/background/windows/confirmTransaction.js'),
 		import('../../app/ts/background/settings.js'),
 		import('../../app/ts/background/popupMessageHandlers.js'),
 		import('../../app/ts/background/storageVariables.js'),
@@ -111,6 +130,7 @@ async function loadModules() {
 		EthereumClientService: simulationModeEthereumClientService.EthereumClientService,
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
+		updateConfirmTransactionView: confirmTransactionWindow.updateConfirmTransactionView,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
@@ -174,6 +194,7 @@ function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: reado
 
 async function main() {
 	const browserMock = createBrowserMock()
+	await browserMock.attachUiSession('confirmTransaction')
 	const modules = await loadModules()
 
 	const fakeRpcNetwork = {
@@ -311,6 +332,55 @@ async function main() {
 		if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
 		const refreshedTimestamp = pendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp
 		assert.ok(refreshedTimestamp.getTime() > oldTimestamp.getTime())
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+	})
+
+	should('refreshing a simulating confirm transaction finalizes it', async () => {
+		browserMock.sentMessages.length = 0
+		await modules.browserStorageLocalSet2({
+			pendingTransactionsAndMessages: [{
+				type: 'Transaction',
+				popupOrTabId: { type: 'popup', id: 1 },
+				originalRequestParameters: popupVisualisation.data.transactionToSimulate.originalRequestParameters,
+				uniqueRequestIdentifier,
+				simulationMode: true,
+				activeAddress,
+				created,
+				transactionIdentifier: 1n,
+				website: popupVisualisation.data.transactionToSimulate.website,
+				approvalStatus: { status: 'WaitingForUser' },
+				transactionOrMessageCreationStatus: 'Simulating',
+				transactionToSimulate: popupVisualisation.data.transactionToSimulate,
+			}],
+		})
+
+		// @ts-expect-error test shim uses a minimal simulator object
+		await modules.refreshPopupConfirmTransactionSimulation(simulator)
+		const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
+		if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
+		assert.equal(pendingTransaction.transactionOrMessageCreationStatus, 'Simulated')
+		if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+	})
+
+	should('confirm transaction view still publishes pending transactions when block number fetch fails', async () => {
+		browserMock.sentMessages.length = 0
+		const failingSimulator = {
+			...simulator,
+			ethereum: {
+				...simulator.ethereum,
+				async getBlockNumber() {
+					throw new Error('block number unavailable')
+				},
+				getCachedBlock() {
+					return { number: 999n }
+				},
+			},
+		}
+
+		// @ts-expect-error test shim uses a minimal simulator object
+		await modules.updateConfirmTransactionView(failingSimulator)
+
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
 	})
 
