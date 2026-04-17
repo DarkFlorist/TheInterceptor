@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { InterceptorMessageToInpage } from '../types/interceptor-messages.js'
 import { serialize } from '../types/wire-types.js'
 import { RawInterceptedRequest } from '../utils/requests.js'
+import { TransportValue } from '../utils/json.js'
 import {
 	MessageErrorRuntype,
 	TransportEnvelope,
@@ -19,7 +20,7 @@ export const PAGE_RPC_EVENT = 'rpc.event'
 
 export type PageRequestPayload = {
 	method: RawInterceptedRequest['method']
-	params?: readonly unknown[]
+	params?: readonly TransportValue[]
 	usingInterceptorWithoutSigner: boolean
 	interceptorRequest: true
 }
@@ -31,7 +32,7 @@ const PageRequestPayloadRuntype = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			method: funtypes.String,
-			params: funtypes.Union(funtypes.ReadonlyArray(funtypes.Unknown), funtypes.Undefined),
+			params: funtypes.Union(funtypes.ReadonlyArray(TransportValue), funtypes.Undefined),
 		}).asReadonly(),
 		funtypes.ReadonlyObject({
 			method: funtypes.String,

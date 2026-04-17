@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
+import { TransportValue } from './json.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({
@@ -19,7 +20,7 @@ export const RawInterceptedRequest = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			params: funtypes.Union(funtypes.Array(TransportValue), funtypes.Undefined)
 		}).asReadonly(),
 		funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 	),
@@ -35,7 +36,7 @@ export const InterceptedRequest = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			params: funtypes.Union(funtypes.Array(TransportValue), funtypes.Undefined)
 		}).asReadonly(),
 		funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 	),

@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { MessageToPopup, MessageToPopupPayload, PopupMessage } from '../types/interceptor-messages.js'
 import { PopupMessageReplyRequests, PopupReplyOption, PopupRequestMethod, PopupRequests, PopupRequestsReplies, PopupRequestsReplyByMethod, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { serialize } from '../types/wire-types.js'
+import { TransportValue } from '../utils/json.js'
 import {
 	MessageErrorRuntype,
 	TransportEnvelope,
@@ -206,7 +207,7 @@ export function createUiErrorResponseEnvelope<Action extends typeof UI_COMMAND_A
 	action: Action,
 	message: string,
 	code?: number,
-	data?: unknown,
+	data?: TransportValue,
 ): TransportResponseEnvelope<Action> {
 	return createTransportErrorResponseEnvelope(id, action, {
 		message,

@@ -14,7 +14,7 @@ import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { EthereumAddress, EthereumBytes32, EthereumQuantity } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
@@ -26,6 +26,7 @@ import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
 import { PageSessionStore } from '../pageSessions.js'
+import { TransportValue } from '../../utils/json.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -123,7 +124,7 @@ export const setGasLimitForTransaction = async (transactionIdentifier: BigInt, g
 export async function resolvePendingTransactionOrMessage(simulator: Simulator, pageSessions: PageSessionStore, confirmation: TransactionConfirmation) {
 	const pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
-	const reply = (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
+	const reply = (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: TransportValue }) => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
 				return replyToInterceptedRequest(pageSessions, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -167,7 +168,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, p
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
 			await updatePopupVisualisationIfNeeded(simulator, false)
-			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
+			return reply({ type: 'result', result: serialize(EthereumBytes32, signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
 	}
