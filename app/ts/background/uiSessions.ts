@@ -20,6 +20,7 @@ type UiSnapshotHandler = (role: UiRole) => Promise<void>
 
 let nextSessionId = 1
 const sessions = new Map<number, UiSession>()
+const getAllUiSessions = () => Array.from(sessions.values())
 
 export const uiRequestRouter = createRouter<UiRouterContext>()
 
@@ -39,10 +40,7 @@ export function isUiPort(port: browser.runtime.Port) {
 }
 
 export function hasUiSession(role: UiRole) {
-	for (const session of sessions.values()) {
-		if (session.role === role) return true
-	}
-	return false
+	return getAllUiSessions().some((session) => session.role === role)
 }
 
 export function hasAnyUiSession() {
@@ -51,15 +49,16 @@ export function hasAnyUiSession() {
 
 export function publishUiPopupEvent(message: MessageToPopupPayload, role: UiPopupEventTarget = 'all') {
 	const envelope: TransportEventEnvelope<typeof UI_EVENT_ACTION, UiPopupEventPayload> = createUiPopupEventEnvelope(role, message)
-	for (const session of sessions.values()) {
-		if (role !== 'all' && session.role !== role) continue
-		try {
-			session.port.postMessage(envelope)
-		} catch (error) {
-			if (error instanceof Error && error.message.includes('disconnected port object')) continue
-			throw error
-		}
-	}
+	getAllUiSessions()
+		.filter((session) => role === 'all' || session.role === role)
+		.forEach((session) => {
+			try {
+				session.port.postMessage(envelope)
+			} catch (error) {
+				if (error instanceof Error && error.message.includes('disconnected port object')) return
+				throw error
+			}
+		})
 }
 
 export function installDefaultUiRouter(handlePopupRequest: UiPopupRequestHandler, handleSnapshot: UiSnapshotHandler) {
@@ -76,7 +75,7 @@ export function installDefaultUiRouter(handlePopupRequest: UiPopupRequestHandler
 		})
 }
 
-export async function onUiPortConnected(port: browser.runtime.Port, handleSnapshot: UiSnapshotHandler) {
+export async function onUiPortConnected(port: browser.runtime.Port) {
 	const session = registerUiPort(port)
 	if (session === undefined) return false
 	port.onMessage.addListener((rawMessage: unknown) => {
@@ -107,6 +106,5 @@ export async function onUiPortConnected(port: browser.runtime.Port, handleSnapsh
 			}
 		})())
 	})
-	await handleSnapshot(session.role)
 	return true
 }

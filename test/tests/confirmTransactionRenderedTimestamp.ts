@@ -4,15 +4,17 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 import { installDomMock } from './someTimeAgo.js'
-import { UI_EVENT_ACTION } from '../../app/ts/messages/ui.js'
+import { UI_EVENT_ACTION, UI_SNAPSHOT_ACTION } from '../../app/ts/messages/ui.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
 function createBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
 	const disconnectListeners: (() => void)[] = []
+	let requestHandler: ((message: { kind: 'request', id: number, action: string }) => void) | undefined = undefined
 	const respondToRequest = (message: unknown) => {
 		if (typeof message !== 'object' || message === null || !('kind' in message) || message.kind !== 'request' || !('id' in message) || typeof message.id !== 'number' || !('action' in message) || typeof message.action !== 'string') return
+		requestHandler?.(message)
 		for (const listener of [...listeners]) {
 			listener({
 				kind: 'response',
@@ -98,6 +100,9 @@ function createBrowserMock() {
 	globalThis.chrome = { runtime: { id: 'test-extension' } }
 
 	return {
+		onRequest(nextRequestHandler: (message: { kind: 'request', id: number, action: string }) => void) {
+			requestHandler = nextRequestHandler
+		},
 		dispatch(message: unknown) {
 			if (typeof message !== 'object' || message === null || !('role' in message) || typeof message.role !== 'string') return
 			const { role, ...popupMessage } = message as { role: string }
@@ -309,9 +314,49 @@ async function main() {
 			assert.equal(dom.document.body.textContent?.includes('Simulated 1s ago'), true)
 
 			dom.restore()
-		})
+			})
 
-		should('updates the simulation age when the real refresh flow runs', async () => {
+			should('hydrates from the initial snapshot request once the window is ready', async () => {
+				const dom = installDomMock()
+				const browser = createBrowserMock()
+				initializeUiPort('confirmTransaction')
+				const pendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+				let snapshotRequestCount = 0
+
+				browser.onRequest((message) => {
+					if (message.action !== UI_SNAPSHOT_ACTION) return
+					snapshotRequestCount += 1
+					browser.dispatch(serialize(MessageToPopup, {
+						role: 'confirmTransaction',
+						method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+						data: {
+							pendingTransactionAndSignableMessages: [pendingTransaction],
+							currentBlockNumber: 123n,
+						},
+					}))
+					browser.dispatch(serialize(MessageToPopup, {
+						role: 'confirmTransaction',
+						method: 'popup_update_confirm_transaction_dialog',
+						data: {
+							visualizedSimulatorState: undefined,
+							currentBlockNumber: 123n,
+						},
+					}))
+				})
+
+				await act(() => {
+					// @ts-expect-error test shim uses a lightweight container
+					render(h(ConfirmTransaction, {}), dom.document.body)
+				})
+
+				assert.equal(snapshotRequestCount, 1)
+				assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
+				assert.equal(dom.document.body.textContent?.includes('Simulated 5s ago'), true)
+
+				dom.restore()
+			})
+
+			should('updates the simulation age when the real refresh flow runs', async () => {
 			const dom = installDomMock()
 			const browser = createBrowserMock()
 			initializeUiPort('confirmTransaction')

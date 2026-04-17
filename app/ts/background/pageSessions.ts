@@ -41,6 +41,8 @@ const getOrCreateTabSessions = (state: PageSessionState, tabId: number) => {
 const getAllSessions = (state: PageSessionState) => Array.from(state.sessionsByKey.values())
 const getSessionsByTabId = (state: PageSessionState, tabId: number) => Array.from(state.sessionsByTab.get(tabId)?.values() ?? [])
 const getSession = (state: PageSessionState, socket: WebsiteSocket) => state.sessionsByKey.get(getSessionKey(socket))
+const getApprovedSessions = (state: PageSessionState) => getAllSessions(state).filter((session) => session.approved)
+const hasApprovedTabSessions = (state: PageSessionState, tabId: number) => getSessionsByTabId(state, tabId).some((session) => session.approved)
 
 function upsertSession(state: PageSessionState, session: PageSession) {
 	const key = getSessionKey(session.socket)
@@ -59,16 +61,14 @@ function removeSession(state: PageSessionState, socket: WebsiteSocket) {
 	if (tabSessions.size === 0) state.sessionsByTab.delete(socket.tabId)
 }
 
-export function createPageSessionStore() {
-	const state = createPageSessionState()
+const createPageSessionStoreApi = (state: PageSessionState) => ({
+	upsert: (session: PageSession) => upsertSession(state, session),
+	remove: (socket: WebsiteSocket) => removeSession(state, socket),
+	get: (socket: WebsiteSocket) => getSession(state, socket),
+	getByTabId: (tabId: number) => getSessionsByTabId(state, tabId),
+	getAll: () => getAllSessions(state),
+	getApproved: () => getApprovedSessions(state),
+	hasApprovedTab: (tabId: number) => hasApprovedTabSessions(state, tabId),
+})
 
-	return {
-		upsert: (session: PageSession) => upsertSession(state, session),
-		remove: (socket: WebsiteSocket) => removeSession(state, socket),
-		get: (socket: WebsiteSocket) => getSession(state, socket),
-		getByTabId: (tabId: number) => getSessionsByTabId(state, tabId),
-		getAll: () => getAllSessions(state),
-		getApproved: () => getAllSessions(state).filter((session) => session.approved),
-		hasApprovedTab: (tabId: number) => getSessionsByTabId(state, tabId).some((session) => session.approved),
-	}
-}
+export const createPageSessionStore = () => createPageSessionStoreApi(createPageSessionState())

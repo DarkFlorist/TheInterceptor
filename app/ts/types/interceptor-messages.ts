@@ -15,7 +15,6 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { PopupMessageReplyRequests, PopupRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { TransportValue } from '../utils/json.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -40,7 +39,7 @@ type InpageScriptRequestWithoutIdentifier = funtypes.Static<typeof InpageScriptR
 const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_connection_status_changed'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: TransportValue }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean, activeAddress: funtypes.String }) }),
@@ -140,7 +139,7 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 		method: funtypes.String,
 	}),
 	funtypes.Partial({
-		params: funtypes.ReadonlyArray(TransportValue),
+		params: funtypes.ReadonlyArray(funtypes.Unknown),
 	})
 )
 
@@ -201,7 +200,7 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 			funtypes.Union(
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('signerIncluded'),
-					signerReply: TransportValue,
+					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
@@ -397,7 +396,7 @@ export const SignerReply = funtypes.ReadonlyObject({
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(true),
 			forwardRequest: SignerReplyForwardRequest,
-			reply: TransportValue,
+			reply: funtypes.Unknown,
 		}),
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(false),

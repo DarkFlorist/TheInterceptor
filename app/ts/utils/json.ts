@@ -19,17 +19,6 @@ export const JSONEncodeableObjectArray = funtypes.Union(funtypes.ReadonlyArray(J
 type JSONEncodeableObjectOrArray = funtypes.Static<typeof JSONEncodeableObjectOrArray>
 const JSONEncodeableObjectOrArray = funtypes.Union(JSONEncodeableObject, JSONEncodeableObjectArray)
 
-export type TransportValue = string | number | boolean | null | undefined | { readonly [x: string]: TransportValue } | readonly TransportValue[]
-export const TransportValue: funtypes.Runtype<TransportValue> = funtypes.Lazy(() => funtypes.Union(
-	funtypes.String,
-	funtypes.Boolean,
-	funtypes.Number,
-	funtypes.Null,
-	funtypes.Undefined,
-	funtypes.ReadonlyArray(TransportValue),
-	funtypes.ReadonlyRecord(funtypes.String, TransportValue),
-))
-
 export function isJSON(text: string){
 	if (typeof text !== 'string') return false
 	try {

@@ -6,7 +6,7 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { UiPopupEventTarget } from '../messages/ui.js'
-import { hasAnyUiSession, hasUiSession, publishUiPopupEvent } from './uiSessions.js'
+import { publishUiPopupEvent } from './uiSessions.js'
 import { sendUiPopupCommand, sendUiPopupQuery } from '../ui/uiPort.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
@@ -33,14 +33,6 @@ export async function publishPopupMessageToOpenUiPorts(message: MessageToPopupPa
 	} catch (error) {
 		await handleUnexpectedError(error)
 	}
-}
-
-export async function isMainUiOpen() {
-	return hasUiSession('main')
-}
-
-export async function isAnyUiOpen() {
-	return hasAnyUiSession()
 }
 
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {

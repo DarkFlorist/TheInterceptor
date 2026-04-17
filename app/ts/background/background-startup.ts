@@ -286,10 +286,10 @@ async function startup() {
 		})
 	})
 	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
-		if (isUiPort(port)) {
-			await onUiPortConnected(port, pushSnapshotForRole)
-			return
-		}
+			if (isUiPort(port)) {
+				await onUiPortConnected(port)
+				return
+			}
 		await onContentScriptConnected(simulator, port, pageSessions)
 	}))
 

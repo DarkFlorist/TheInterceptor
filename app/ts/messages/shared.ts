@@ -1,10 +1,9 @@
 import * as funtypes from 'funtypes'
-import { TransportValue } from '../utils/json.js'
 
 export type MessageError = {
 	message: string
 	code?: number
-	data?: TransportValue
+	data?: unknown
 }
 
 export type TransportRequestEnvelope<Action extends string = string, Payload = unknown> = {
@@ -44,7 +43,7 @@ export const MessageErrorRuntype = funtypes.Intersect(
 	funtypes.ReadonlyObject({ message: funtypes.String }),
 	funtypes.Partial({
 		code: funtypes.Number,
-		data: TransportValue,
+		data: funtypes.Unknown,
 	}),
 )
 
@@ -102,11 +101,10 @@ export function isTransportEnvelope(value: unknown): value is TransportEnvelope 
 export function toMessageError(error: unknown): MessageError {
 	if (error instanceof Error) return { message: error.message }
 	if (isObject(error) && typeof error.message === 'string') {
-		const maybeData = 'data' in error ? TransportValue.safeParse(error.data) : undefined
 		return {
 			message: error.message,
 			...typeof error.code === 'number' ? { code: error.code } : {},
-			...(maybeData?.success ? { data: maybeData.value } : {}),
+			...('data' in error ? { data: error.data } : {}),
 		}
 	}
 	return { message: 'Unknown error' }

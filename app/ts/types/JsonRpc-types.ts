@@ -4,7 +4,6 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { TransportValue } from '../utils/json.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -147,7 +146,7 @@ type JsonRpcSuccessResponse = funtypes.Static<typeof JsonRpcSuccessResponse>
 const JsonRpcSuccessResponse = funtypes.ReadonlyObject({
 	jsonrpc: funtypes.Literal('2.0'),
 	id: funtypes.Union(funtypes.String, funtypes.Number),
-	result: TransportValue,
+	result: funtypes.Unknown,
 }).asReadonly()
 
 export type JsonRpcErrorResponse = funtypes.Static<typeof JsonRpcErrorResponse>
@@ -195,7 +194,7 @@ export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 					message: funtypes.String,
 				}),
 				funtypes.Partial({
-					data: TransportValue
+					data: funtypes.Unknown
 				})
 			)
 		})
@@ -379,7 +378,7 @@ export const GetFilterLogs = funtypes.ReadonlyObject({
 export type InterceptorError = funtypes.Static<typeof InterceptorError>
 export const InterceptorError = funtypes.ReadonlyObject({
 	method: funtypes.Literal('InterceptorError'),
-	params: funtypes.ReadonlyArray(TransportValue),
+	params: funtypes.ReadonlyArray(funtypes.Unknown),
 })
 
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
