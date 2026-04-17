@@ -27,25 +27,83 @@ const dependencyPaths = [
 	{ packageName: '@darkflorist/address-metadata', subfolderToVendor: 'lib', entrypointFile: 'index.js' },
 ]
 
+const codeFileExtensions = ['.js', '.ts', '.mjs', '.mts'] as const
+const sourceMapFileExtensions = ['.map'] as const
+const declarationFileSuffixes = ['.d.ts', '.d.mts', '.d.cts'] as const
+const nodeBuiltinImportPatterns = [
+	/(?:^|\n)\s*(?:import\s+(?:[^'";]+?\s+from\s+)?|export\s+(?:\*|\{[^}]*\})\s+from\s+)(['"])node:[^'"]+\1/m,
+	/(?:^|\n)\s*import\s+(['"])node:[^'"]+\1/m,
+	/\bimport\s*\(\s*(['"])node:[^'"]+\1\s*\)/m,
+	/\brequire\s*\(\s*(['"])node:[^'"]+\1\s*\)/m,
+]
+
+function hasExtension(filePath: string, extensions: readonly string[]) {
+	return extensions.some((extension) => filePath.endsWith(extension))
+}
+
+function isGitPath(filePath: string) {
+	return filePath.endsWith('.git') || filePath.endsWith('.git/') || filePath.endsWith('.git\\')
+}
+
+function isNodeModulesPath(filePath: string) {
+	return filePath.endsWith('node_modules') || filePath.endsWith('node_modules/') || filePath.endsWith('node_modules\\')
+}
+
+function isAddressMetadataImagePath(filePath: string) {
+	return filePath.includes('address-metadata/lib/images') || filePath.includes('address-metadata\\lib\\images')
+}
+
+function stripFileSuffix(filePath: string, suffixes: readonly string[]) {
+	for (const suffix of suffixes) {
+		if (filePath.endsWith(suffix)) return filePath.slice(0, -suffix.length)
+	}
+	return undefined
+}
+
+function getAssociatedCodeFiles(filePath: string) {
+	if (hasExtension(filePath, codeFileExtensions)) return [filePath]
+
+	const sourceMapBasePath = stripFileSuffix(filePath, sourceMapFileExtensions)
+	if (sourceMapBasePath !== undefined) return getAssociatedCodeFiles(sourceMapBasePath)
+
+	const declarationBasePath = stripFileSuffix(filePath, declarationFileSuffixes)
+	if (declarationBasePath !== undefined) {
+		return codeFileExtensions
+			.map((extension) => `${ declarationBasePath }${ extension }`)
+			.filter((candidatePath) => candidatePath !== filePath)
+	}
+
+	return []
+}
+
+async function fileImportsNodeBuiltin(filePath: string) {
+	try {
+		const fileContents = await fs.readFile(filePath, 'utf8')
+		return nodeBuiltinImportPatterns.some((pattern) => pattern.test(fileContents))
+	} catch {
+		return false
+	}
+}
+
+async function shouldIncludeVendoredFile(filePath: string, fileType: FileType) {
+	if (isGitPath(filePath) || isNodeModulesPath(filePath)) return false
+	if (isAddressMetadataImagePath(filePath)) return true
+	if (fileType === 'directory') return true
+	if (!hasExtension(filePath, [...codeFileExtensions, ...sourceMapFileExtensions, ...declarationFileSuffixes])) return false
+
+	const associatedCodeFiles = getAssociatedCodeFiles(filePath)
+	for (const associatedCodeFile of associatedCodeFiles) {
+		if (await fileImportsNodeBuiltin(associatedCodeFile)) return false
+	}
+	return true
+}
+
 async function vendorDependencies(files: string[]) {
 	for (const { packageName, packageToVendor, subfolderToVendor } of dependencyPaths) {
 		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageToVendor || packageName, subfolderToVendor)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageToVendor || packageName)
 		await fs.rm(destinationDirectoryPath, { recursive: true, force: true })
-		async function inclusionPredicate(path: string, fileType: FileType) {
-			if (path.endsWith('cryptoNode.js') || path.endsWith('cryptoNode.js.map') || path.endsWith('cryptoNode.d.ts') || path.endsWith('cryptoNode.d.ts.map')) return false
-			if (path.endsWith('.js')) return true
-			if (path.endsWith('.ts')) return true
-			if (path.endsWith('.mjs')) return true
-			if (path.endsWith('.mts')) return true
-			if (path.endsWith('.map')) return true
-			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
-			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
-			if (path.endsWith('node_modules') || path.endsWith('node_modules/') || path.endsWith('node_modules\\')) return false
-			if (fileType === 'directory') return true
-			return false
-		}
-		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageName))
+		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, shouldIncludeVendoredFile, rewriteSourceMapSourcePath.bind(undefined, packageName))
 	}
 
 	const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile, packageToVendor }) => {
