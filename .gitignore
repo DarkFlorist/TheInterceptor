@@ -1,3 +1,5 @@
+*.js
+*.js.map
 /app/js/
 /test/js/
 /app/vendor/

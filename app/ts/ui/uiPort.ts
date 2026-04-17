@@ -79,8 +79,8 @@ function createUiPortClient(role: UiRole) {
 		},
 
 		addListener(listener: EventHandler) {
-			ensurePort()
 			state.listeners.add(listener)
+			ensurePort()
 			return () => {
 				state.listeners.delete(listener)
 			}
