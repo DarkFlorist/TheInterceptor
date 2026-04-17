@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, MaybeSimulatedTransaction, ModifyAddressWindowState, VisualizedSimulationState } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
@@ -244,6 +244,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	}, [popupVisualisation])
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
+	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader simTx = { simTx } />
@@ -301,7 +302,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
-							simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
+							simulationBlockNumber = { simulationBlockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
 							simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
