@@ -9,7 +9,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getUpdatedSimulationState } from './background.js'
-import { isMainUiOpen, publishPopupMessageToOpenUiPorts } from './backgroundUtils.js'
+import { isAnyUiOpen, publishPopupMessageToOpenUiPorts } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
@@ -43,7 +43,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
-		if (!(await isMainUiOpen())) return popupVisualisation
+		if (!(await isAnyUiOpen())) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(simulator)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)

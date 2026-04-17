@@ -14,7 +14,7 @@ import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumQuantity } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
@@ -70,8 +70,8 @@ export async function updateConfirmTransactionView(simulator: Simulator, onlyIfN
 			}
 		}
 		await Promise.all([
-			publishPopupMessageToOpenUiPorts(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
-			publishPopupMessageToOpenUiPorts(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
+			publishPopupMessageToOpenUiPorts(messagePendingTransactions, 'confirmTransaction'),
+			publishPopupMessageToOpenUiPorts(message, 'confirmTransaction')
 		])
 		return true
 	} catch(error: unknown) {
