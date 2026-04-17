@@ -331,7 +331,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 							addressMetaData = { computedAddressBookEntries }
 						/>
-						{ param.removedTransactionOrSignedMessages.length > 0
+					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
 							simulationAndVisualisationResults = { definedSimulationResults }
