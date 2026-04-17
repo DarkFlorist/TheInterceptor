@@ -1,9 +1,9 @@
 import * as preact from 'preact'
 import { App } from './components/App.js'
+import { ErrorBoundary } from './components/subcomponents/Error.js'
 
 function rerender() {
-	const element = preact.createElement(App, {})
-	preact.render(element, document.body)
+	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(App, {})), document.body)
 }
 
 rerender()

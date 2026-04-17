@@ -94,15 +94,19 @@ const browserMock = createBrowserMock()
 
 async function loadModules() {
 	const popupVisualisationUpdater = await import('../../app/ts/background/popupVisualisationUpdater.js')
+	const popupSimulationFingerprint = await import('../../app/ts/background/popupSimulationFingerprint.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const settings = await import('../../app/ts/background/settings.js')
 	const background = await import('../../app/ts/background/background.js')
+	const simulationUpdating = await import('../../app/ts/background/simulationUpdating.js')
 	const simulationMode = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 	return {
 		...popupVisualisationUpdater,
+		...popupSimulationFingerprint,
 		...storageUtils,
 		...settings,
 		...background,
+		...simulationUpdating,
 		...simulationMode,
 	}
 }
@@ -163,6 +167,9 @@ function buildStalePopupVisualisationState(
 
 function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 	return {
+		async getBlockNumber() {
+			return 123n
+		},
 		async getBlock() {
 			return {
 				number: 123n,
@@ -186,6 +193,7 @@ function getSimulationStateChangedMessages(messages: RuntimeMessage[]) {
 
 function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVisualizedSimulation) {
 	return serialize(MessageToPopup, {
+		role: 'all',
 		method: 'popup_simulation_state_changed',
 		data: { visualizedSimulatorState: popupVisualisation },
 	} as any)
@@ -212,6 +220,37 @@ export async function main() {
 	const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
 
 	describe('popup clear reset', () => {
+		should('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
+			browserMock.reset()
+			await browserStorageLocalSet({
+				activeSimulationAddress: activeAddress,
+				interceptorTransactionStack: { operations: [] },
+			})
+			const modules = await modulesPromise
+			const currentSimulationInput = await modules.getCurrentSimulationInput()
+			const matchingPopupVisualisation = {
+				...stalePopupVisualisation,
+				simulationState: {
+					...stalePopupVisualisation.simulationState,
+					simulationStateInput: currentSimulationInput,
+				},
+			}
+			await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
+			const storedPopupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+			assert.ok(storedPopupVisualisation)
+			const storedSimulationState = storedPopupVisualisation.simulationState
+			assert.ok(storedSimulationState)
+			assert.equal(
+				modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
+				modules.getPopupVisualisationFingerprint(storedSimulationState.simulationStateInput, storedSimulationState.rpcNetwork, storedSimulationState.blockNumber),
+			)
+
+			const popupVisualisation = await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false, true)
+			assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
+			assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
+			assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+		})
+
 		should('publish an empty popup visualisation even when previous state was done', async () => {
 			browserMock.reset()
 			await browserStorageLocalSet({

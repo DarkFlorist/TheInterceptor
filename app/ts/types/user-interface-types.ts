@@ -1,4 +1,3 @@
-import { Dispatch, StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
@@ -19,9 +18,8 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,
-	setWebsiteAccess: Dispatch<StateUpdater<WebsiteAccessArray | undefined>>,
-	websiteAccess: WebsiteAccessArray | undefined,
-	websiteAccessAddressMetadata: AddressBookEntries,
+	websiteAccess: Signal<WebsiteAccessArray | undefined>,
+	websiteAccessAddressMetadata: Signal<AddressBookEntries>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -37,23 +35,23 @@ export type HomeParams = {
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
-	tabState: TabState | undefined
+	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
 	activeSigningAddress: Signal<bigint | undefined>
-	useSignersAddressAsActiveAddress: boolean
-	simVisResults: SimulationAndVisualisationResults | undefined
+	useSignersAddressAsActiveAddress: Signal<boolean>
+	simVisResults: Signal<SimulationAndVisualisationResults | undefined>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void
 	simulationMode: Signal<boolean>
-	tabIconDetails: TabIconDetails
-	currentBlockNumber: bigint | undefined
+	tabIconDetails: Signal<TabIconDetails>
+	currentBlockNumber: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	rpcEntries: Signal<RpcEntries>
-	simulationUpdatingState: SimulationUpdatingState | undefined
-	simulationResultState: SimulationResultState | undefined
-	interceptorDisabled: boolean
+	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>
+	simulationResultState: Signal<SimulationResultState | undefined>
+	interceptorDisabled: Signal<boolean>
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
 	openImportSimulation: () => void
@@ -71,7 +69,7 @@ export type ChangeActiveAddressParam = {
 
 export type FirstCardParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
-	useSignersAddressAsActiveAddress: boolean
+	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => void
 	rpcNetwork: Signal<RpcNetwork | undefined>
@@ -79,8 +77,8 @@ export type FirstCardParams = {
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richList: Signal<readonly EnrichedRichListElement[]>
-	tabIconDetails: TabIconDetails,
-	tabState: TabState | undefined,
+	tabIconDetails: Signal<TabIconDetails>
+	tabState: Signal<TabState | undefined>
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcEntries: Signal<RpcEntries>,
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
@@ -89,15 +87,15 @@ export type FirstCardParams = {
 export type SimulationStateParam = {
 	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
-	currentBlockNumber: bigint | undefined
+	currentBlockNumber: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	disableReset: boolean
+	disableReset: Signal<boolean>
 	resetSimulation: () => void
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
-	simulationUpdatingState: SimulationUpdatingState | undefined
-	simulationResultState: SimulationResultState | undefined
+	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>
+	simulationResultState: Signal<SimulationResultState | undefined>
 	openImportSimulation: () => void
 }
 
@@ -109,7 +107,7 @@ export type LogAnalysisParams = {
 
 export type NonLogAnalysisParams = {
 	nonTokenLogs: readonly EnrichedEthereumEventWithMetadata[]
-	addressMetaData: readonly AddressBookEntry[]
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }

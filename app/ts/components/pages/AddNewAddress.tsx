@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
@@ -221,7 +221,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 
 export function AddNewAddress(param: AddAddressParam) {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const [onChainInformationVerifiedByUser, setOnChainInformationVerifiedByUser] = useState<boolean>(false)
+	const onChainInformationVerifiedByUser = useSignal<boolean>(false)
 	const canFetchFromEtherScan = useSignal<boolean>(false)
 	const lastCheckedAddress = useSignal<bigint>(0n)
 
@@ -269,7 +269,11 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (param.modifyAddressWindowState.value !== undefined) {
 			canFetchFromEtherScan.value = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) !== undefined
 		}
-	}, [param.modifyAddressWindowState.value.windowStateId, param.activeAddress])
+	}, [
+		param.modifyAddressWindowState.value.windowStateId,
+		param.modifyAddressWindowState.value.incompleteAddressBookEntry.address,
+		param.activeAddress,
+	])
 
 	function getCompleteAddressBookEntry(): AddressBookEntry | { type: 'error', error: string } {
 		const incompleteAddressBookEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
@@ -389,7 +393,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const isSubmitButtonDisabled = useComputed(() => {
 		return !areInputsValid.value
 			|| (param.modifyAddressWindowState.value.errorState?.blockEditing)
-			|| (showOnChainVerificationErrorBox.value && !onChainInformationVerifiedByUser)
+			|| (showOnChainVerificationErrorBox.value && !onChainInformationVerifiedByUser.value)
 	})
 
 	function getCardTitle() {
@@ -437,7 +441,6 @@ export function AddNewAddress(param: AddAddressParam) {
 						<ErrorCheckBox
 							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
 							checked = { onChainInformationVerifiedByUser }
-							onInput = { setOnChainInformationVerifiedByUser }
 						/>
 					}
 				</div>

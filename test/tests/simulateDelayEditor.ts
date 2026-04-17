@@ -58,6 +58,8 @@ async function main() {
 	const mockBrowser = makeMockBrowser()
 	// @ts-expect-error test shim for extension APIs
 	globalThis.browser = mockBrowser
+	// @ts-expect-error test shim for extension APIs
+	globalThis.chrome = { runtime: { id: 'test-extension' } }
 
 	const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 	const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')

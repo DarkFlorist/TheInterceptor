@@ -340,6 +340,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	if (simulationState.success === false) {
 		const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
 		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, [], parsedInputDataForEachBlockAndTransaction.flat())
+		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
 			const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
@@ -372,7 +373,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			tokenPriceEstimates: [],
 			tokenPriceQuoteToken: weth,
 			namedTokenIds: [],
-			simulationState,
+			simulationState: refreshedSimulationState,
 			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
 		}
 	}
@@ -406,6 +407,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	const protectorsForEachBlockAndTransaction = await protectorsForEachBlockAndTransactionPromise
 
 	const tokenPriceEstimates = await tokenPriceEstimatesPromise
+	const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 	const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block, blockIndex) => {
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
@@ -424,7 +426,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		addressBookEntries: updatedMetadata.addressBookEntries,
 		tokenPriceEstimates,
 		tokenPriceQuoteToken: weth,
-		simulationState,
+		simulationState: refreshedSimulationState,
 		visualizedSimulationState: { success: true, visualizedBlocks },
 	}
 }

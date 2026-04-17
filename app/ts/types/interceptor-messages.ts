@@ -461,6 +461,12 @@ const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 	})
 })
 
+type MessageToPopupRole = funtypes.Static<typeof MessageToPopupRole>
+const MessageToPopupRole = funtypes.Union(
+	funtypes.Literal('all'),
+	funtypes.Literal('confirmTransaction'),
+)
+
 type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 const MessageToPopupSimple = funtypes.ReadonlyObject({
 	method: funtypes.Union(
@@ -845,6 +851,33 @@ export const ImportSimulationStack = funtypes.ReadonlyObject({
 	data: InterceptorSimulationExport,
 })
 
+export type MessageToPopupPayload = funtypes.Static<typeof MessageToPopupPayload>
+export const MessageToPopupPayload = funtypes.Union(
+	MessageToPopupSimple,
+	WebsiteIconChanged,
+	GetAddressBookDataReply,
+	ChangeChainRequest,
+	InterceptorAccessDialog,
+	NewBlockArrivedOrFailedToArrive,
+	SettingsUpdated,
+	UpdateConfirmTransactionDialogPartial,
+	UpdateConfirmTransactionDialogPendingTransactionsPartial,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
+	ImportSettingsReply,
+	ActiveSigningAddressChanged,
+	UpdateRPCList,
+	SimulationUpdateStartedOrEnded,
+	PartialUpdateHomePage,
+	PartiallyParsedSimulateExecutionReply,
+	SettingsOpenedReply,
+	PopupAddOrModifyAddressWindowStateInfomation,
+	DisableInterceptorReply,
+	UnexpectedErrorOccured,
+	RetrieveWebsiteAccessReply,
+	FetchSimulationStackRequest,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
+)
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	PopupMessageReplyRequests,
@@ -905,27 +938,8 @@ export const PopupMessage = funtypes.Union(
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
-	MessageToPopupSimple,
-	WebsiteIconChanged,
-	GetAddressBookDataReply,
-	ChangeChainRequest,
-	InterceptorAccessDialog,
-	NewBlockArrivedOrFailedToArrive,
-	SettingsUpdated,
-	UpdateConfirmTransactionDialogPartial,
-	UpdateConfirmTransactionDialogPendingTransactionsPartial,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
-	ImportSettingsReply,
-	ActiveSigningAddressChanged,
-	UpdateRPCList,
-	SimulationUpdateStartedOrEnded,
-	PartialUpdateHomePage,
-	PartiallyParsedSimulateExecutionReply,
-	SettingsOpenedReply,
-	PopupAddOrModifyAddressWindowStateInfomation,
-	DisableInterceptorReply,
-	UnexpectedErrorOccured,
-	RetrieveWebsiteAccessReply,
-	FetchSimulationStackRequest,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
+	funtypes.Intersect(
+		funtypes.ReadonlyObject({ role: MessageToPopupRole }),
+		MessageToPopupPayload
+	)
 )

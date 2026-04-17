@@ -31,7 +31,7 @@ export function clickOutsideAlerter(ref: RefObject<HTMLDivElement>, callback: ()
 		return () => {
 			document.removeEventListener('mousedown', handleClickOutside);
 		}
-	}, [ref]);
+	}, [ref, callback]);
 }
 
 export function getIssueWithAddressString(address: string): string | undefined {

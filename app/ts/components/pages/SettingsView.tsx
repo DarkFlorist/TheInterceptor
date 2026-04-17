@@ -2,7 +2,7 @@
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { MessageToPopup, ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { RpcEntries, RpcEntry } from '../../types/rpc.js'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
@@ -13,6 +13,7 @@ import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -35,8 +36,9 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 }
 
 function ImportExport() {
-	const [settingsReply, setSettingsReply] = useState<ImportSettingsReply | undefined>(undefined)
-	const [dismissedNotification, setdDismissedNotification] = useState<boolean>(false)
+	const settingsReply = useSignal<ImportSettingsReply | undefined>(undefined)
+	const dismissedNotification = useSignal<boolean>(false)
+	const errorText = useComputed(() => settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined)
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -44,8 +46,8 @@ function ImportExport() {
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_initiate_export_settings_reply') {
-				setdDismissedNotification(false)
-				setSettingsReply(parsed)
+				dismissedNotification.value = false
+				settingsReply.value = parsed
 				return false
 			}
 			if (parsed.method !== 'popup_initiate_export_settings') return false
@@ -55,7 +57,7 @@ function ImportExport() {
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
+	}, [])
 
 	const downloadFile = (filename: string, fileContents: string) => {
 		window.URL = window.webkitURL || window.URL
@@ -89,13 +91,13 @@ function ImportExport() {
 	const exportSettings = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_get_export_settings' })
 
 	return <>
-		{ settingsReply !== undefined && settingsReply.data.success === false ?
-			<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage } />
+		{ settingsReply.value !== undefined && settingsReply.value.data.success === false ?
+			<ErrorComponent warning = { true } text = { errorText } />
 			: <></> }
-		{ settingsReply !== undefined && settingsReply.data.success === true && dismissedNotification === false ?
+		{ settingsReply.value !== undefined && settingsReply.value.data.success === true && dismissedNotification.value === false ?
 			<DinoSaysNotification
 				text = { 'Settings and address book loaded!' }
-				close = { () => setdDismissedNotification(true) }
+				close = { () => { dismissedNotification.value = true } }
 			/>
 			: <></> }
 		<div class = 'popup-button-row'>
@@ -113,8 +115,8 @@ function ImportExport() {
 }
 
 export function SettingsView() {
-	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean>(false)
-	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean>(false)
+	const useTabsInsteadOfPopup = useSignal<boolean>(false)
+	const metamaskCompatibilityMode = useSignal<boolean>(false)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -126,13 +128,13 @@ export function SettingsView() {
 				return false
 			}
 			if (parsed.method !== 'popup_requestSettingsReply') return false
-			setMetamaskCompatibilityMode(parsed.data.metamaskCompatibilityMode)
-			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
+			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
+			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
+	}, [])
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
@@ -169,12 +171,12 @@ export function SettingsView() {
 						<p className = 'paragraph'>Misc</p>
 						<CheckBoxSetting
 							text = { 'Open popups as tabs (experimental)' }
-							checked = { useTabsInsteadOfPopup }
+							checked = { useTabsInsteadOfPopup.value }
 							onInput = { requestToUseTabsInsteadOfPopup }
 						/>
 						<CheckBoxSetting
 							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
-							checked = { metamaskCompatibilityMode }
+							checked = { metamaskCompatibilityMode.value }
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 					</li>
@@ -210,7 +212,7 @@ const RpcListings = () => {
 					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load the default RPC list</button>
 				</aside>
 				<ul class = 'grid' style = '--gap-y: 0.5rem'>
-					<RpcSummary info = { latestEntry.value } />
+						<RpcSummary info = { latestEntry } />
 				</ul>
 			</>
 		)
@@ -223,21 +225,23 @@ const RpcListings = () => {
 	)
 }
 
-const RpcSummary = ({ info }: { info: RpcEntry }) => {
-	const networkName = getChainName(info.chainId)
+const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => {
+	const currentInfo = resolveSignal(info)
+	if (currentInfo === undefined) return <></>
+	const networkName = getChainName(currentInfo.chainId)
 
 	// rerender form if entry is updated in the background by specifying a unique key
-	const infoKey = JSON.stringify(serialize(RpcEntry, info))
+	const infoKey = JSON.stringify(serialize(RpcEntry, currentInfo))
 
 	return (
 		<li class = 'grid brief'>
 			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>
-				<div style = '--area: 1 / 1'><strong>{ info.name }</strong></div>
+				<div style = '--area: 1 / 1'><strong>{ currentInfo.name }</strong></div>
 				<div style = '--area: span 2 / 2'>{ networkName }</div>
-				<div>{ info.httpsRpc }</div>
+				<div>{ currentInfo.httpsRpc }</div>
 			</div>
 			<div class = 'actions'>
-				<ConfigureRpcConnection key = { infoKey } rpcInfo = { info } />
+				<ConfigureRpcConnection key = { infoKey } rpcInfo = { currentInfo } />
 			</div>
 		</li>
 	)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -12,7 +12,7 @@ import { getPrettySignerName } from '../subcomponents/signers.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
-import { Signal, useSignal } from '@preact/signals'
+import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
@@ -31,17 +31,17 @@ function Title({ icon, title} : {icon: string | undefined, title: string}) {
 function AccessRequestHeader(website: Website) {
 	return <header class = 'card-header' style = 'height: 40px'>
 		<div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
-			<WebsiteOriginText { ...website } />
+			<WebsiteOriginText website = { website } />
 		</div>
 	</header>
 }
 
 function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: AddressBookEntries, renameAddressCallBack: RenameAddressCallBack } ) {
-	const [showLogs, setShowLogs] = useState<boolean>(associatedAddresses.length > 1)
+	const showLogs = useSignal<boolean>(associatedAddresses.length > 1)
 
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px;'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
+			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ associatedAddresses.length <= 1
 						? 'The website cannot associate any addresses with each other'
@@ -55,7 +55,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 					<span class = 'icon'><ChevronIcon /></span>
 				</div>
 			</header>
-			{ !showLogs
+			{ !showLogs.value
 				? <></>
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					{ associatedAddresses.length <= 1
@@ -133,7 +133,7 @@ type AccessRequestParam = {
 	refreshActiveAddress: (accessRequestId: string) => Promise<void>
 	approve: (accessRequestId: string) => void
 	reject: (accessRequestId: string) => void
-	informationChangedRecently: () => boolean
+	informationChangedRecently: ReadonlySignal<boolean>
 }
 
 function AccessRequests(param: AccessRequestParam) {
@@ -151,10 +151,10 @@ function AccessRequests(param: AccessRequestParam) {
 
 			<nav class = 'popup-button-row'>
 				<div style = 'display: flex; flex-direction: row;'>
-					<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently() }>
+					<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
 						Deny Access
 					</button>
-					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently() }>
+					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
 						Grant Access
 					</button>
 				</div>
@@ -170,11 +170,11 @@ type Page = { page: 'Home', accessRequestId: string }
 	| { page: 'ChangeActiveAddress', accessRequestId: string }
 
 export function InterceptorAccess() {
-	const [pendingAccessRequests, setAccessRequest] = useState<PendingAccessRequests>([])
+	const pendingAccessRequests = useSignal<PendingAccessRequests>([])
 	const activeAddresses = useSignal<AddressBookEntries>([])
 	const appPage = useSignal<Page>({ page: 'Home', accessRequestId: '' })
-	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
-	const [, setTimeSinceInformationUpdate] = useState(0)
+	const informationUpdatedTimestamp = useSignal<number>(0)
+	const timeTicker = useSignal<number>(0)
 	const rpcEntries = useSignal<RpcEntries>([])
 
 	useEffect(() => {
@@ -200,9 +200,9 @@ export function InterceptorAccess() {
 			}
 			if (parsed.method === 'popup_interceptorAccessDialog' || parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
 				if (parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
-					if (pendingAccessRequests.length > 0) setInformationUpdatedTimestamp(Date.now())
+					if (pendingAccessRequests.value.length > 0) informationUpdatedTimestamp.value = Date.now()
 				}
-				setAccessRequest(parsed.data.pendingAccessRequests)
+				pendingAccessRequests.value = parsed.data.pendingAccessRequests
 				activeAddresses.value = parsed.data.activeAddresses
 				return false
 			}
@@ -210,7 +210,7 @@ export function InterceptorAccess() {
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
+	}, [])
 
 	useEffect(() => {
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' })
@@ -218,7 +218,7 @@ export function InterceptorAccess() {
 	}, [])
 
 	async function approve(accessRequestId: string) {
-		const accessRequest = pendingAccessRequests.find((request) => request.accessRequestId === accessRequestId)
+		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		const data = {
 			userReply: 'Approved' as const,
@@ -227,13 +227,13 @@ export function InterceptorAccess() {
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 			accessRequestId: accessRequest.accessRequestId,
 		}
-		setInformationUpdatedTimestamp(Date.now())
-		if (pendingAccessRequests.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
+		informationUpdatedTimestamp.value = Date.now()
+		if (pendingAccessRequests.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
 	}
 
 	async function reject(accessRequestId: string) {
-		const accessRequest = pendingAccessRequests.find((request) => request.accessRequestId === accessRequestId)
+		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		const data = {
 			userReply: 'Rejected' as const,
@@ -242,8 +242,8 @@ export function InterceptorAccess() {
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 			accessRequestId: accessRequest.accessRequestId,
 		}
-		setInformationUpdatedTimestamp(Date.now())
-		if (pendingAccessRequests.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
+		informationUpdatedTimestamp.value = Date.now()
+		if (pendingAccessRequests.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
 	}
 
@@ -258,7 +258,7 @@ export function InterceptorAccess() {
 	}
 
 	async function refreshActiveAddress(accessRequestId: string) {
-		const accessRequest = pendingAccessRequests.find((request) => request.accessRequestId === accessRequestId)
+		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', data: {
 			socket: accessRequest.socket,
@@ -269,7 +269,7 @@ export function InterceptorAccess() {
 	}
 
 	async function setActiveAddressAndInformAboutIt(accessRequestId: string, address: bigint | 'signer') {
-		const accessRequest = pendingAccessRequests.find((request) => request.accessRequestId === accessRequestId)
+		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', data: {
 			socket: accessRequest.socket,
@@ -280,10 +280,13 @@ export function InterceptorAccess() {
 		} } )
 	}
 
-	const informationChangedRecently = () => new Date().getTime() < informationUpdatedTimestamp + DISABLED_DELAY_MS
+	const informationChangedRecently = useComputed(() => {
+		timeTicker.value
+		return new Date().getTime() < informationUpdatedTimestamp.value + DISABLED_DELAY_MS
+	})
 
 	useEffect(() => {
-		const id = setInterval(() => setTimeSinceInformationUpdate((old) => old + 1), 1000)
+		const id = setInterval(() => { timeTicker.value++ }, 1000)
 		return () => clearInterval(id)
 	}, [])
 
@@ -309,8 +312,8 @@ export function InterceptorAccess() {
 		}) }
 	}
 
-	if (pendingAccessRequests.length === 0) return <main></main>
-	const pendingAccessRequest = pendingAccessRequests[0]
+	if (pendingAccessRequests.value.length === 0) return <main></main>
+	const pendingAccessRequest = pendingAccessRequests.value[0]
 	if (pendingAccessRequest === undefined) throw new Error('pending access request was undefined')
 
 	return <main>
@@ -346,7 +349,7 @@ export function InterceptorAccess() {
 					<AccessRequests
 						changeActiveAddress = { changeActiveAddress }
 						renameAddressCallBack = { renameAddressCallBack }
-						pendingAccessRequests = { pendingAccessRequests }
+						pendingAccessRequests = { pendingAccessRequests.value }
 						refreshActiveAddress = { refreshActiveAddress }
 						approve = { approve }
 						reject = { reject }
