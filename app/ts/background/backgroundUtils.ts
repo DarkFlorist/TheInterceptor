@@ -58,7 +58,15 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 
 export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
 	try {
-		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
+		const response = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
+		if (response === undefined) return undefined
+		if (typeof response === 'object' && response !== null && 'error' in response) {
+			const responseError = response.error
+			if (typeof responseError === 'object' && responseError !== null && 'message' in responseError && typeof responseError.message === 'string') {
+				throw new Error(responseError.message)
+			}
+		}
+		return PopupReplyOption.parse(response) as PopupRequestsReplyReturn<Request>
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error.message.includes('The message port closed before a response was received')) return undefined

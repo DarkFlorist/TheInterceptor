@@ -421,12 +421,8 @@ export async function popupMessageHandler(
 		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
-		return {
-			error: {
-				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
-				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-			}
-		}
+		await handleUnexpectedError(maybeParsedRequest.fullError === undefined ? new Error('Unknown parsing error') : maybeParsedRequest.fullError)
+		return undefined
 	}
 	const parsedRequest = maybeParsedRequest.value
 	try {
