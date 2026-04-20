@@ -24,7 +24,6 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getUpdatedSimulationState } from './background.js'
-import { StateOverrides } from '../types/ethSimulate-types.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -94,15 +93,6 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		simulateWithZeroBaseFee: false,
 	})
 	return inputBlocks
-}
-
-const simulateTransactionOnCurrentStack = async (
-	ethereumClientService: EthereumClientService,
-	simulationInput: SimulationStateInput,
-	transaction: PreSimulationTransaction,
-	temporaryAccountOverrides: StateOverrides = {},
-) => {
-	return await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [transaction], undefined, temporaryAccountOverrides)
 }
 
 export async function getMetadataForSimulation(
@@ -271,7 +261,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			}
 		}
 		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
-		const simulationStateAfterGnosisSafeMetaTransaction = await simulateTransactionOnCurrentStack(ethereumClientService, simulationInput, metaTransaction, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
