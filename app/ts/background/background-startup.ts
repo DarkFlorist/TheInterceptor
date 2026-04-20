@@ -16,7 +16,7 @@ import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/err
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
-import { onCloseWindowOrTab, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { onCloseWindowOrTab, publishConfirmTransactionViewSnapshot } from './windows/confirmTransaction.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
@@ -259,7 +259,7 @@ async function startup() {
 				await updateChainChangeViewWithPendingRequest()
 				return
 			case 'confirmTransaction':
-				await updateConfirmTransactionView(simulator)
+				await publishConfirmTransactionViewSnapshot(simulator)
 				return
 			case 'fetchSimulationStack':
 				await updateFetchSimulationStackRequestWithPendingRequest()

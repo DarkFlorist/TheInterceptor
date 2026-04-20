@@ -8,7 +8,7 @@ import { InterceptorTransactionStack, WebsiteCreatedEthereumUnsignedTransaction,
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, publishPopupMessageToOpenUiPorts } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
@@ -118,6 +118,33 @@ const createPendingTransactionsMessage = (
 	}
 })
 
+const createConfirmTransactionMessage = (
+	currentBlockNumber: bigint,
+	visualizedSimulatorState: UpdateConfirmTransactionDialog['data']['visualizedSimulatorState'],
+): UpdateConfirmTransactionDialog => ({
+	method: 'popup_update_confirm_transaction_dialog',
+	data: {
+		currentBlockNumber,
+		visualizedSimulatorState,
+	}
+})
+
+export async function publishConfirmTransactionViewSnapshot(simulator: Simulator) {
+	try {
+		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+		if (pendingTransactionAndSignableMessages.length === 0) return false
+		const currentBlockNumber = getFallbackCurrentBlockNumber(simulator, pendingTransactionAndSignableMessages)
+		await publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, currentBlockNumber), 'confirmTransaction')
+		await publishPopupMessageToOpenUiPorts(createConfirmTransactionMessage(currentBlockNumber, await getPopupVisualisationState()), 'confirmTransaction')
+		return true
+	} catch (error: unknown) {
+		logConfirmTransactionView('snapshot publish failed', error)
+		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return false
+		await handleUnexpectedError(error)
+		return false
+	}
+}
+
 export async function updateConfirmTransactionView(simulator: Simulator, onlyIfNotAlreadyUpdating = false) {
 	const updateSequence = ++latestConfirmTransactionViewUpdateSequence
 	let hasPendingTransactions = false
@@ -141,20 +168,14 @@ export async function updateConfirmTransactionView(simulator: Simulator, onlyIfN
 			logConfirmTransactionView('skipping stale update before final publish', { updateSequence, latestUpdateSequence: latestConfirmTransactionViewUpdateSequence })
 			return hasPendingTransactions
 		}
-		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
-			currentBlockNumber,
-			visualizedSimulatorState,
-		} }
+		const message = createConfirmTransactionMessage(currentBlockNumber, visualizedSimulatorState)
 		logConfirmTransactionView('publishing confirm transaction state', {
 			currentBlockNumber,
 			pendingCount: pendingTransactionAndSignableMessages.length,
 			hasVisualizedSimulatorState: visualizedSimulatorState !== undefined,
 			updateSequence,
 		})
-		await Promise.all([
-			publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, currentBlockNumber), 'confirmTransaction'),
-			publishPopupMessageToOpenUiPorts(message, 'confirmTransaction')
-		])
+		await publishPopupMessageToOpenUiPorts(message, 'confirmTransaction')
 		return true
 	} catch(error: unknown) {
 		logConfirmTransactionView('update failed', error)

@@ -309,6 +309,25 @@ export async function main() {
 		)
 	})
 
+	should('confirm transaction view publishes pending transactions only once per completed refresh', async () => {
+		browserMock.sentMessages.length = 0
+		await modules.browserStorageLocalSet2({
+			simulationMode: false,
+			pendingTransactionsAndMessages: [buildPendingTransaction(makePopupVisualisation(new Date('2024-01-01T00:00:05.000Z')))],
+		})
+
+		await modules.updateConfirmTransactionView(buildSimulator(124n))
+
+		assert.equal(
+			browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').length,
+			1,
+		)
+		assert.equal(
+			browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog').length,
+			1,
+		)
+	})
+
 	should('confirm transaction view still publishes pending transactions while a stale bootstrap update is overtaken', async () => {
 		browserMock.sentMessages.length = 0
 		const releasePendingTransactionsRead = browserMock.blockNextPendingTransactionsRead()
