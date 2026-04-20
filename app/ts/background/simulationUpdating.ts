@@ -24,6 +24,7 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getUpdatedSimulationState } from './background.js'
+import { StateOverrides } from '../types/ethSimulate-types.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -95,6 +96,15 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	return inputBlocks
 }
 
+const simulateTransactionOnCurrentStack = async (
+	ethereumClientService: EthereumClientService,
+	simulationInput: SimulationStateInput,
+	transaction: PreSimulationTransaction,
+	temporaryAccountOverrides: StateOverrides = {},
+) => {
+	return await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [transaction], undefined, temporaryAccountOverrides)
+}
+
 export async function getMetadataForSimulation(
 	simulationState: SimulationState,
 	ethereum: EthereumClientService,
@@ -144,11 +154,12 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
+		const simulationInput = await getCurrentSimulationInput()
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const tokenBalancesAfter = await getTokenBalancesAfterForTransaction(
 			ethereum,
 			undefined,
-			[], // we are simulating on top of mainnet, not top of our stack. Fix to simulate on right place of the stack
+			simulationInput,
 			contractExecutionResult.ethSimulateV1CallResult,
 			contractExecutionResult.executingTransaction.from
 		)
@@ -260,7 +271,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			}
 		}
 		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await simulateTransactionOnCurrentStack(ethereumClientService, simulationInput, metaTransaction, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
