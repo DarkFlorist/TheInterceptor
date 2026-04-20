@@ -384,6 +384,32 @@ async function main() {
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
 	})
 
+	should('confirm transaction view publishes pending transactions before waiting for the latest block number', async () => {
+		browserMock.sentMessages.length = 0
+		let resolveBlockNumber: ((value: bigint) => void) | undefined = undefined
+		const delayedBlockNumber = new Promise<bigint>((resolve) => {
+			resolveBlockNumber = resolve
+		})
+		const slowSimulator = {
+			...simulator,
+			ethereum: {
+				...simulator.ethereum,
+				getBlockNumber() {
+					return delayedBlockNumber
+				},
+			},
+		}
+
+		// @ts-expect-error test shim uses a minimal simulator object
+		const updatePromise = modules.updateConfirmTransactionView(slowSimulator)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+
+		resolveBlockNumber?.(123n)
+		await updatePromise
+	})
+
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 

@@ -97,31 +97,41 @@ const getVisualizedSimulatorStateForConfirmTransactionView = async (simulator: S
 	}
 }
 
+const createPendingTransactionsMessage = (
+	pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
+	currentBlockNumber: bigint,
+): UpdateConfirmTransactionDialogPendingTransactions => ({
+	method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+	data: {
+		pendingTransactionAndSignableMessages,
+		currentBlockNumber,
+	}
+})
+
 export async function updateConfirmTransactionView(simulator: Simulator, onlyIfNotAlreadyUpdating = false) {
+	let hasPendingTransactions = false
 	try {
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		logConfirmTransactionView('update requested', { pendingCount: pendingTransactionAndSignableMessages.length, onlyIfNotAlreadyUpdating })
 		if (pendingTransactionAndSignableMessages.length === 0) return false
-		const currentBlockNumber = await getCurrentBlockNumberForConfirmTransactionView(simulator, pendingTransactionAndSignableMessages)
-		const visualizedSimulatorState = await getVisualizedSimulatorStateForConfirmTransactionView(simulator, onlyIfNotAlreadyUpdating)
+		hasPendingTransactions = true
+		const fallbackCurrentBlockNumber = getFallbackCurrentBlockNumber(simulator, pendingTransactionAndSignableMessages)
+		await publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, fallbackCurrentBlockNumber), 'confirmTransaction')
+		const [currentBlockNumber, visualizedSimulatorState] = await Promise.all([
+			getCurrentBlockNumberForConfirmTransactionView(simulator, pendingTransactionAndSignableMessages),
+			getVisualizedSimulatorStateForConfirmTransactionView(simulator, onlyIfNotAlreadyUpdating),
+		])
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber,
 			visualizedSimulatorState,
 		} }
-		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: {
-				pendingTransactionAndSignableMessages,
-				currentBlockNumber,
-			}
-		}
 		logConfirmTransactionView('publishing confirm transaction state', {
 			currentBlockNumber,
 			pendingCount: pendingTransactionAndSignableMessages.length,
 			hasVisualizedSimulatorState: visualizedSimulatorState !== undefined,
 		})
 		await Promise.all([
-			publishPopupMessageToOpenUiPorts(messagePendingTransactions, 'confirmTransaction'),
+			publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, currentBlockNumber), 'confirmTransaction'),
 			publishPopupMessageToOpenUiPorts(message, 'confirmTransaction')
 		])
 		return true
@@ -130,7 +140,7 @@ export async function updateConfirmTransactionView(simulator: Simulator, onlyIfN
 		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return false
 		await handleUnexpectedError(error)
 	}
-	return false
+	return hasPendingTransactions
 }
 
 export const isConfirmTransactionFocused = async () => {
