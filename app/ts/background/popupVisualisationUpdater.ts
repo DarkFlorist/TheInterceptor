@@ -13,6 +13,7 @@ import { sendPopupMessageWithReply, sendPopupMessageToOpenWindows } from './back
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+import { hasSimulationStackInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 let abortController = new AbortController()
 
@@ -75,7 +76,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		const simulationId = popupVisualisation.simulationId + 1
 		const simulationState = await getUpdatedSimulationState(ethereum)
 		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
-		if (simulationState?.simulationStateInput === undefined || simulationState.simulationStateInput.filter((x) => x.transactions.length > 0).length === 0) {
+		if (!hasSimulationStackInput(simulationState?.simulationStateInput)) {
 			const newState = buildEmptyVisualizedState(simulationId, (await getAddressesbeingMadeRich()).length)
 			await setPopupVisualisationState(newState)
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })

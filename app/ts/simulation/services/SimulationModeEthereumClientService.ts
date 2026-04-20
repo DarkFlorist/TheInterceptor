@@ -189,10 +189,12 @@ export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimul
 	return groupedResults
 }
 
+export const hasSimulationStackInput = (simulationStateInput: SimulationStateInput | undefined) => simulationStateInput !== undefined && simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
+
 export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput): Promise<SimulationState> => {
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	if (simulationStateInput.length === 0 || (simulationStateInput[0]?.transactions.length === 0 && simulationStateInput[0]?.transactions.length === 0 && simulationStateInput.length === 1)) {
+	if (simulationStateInput.length === 0 || (simulationStateInput.length === 1 && simulationStateInput[0]?.transactions.length === 0 && simulationStateInput[0]?.signedMessages.length === 0)) {
 		// if there's no blocks, or there's an empty block (that can have state overrides), skip simulation and return empty results
 		return {
 			rpcNetwork: ethereumClientService.getRpcEntry(),

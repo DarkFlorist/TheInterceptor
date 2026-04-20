@@ -258,10 +258,8 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	if (simulationAndVisualisationResults.visualizedSimulationState.success === false) return false
-	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
-		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
-		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
+	return !simulationAndVisualisationResults.simulationStateInput
+		.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 }
 
 function PopupVisualisation(param: SimulationStateParam) {

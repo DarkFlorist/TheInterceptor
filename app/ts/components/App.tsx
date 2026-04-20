@@ -178,6 +178,7 @@ export function App() {
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
+				simulationStateInput: simState.simulationStateInput,
 				visualizedSimulationState,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPriceEstimates,

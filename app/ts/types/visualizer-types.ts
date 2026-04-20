@@ -275,6 +275,7 @@ export type SimulationAndVisualisationResults = {
 	blockNumber: bigint,
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
+	simulationStateInput: SimulationStateInput,
 	addressBookEntries: readonly AddressBookEntry[],
 	visualizedSimulationState: VisualizedSimulationState,
 	rpcNetwork: RpcNetwork,
