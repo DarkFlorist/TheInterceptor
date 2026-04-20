@@ -194,31 +194,31 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	}
 
 	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'dialog-backdrop'> </div>
+		<div class = 'dialog-panel' style = 'height: 100%;'>
+			<header class = 'dialog-panel__header panel-card__header interceptor-modal-head window-header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = '../img/internet.svg'/>
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'>
 						Website Access
 					</p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.goHome }>
+				<button class = 'panel-card__icon' aria-label = 'close' onClick = { param.goHome }>
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body'>
+			<section class = 'dialog-panel__body'>
 				<ul>
 					{ editableAccessList.value !== undefined && editableAccessList.value.length === 0 ?
 						<li>
-							<div class = 'card'>
-								<div class = 'card-content'>
-									<div class = 'media'>
-										<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
+							<div class = 'panel-card'>
+								<div class = 'panel-card__content'>
+									<div class = 'media-layout'>
+										<div class = 'media-layout__content' style = 'overflow-y: visible; overflow-x: unset;'>
 											<p className = 'paragraph'> No website is given access to The Interceptor </p>
 										</div>
 									</div>
@@ -229,14 +229,14 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					{ editableAccessList.value === undefined ? <></> : editableAccessList.value.map((access, accessListIndex) => (
 						<li>
 							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
-								<div class = 'card'>
-									<div class = 'card-header'>
-										<div class = 'card-header-icon unset-cursor' >
-											<p class = 'image is-24x24'>
+								<div class = 'panel-card'>
+									<div class = 'panel-card__header'>
+										<div class = 'panel-card__icon unset-cursor' >
+											<p class = 'media-figure media-figure--24'>
 												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon }/>
 											</p>
 										</div>
-										<div class = 'card-header-title' style = 'width: 13em'>
+										<div class = 'panel-card__title' style = 'width: 13em'>
 											<CopyToClipboard
 												content = { access.websiteAccess.website.websiteOrigin }
 												copyMessage = 'Website address copied!'
@@ -246,17 +246,17 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												</p>
 											</CopyToClipboard>
 										</div>
-										<div class = 'card-header-icon unset-cursor'>
+										<div class = 'panel-card__icon unset-cursor'>
 											<label class = 'form-control' style = 'width: 8em;'>
 												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { access: e.target.checked }) } } } />
 												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
-											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
+											<button class = 'panel-card__icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
 												<XMarkIcon />
 											</button>
 										</div>
 									</div>
-									<div class = 'card-content' style = 'margin-bottom: 0px;'>
+									<div class = 'panel-card__content' style = 'margin-bottom: 0px;'>
 										<>
 											<label class = 'form-control' style = 'margin: auto'>
 												<input type = 'checkbox' checked = { access.interceptorDisabled } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { interceptorDisabled: e.target.checked }) } } } />
@@ -287,7 +287,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 																		<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setAddressAccess(accessListIndex, addressIndex, { access: e.target.checked }) } } } />
 																		<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
 																	</label>
-																	<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
+																	<button class = 'panel-card__icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
 																		<XMarkIcon />
 																	</button>
 																</div>
@@ -305,9 +305,9 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				</ul>
 			</section>
 
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.goHome }>Cancel</button>
-				<button class = 'button is-success is-primary' onClick = { saveChanges }> { areThereChanges() ? 'Save Changes' : 'Close' } </button>
+			<footer class = 'dialog-panel__footer window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+				<button class = 'btn btn--primary' style = 'background-color: var(--negative-color)' onClick = { param.goHome }>Cancel</button>
+				<button class = 'btn btn--success' onClick = { saveChanges }> { areThereChanges() ? 'Save Changes' : 'Close' } </button>
 			</footer>
 		</div>
 	</> )

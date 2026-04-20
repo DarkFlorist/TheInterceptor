@@ -330,14 +330,14 @@ function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: S
 export function SwapVisualization(param: SwapVisualizationParams) {
 	if (param.identifiedSwap === false) return <></>
 
-	return <div class = 'notification transaction-importance-box'>
+	return <div class = 'notice-box transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Swap </p>
-			<div class = 'box swap-box'>
+			<div class = 'surface-box swap-box'>
 				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 			<p class = 'paragraph'> For </p>
-			<div class = 'box swap-box'>
+			<div class = 'surface-box swap-box'>
 				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 		</div>

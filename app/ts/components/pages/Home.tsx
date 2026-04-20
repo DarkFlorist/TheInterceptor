@@ -53,16 +53,16 @@ function FirstCardHeader(param: FirstCardParams) {
 				</ToolTip>
 			</div>
 			<div>
-				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
+				<div class = 'segmented-actions' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
 					<button
-						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
+						class = { `btn btn--primary ${ param.simulationMode.value ? '' : 'btn--outline' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
 						disabled = { param.simulationMode.value }
 						onClick = { () => enableSimulationMode(true) }>
 						Simulating
 					</button>
 					<button
-						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
+						class = { `btn btn--primary ${ param.simulationMode.value ? 'btn--outline' : ''}` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
 						disabled = { !param.simulationMode.value }
 						onClick = { () => enableSimulationMode(false) }>
@@ -82,12 +82,12 @@ type InterceptorDisabledButtonParams = {
 }
 
 function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
-	return <button disabled = { website.value === undefined } className = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
+	return <button disabled = { website.value === undefined } className = { `btn btn--small ${ interceptorDisabled.value ? 'btn--success' : 'btn--primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
 		{ interceptorDisabled.value ? <>
-			<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
+			<span class = 'ui-icon'> <img src = { ICON_ACTIVE }/> </span>
 			<span> Enable</span>
 		</> : <>
-			<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
+			<span class = 'ui-icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
 			<span> Disable</span>
 		</> }
 	</button>
@@ -128,28 +128,28 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 	const numberOfRichAddresses = useComputed(() => richList.value.filter((element) => element.makingRich).length)
 
 	return <>
-		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
+		<header class = 'panel-card__header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
+			<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
 					<input type = 'checkbox' checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
-			<div class = 'card-header-icon noselect' style = 'cursor: pointer;'>
+			<div class = 'panel-card__icon noselect' style = 'cursor: pointer;'>
 				{ numberOfRichAddresses.value === 0 ? <></> : <p class = 'paragraph checkbox-text' style = 'white-space: nowrap; color: gray; padding-right: 10px;'> (+{ numberOfRichAddresses.value } rich address{ numberOfRichAddresses.value > 1 ? 'es' : '' })</p> }
-				<span class = 'icon'><ChevronIcon /></span>
+				<span class = 'ui-icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showList.value
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
-				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
+				<div class = 'panel-card__content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
 						<input type = 'checkbox' checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
 						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } />
 					</label>
 				</div>
 			</> } </>
-			: <div class = 'card-content'>
+			: <div class = 'panel-card__content'>
 				<div style = { { display: 'flex', flexDirection: 'column' } } >
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
@@ -197,9 +197,9 @@ function FirstCard(param: FirstCardParams) {
 
 	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
 		return <>
-			<section class = 'card' style = 'margin: 10px;'>
+			<section class = 'panel-card' style = 'margin: 10px;'>
 				<FirstCardHeader { ...param }/>
-				<div class = 'card-content'>
+				<div class = 'panel-card__content'>
 					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
 				</div>
 			</section>
@@ -207,9 +207,9 @@ function FirstCard(param: FirstCardParams) {
 	}
 
 	return <>
-		<section class = 'card' style = 'margin: 10px;'>
+		<section class = 'panel-card' style = 'margin: 10px;'>
 			<FirstCardHeader { ...param }/>
-			<div class = 'card-content'>
+			<div class = 'panel-card__content'>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
@@ -228,14 +228,14 @@ function FirstCard(param: FirstCardParams) {
 				{ !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
-							<button className = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
+							<button className = 'btn btn--primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
 								<SignerLogoText
 									signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }
 									text = { `Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
 								/>
 							</button>
 						</div>
-						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
+						: <p style = 'color: var(--subtitle-text-color);' class = 'subheading-text subheading-text--sm'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
@@ -293,13 +293,13 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<p className = 'h1'> Simulation Results </p>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
-				<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
+				<button className = 'btn btn--outline btn--small' onClick = { param.openImportSimulation }>
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<ImportIcon/>
 					</span>
 					<span>Import Simulation Stack</span>
 				</button>
-				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
+				<button className = 'btn btn--small btn--destructive' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<BroomIcon />
 					</span>
@@ -344,7 +344,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				</div>
 			</> }
 		</> }
-		<div class = 'content' style = 'height: 0.1px'/>
+		<div class = 'rich-content' style = 'height: 0.1px'/>
 	</div>
 }
 

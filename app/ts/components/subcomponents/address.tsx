@@ -111,8 +111,8 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 			/>
 		</div>
 		<div class = 'log-cell'>
-			<div class = 'media-right'>
-				<button className = 'button is-primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
+			<div class = 'media-layout__aside'>
+				<button className = 'btn btn--primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
 					{ params.buttonText }
 				</button>
 			</div>
@@ -144,14 +144,14 @@ export function WebsiteOriginText({ website }: { website: SignalOrValue<Website 
 	const currentWebsite = resolveSignal(website)
 	if (currentWebsite === undefined) return <></>
 	const { icon, websiteOrigin, title } = currentWebsite
-	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
+	return <div class = 'panel-card__icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;' /> }
 		</span>
 
-		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
-			<p class = 'title is-5 is-spaced address-text' style = 'overflow: hidden;'>{ websiteOrigin }</p>
-			<p class = 'subtitle is-7' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: hidden;'> { title } </p>
+		<div class = 'media-layout__content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
+			<p class = 'heading-text heading-text--md flow-spacing-sm address-text' style = 'overflow: hidden;'>{ websiteOrigin }</p>
+			<p class = 'subheading-text subheading-text--sm' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: hidden;'> { title } </p>
 		</div>
 	</div>
 }

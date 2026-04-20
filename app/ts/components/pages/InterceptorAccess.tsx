@@ -29,8 +29,8 @@ function Title({ icon, title} : {icon: string | undefined, title: string}) {
 }
 
 function AccessRequestHeader(website: Website) {
-	return <header class = 'card-header' style = 'height: 40px'>
-		<div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
+	return <header class = 'panel-card__header' style = 'height: 40px'>
+		<div class = 'panel-card__icon noselect nopointer' style = 'width: 100%;'>
 			<WebsiteOriginText website = { website } />
 		</div>
 	</header>
@@ -40,9 +40,9 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 	const showLogs = useSignal<boolean>(associatedAddresses.length > 1)
 
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px;'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
-				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+		<div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px;'>
+			<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
+				<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ associatedAddresses.length <= 1
 						? 'The website cannot associate any addresses with each other'
 						: <> There are&nbsp;
@@ -51,13 +51,13 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 						</>
 					}
 				</p>
-				<div class = 'card-header-icon'>
-					<span class = 'icon'><ChevronIcon /></span>
+				<div class = 'panel-card__icon'>
+					<span class = 'ui-icon'><ChevronIcon /></span>
 				</div>
 			</header>
 			{ !showLogs.value
 				? <></>
-				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+				: <div class = 'panel-card__content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					{ associatedAddresses.length <= 1
 						? <DinoSays text = { 'Given its size, a tiny dinosaur wouldn\'t be expected to know any...' } />
 						: <ul>
@@ -81,19 +81,19 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 	return <>
 		{ accessRequest.requestAccessToAddress === undefined ?
 		<div style = 'margin: 10px'>
-			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
+			<p className = 'heading-text heading-text--lg' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
 				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 				<br/>
 				would like to connect to The Interceptor
 			</p>
 		</div> :
 			<>
-				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
-					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
+				<div class = 'notice-box' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
+					<p className = 'heading-text heading-text--xl' style = 'text-align: center; margin-bottom: 10px;'>
 						<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 						&nbsp;would like to connect to your account:
 					</p>
-					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
+					<div class = 'notice-box' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
 						{ accessRequest.simulationMode ?
 							<ActiveAddressComponent
 								activeAddress = { accessRequest.requestAccessToAddress }
@@ -109,7 +109,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 									disableButton = { false }
 									buttonText = { 'Refresh' }
 								/>
-								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
+								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subheading-text subheading-text--sm'>
 									{ `You can change active address by changing it directly from ${ getPrettySignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
 								</p>
 							</>
@@ -138,9 +138,9 @@ type AccessRequestParam = {
 
 function AccessRequests(param: AccessRequestParam) {
 	return <> { param.pendingAccessRequests.map((pendingRequest) => <>
-		<div class = 'card' style = 'margin-bottom: 10px;'>
+		<div class = 'panel-card' style = 'margin-bottom: 10px;'>
 			<AccessRequestHeader { ...pendingRequest.website } />
-			<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<div class = 'panel-card__content' style = 'padding-bottom: 5px;'>
 				<AccessRequest
 					renameAddressCallBack =  { (entry: AddressBookEntry) => param.renameAddressCallBack(pendingRequest.accessRequestId, entry) }
 					accessRequest = { pendingRequest }
@@ -151,10 +151,10 @@ function AccessRequests(param: AccessRequestParam) {
 
 			<nav class = 'popup-button-row'>
 				<div style = 'display: flex; flex-direction: row;'>
-					<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
+					<button className = 'btn btn--destructive' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
 						Deny Access
 					</button>
-					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
+					<button className = 'btn btn--primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
 						Grant Access
 					</button>
 				</div>
@@ -318,7 +318,7 @@ export function InterceptorAccess() {
 
 	return <main>
 		<Hint>
-			<div class = { `modal ${ appPage.value.page !== 'Home' ? 'is-active' : ''}` }>
+			<div class = { `dialog-shell ${ appPage.value.page !== 'Home' ? 'is-open' : ''}` }>
 				{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress'
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }

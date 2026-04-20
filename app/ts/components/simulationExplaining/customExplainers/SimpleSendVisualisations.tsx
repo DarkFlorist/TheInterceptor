@@ -54,7 +54,7 @@ type SimpleSendParams = {
 }
 
 export function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack, viaProxypath } : SimpleSendParams) {
-	return <div class = 'notification transaction-importance-box'>
+	return <div class = 'notice-box transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
 			<TokenOrEth
@@ -65,7 +65,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 			/>
 		</span>
 		<p class = 'paragraph'> From </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<div class = 'surface-box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter
 				{ ...sender }
 				renameAddressCallBack = { renameAddressCallBack }
@@ -73,7 +73,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 			/>
 		</div>
 		<p class = 'paragraph'> To </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<div class = 'surface-box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter
 				{ ...receiver }
 				renameAddressCallBack = { renameAddressCallBack }

@@ -101,7 +101,7 @@ export function FetchSimulationStack() {
 	return (
 		<main>
 			<Hint>
-				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+				<div class = { `dialog-shell ${ modalState.value.page !== 'noModal' ? 'is-open' : ''}` }>
 					{ modalState.value.page === 'modifyAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
@@ -113,37 +113,37 @@ export function FetchSimulationStack() {
 					: <></> }
 				</div>
 				<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
-					<header class = 'card-header window-header'>
-						<div class = 'card-header-icon unset-cursor'>
-							<span class = 'icon'>
+					<header class = 'panel-card__header window-header'>
+						<div class = 'panel-card__icon unset-cursor'>
+							<span class = 'ui-icon'>
 								<img src = '../img/access-key.svg'/>
 							</span>
 						</div>
-						<div class = 'card-header-title'>
+						<div class = 'panel-card__title'>
 							<p className = 'paragraph'>
 								Interceptor Simulation Stack Request
 							</p>
 						</div>
 					</header>
-					<div class = 'card-content'>
-						<article class = 'media'>
+					<div class = 'panel-card__content'>
+						<article class = 'media-layout'>
 							{
 								changeRequest.value.website.icon === undefined
 									? <></>
-									: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
-										<div class = 'image is-64x64'>
+									: <figure class = 'media-layout__aside' style = 'margin: auto; display: block; padding: 20px'>
+										<div class = 'media-figure media-figure--64'>
 											<img src = { changeRequest.value.website.icon }/>
 										</div>
 									</figure>
 							}
 						</article>
-						<div class = 'media-content' style = 'padding-bottom: 10px'>
-							<div class = 'content'>
-								<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+						<div class = 'media-layout__content' style = 'padding-bottom: 10px'>
+							<div class = 'rich-content'>
+								<p className = 'heading-text' style = 'white-space: normal; text-align: center; padding: 10px;'>
 									<b>	{ changeRequest.value.website.websiteOrigin } </b>
 									would like to retrieve your Simulation Stack
 								</p>
-								<div class = 'notification transaction-importance-box simulation-stack-view'>
+								<div class = 'notice-box transaction-importance-box simulation-stack-view'>
 									<div style = 'width: 100%;'>
 										<p class = 'paragraph' style = { { minWidth: '400px' } }> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
 										<div class = 'sub-importance-box'>
@@ -170,13 +170,13 @@ export function FetchSimulationStack() {
 						</div>
 						<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 							<button
-								className = { 'button is-danger' }
+								className = { 'btn btn--destructive' }
 								style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 								onClick = { reject } >
 								Don't allow
 							</button>
 							<button
-								className = { 'button is-primary' }
+								className = { 'btn btn--primary' }
 								disabled = { false }
 								style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 								onClick = { approve }>
@@ -186,7 +186,7 @@ export function FetchSimulationStack() {
 					</div>
 				</div>
 
-				<div class = 'content' style = 'height: 0.1px'/>
+				<div class = 'rich-content' style = 'height: 0.1px'/>
 			</Hint>
 		</main>
 	)

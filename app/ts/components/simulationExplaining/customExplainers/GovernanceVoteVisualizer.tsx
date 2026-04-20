@@ -25,7 +25,7 @@ function MissingAbi(params: MissingAbiParams) {
 		<ErrorComponent warning = { false } text = { params.errorMessage }/>
 		<div style = 'display: flex; justify-content: center; padding-top: 10px'>
 			{ params.addressBookEntry === undefined ? <></> :
-				<button class = { 'button is-primary' } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
+				<button class = { 'btn btn--primary' } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
 					Add Abi
 				</button>
 			}
@@ -45,16 +45,15 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 	}
 
 	return <>
-		<div class = 'notification transaction-importance-box'>
+		<div class = 'notice-box transaction-importance-box'>
 			<div style = 'display: flex; justify-content: center;' >
 				<p style = { { 'font-size': 'var(--big-font-size)' } } >
 					Vote&nbsp;<b>{ interpretSupport(resolvedInputParams.support) }</b>&nbsp;{`for proposal: ${ resolvedInputParams.proposalId } `}
 				</p>
 			</div>
 		</div>
-
 		{ resolvedInputParams.reason !== undefined || resolvedInputParams.signature !== undefined || resolvedInputParams.voter !== undefined || resolvedInputParams.params !== undefined ? <>
-			<div class = 'container'>
+			<div class = 'layout-container'>
 				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
 					{ resolvedInputParams.reason !== undefined ? <>
 						<CellElement text = 'Reason:'/>
@@ -117,7 +116,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		return <div style = 'display: flex; justify-content: center;'>
 			{ simTx.value.transaction.to !== undefined && 'abi' in simTx.value.transaction.to && simTx.value.transaction.to.abi !== undefined ?
 				<button
-					class = { 'button is-primary' }
+					class = { 'btn btn--primary' }
 					onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }
 					disabled = { false }
 				>
@@ -209,13 +208,13 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					{ simulateExecutionReply.value === undefined ? <></> :
-						<button class = { 'button is-primary is-small' } onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }>Refresh</button>
+						<button class = { 'btn btn--primary btn--small' } onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }>Refresh</button>
 					}
 				</div>
 			</span>
 		</div>
 
-		<div class = 'notification dashed-notification'>
+		<div class = 'notice-box dashed-notification'>
 			<ShowSuccessOrFailure
 				simulateExecutionReply = { simulateExecutionReply }
 				renameAddressCallBack = { param.renameAddressCallBack }

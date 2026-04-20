@@ -23,7 +23,7 @@ function SimulationInput({ input, disabled, isValid }: SimulationInputParams) {
 	const ref = createRef<HTMLInputElement>()
 	useEffect(() => { ref.current?.focus() }, [])
 	return <input
-		className = 'input is-spaced'
+		className = 'text-field flow-spacing-sm'
 		type = 'text'
 		onInput = { (e) => { input.value = e.currentTarget.value } }
 		ref = { ref }
@@ -64,27 +64,27 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 	}
 
 	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'dialog-backdrop'> </div>
+		<div class = 'dialog-panel'>
+			<header class = 'dialog-panel__header panel-card__header interceptor-modal-head window-header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'> { 'Import Interceptor Simulation Stack' } </p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'panel-card__icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
-					<div class = 'card-content'>
-						<div class = 'media'>
-							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-								<div class = 'container' style = 'margin-bottom: 10px;'>
+			<section class = 'dialog-panel__body'>
+				<div class = 'panel-card' style = 'margin: 10px;'>
+					<div class = 'panel-card__content'>
+						<div class = 'media-layout'>
+							<div class = 'media-layout__content' style = 'overflow-y: unset; overflow-x: unset;'>
+								<div class = 'layout-container' style = 'margin-bottom: 10px;'>
 									<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 										<CellElement element = { <Text text = { 'Interceptor Simulation Stack: ' }/> }/>
 										<CellElement element = { <>
@@ -101,8 +101,8 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 					{ errorString.value === undefined ? <></> : <Notice text = { errorString.value} /> }
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { importStack } disabled = { isSubmitButtonDisabled.value }> { 'Import' } </button>
+			<footer class = 'dialog-panel__footer window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+				<button class = 'btn btn--success' onClick = { importStack } disabled = { isSubmitButtonDisabled.value }> { 'Import' } </button>
 			</footer>
 		</div>
 	</> )

@@ -29,8 +29,8 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 						<p class = 'address-text noselect nopointer' style = 'color: var(--text-color)'>{ name }</p>
 					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>
-						<span class = 'icon'>
+					<button className = 'btn btn--primary btn--small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>
+						<span class = 'ui-icon'>
 							<img src = '../img/rename.svg'/>
 						</span>
 					</button>

@@ -48,8 +48,8 @@ const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal,
 		case 'No Delay': return <></>
 		case 'Until': return <input type = 'datetime-local' class = 'timepicker-datetime-local' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
-			<input class = 'input' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
-			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' }/>
+			<input class = 'text-field' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
+			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline btn--small' }/>
 		</div>
 		default: assertNever(mode.value)
 	}
@@ -140,10 +140,10 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 		<div style = 'display: flex; justify-content: space-between'>
 			<p class = 'paragraph' style = 'align-content: center;'> { startText } </p>
 			<div style = 'display: grid; grid-template-columns: auto auto auto; column-gap: 10px; padding-left: 5px'>
-				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' }/>
+				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline btn--small' }/>
 				<TimePickerModeViews mode = { temporaryMode } absoluteTime = { temporaryAbsoluteTime } deltaValue = { temporaryDeltaValue } deltaUnit = { temporaryDeltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue }/>
 
-				<button class = 'btn is-small is-primary' onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
+				<button class = 'btn btn--small btn--primary' onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
 					Commit
 				</button>
 			</div>

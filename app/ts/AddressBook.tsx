@@ -32,7 +32,7 @@ type FilterKey = keyof typeof filterDefs
 
 function FilterLink(param: { name: FilterKey, currentFilter: FilterKey, setActiveFilter: (activeFilter: FilterKey) => void }) {
 	return <a
-		class = { param.currentFilter === param.name ? 'is-active' : '' }
+		class = { param.currentFilter === param.name ? 'is-open' : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
 		{ param.name }
 	</a>
@@ -52,24 +52,24 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 		param.close()
 	}
 	return <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'dialog-backdrop'> </div>
+		<div class = 'dialog-panel'>
+			<header class = 'dialog-panel__header panel-card__header interceptor-modal-head window-header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'> { `Remove ${ filterDefs[param.category] }` } </p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'panel-card__icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
-					<div class = 'card-content'>
+			<section class = 'dialog-panel__body'>
+				<div class = 'panel-card' style = 'margin: 10px;'>
+					<div class = 'panel-card__content'>
 						<BigAddress
 							addressBookEntry = { param.addressBookEntry }
 							renameAddressCallBack = { param.renameAddressCallBack }
@@ -77,9 +77,9 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 					</div>
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { remove }> { 'Remove' } </button>
-				<button class = 'button is-warning is-danger' onClick = { param.close }>Cancel</button>
+			<footer class = 'dialog-panel__footer window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+				<button class = 'btn btn--success' onClick = { remove }> { 'Remove' } </button>
+				<button class = 'btn btn--destructive' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
 	</>
@@ -103,10 +103,10 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 	}
 
 	return (
-		<div class = 'card' style = { { marginLeft: '1rem', marginRight: '1rem', marginBottom: '1rem' } }>
-			<div class = 'card-content' style = 'width: 500px;'>
-				<div class = 'media' style = { { alignItems: 'stretch' } }>
-					<div class = 'media-content' style = {{ overflowY: 'visible', overflowX: 'unset', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+		<div class = 'panel-card' style = { { marginLeft: '1rem', marginRight: '1rem', marginBottom: '1rem' } }>
+			<div class = 'panel-card__content' style = 'width: 500px;'>
+				<div class = 'media-layout' style = { { alignItems: 'stretch' } }>
+					<div class = 'media-layout__content' style = {{ overflowY: 'visible', overflowX: 'unset', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 						<div style = 'padding-bottom: 10px; height: 40px'>
 							{ entry.type === 'empty'
 								? <></>
@@ -153,11 +153,11 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 						</div>
 					</div>
 
-					<div class = 'content' style = 'color: var(--text-color); display: flex; flex-direction: column; justify-content: space-between;'>
-						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { conditionallyRemoveEntry }>
+					<div class = 'rich-content' style = 'color: var(--text-color); display: flex; flex-direction: column; justify-content: space-between;'>
+						<button class = 'panel-card__icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { conditionallyRemoveEntry }>
 							<XMarkIcon />
 						</button>
-						<button class = 'button is-primary is-small' onClick = { conditionallyEditEntry }>Edit</button>
+						<button class = 'btn btn--primary btn--small' onClick = { conditionallyEditEntry }>Edit</button>
 					</div>
 				</div>
 			</div>
@@ -307,20 +307,20 @@ export function AddressBook() {
 	return (
 		<main>
 			<Hint>
-				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
+				<div class = 'layout-columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
 					<div style = { { padding: '1rem 0'} }>
 						<div style = 'padding: 10px;'>
-							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain } buttonClassses = 'button is-primary chainSelector'/>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain } buttonClassses = 'btn btn--primary chainSelector'/>
 						</div>
-						<aside class = 'menu'>
-							<ul class = 'menu-list'>
+						<aside class = 'nav-menu'>
+							<ul class = 'nav-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
 								<ul>
 									<li> <FilterLink name = 'My Active Addresses' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'My Contacts' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>
-							<ul class = 'menu-list'>
+							<ul class = 'nav-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
 								<ul>
 									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
@@ -333,8 +333,8 @@ export function AddressBook() {
 					</div>
 					<div style = { { display: 'grid', gridTemplateRows: 'min-content 1fr', rowGap: '1rem', height: '100vh', paddingTop: '1rem' } }>
 						<div style = { { display: 'grid', gridTemplateColumns: '1fr max-content', columnGap: '1rem', padding: '0 1rem', alignItems: 'center' } }>
-							<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { viewFilter.value.searchString } onInput = { e => search(e.currentTarget.value) } />
-							<button class = 'button is-primary' onClick = { () => openNewAddress(viewFilter.value.activeFilter) }>
+							<input class = 'text-field' type = 'text' placeholder = 'Search In Category' value = { viewFilter.value.searchString } onInput = { e => search(e.currentTarget.value) } />
+							<button class = 'btn btn--primary' onClick = { () => openNewAddress(viewFilter.value.activeFilter) }>
 								{ `Add New ${ filterDefs[viewFilter.value.activeFilter] }` }
 							</button>
 						</div>
@@ -352,7 +352,7 @@ export function AddressBook() {
 					</div>
 				</div>
 
-				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }` }>
+				<div class = { `dialog-shell ${ modalState.value.page !== 'noModal' ? 'is-open' : '' }` }>
 					{ modalState.value.page === 'addNewAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }

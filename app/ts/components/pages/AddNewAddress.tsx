@@ -52,7 +52,7 @@ function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
 	useEffect(() => { ref.current?.focus() }, [])
 	return <input
-		className = 'input title is-5 is-spaced'
+		className = 'text-field heading-text heading-text--md flow-spacing-sm'
 		type = 'text'
 		value = { nameInput }
 		placeholder = { 'What should we call this address?' }
@@ -73,7 +73,7 @@ type AddressInputParams = {
 function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
 	return <input
 		disabled = { disabled }
-		className = 'input subtitle is-7 is-spaced'
+		className = 'text-field subheading-text subheading-text--sm flow-spacing-sm'
 		type = 'text'
 		value = { addressInput }
 		placeholder = { '0x0...' }
@@ -105,7 +105,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	const ref = createRef<HTMLInputElement>()
 	useEffect(() => { ref.current?.focus() }, [])
 	return <input
-		className = 'input is-spaced'
+		className = 'text-field flow-spacing-sm'
 		type = 'text'
 		value = { abiInput }
 		placeholder = { 'no abi' }
@@ -170,36 +170,36 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { askForAddressAccess }))
 
 	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
-	return <div class = 'media'>
-		<div class = 'media-left'>
-			<figure class = 'image'>
+	return <div class = 'media-layout'>
+		<div class = 'media-layout__aside'>
+			<figure class = 'media-figure'>
 				<IncompleteAddressIcon addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } logoUri = { logoUri }/>
 			</figure>
 		</div>
-		<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-			<div class = 'container' style = 'margin-bottom: 10px;'>
+		<div class = 'media-layout__content' style = 'overflow-y: unset; overflow-x: unset;'>
+			<div class = 'layout-container' style = 'margin-bottom: 10px;'>
 				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 					<CellElement element = { <Text text = { 'Address type: ' }/> }/>
-					<div style = { { justifyContent: 'right', display: 'flex' } }> <DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' }/> </div>
+					<div style = { { justifyContent: 'right', display: 'flex' } }> <DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline btn--small' }/> </div>
 					<CellElement element = { <Text text = { 'Chain: ' }/> }/>
-					<div style = { { justifyContent: 'right', display: 'flex' } }> <ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' }/> </div>
+					<div style = { { justifyContent: 'right', display: 'flex' } }> <ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline btn--small' }/> </div>
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
 					<CellElement element = { <NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/>
 					<CellElement element = { <AddressInput disabled = { modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
+						<CellElement element = { <input disabled = { disableDueToSource } className = 'text-field subheading-text subheading-text--sm flow-spacing-sm' style = 'width: 100%' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
+						<CellElement element = { <input disabled = { disableDueToSource } className = 'text-field subheading-text subheading-text--sm flow-spacing-sm' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
 					</> : <></> }
 					<CellElement element = { <Text text = { 'Abi: ' }/> }/>
 					<CellElement element = { <>
 						<AbiInput abiInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
 						<div style = 'padding-left: 5px'/>
-						<button class = 'btn btn--outline is-small' disabled = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan.value || !blockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromBlockExplorer() } }> Fetch from Block Explorer</button>
+						<button class = 'btn btn--outline btn--small' disabled = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan.value || !blockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromBlockExplorer() } }> Fetch from Block Explorer</button>
 					</> }/>
 				</span>
 			</div>
@@ -407,24 +407,24 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 	const incompleteAddressBookEntry = useComputed(() => param.modifyAddressWindowState.value.incompleteAddressBookEntry )
 	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'dialog-backdrop'> </div>
+		<div class = 'dialog-panel'>
+			<header class = 'dialog-panel__header panel-card__header interceptor-modal-head window-header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'> { getCardTitle() } </p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'panel-card__icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
-					<div class = 'card-content'>
+			<section class = 'dialog-panel__body'>
+				<div class = 'panel-card' style = 'margin: 10px;'>
+					<div class = 'panel-card__content'>
 						<RenderIncompleteAddressBookEntry
 							modifyAddressWindowState = { param.modifyAddressWindowState }
 							rpcEntries = { param.rpcEntries }
@@ -445,12 +445,12 @@ export function AddNewAddress(param: AddAddressParam) {
 					}
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { !areInputsValid.value }>
+			<footer class = 'dialog-panel__footer window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'btn btn--success' onClick = { createAndSwitch } disabled = { !areInputsValid.value }>
 					{ param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' }
 				</button> }
-				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
+				<button class = 'btn btn--success' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'btn btn--primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
 	</> )

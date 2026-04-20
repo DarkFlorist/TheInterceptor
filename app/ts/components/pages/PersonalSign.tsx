@@ -93,20 +93,20 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 
 export function SignatureHeader(params: SignatureHeaderParams) {
 	const removeSignedMessage = params.removeTransactionOrSignedMessage
-	return <header class = 'card-header'>
-		<div class = 'card-header-icon unset-cursor'>
-			<span class = 'icon'>
+	return <header class = 'panel-card__header'>
+		<div class = 'panel-card__icon unset-cursor'>
+			<span class = 'ui-icon'>
 				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+		<p class = 'panel-card__title' style = 'white-space: nowrap;'>
 			{ identifySignature(params.visualizedPersonalSignRequest).title }
 		</p>
-		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
+		<p class = 'panel-card__icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
 			<WebsiteOriginText website = { params.visualizedPersonalSignRequest.website } />
 		</p>
 		{ removeSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
+			? <button class = 'panel-card__icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
 				<XMarkIcon />
 			</button>
 			: <></>
@@ -384,20 +384,20 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+	return <div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
+			<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Extra details
 			</p>
-			<div class = 'card-header-icon'>
-				<span class = 'icon'><ChevronIcon /></span>
+			<div class = 'panel-card__icon'>
+				<span class = 'ui-icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary.value
 			? <></>
 			: <>
-				<div class = 'card-content'>
-					<div class = 'container' style = 'margin-bottom: 10px;'>
+				<div class = 'panel-card__content'>
+					<div class = 'layout-container' style = 'margin-bottom: 10px;'>
 						<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
 							<ExtraDetailsInner visualizedPersonalSignRequest = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
 						</span>
@@ -410,13 +410,13 @@ function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: 
 
 function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+	return <div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
+			<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Raw message
 			</p>
-			<div class = 'card-header-icon'>
-				<span class = 'icon'><ChevronIcon /></span>
+			<div class = 'panel-card__icon'>
+				<span class = 'ui-icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary.value
@@ -454,10 +454,10 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 const HALF_HEADER_HEIGHT = 48 / 2
 
 export function SignatureCard(params: SignatureCardParams) {
-	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
+	return <div class = 'panel-card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 		<SignatureHeader { ...params }/>
-		<div class = 'card-content' style = 'padding-bottom: 5px;'>
-			<div class = 'container'>
+		<div class = 'panel-card__content' style = 'padding-bottom: 5px;'>
+			<div class = 'layout-container'>
 				<SignRequest { ...params }/>
 			</div>
 			<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>

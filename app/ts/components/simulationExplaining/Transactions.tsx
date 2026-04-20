@@ -143,10 +143,10 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	const addressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.addressBookEntries)
 	const namedTokenIds = useComputed(() => param.simulationAndVisualisationResults.value.namedTokenIds)
 	return (
-		<div class = 'card'>
+		<div class = 'panel-card'>
 			<TransactionHeader simTx = { param.simTx } removeTransactionOrSignedMessage = { remove } />
-			<div class = 'card-content' style = 'padding-bottom: 5px;'>
-				<div class = 'container'>
+			<div class = 'panel-card__content' style = 'padding-bottom: 5px;'>
+				<div class = 'layout-container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
 				{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>

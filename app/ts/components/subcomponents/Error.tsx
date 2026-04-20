@@ -24,8 +24,8 @@ export function ErrorComponent(props: ErrorProps) {
 	}
 	return (
 		<div style = { containerStyle }>
-			<div className = 'notification' style = { `background-color: ${ boxColor }; display: flex; align-items: center; padding: 10px`}>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
+			<div className = 'notice-box' style = { `background-color: ${ boxColor }; display: flex; align-items: center; padding: 10px`}>
+				<span class = 'ui-icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
 				<p className = 'paragraph' style = { `margin-left: 10px; color: ${ textColor }` }> { resolveSignal(props.text) } </p>
@@ -37,7 +37,7 @@ export function ErrorComponent(props: ErrorProps) {
 export function Notice(props: ErrorProps) {
 	return (
 		<div>
-			<div className = 'notification' style = { 'background-color: unset; display: flex; align-items: center; padding: 0px;' }>
+			<div className = 'notice-box' style = { 'background-color: unset; display: flex; align-items: center; padding: 0px;' }>
 				<p className = 'paragraph' style = 'margin-left: 10px'> { resolveSignal(props.text) } </p>
 			</div>
 		</div>
@@ -55,7 +55,7 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'
 	return (
 		<div>
-			<div className = 'notification' style = { `background-color: ${ boxColor }; padding: 10px;` }>
+			<div className = 'notice-box' style = { `background-color: ${ boxColor }; padding: 10px;` }>
 				<label class = 'form-control' style = { `color: ${ textColor }; font-size: 1em;` }>
 					<input type = 'checkbox'
 						checked = { props.checked.value }
@@ -104,9 +104,9 @@ type UnexpectedErrorParams = {
 export function UnexpectedError({ error, close }: UnexpectedErrorParams) {
 	if (error === undefined) return <></>
 	return (
-		<div className = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
+		<div className = 'notice-box' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
 			<div style = 'display: flex; padding-bottom: 10px;'>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
+				<span class = 'ui-icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
 				<p className = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }>
@@ -117,7 +117,7 @@ export function UnexpectedError({ error, close }: UnexpectedErrorParams) {
 				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { error.message } </p>
 			</div>
 			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>
+				<button class = 'btn btn--success' onClick = { close }> { 'close' } </button>
 			</div>
 		</div>
 	)

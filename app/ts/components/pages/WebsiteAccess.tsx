@@ -284,7 +284,7 @@ const WebsiteSettingsDetail = () => {
 	if (selectedWebsiteAccess.value === undefined) return <></>
 
 	return (
-		<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+		<div class = { `dialog-shell ${ modalState.value.page !== 'noModal' ? 'is-open' : ''}` }>
 			<FullFrameWindow>
 				<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
 					<header style = { { paddingBlock: '1rem' } }>

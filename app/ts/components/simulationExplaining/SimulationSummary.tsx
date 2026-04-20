@@ -362,7 +362,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 			/>
 		}
 
-		<div class = 'content' style = 'margin-bottom: 0px;'>
+		<div class = 'rich-content' style = 'margin-bottom: 0px;'>
 			<Erc20BalanceChange
 				erc20TokenBalanceChanges = { param.balanceSummary.erc20TokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
@@ -423,18 +423,18 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const tokenEventsSingular = 'One token event or an ETH transaction'
 	const tokenResults = extractTokenEvents(simTx.events)
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
-				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+		<div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px'>
+			<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
+				<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
-				<div class = 'card-header-icon'>
-					<span class = 'icon'><ChevronIcon /></span>
+				<div class = 'panel-card__icon'>
+					<span class = 'ui-icon'><ChevronIcon /></span>
 				</div>
 			</header>
 			{ !showLogs.value
 				? <></>
-				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+				: <div class = 'panel-card__content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<TokenLogAnalysis
 						simulatedAndVisualizedTransaction = { simTx }
 						identifiedSwap = { identifiedSwap }
@@ -458,18 +458,18 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	if (simTx === undefined) return <></>
 	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
-				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+		<div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px'>
+			<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
+				<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ nonTokenLogs.length === 0 ? 'No non-token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(nonTokenLogs.length)) } non-token event${ nonTokenLogs.length > 1 ? 's' : '' }` }
 				</p>
-				<div class = 'card-header-icon'>
-					<span class = 'icon'><ChevronIcon /></span>
+				<div class = 'panel-card__icon'>
+					<span class = 'ui-icon'><ChevronIcon /></span>
 				</div>
 			</header>
 			{ !showLogs.value
 				? <></>
-				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+				: <div class = 'panel-card__content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 				</div>
 			}
@@ -506,21 +506,21 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+	return <div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
+			<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 				{ numberOfChanges === 0 ? 'No changes in accounts' : `${  upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(numberOfChanges)) } account${ numberOfChanges > 1 ? 's' : '' } changing` }
 			</p>
-			<div class = 'card-header-icon'>
-				<span class = 'icon'><ChevronIcon /></span>
+			<div class = 'panel-card__icon'>
+				<span class = 'ui-icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary.value
 			? <></>
-			: <div class = 'card-content'>
-				<div class = 'container' style = 'margin-bottom: 10px;'>
+			: <div class = 'panel-card__content'>
+				<div class = 'layout-container' style = 'margin-bottom: 10px;'>
 					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
-						: <div class = 'notification transaction-importance-box'>
+						: <div class = 'notice-box transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
@@ -536,7 +536,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 
 				{ notOwnAddresses.length === 0
 					? <></>
-					: <div class = 'container'>
+					: <div class = 'layout-container'>
 						{ notOwnAddresses.map( ([_index, balanceSummary]) => {
 							return <>
 								<SummarizeAddress
@@ -593,37 +593,37 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : 
 		if (simTx.quarantine) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
-	return <header class = 'card-header'>
-		<div class = 'card-header-icon unset-cursor'>
-			<span class = 'icon'>
+	return <header class = 'panel-card__header'>
+		<div class = 'panel-card__icon unset-cursor'>
+			<span class = 'ui-icon'>
 				<img src = { icon.value } />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+		<p class = 'panel-card__title' style = 'white-space: nowrap;'>
 			{ identifyTransaction(simTx).title }
 		</p>
 		{ simTx.transaction.to === undefined
 			? <></>
-			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
+			: <p class = 'panel-card__icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText website = { simTx.website } />
 			</p>
 		}
 		{ removeTransactionOrSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }><XMarkIcon /></button>
+			? <button class = 'panel-card__icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }><XMarkIcon /></button>
 			: <></>
 		}
 	</header>
 }
 
 export function TransactionHeaderForFailedToSimulate({ website } : { website: Website }) {
-	return <header class = 'card-header'>
-		<div class = 'card-header-icon unset-cursor'>
-			<span class = 'icon'>
+	return <header class = 'panel-card__header'>
+		<div class = 'panel-card__icon unset-cursor'>
+			<span class = 'ui-icon'>
 				<img src = { '../img/error-icon.svg' } />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
-		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
+		<p class = 'panel-card__title' style = 'white-space: nowrap;'> Not simulated </p>
+		<p class = 'panel-card__icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
 			<WebsiteOriginText website = { website } />
 		</p>
 	</header>
@@ -698,21 +698,21 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	}
 
 	return (
-		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
-			<header class = 'card-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'panel-card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
+			<header class = 'panel-card__header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = { icon } />
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'> Simulation Outcome </p>
 				</div>
 			</header>
-			<div class = 'card-content'>
-				<div class = 'container' style = 'margin-bottom: 10px'>
+			<div class = 'panel-card__content'>
+				<div class = 'layout-container' style = 'margin-bottom: 10px'>
 					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
-						: <div class = 'notification transaction-importance-box'>
+						: <div class = 'notice-box transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
@@ -725,19 +725,19 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						</div>
 					}
 				</div>
-				<div class = 'card'>
-					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
-						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+				<div class = 'panel-card'>
+					<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
+						<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 							{ notOwnAddresses.length === 0 ? 'No changes in other accounts' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(notOwnAddresses.length)) } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
 						</p>
-						<div class = 'card-header-icon'>
-							<span class = 'icon'><ChevronIcon /></span>
+						<div class = 'panel-card__icon'>
+							<span class = 'ui-icon'><ChevronIcon /></span>
 						</div>
 					</header>
 					{ !showOtherAccountChanges.value
 						? <></>
-						: <div class = 'card-content'>
-							<div class = 'container'>
+						: <div class = 'panel-card__content'>
+							<div class = 'layout-container'>
 								{ notOwnAddresses.length === 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
 									<SummarizeAddress
 										balanceSummary = { balanceSummary }
@@ -757,7 +757,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						<CopyToClipboard
 							copyFunction = { exportEthSimulateInput }
 							copyMessage = 'Interceptor Simulation input copied!'
-							classNames = { 'btn btn--outline is-small' }
+							classNames = { 'btn btn--outline btn--small' }
 						>
 							<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
 								<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
@@ -802,18 +802,18 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gas, transactionIdentifier: transactionIdentifier } })
 	}
 
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+	return <div class = 'panel-card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'panel-card__header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
+			<p class = 'panel-card__title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Raw transaction information
 			</p>
-			<div class = 'card-header-icon'>
-				<span class = 'icon'><ChevronIcon /></span>
+			<div class = 'panel-card__icon'>
+				<span class = 'ui-icon'><ChevronIcon /></span>
 			</div>
 		</header>
 		{ !showSummary.value
 			? <></>
-			: <div class = 'card-content'>
+			: <div class = 'panel-card__content'>
 				<div style = { { display: 'flex', flexDirection: 'column', rowGap: '1rem' } } >
 					<dl class = 'grid key-value-pair'>
 						<dt>Transaction type</dt>
@@ -839,7 +839,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 								/>
 							</span>
 							&nbsp;gas&nbsp;
-							<button disabled = { gasLimit.deepValue === transaction.gas } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+							<button disabled = { gasLimit.deepValue === transaction.gas } class = 'btn btn--primary btn--small' onClick = { forceSetGasLimitForTransaction }>Change</button>
 						</dd>
 						<dt>Nonce: </dt>
 						<dd>{ transaction.nonce.toString(10) }</dd>

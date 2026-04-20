@@ -28,43 +28,43 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	const signerAddressName = param.activeAddresses.value.find((x) => x.address === getSignerAccount() )?.name
 
 	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'dialog-backdrop'> </div>
+		<div class = 'dialog-panel' style = 'height: 100%;'>
+			<header class = 'dialog-panel__header panel-card__header interceptor-modal-head window-header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'>
 					Change Active Address
 					</p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'panel-card__icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
 				</button>
 			</header>
-			<section class = 'modal-card-body'>
+			<section class = 'dialog-panel__body'>
 				<ul>
 					<li>
-						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
-							<div class = 'card-content hoverable' style = 'cursor: pointer;'>
-								<div class = 'media'>
-									<div class = 'media-left'>
-										<figure class = 'image'>
+						<div class = 'panel-card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
+							<div class = 'panel-card__content hoverable' style = 'cursor: pointer;'>
+								<div class = 'media-layout'>
+									<div class = 'media-layout__aside'>
+										<figure class = 'media-figure'>
 											{ getSignerLogo(param.signerName) === undefined ?
 												<div style = 'border: 1px solid white; width: 40px; height: 40px;'>
-													<p class = 'title' style = 'text-align: center'> S </p>
+													<p class = 'heading-text' style = 'text-align: center'> S </p>
 												</div>
 												: <img src = { getSignerLogo(param.signerName) } style = 'max-width: 40px; max-height: 40px'/>
 											}
 										</figure>
 									</div>
 
-									<div class = 'media-content' style = 'overflow-y: hidden;'>
-										<p class = 'title is-5 is-spaced'>{ `Use address from ${ getPrettySignerName(param.signerName) }` }</p>
-										<p class = 'subtitle is-7'> { signerAddressName === undefined ? '' : signerAddressName }</p>
+									<div class = 'media-layout__content' style = 'overflow-y: hidden;'>
+										<p class = 'heading-text heading-text--md flow-spacing-sm'>{ `Use address from ${ getPrettySignerName(param.signerName) }` }</p>
+										<p class = 'subheading-text subheading-text--sm'> { signerAddressName === undefined ? '' : signerAddressName }</p>
 									</div>
 								</div>
 							</div>
@@ -75,8 +75,8 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						? <></>
 						: param.activeAddresses.value.map((activeAddress) => (
 							<li>
-								<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
-									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
+								<div class = 'panel-card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
+									<div class = 'panel-card__content hoverable ' style = 'cursor: pointer;'>
 										<BigAddress
 											addressBookEntry = { activeAddress }
 											noCopying = { true }
@@ -84,7 +84,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 											renameAddressCallBack = { param.renameAddressCallBack }
 										/>
 										{ isSignerConnected(activeAddress.address) ?
-											<div class = 'content' style = 'color: var(--text-color)'>
+											<div class = 'rich-content' style = 'color: var(--text-color)'>
 												<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
 											</div> : <></>
 										}
@@ -96,9 +96,9 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 
 				</ul>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary is-success' onClick = { param.close }> Close </button>
-				<button class = 'button is-primary' onClick = { changePageToAddAddress }> Add New Address </button>
+			<footer class = 'dialog-panel__footer window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+				<button class = 'btn btn--success' onClick = { param.close }> Close </button>
+				<button class = 'btn btn--primary' onClick = { changePageToAddAddress }> Add New Address </button>
 			</footer>
 		</div>
 	</> )

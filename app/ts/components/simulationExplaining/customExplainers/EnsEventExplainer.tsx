@@ -413,7 +413,7 @@ export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
 	return <>
 		{ param.ensEvents.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed').map((ensEvent) =>
 			<div class = 'vertical-center'>
-				<div class = 'box token-box vertical-center positive-box' style = 'display: inline-block'>
+				<div class = 'surface-box token-box vertical-center positive-box' style = 'display: inline-block'>
 					<VisualizeEnsEvent ensEvent = { ensEvent } textColor = { param.textColor } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/>
 				</div>
 			</div>

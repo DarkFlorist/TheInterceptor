@@ -46,7 +46,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	if (simulateExecutionReply.value === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
 			<button
-				class = { 'button is-primary' }
+				class = { 'btn btn--primary' }
 				onClick = { () => requestToSimulate(gnosisSafeMessage) }
 				disabled = { false }
 			>
@@ -115,14 +115,14 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 
 	if (activeAddress.value === undefined) return <></>
 	return <>
-		<div class = 'notification transaction-importance-box'>
+		<div class = 'notice-box transaction-importance-box'>
 			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>
 				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>
 				<div class = 'log-cell'> <SmallAddress addressBookEntry = { param.gnosisSafeMessage.verifyingContract } renameAddressCallBack = { param.renameAddressCallBack } /> </div>
 				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>
 			</span>
 		</div>
-		<div class = 'notification dashed-notification'>
+		<div class = 'notice-box dashed-notification'>
 			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
 			<ShowSuccessOrFailure
 				gnosisSafeMessage = { param.gnosisSafeMessage }
@@ -134,7 +134,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		</div>
 		{ simulateExecutionReply.value === undefined ? <></> :
 			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
-				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
+				<button class = { 'btn btn--primary btn--small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
 			</div>
 		}
 	</>

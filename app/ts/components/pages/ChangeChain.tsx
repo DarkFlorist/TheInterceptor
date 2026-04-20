@@ -42,33 +42,33 @@ export function ChangeChain() {
 	return (
 		<main>
 			<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
-				<header class = 'card-header window-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<span class = 'icon'>
+				<header class = 'panel-card__header window-header'>
+					<div class = 'panel-card__icon unset-cursor'>
+						<span class = 'ui-icon'>
 							<img src = '../img/access-key.svg'/>
 						</span>
 					</div>
-					<div class = 'card-header-title'>
+					<div class = 'panel-card__title'>
 						<p className = 'paragraph'>
 							Chain Change Request
 						</p>
 					</div>
 				</header>
-				<div class = 'card-content'>
-					<article class = 'media'>
+				<div class = 'panel-card__content'>
+					<article class = 'media-layout'>
 						{
 							chainChangeData.value.website.icon === undefined
 								? <></>
-								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
-									<div class = 'image is-64x64'>
+								: <figure class = 'media-layout__aside' style = 'margin: auto; display: block; padding: 20px'>
+									<div class = 'media-figure media-figure--64'>
 										<img src = { chainChangeData.value.website.icon }/>
 									</div>
 								</figure>
 						}
 					</article>
-					<div class = 'media-content' style = 'padding-bottom: 10px'>
-						<div class = 'content'>
-							<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+					<div class = 'media-layout__content' style = 'padding-bottom: 10px'>
+						<div class = 'rich-content'>
+							<p className = 'heading-text' style = 'white-space: normal; text-align: center; padding: 10px;'>
 								<b>	{ chainChangeData.value.website.websiteOrigin } </b>
 								would like to switch to
 								<b> { chainChangeData.value.rpcNetwork.name } </b>
@@ -86,13 +86,13 @@ export function ChangeChain() {
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<button
-							className = { 'button is-danger' }
+							className = { 'btn btn--destructive' }
 							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 							onClick = { reject } >
 							Don't change
 						</button>
 						<button
-							className = { 'button is-primary' }
+							className = { 'btn btn--primary' }
 							disabled = { chainChangeData.value.rpcNetwork.httpsRpc === undefined && ( (!connectAnyway.value && !chainChangeData.value.simulationMode ) || chainChangeData.value.simulationMode ) }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>
@@ -102,7 +102,7 @@ export function ChangeChain() {
 				</div>
 			</div>
 
-			<div class = 'content' style = 'height: 0.1px'/>
+			<div class = 'rich-content' style = 'height: 0.1px'/>
 		</main>
 	)
 }

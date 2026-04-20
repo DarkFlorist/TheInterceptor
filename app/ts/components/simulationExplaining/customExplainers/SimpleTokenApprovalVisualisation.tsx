@@ -16,20 +16,20 @@ type SimpleTokenApprovalVisualisation = {
 export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisualisation) {
 	const textColor = 'var(--negative-color)'
 
-	return <div class = 'notification transaction-importance-box'>
+	return <div class = 'notice-box transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto; display: grid;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Allow &nbsp;</p>
 		</span>
-			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
-				<BigAddress
-					addressBookEntry = { param.approval.to }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-			</div>
+		<div class = 'surface-box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+			<BigAddress
+				addressBookEntry = { param.approval.to }
+				renameAddressCallBack = { param.renameAddressCallBack }
+			/>
+		</div>
 		<span style = 'grid-template-columns: auto auto; display: grid;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> To Spend &nbsp;</p>
 		</span>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<div class = 'surface-box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					{ param.approval.type === 'NFT All approval' ?

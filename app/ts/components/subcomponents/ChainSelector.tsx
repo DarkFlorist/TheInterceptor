@@ -18,7 +18,7 @@ export function RpcSelector(params: RpcSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${ rpcName }`)
 		params.changeRpc(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small'/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline btn--small'/>
 }
 
 interface ChainSelectorParams {

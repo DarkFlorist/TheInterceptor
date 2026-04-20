@@ -22,13 +22,13 @@ type ProxyMultiSendParams = {
 }
 
 function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCallBack, viaProxypath } : ProxyMultiSendParams) {
-	return <div class = 'notification transaction-importance-box'>
+	return <div class = 'notice-box transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
 			<TokenOrEth { ...asset } useFullTokenName = { false } style = { { 'font-weight': '500' } } fontSize = 'big' />
 		</span>
 		<p class = 'paragraph'> From </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<div class = 'surface-box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter { ...sender } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { asset } />
 		</div>
 		<p class = 'paragraph'> To </p>
@@ -37,7 +37,7 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 				<p class = 'paragraph' style = 'justify-self: right;'> Receive&nbsp;</p>
 				<TokenOrEth { ...{ ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } } useFullTokenName = { false } />
 			</span>
-			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+			<div class = 'surface-box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 				<AddressBeforeAfter { ...receiver } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { { ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } }/>
 			</div>
 		</>) }

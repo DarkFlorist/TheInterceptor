@@ -79,14 +79,14 @@ type OrderComponentsParams = {
 }
 
 export function OrderComponents(param: OrderComponentsParams) {
-	return <div class = 'notification transaction-importance-box'>
+	return <div class = 'notice-box transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Offer </p>
-			<div class = 'box swap-box'>
+			<div class = 'surface-box swap-box'>
 				{ param.openSeaOrderMessage.offer.map((offer) => <SwapGrid orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/> ) }
 			</div>
 			<p class = 'paragraph'> For </p>
-			<div class = 'box swap-box'>
+			<div class = 'surface-box swap-box'>
 				<span class = 'log-table-4' style = 'justify-content: center; column-gap: 5px;'>
 					{ param.openSeaOrderMessage.consideration.map((consideration) => <VisualizeOpenSeaAsset consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork } /> ) }
 				</span>

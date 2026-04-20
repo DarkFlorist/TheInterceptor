@@ -23,7 +23,7 @@ type CheckBoxSettingParam = {
 
 function CheckBoxSetting(param: CheckBoxSettingParam) {
 	return (
-		<div class = 'container'>
+		<div class = 'layout-container'>
 			<label class = 'form-control' style = { 'color: var(--text-color); font-size: 1em;' }>
 				<input type = 'checkbox'
 					checked = { param.checked }
@@ -102,11 +102,11 @@ function ImportExport() {
 			: <></> }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
-				<label className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
+				<label className = 'btn btn--destructive' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
 					Import settings
 					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>
-				<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
+				<button className = 'btn btn--primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
 					Export settings
 				</button>
 			</div>
@@ -152,20 +152,20 @@ export function SettingsView() {
 	}
 
 	return <main style = 'padding: 10px'>
-		<div class = 'card' style = 'height: 100%;'>
-			<header class = 'card-head card-header window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
+		<div class = 'panel-card' style = 'height: 100%;'>
+			<header class = 'panel-card__header window-header'>
+				<div class = 'panel-card__icon unset-cursor'>
+					<span class = 'ui-icon'>
 						<img src = '../img/settings.svg' />
 					</span>
 				</div>
-				<div class = 'card-header-title'>
+				<div class = 'panel-card__title'>
 					<p className = 'paragraph'>
 						Settings
 					</p>
 				</div>
 			</header>
-			<section class = 'card-body' style = 'padding-bottom: 10px'>
+			<section class = 'panel-card__body' style = 'padding-bottom: 10px'>
 				<ul>
 					<li>
 						<p className = 'paragraph'>Misc</p>

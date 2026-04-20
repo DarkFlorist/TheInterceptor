@@ -49,17 +49,17 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.pendingTransactionsAndSignableMessages.value.map((pendingTransaction, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
-			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div class = 'card' style = { style }>
-				<header class = 'card-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<span class = 'icon'>
+			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div class = 'panel-card' style = { style }>
+				<header class = 'panel-card__header'>
+					<div class = 'panel-card__icon unset-cursor'>
+						<span class = 'ui-icon'>
 							{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? <img src = '../img/error-icon.svg'/> : <Spinner height = '2em'/> }
 						</span>
 					</div>
-					<p class = 'card-header-title' style = 'white-space: nowrap;'>
+					<p class = 'panel-card__title' style = 'white-space: nowrap;'>
 						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
 					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
+					<p class = 'panel-card__icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
 						<WebsiteOriginText website = { pendingTransaction.website } />
 					</p>
 				</header>
@@ -69,17 +69,17 @@ function UnderTransactions(param: UnderTransactionsParams) {
 				if (pendingTransaction.popupVisualisation.statusCode === 'success' && pendingTransaction.popupVisualisation.data.visualizedSimulationState.success) {
 					const simTx = getResultsForTransaction(pendingTransaction.popupVisualisation.data.visualizedSimulationState, pendingTransaction.transactionIdentifier)
 					if (simTx === undefined) throw new Error('No simulated and visualized transactions')
-					return <div class = 'card' style = { style }>
+					return <div class = 'panel-card' style = { style }>
 						<TransactionHeader simTx = { simTx } />
 						<div style = { absoluteStyle }></div>
 					</div>
 				}
-				return <div class = 'card' style = { style }>
+				return <div class = 'panel-card' style = { style }>
 					<TransactionHeaderForFailedToSimulate website = { pendingTransaction.transactionToSimulate.website } />
 					<div style = { absoluteStyle }></div>
 				</div>
 			}
-			return <div class = 'card' style = { style }>
+			return <div class = 'panel-card' style = { style }>
 				<SignatureHeader visualizedPersonalSignRequest = { pendingTransaction.visualizedPersonalSignRequest }/>
 				<div style = { absoluteStyle }></div>
 			</div>
@@ -115,11 +115,11 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 		return [...param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${ param.completeVisualizedSimulation.value.numberOfAddressesMadeRich } addresses rich`] : [], ...names, ...param.includeCurrentTransaction ? [titleOfCurrentPendingTransaction()] : [] ]
 	})
 
-	return <nav class = 'breadcrumb has-succeeds-separator is-small'>
+	return <nav class = 'step-breadcrumb step-breadcrumb--separated btn--small'>
 		<ul>
 			{ namesWithCurrentTransaction.value.map((name, index) => (
 				<li style = 'margin: 0px;'>
-					<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : ''}` }>
+					<div class = 'panel-card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : ''}` }>
 						<p class = 'paragraph' style = { `margin: 0px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'color: var(--disabled-text-color)' : ''}` }>
 							{ name }
 						</p>
@@ -174,23 +174,23 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
 		return <>
-			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
-				<header class = 'card-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<span class = 'icon'>
+			<div class = 'panel-card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
+				<header class = 'panel-card__header'>
+					<div class = 'panel-card__icon unset-cursor'>
+						<span class = 'ui-icon'>
 							<img src = { '../img/error-icon.svg' } />
 						</span>
 					</div>
-					<p class = 'card-header-title' style = 'white-space: nowrap;'>
+					<p class = 'panel-card__title' style = 'white-space: nowrap;'>
 						{ popupVisualisation.data.transactionToSimulate.success ? 'Gas estimation error' : 'Execution error' }
 					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
+					<p class = 'panel-card__icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
 						<WebsiteOriginText website = { currentPendingTransaction.transactionToSimulate.website } />
 					</p>
 				</header>
 
-				<div class = 'card-content' style = 'padding-bottom: 5px;'>
-					<div class = 'container'>
+				<div class = 'panel-card__content' style = 'padding-bottom: 5px;'>
+					<div class = 'layout-container'>
 						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } containerStyle = { { margin: '0px' } } />
 					</div>
 
@@ -246,11 +246,11 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return <>
-		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
+		<div class = 'panel-card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader simTx = { simTx } />
-			<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<div class = 'panel-card__content' style = 'padding-bottom: 5px;'>
 				{ simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-					<div class = 'container'>
+					<div class = 'layout-container'>
 						<TransactionImportanceBlock
 							simTx = { simTx }
 							activeAddress = { activeAddress }
@@ -381,7 +381,7 @@ type RejectButtonParams = {
 }
 const RejectButton = ({ onClick }: RejectButtonParams) => {
 	return <div style = 'display: flex;'>
-		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
+		<button className = 'btn btn--destructive button-overflow dialog-button-left' onClick = { onClick } >
 			{ 'Reject' }
 		</button>
 	</div>
@@ -408,10 +408,10 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 	if (identified === undefined) return <RejectButton onClick = { reject }/>
 
 	return <div style = 'display: flex; flex-direction: row;'>
-		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
+		<button className = 'btn btn--destructive button-overflow dialog-button-left' onClick = { reject } >
 			{ identified.rejectAction }
 		</button>
-		<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
+		<button className = 'btn btn--primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
 			{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
 				<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
 				</> : <>
@@ -599,7 +599,7 @@ export function ConfirmTransaction() {
 		return <>
 			<main>
 				<Hint>
-					<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+					<div class = { `dialog-shell ${ modalState.value.page !== 'noModal' ? 'is-open' : ''}` }>
 						{ modalState.value.page === 'editEns' ?
 							<EditEnsLabelHash
 								close = { () => { modalState.value = { page: 'noModal' } } }
@@ -631,7 +631,7 @@ export function ConfirmTransaction() {
 	return (
 		<main>
 			<Hint>
-				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+				<div class = { `dialog-shell ${ modalState.value.page !== 'noModal' ? 'is-open' : ''}` }>
 					{ modalState.value.page === 'editEns' ?
 						<EditEnsLabelHash
 							close = { () => { modalState.value = { page: 'noModal' } } }
