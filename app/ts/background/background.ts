@@ -411,8 +411,7 @@ export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
 	simulator: Simulator,
 	request: unknown,
-	settings: Settings,
-	_sender?: browser.runtime.MessageSender
+	settings: Settings
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
