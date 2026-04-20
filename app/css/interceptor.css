@@ -399,6 +399,14 @@ img {
 	font-size: 1.25rem;
 }
 
+.heading-text.heading-text--lg {
+	font-size: 1.5rem;
+}
+
+.heading-text.heading-text--xl {
+	font-size: 2rem;
+}
+
 .flow-spacing-sm {
 	margin-bottom: 0.35em;
 }
@@ -409,6 +417,11 @@ img {
 
 .text-field.flow-spacing-sm {
 	margin-bottom: 0.75rem;
+}
+
+.btn--small,
+.btn--sm {
+	font-size: 0.75rem;
 }
 
 .is-divider {
@@ -1083,6 +1096,11 @@ svg.spinner > circle {
 
 .step-breadcrumb ul, .step-breadcrumb ol {
 	align-items: center;
+}
+
+.step-breadcrumb--separated li + li::before {
+	content: ">";
+	color: var(--subtitle-text-color);
 }
 
 .step-breadcrumb li + li::before {
