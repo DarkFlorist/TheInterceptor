@@ -45,6 +45,13 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService)
 }
 
 let confirmTransactionAbortController = new AbortController()
+const logConfirmTransactionSimulation = (message: string, data?: unknown) => {
+	if (data === undefined) {
+		console.info(`[confirm-tx-debug] simulation ${ message }`)
+		return
+	}
+	console.info(`[confirm-tx-debug] simulation ${ message }`, data)
+}
 export async function refreshConfirmTransactionSimulation(
 	simulator: Simulator,
 	activeAddress: bigint,
@@ -60,6 +67,12 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
+	logConfirmTransactionSimulation('starting confirm transaction simulation', {
+		uniqueRequestIdentifier,
+		simulationMode,
+		activeAddress,
+		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+	})
 	publishPopupMessageToOpenUiPorts({ method: 'popup_confirm_transaction_simulation_started' } as const, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
@@ -81,6 +94,11 @@ export async function refreshConfirmTransactionSimulation(
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
 		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
+			logConfirmTransactionSimulation('simulation completed with decoded failure', {
+				uniqueRequestIdentifier,
+				transactionIdentifier: transactionToSimulate.transactionIdentifier,
+				blockNumber: visualizedSimulatorState.simulationState.blockNumber,
+			})
 			return { statusCode: 'failed' as const, data: {
 				...info,
 				simulationStartedTimestamp,
@@ -93,6 +111,11 @@ export async function refreshConfirmTransactionSimulation(
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
+		logConfirmTransactionSimulation('simulation completed successfully', {
+			uniqueRequestIdentifier,
+			transactionIdentifier: transactionToSimulate.transactionIdentifier,
+			blockNumber: visualizedSimulatorState.simulationState.blockNumber,
+		})
 		return {
 			statusCode: 'success' as const,
 			data: {
@@ -114,8 +137,20 @@ export async function refreshConfirmTransactionSimulation(
 			}
 		}
 	} catch (error) {
-		if (error instanceof Error && isNewBlockAbort(error)) return undefined
-		if (error instanceof Error && isFailedToFetchError(error)) return undefined
+		if (error instanceof Error && isNewBlockAbort(error)) {
+			logConfirmTransactionSimulation('simulation aborted by a newer block', {
+				uniqueRequestIdentifier,
+				transactionIdentifier: transactionToSimulate.transactionIdentifier,
+			})
+			return undefined
+		}
+		if (error instanceof Error && isFailedToFetchError(error)) {
+			logConfirmTransactionSimulation('simulation failed to fetch', {
+				uniqueRequestIdentifier,
+				transactionIdentifier: transactionToSimulate.transactionIdentifier,
+			})
+			return undefined
+		}
 		if (!(error instanceof JsonRpcResponseError)) throw error
 
 		const extractToAbi = async () => {
@@ -131,6 +166,12 @@ export async function refreshConfirmTransactionSimulation(
 			message: error.message,
 			data: typeof error.data === 'string' ? error.data : '0x',
 		}
+		logConfirmTransactionSimulation('simulation raised JSON-RPC error', {
+			uniqueRequestIdentifier,
+			transactionIdentifier: transactionToSimulate.transactionIdentifier,
+			code: error.code,
+			message: error.message,
+		})
 		return { statusCode: 'failed' as const, data: {
 			...info,
 			simulationStartedTimestamp,

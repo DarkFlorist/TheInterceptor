@@ -58,6 +58,14 @@ const logConfirmTransactionView = (message: string, data?: unknown) => {
 	console.info(`[confirm-tx-debug] confirmView ${ message }`, data)
 }
 
+const logConfirmTransactionPhase = (message: string, data?: unknown) => {
+	if (data === undefined) {
+		console.info(`[confirm-tx-debug] phase ${ message }`)
+		return
+	}
+	console.info(`[confirm-tx-debug] phase ${ message }`, data)
+}
+
 let latestConfirmTransactionViewUpdateSequence = 0
 
 const getFallbackCurrentBlockNumber = (simulator: Simulator, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) => {
@@ -118,11 +126,12 @@ export async function updateConfirmTransactionView(simulator: Simulator, onlyIfN
 		logConfirmTransactionView('update requested', { pendingCount: pendingTransactionAndSignableMessages.length, onlyIfNotAlreadyUpdating, updateSequence })
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		hasPendingTransactions = true
-		if (updateSequence !== latestConfirmTransactionViewUpdateSequence) {
-			logConfirmTransactionView('skipping stale update before initial publish', { updateSequence, latestUpdateSequence: latestConfirmTransactionViewUpdateSequence })
-			return hasPendingTransactions
-		}
 		const fallbackCurrentBlockNumber = getFallbackCurrentBlockNumber(simulator, pendingTransactionAndSignableMessages)
+		logConfirmTransactionView('publishing pending transactions state', {
+			currentBlockNumber: fallbackCurrentBlockNumber,
+			pendingCount: pendingTransactionAndSignableMessages.length,
+			updateSequence,
+		})
 		await publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, fallbackCurrentBlockNumber), 'confirmTransaction')
 		const [currentBlockNumber, visualizedSimulatorState] = await Promise.all([
 			getCurrentBlockNumberForConfirmTransactionView(simulator, pendingTransactionAndSignableMessages),
@@ -360,10 +369,16 @@ const getPendingTransactionWindow = async (simulator: Simulator, pageSessions: P
 	const [firstPendingTransaction] = pendingTransactions
 	if (firstPendingTransaction !== undefined) {
 		const alreadyOpenWindow = await getPopupOrTabById(firstPendingTransaction.popupOrTabId)
-		if (alreadyOpenWindow) return alreadyOpenWindow
+		if (alreadyOpenWindow) {
+			logConfirmTransactionPhase('reusing existing confirm transaction window', { popupOrTabId: firstPendingTransaction.popupOrTabId })
+			return alreadyOpenWindow
+		}
+		logConfirmTransactionPhase('stale confirm transaction window missing, clearing pending items', { pendingCount: pendingTransactions.length })
 		await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions, simulator, pageSessions)
 	}
-	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
+	const popupOrTab = await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
+	logConfirmTransactionPhase('opened confirm transaction window', { popupOrTabId: popupOrTab })
+	return popupOrTab
 }
 
 export async function openConfirmTransactionDialogForMessage(
@@ -377,6 +392,11 @@ export async function openConfirmTransactionDialogForMessage(
 	pageSessions: PageSessionStore,
 ) {
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
+	logConfirmTransactionPhase('message confirm transaction requested', {
+		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+		simulationMode,
+		activeAddress,
+	})
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const messageIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifierString)))
 	const created = new Date()
@@ -409,17 +429,30 @@ export async function openConfirmTransactionDialogForMessage(
 				signedMessageTransaction,
 			}
 			await appendPendingTransactionOrMessage(pendingMessage)
+			logConfirmTransactionPhase('message appended to pending queue', {
+				uniqueRequestIdentifier: pendingMessage.uniqueRequestIdentifier,
+				status: pendingMessage.transactionOrMessageCreationStatus,
+				popupOrTabId: openedDialog,
+			})
 			await updateConfirmTransactionView(simulator)
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
 				if (message.type !== 'SignableMessage') return message
 				return modifyObject(message, { transactionOrMessageCreationStatus: 'Simulating' as const } )
 			})
+			logConfirmTransactionPhase('message advanced to simulation', {
+				uniqueRequestIdentifier: pendingMessage.uniqueRequestIdentifier,
+				status: 'Simulating',
+			})
 			await updateConfirmTransactionView(simulator)
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
 				if (message.type !== 'SignableMessage') return message
 				return { ...message, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
+			})
+			logConfirmTransactionPhase('message simulation finalized', {
+				uniqueRequestIdentifier: pendingMessage.uniqueRequestIdentifier,
+				status: 'Simulated',
 			})
 			await updateConfirmTransactionView(simulator)
 
@@ -446,6 +479,12 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	pageSessions: PageSessionStore,
 ) {
+	logConfirmTransactionPhase('transaction confirm transaction requested', {
+		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+		simulationMode,
+		activeAddress,
+		method: transactionParams.method,
+	})
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifierString)))
 	const created = new Date()
@@ -472,10 +511,21 @@ export async function openConfirmTransactionDialogForTransaction(
 				approvalStatus: { status: 'WaitingForUser' as const }
 			}
 			await appendPendingTransactionOrMessage(pendingTransaction)
+			logConfirmTransactionPhase('transaction appended to pending queue', {
+				uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier,
+				transactionIdentifier,
+				status: pendingTransaction.transactionOrMessageCreationStatus,
+				popupOrTabId: openedDialog,
+			})
 			await updateConfirmTransactionView(simulator)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(simulator, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate))
 			if (transactionToSimulate.success) {
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
+				logConfirmTransactionPhase('transaction advanced to simulation', {
+					uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier,
+					transactionIdentifier,
+					status: 'Simulating',
+				})
 				await updateConfirmTransactionView(simulator)
 			}
 			const popupVisualisation = await simulationResultsPromise ?? (
@@ -483,6 +533,12 @@ export async function openConfirmTransactionDialogForTransaction(
 					? await refreshConfirmTransactionSimulation(simulator, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
 					: undefined
 			)
+			if (popupVisualisation === undefined) {
+				logConfirmTransactionPhase('transaction simulation produced no popup visualisation', {
+					uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier,
+					transactionIdentifier,
+				})
+			}
 			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 				if (transaction.type !== 'Transaction') return transaction
 				if (popupVisualisation === undefined) return transaction
@@ -492,6 +548,14 @@ export async function openConfirmTransactionDialogForTransaction(
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 			})
+			if (popupVisualisation !== undefined) {
+				logConfirmTransactionPhase('transaction simulation finalized', {
+					uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier,
+					transactionIdentifier,
+					status: transactionToSimulate.success ? 'Simulated' : 'FailedToSimulate',
+					popupStatusCode: popupVisualisation.statusCode,
+				})
+			}
 			await updateConfirmTransactionView(simulator)
 			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }

@@ -473,8 +473,16 @@ export function ConfirmTransaction() {
 				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 				return false
 			}
-			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
+			if (parsed.method === 'popup_confirm_transaction_simulation_started') {
 				console.info('[confirm-tx-debug] popup received event', { method: parsed.method })
+				return false
+			}
+			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
+				console.info('[confirm-tx-debug] popup received event', {
+					method: parsed.method,
+					currentBlockNumber: parsed.data.currentBlockNumber,
+					hasVisualizedSimulatorState: parsed.data.visualizedSimulatorState !== undefined,
+				})
 				const { role: _role, ...popupUpdateConfirmTransactionDialog } = parsed
 				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(popupUpdateConfirmTransactionDialog))
 				return false
@@ -488,7 +496,11 @@ export function ConfirmTransaction() {
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
 				pendingTransactionsAndSignableMessages.value = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
-				if (firstMessage === undefined) throw new Error('message data was undefined')
+				if (firstMessage === undefined) {
+					console.warn('[confirm-tx-debug] popup received empty pending transaction update')
+					currentPendingTransactionOrSignableMessage.value = undefined
+					return false
+				}
 				currentPendingTransactionOrSignableMessage.value = firstMessage
 				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.popupVisualisation !== undefined && firstMessage.popupVisualisation.statusCode === 'success' && (currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)) {
 					currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
@@ -499,6 +511,16 @@ export function ConfirmTransaction() {
 		const removeListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => removeListener()
 	}, [])
+
+	useEffect(() => {
+		const current = currentPendingTransactionOrSignableMessage.value
+		console.info('[confirm-tx-debug] popup phase changed', {
+			phase: current === undefined ? 'Initializing' : current.transactionOrMessageCreationStatus,
+			type: current?.type,
+			approvalStatus: current?.approvalStatus.status,
+			pendingCount: pendingTransactionsAndSignableMessages.value.length,
+		})
+	}, [currentPendingTransactionOrSignableMessage.value, pendingTransactionsAndSignableMessages.value.length])
 
 	useEffect(() => {
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })

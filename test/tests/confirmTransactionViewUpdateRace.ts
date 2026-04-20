@@ -12,6 +12,7 @@ type RuntimeMessage = {
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	let nextPendingTransactionsReadBarrier: { promise: Promise<void>, release: () => void } | undefined = undefined
 
 	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -36,7 +37,18 @@ function createBrowserMock() {
 		},
 		storage: {
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getItems(keys) },
+				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					const items = getItems(keys)
+					const includesPendingTransactions = Array.isArray(keys)
+						? keys.includes('pendingTransactionsAndMessages')
+						: keys === 'pendingTransactionsAndMessages'
+					if (includesPendingTransactions && nextPendingTransactionsReadBarrier !== undefined) {
+						const barrier = nextPendingTransactionsReadBarrier
+						nextPendingTransactionsReadBarrier = undefined
+						await barrier.promise
+					}
+					return items
+				},
 				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
 				async remove(keys: string | string[]) { removeItems(keys) },
 			},
@@ -70,6 +82,17 @@ function createBrowserMock() {
 
 	return {
 		sentMessages,
+		blockNextPendingTransactionsRead() {
+			if (nextPendingTransactionsReadBarrier !== undefined) throw new Error('pending transaction read already blocked')
+			let resolveBarrier: (() => void) | undefined = undefined
+			nextPendingTransactionsReadBarrier = {
+				promise: new Promise<void>((resolve) => {
+					resolveBarrier = resolve
+				}),
+				release: () => resolveBarrier?.(),
+			}
+			return () => nextPendingTransactionsReadBarrier?.release() ?? resolveBarrier?.()
+		},
 		async attachUiSession(role: MainOrConfirmUiRole) {
 			const { registerUiPort } = await import('../../app/ts/background/uiSessions.js')
 			const { getUiPortName } = await import('../../app/ts/messages/ui.js')
@@ -284,6 +307,27 @@ export async function main() {
 			lastPendingTransactionsMessage?.data.pendingTransactionAndSignableMessages[0]?.popupVisualisation?.data?.simulationState?.simulationConductedTimestamp?.getTime(),
 			newerTimestamp.getTime(),
 		)
+	})
+
+	should('confirm transaction view still publishes pending transactions while a stale bootstrap update is overtaken', async () => {
+		browserMock.sentMessages.length = 0
+		const releasePendingTransactionsRead = browserMock.blockNextPendingTransactionsRead()
+		await modules.browserStorageLocalSet2({
+			pendingTransactionsAndMessages: [buildPendingTransaction(makePopupVisualisation(new Date('2024-01-01T00:00:05.000Z')))],
+		})
+
+		const staleUpdatePromise = modules.updateConfirmTransactionView(buildSimulator(123n))
+		await modules.browserStorageLocalSet2({
+			pendingTransactionsAndMessages: [],
+		})
+		await modules.updateConfirmTransactionView(buildSimulator(124n))
+		releasePendingTransactionsRead()
+		await staleUpdatePromise
+
+		const pendingTransactionsMessage = browserMock.sentMessages
+			.find((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+
+		assert.equal(pendingTransactionsMessage?.data.pendingTransactionAndSignableMessages.length, 1)
 	})
 }
 
