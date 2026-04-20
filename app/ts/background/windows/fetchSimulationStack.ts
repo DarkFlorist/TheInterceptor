@@ -4,6 +4,7 @@ import { Future } from '../../utils/future.js'
 import { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
+import { getSimulationInputHash } from '../popupSimulationFingerprint.js'
 import { getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
@@ -13,8 +14,6 @@ import { SimulationState, SimulationStateInput } from '../../types/visualizer-ty
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
-import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { keccak256, toUtf8Bytes } from 'ethers'
 import { getCurrentSimulationInput } from '../simulationUpdating.js'
 
 let pendForUserReply: Future<FetchSimulationStackRequestConfirmation> | undefined = undefined
@@ -132,12 +131,7 @@ export const openFetchSimulationStackDialog = async (
 
 export const getSimulationStackHash = (simulationState: SimulationStateInput | undefined) => {
 	if (simulationState === undefined) return 'undefined'
-	const messages = stringifyJSONWithBigInts(simulationState.map((x) => x.signedMessages.map((x) => x.originalRequestParameters)))
-	const overrides = stringifyJSONWithBigInts(simulationState.map((x) => x.stateOverrides))
-	const transactions = stringifyJSONWithBigInts(simulationState.map((x) => x.transactions.map((x) => x.originalRequestParameters)))
-	const blockTime = stringifyJSONWithBigInts(simulationState.map((x) => x.blockTimeManipulation))
-	const baseFee = stringifyJSONWithBigInts(simulationState.map((x) => x.simulateWithZeroBaseFee))
-	return keccak256(toUtf8Bytes(JSON.stringify([messages, overrides, transactions, blockTime, baseFee])))
+	return getSimulationInputHash(simulationState)
 }
 
 export async function openFetchSimulationStackDialogOrGetCachedResult(simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
