@@ -8,16 +8,17 @@ import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
 import { ProviderMessage } from '../utils/requests.js'
-import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { addressString } from '../utils/bigint.js'
 import { modifyObject } from '../utils/typescript.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 
-export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
+	if (approval !== 'hasAccess') return returnValue
 	if (!('params' in request)) return returnValue
 	if (port.sender?.tab?.id === undefined) return returnValue
 
@@ -87,17 +88,15 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
+	if (approval !== 'hasAccess') {
+		return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode(), activeAddress: '' } }
+	}
 	await setDefaultSignerName(signerName)
 	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => modifyObject(previousState, { signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		if (approval === 'hasAccess') {
-			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
-		} else {
-			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] })
-		}
-		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_chainId' as const, result: [] })
+		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 	}
 	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode(), activeAddress: activeAddress === undefined ? '' : addressString(activeAddress) } }
 }

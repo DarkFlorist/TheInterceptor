@@ -42,14 +42,17 @@ export const getAddressesbeingMadeRich = async () => {
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
-	const preSimulationBlockTimeManipulation = await getPreSimulationBlockTimeManipulation()
+	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
+		getSettings(),
+		getPreSimulationBlockTimeManipulation()
+	])
 	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
-	let previousBlockTimeManipulation = preSimulationBlockTimeManipulation
+	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
@@ -337,6 +340,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	if (simulationState.success === false) {
 		const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
 		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, [], parsedInputDataForEachBlockAndTransaction.flat())
+		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
 			const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
@@ -369,7 +373,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			tokenPriceEstimates: [],
 			tokenPriceQuoteToken: weth,
 			namedTokenIds: [],
-			simulationState,
+			simulationState: refreshedSimulationState,
 			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
 		}
 	}
@@ -403,6 +407,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	const protectorsForEachBlockAndTransaction = await protectorsForEachBlockAndTransactionPromise
 
 	const tokenPriceEstimates = await tokenPriceEstimatesPromise
+	const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 	const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block, blockIndex) => {
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
@@ -421,7 +426,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		addressBookEntries: updatedMetadata.addressBookEntries,
 		tokenPriceEstimates,
 		tokenPriceQuoteToken: weth,
-		simulationState,
+		simulationState: refreshedSimulationState,
 		visualizedSimulationState: { success: true, visualizedBlocks },
 	}
 }

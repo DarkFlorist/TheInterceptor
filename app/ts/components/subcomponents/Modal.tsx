@@ -74,7 +74,7 @@ const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDia
 		const dialogElement = context.dialogRef.current
 		if (dialogElement === null) return
 		dialogElement.addEventListener('close', closeEventCallback)
-		return () => { dialogElement.addEventListener('close', closeEventCallback) }
+		return () => { dialogElement.removeEventListener('close', closeEventCallback) }
 	}, [context.dialogRef.current])
 
 	return (
