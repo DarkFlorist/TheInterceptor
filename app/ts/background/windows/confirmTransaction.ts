@@ -58,6 +58,8 @@ const logConfirmTransactionView = (message: string, data?: unknown) => {
 	console.info(`[confirm-tx-debug] confirmView ${ message }`, data)
 }
 
+let latestConfirmTransactionViewUpdateSequence = 0
+
 const getFallbackCurrentBlockNumber = (simulator: Simulator, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) => {
 	const [firstPendingTransactionOrMessage] = pendingTransactionAndSignableMessages
 	if (
@@ -109,18 +111,27 @@ const createPendingTransactionsMessage = (
 })
 
 export async function updateConfirmTransactionView(simulator: Simulator, onlyIfNotAlreadyUpdating = false) {
+	const updateSequence = ++latestConfirmTransactionViewUpdateSequence
 	let hasPendingTransactions = false
 	try {
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
-		logConfirmTransactionView('update requested', { pendingCount: pendingTransactionAndSignableMessages.length, onlyIfNotAlreadyUpdating })
+		logConfirmTransactionView('update requested', { pendingCount: pendingTransactionAndSignableMessages.length, onlyIfNotAlreadyUpdating, updateSequence })
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		hasPendingTransactions = true
+		if (updateSequence !== latestConfirmTransactionViewUpdateSequence) {
+			logConfirmTransactionView('skipping stale update before initial publish', { updateSequence, latestUpdateSequence: latestConfirmTransactionViewUpdateSequence })
+			return hasPendingTransactions
+		}
 		const fallbackCurrentBlockNumber = getFallbackCurrentBlockNumber(simulator, pendingTransactionAndSignableMessages)
 		await publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, fallbackCurrentBlockNumber), 'confirmTransaction')
 		const [currentBlockNumber, visualizedSimulatorState] = await Promise.all([
 			getCurrentBlockNumberForConfirmTransactionView(simulator, pendingTransactionAndSignableMessages),
 			getVisualizedSimulatorStateForConfirmTransactionView(simulator, onlyIfNotAlreadyUpdating),
 		])
+		if (updateSequence !== latestConfirmTransactionViewUpdateSequence) {
+			logConfirmTransactionView('skipping stale update before final publish', { updateSequence, latestUpdateSequence: latestConfirmTransactionViewUpdateSequence })
+			return hasPendingTransactions
+		}
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber,
 			visualizedSimulatorState,
@@ -129,6 +140,7 @@ export async function updateConfirmTransactionView(simulator: Simulator, onlyIfN
 			currentBlockNumber,
 			pendingCount: pendingTransactionAndSignableMessages.length,
 			hasVisualizedSimulatorState: visualizedSimulatorState !== undefined,
+			updateSequence,
 		})
 		await Promise.all([
 			publishPopupMessageToOpenUiPorts(createPendingTransactionsMessage(pendingTransactionAndSignableMessages, currentBlockNumber), 'confirmTransaction'),
