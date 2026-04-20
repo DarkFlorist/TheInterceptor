@@ -241,7 +241,7 @@ async function startup() {
 		})
 	})
 	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
-	browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings()))))
+	browser.runtime.onMessage.addListener((message: unknown, sender: browser.runtime.MessageSender) => Promise.resolve(catchAllErrorsAndCall(async () => await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings(), sender))))
 
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))

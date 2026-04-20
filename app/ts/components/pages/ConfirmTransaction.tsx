@@ -6,7 +6,7 @@ import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlo
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
@@ -495,7 +495,7 @@ export function ConfirmTransaction() {
 	}, [])
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' })
+		void sendPopupReadyAndListening('confirmTransaction')
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 

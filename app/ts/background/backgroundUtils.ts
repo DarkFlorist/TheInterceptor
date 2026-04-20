@@ -1,6 +1,7 @@
-import { MessageToPopup, MessageToPopupPayload, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
+import { MessageToPopup, MessageToPopupPayload, PopupMessage, PopupReadyAndListeningPage, Settings, WindowMessage } from '../types/interceptor-messages.js'
 import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
+import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
@@ -67,6 +68,11 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 		await handleUnexpectedError(error)
 		return undefined
 	}
+}
+
+export async function sendPopupReadyAndListening(page: PopupReadyAndListeningPage): Promise<PopupOrTabId | undefined> {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page } })
+	return reply?.data.popupOrTabId
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'

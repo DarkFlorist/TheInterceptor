@@ -647,6 +647,22 @@ const ChangeChainRequest = funtypes.ReadonlyObject({
 	data: PendingChainChangeConfirmationPromise,
 })
 
+export type PopupReadyAndListeningPage = funtypes.Static<typeof PopupReadyAndListeningPage>
+const PopupReadyAndListeningPage = funtypes.Union(
+	funtypes.Literal('changeChain'),
+	funtypes.Literal('confirmTransaction'),
+	funtypes.Literal('interceptorAccess'),
+	funtypes.Literal('fetchSimulationStack'),
+)
+
+export type PopupReadyAndListening = funtypes.Static<typeof PopupReadyAndListening>
+export const PopupReadyAndListening = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_readyAndListening'),
+	data: funtypes.ReadonlyObject({
+		page: PopupReadyAndListeningPage,
+	}),
+})
+
 type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
 const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
@@ -903,10 +919,7 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_fetchSimulationStackRequestReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
+	PopupReadyAndListening,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),

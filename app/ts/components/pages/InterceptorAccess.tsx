@@ -17,6 +17,7 @@ import { RpcEntries } from '../../types/rpc.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <span style = 'font-weight: 900; line-height: 48px'>
@@ -213,7 +214,7 @@ export function InterceptorAccess() {
 	}, [])
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' })
+		void sendPopupReadyAndListening('interceptorAccess')
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 
