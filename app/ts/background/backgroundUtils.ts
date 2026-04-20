@@ -6,6 +6,11 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, PopupReplyOption, PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 
+function isIgnorableClosedMessageChannelError(error: Error) {
+	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
+		|| error.message?.includes('The message port closed before a response was received')
+}
+
 export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
 		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
@@ -35,8 +40,7 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
 				return
 			}
-			if (error?.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')) return
-			if (error?.message?.includes('The message port closed before a response was received')) return
+			if (isIgnorableClosedMessageChannelError(error)) return
 		}
 		await handleUnexpectedError(error)
 	}
@@ -48,9 +52,7 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		if (error instanceof Error) {
-			if (error?.message?.includes('The message port closed before a response was received')) {
-				return
-			}
+			if (isIgnorableClosedMessageChannelError(error)) return
 		}
 		await handleUnexpectedError(error)
 	}
@@ -61,7 +63,7 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
 	} catch (error) {
 		if (error instanceof Error) {
-			if (error.message.includes('The message port closed before a response was received')) return undefined
+			if (isIgnorableClosedMessageChannelError(error)) return undefined
 			if (error.message?.includes('Could not establish connection.')) return undefined
 		}
 		await handleUnexpectedError(error)

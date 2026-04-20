@@ -57,9 +57,9 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 		</p>
 	}
 
-	const importStack = () => {
+	const importStack = async () => {
 		const trimmed = param.simulationInput.value.trim()
-		sendPopupMessageToBackgroundPage({ method: 'popup_importSimulationStack', data: InterceptorSimulationExport.parse(JSON.parse(trimmed)) })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_importSimulationStack', data: InterceptorSimulationExport.parse(JSON.parse(trimmed)) })
 		param.close()
 	}
 
