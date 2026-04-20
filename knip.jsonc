@@ -1,23 +1,31 @@
 {
 	// use jsonc to allow comments
-  "$schema": "https://unpkg.com/knip@5/schema-jsonc.json",
+	"$schema": "https://unpkg.com/knip@5/schema-jsonc.json",
 
 	"workspaces": {
 		".": {
 			"entry": [
 				"app/ts/addressBookRender.ts",
-				"app/ts/background-startup.ts",
+				"app/ts/background/background-startup.ts",
 				"app/ts/backgroundServiceWorker.ts",
 				"app/ts/changeChain.ts",
 				"app/ts/confirmTransaction.ts",
+				"app/ts/fetchSimulationStack.ts",
 				"app/ts/interceptorAccess.ts",
 				"app/ts/popup.ts",
 				"app/ts/settingsView.ts",
-				"app/ts/components/pages/WebsiteAccess.tsx",
+				"app/ts/websiteAccess.ts",
+				"app/inpage/ts/document_start.ts",
+				"app/inpage/ts/inpage.ts",
+				"app/inpage/ts/listenContentScript.ts",
 				"test/run-all.ts",
-				"test/tests/*.ts",
+				"test/tests/*.ts"
 			],
-			"project": ["app/ts/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
+			"project": [
+				"app/ts/**/*.{ts,tsx}",
+				"app/inpage/ts/*.ts",
+				"test/**/*.{ts,tsx}"
+			],
 			"ignoreDependencies": [
 				// cleanup and lint scripts should not be flagged unlisted dependencies
 				"knip",
@@ -31,27 +39,29 @@
 		},
 
 		// isolate ./build as workspace with it's own package.json
-		"build/*": {
+		"build": {
 			"entry": [
 				"vendor.mts",
 				"bundler.mts"
 			],
-			"project": ["**/*.{ts,tsx}"]
+			"project": ["**/*.{ts,tsx,mts}"]
 		}
 	},
+
+	"treatConfigHintsAsErrors": true,
 
 	// toggle for all applied rules
 	"rules": {
 		"classMembers": "off",
-		"dependencies": "off",
+		"dependencies": "error",
 		"duplicates": "off",
 		"enumMembers": "off",
-		"exports": "warn",
-		"files": "off",
+		"exports": "error",
+		"files": "error",
 		"nsExports": "off",
 		"nsTypes": "off",
 		"types": "off",
-		"unlisted": "off",
-		"unresolved": "off"
+		"unlisted": "error",
+		"unresolved": "error"
 	}
 }
