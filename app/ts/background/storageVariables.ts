@@ -193,16 +193,37 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 	})
 }
 
-export const setRpcList = async(rpcEntries: RpcEntries) => await browserStorageLocalSet({ rpcEntries })
+let cachedRpcEntries: RpcEntries | undefined
+let cachedRpcEntriesPromise: Promise<RpcEntries> | undefined
+
+export function resetRpcListCache() {
+	cachedRpcEntries = undefined
+	cachedRpcEntriesPromise = undefined
+}
+
+export const setRpcList = async(rpcEntries: RpcEntries) => {
+	cachedRpcEntries = rpcEntries
+	return await browserStorageLocalSet({ rpcEntries })
+}
 
 export async function getRpcList() {
-	try {
-		return (await browserStorageLocalGet('rpcEntries'))?.rpcEntries ?? defaultRpcs
-	} catch(e) {
-		console.warn('Rpc entries were corrupt:')
-		console.warn(e)
-		return defaultRpcs
-	}
+	if (cachedRpcEntries !== undefined) return cachedRpcEntries
+	if (cachedRpcEntriesPromise !== undefined) return await cachedRpcEntriesPromise
+	cachedRpcEntriesPromise = (async () => {
+		try {
+			return (await browserStorageLocalGet('rpcEntries'))?.rpcEntries ?? defaultRpcs
+		} catch(e) {
+			console.warn('Rpc entries were corrupt:')
+			console.warn(e)
+			return defaultRpcs
+		}
+	})().then((rpcEntries) => {
+		cachedRpcEntries = rpcEntries
+		return rpcEntries
+	}).finally(() => {
+		cachedRpcEntriesPromise = undefined
+	})
+	return await cachedRpcEntriesPromise
 }
 
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
@@ -212,7 +233,9 @@ export const getInterceptorStartSleepingTimestamp = async () => (await browserSt
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
 	if (rpcNetwork.primary) return
 	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	const updated = rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc)
+	cachedRpcEntries = updated
+	await setRpcList(updated)
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {

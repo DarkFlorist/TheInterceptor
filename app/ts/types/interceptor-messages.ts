@@ -880,6 +880,7 @@ export const MessageToPopupPayload = funtypes.Union(
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestBootstrapData') }),
 	PopupMessageReplyRequests,
 	TransactionConfirmation,
 	RemoveTransaction,

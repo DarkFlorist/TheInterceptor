@@ -1,12 +1,10 @@
 import { useEffect } from 'preact/hooks'
+import type { JSX } from 'preact'
 import { defaultActiveAddresses } from '../background/settings.js'
 import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
-import { AddNewAddress } from './pages/AddNewAddress.js'
-import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
 import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
@@ -24,12 +22,11 @@ import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
-import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
-import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { EnrichedRichListElement, PopupBootstrapData, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
-import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
+import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -69,6 +66,58 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
 	| { page: 'ChangeActiveAddress' }
 	| { page: 'ImportSimulation', state: Signal<string> }
+
+type LazyPageComponent<T> = ((props: T) => JSX.Element) | undefined
+
+function useLazyPage<T>(loader: () => Promise<Record<string, unknown>>, selector: (module: Record<string, unknown>) => (props: T) => JSX.Element) {
+	const component = useSignal<LazyPageComponent<T>>(undefined)
+	useEffect(() => {
+		let cancelled = false
+		void loader().then((module) => {
+			if (cancelled) return
+			component.value = selector(module)
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [])
+	return component
+}
+
+function LazyChangeActiveAddress(props: ChangeActiveAddressParam) {
+	const component = useLazyPage(() => import('./pages/ChangeActiveAddress.js'), (module) => module.ChangeActiveAddress as (props: ChangeActiveAddressParam) => JSX.Element)
+	if (component.value === undefined) return <CenterToPageTextSpinner />
+	const Component = component.value
+	return <Component { ...props } />
+}
+
+function LazyAddNewAddress(props: AddAddressParam) {
+	const component = useLazyPage(() => import('./pages/AddNewAddress.js'), (module) => module.AddNewAddress as (props: AddAddressParam) => JSX.Element)
+	if (component.value === undefined) return <CenterToPageTextSpinner />
+	const Component = component.value
+	return <Component { ...props } />
+}
+
+function LazyInterceptorAccessList(props: InterceptorAccessListParams) {
+	const component = useLazyPage(() => import('./pages/InterceptorAccessList.js'), (module) => module.InterceptorAccessList as (props: InterceptorAccessListParams) => JSX.Element)
+	if (component.value === undefined) return <CenterToPageTextSpinner />
+	const Component = component.value
+	return <Component { ...props } />
+}
+
+function LazyEditEnsLabelHash(props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) {
+	const component = useLazyPage(() => import('./pages/EditEnsLabelHash.js'), (module) => module.EditEnsLabelHash as (props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) => JSX.Element)
+	if (component.value === undefined) return <CenterToPageTextSpinner />
+	const Component = component.value
+	return <Component { ...props } />
+}
+
+function LazyImportSimulationStack(props: { close: () => void, simulationInput: Signal<string> }) {
+	const component = useLazyPage(() => import('./pages/ImportSimulationStack.js'), (module) => module.ImportSimulationStack as (props: { close: () => void, simulationInput: Signal<string> }) => JSX.Element)
+	if (component.value === undefined) return <CenterToPageTextSpinner />
+	const Component = component.value
+	return <Component { ...props } />
+}
 
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
@@ -131,37 +180,80 @@ export function App() {
 			rpcNetwork.value = entry
 		}
 	}
-	const requestActiveAddresses = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestActiveAddresses' })
-		if (reply === undefined) return
-		activeAddresses.value = reply.activeAddresses
-	}
+		const requestRichData = async () => {
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
+			if (reply === undefined) return
+			fixedAddressRichList.value = reply.richList
+			makeCurrentAddressRich.value = reply.makeCurrentAddressRich
+		}
 
-	const requestSimulationMode = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
-		if (reply === undefined) return
-		simulationMode.value = reply.simulationMode
-	}
+		const applyBootstrapData = (reply: PopupBootstrapData) => {
+			const wasLoaded = isSettingsLoaded.value
+			isSettingsLoaded.value = true
+			activeAddresses.value = reply.activeAddresses
+			fixedAddressRichList.value = reply.fixedAddressRichList
+			makeCurrentAddressRich.value = reply.makeCurrentAddressRich
+			unexpectedError.value = reply.latestUnexpectedError
+			rpcEntries.value = reply.rpcEntries
+			currentTabId.value = reply.tabId
+			activeSigningAddress.value = reply.tabState.activeSigningAddress
+			interceptorDisabled.value = reply.interceptorDisabled
+			rpcNetwork.value = reply.settings.activeRpcNetwork
+			activeSimulationAddress.value = reply.settings.activeSimulationAddress
+			useSignersAddressAsActiveAddress.value = reply.settings.useSignersAddressAsActiveAddress
+			websiteAccess.value = reply.settings.websiteAccess
+			simulationMode.value = reply.settings.simulationMode
+			if (!wasLoaded) tabIconDetails.value = reply.tabState.tabIconDetails
+			tabState.value = reply.tabState
+			currentBlockNumber.value = reply.currentBlockNumber
+			rpcConnectionStatus.value = reply.rpcConnectionStatus
+			preSimulationBlockTimeManipulation.value = reply.preSimulationBlockTimeManipulation
+			websiteAccessAddressMetadata.value = reply.websiteAccessAddressMetadata
+			if (reply.visualizedSimulatorState !== undefined) {
+				const activeAddress = reply.settings.simulationMode ? reply.settings.activeSimulationAddress : reply.tabState.activeSigningAddress
+				if (activeAddress !== undefined && reply.visualizedSimulatorState.simulationState !== undefined) {
+					simVisResults.value = {
+						blockNumber: reply.visualizedSimulatorState.simulationState.blockNumber,
+						blockTimestamp: reply.visualizedSimulatorState.simulationState.blockTimestamp,
+						simulationConductedTimestamp: reply.visualizedSimulatorState.simulationState.simulationConductedTimestamp,
+						visualizedSimulationState: reply.visualizedSimulatorState.visualizedSimulationState,
+						rpcNetwork: reply.visualizedSimulatorState.simulationState.rpcNetwork,
+						tokenPriceEstimates: reply.visualizedSimulatorState.tokenPriceEstimates,
+						addressBookEntries: reply.visualizedSimulatorState.addressBookEntries,
+						namedTokenIds: reply.visualizedSimulatorState.namedTokenIds,
+					}
+					simulationUpdatingState.value = reply.visualizedSimulatorState.simulationUpdatingState
+					simulationResultState.value = reply.visualizedSimulatorState.simulationResultState
+				}
+			}
+			if (appPage.value.page === 'Unknown') {
+				if (reply.settings.openedPage.page === 'AddNewAddress' || reply.settings.openedPage.page === 'ModifyAddress') {
+					appPage.value = { ...reply.settings.openedPage, state: new Signal(reply.settings.openedPage.state) }
+				} else {
+					appPage.value = reply.settings.openedPage
+				}
+			}
+		}
 
-	const requestRichData = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
-		if (reply === undefined) return
-		fixedAddressRichList.value = reply.richList
-		makeCurrentAddressRich.value = reply.makeCurrentAddressRich
-	}
-
-	const requestUnexpectedError = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
-		if (reply === undefined) return
-		unexpectedError.value = reply.latestUnexpectedError
-	}
-
-	useEffect(() => {
-		requestActiveAddresses()
-		requestRichData()
-		requestSimulationMode()
-		requestUnexpectedError()
-	}, [])
+		useEffect(() => {
+			let cancelled = false
+			void (async () => {
+				const reply = await sendPopupMessageWithReply({ method: 'popup_requestBootstrapData' })
+				if (reply === undefined || cancelled) return
+				applyBootstrapData(reply)
+				if (reply.settings.simulationMode) {
+					setTimeout(() => {
+						if (!cancelled) void requestRichData()
+					}, 0)
+				}
+				setTimeout(() => {
+					if (!cancelled) sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+				}, 0)
+			})()
+			return () => {
+				cancelled = true
+			}
+		}, [])
 
 	useEffect(() => {
 		const setSimulationState = (
@@ -291,10 +383,6 @@ export function App() {
 		return () => {
 			browser.runtime.onMessage.removeListener(replyPopupMessageListener)
 		}
-	}, [])
-
-	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 	}, [])
 
 	function goHome() {
@@ -458,13 +546,13 @@ export function App() {
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><EditEnsLabelHash
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyEditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><InterceptorAccessList
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyInterceptorAccessList
 								goHome = { goHome }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
@@ -472,7 +560,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ChangeActiveAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								signerAccounts = { tabState.value?.signerAccounts ?? [] }
 								close = { goHome }
@@ -483,7 +571,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><AddNewAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyAddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
@@ -492,7 +580,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ImportSimulationStack
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
 							/></ErrorBoundary>

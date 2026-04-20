@@ -10,7 +10,7 @@ import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, up
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddresses, identifyAddress } from './metadataUtils.js'
-import { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
@@ -21,6 +21,7 @@ import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/Et
 import { generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
 import { ethers } from 'ethers'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
+import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
@@ -32,7 +33,7 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { PopupBootstrapData, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
@@ -386,6 +387,50 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 export async function requestNewHomeData(simulator: Simulator, requestAbortController: AbortController | undefined) {
 	// Metadata edits only need the cached visualisation metadata to be refreshed.
 	await refreshHomeData(simulator, false, requestAbortController)
+}
+
+export async function requestBootstrapData(simulator: Simulator): Promise<PopupBootstrapData> {
+	const settings = await getSettings()
+	const currentTabId = await getCurrentTabId()
+	const tabId = currentTabId ?? -1
+	const tabState = await getTabState(tabId).catch(() => ({
+		tabId,
+		website: undefined,
+		signerConnected: false,
+		signerName: 'NoSignerDetected' as const,
+		signerAccounts: [],
+		signerAccountError: undefined,
+		signerChain: undefined,
+		tabIconDetails: DEFAULT_TAB_CONNECTION,
+		activeSigningAddress: undefined,
+	} satisfies TabState))
+	const websiteOrigin = tabState.website?.websiteOrigin
+	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
+	const [rpcConnectionStatus, rpcEntries, preSimulationBlockTimeManipulation, visualizedSimulatorState, latestUnexpectedError, activeAddresses, makeCurrentAddressRich] = await Promise.all([
+		getRpcConnectionStatus(),
+		getRpcList(),
+		getPreSimulationBlockTimeManipulation(),
+		getPopupVisualisationState(),
+		getLatestUnexpectedError(),
+		getActiveAddresses(),
+		getMakeCurrentAddressRich(),
+	])
+	return {
+		activeAddresses,
+		fixedAddressRichList: [],
+		makeCurrentAddressRich,
+		latestUnexpectedError,
+		settings,
+		rpcEntries,
+		tabState,
+		currentBlockNumber: simulator.ethereum.getCachedBlock()?.number,
+		rpcConnectionStatus,
+		tabId: currentTabId,
+		interceptorDisabled,
+		preSimulationBlockTimeManipulation,
+		visualizedSimulatorState,
+		websiteAccessAddressMetadata: [],
+	}
 }
 
 export async function refreshHomeData(simulator: Simulator, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {

@@ -4,7 +4,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack } from './storageVariables.js'
 import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMakeMeRichList } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack } from './simulationModeHanders.js'
-import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress } from './popupMessageHandlers.js'
+import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, requestBootstrapData } from './popupMessageHandlers.js'
 import { SimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -456,11 +456,12 @@ export async function popupMessageHandler(
 				case 'popup_openAddressBook': return await openNewTab('addressBook')
 				case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 				case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
-				case 'popup_confirmTransactionReadyAndListening': {
-					await updateConfirmTransactionView(simulator)
-					return
-				}
-				case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
+					case 'popup_confirmTransactionReadyAndListening': {
+						await updateConfirmTransactionView(simulator)
+						return
+					}
+					case 'popup_requestBootstrapData': return await requestBootstrapData(simulator)
+					case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
 				case 'popup_refreshHomeData': return await refreshHomeData(simulator)
 				case 'popup_requestSettings': return await settingsOpened()
 				case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()

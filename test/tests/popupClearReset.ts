@@ -1,8 +1,10 @@
 import * as assert from 'assert'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
+import type { PopupBootstrapData } from '../../app/ts/types/interceptor-reply-messages.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
+import * as storageVariables from '../../app/ts/background/storageVariables.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -17,7 +19,9 @@ type BrowserMock = {
 
 function createBrowserMock(): BrowserMock {
 	const storageState: Record<string, unknown> = {}
-	const sentMessages: RuntimeMessage[] = []
+	const state = {
+		sentMessages: [] as RuntimeMessage[],
+	}
 
 	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -35,7 +39,7 @@ function createBrowserMock(): BrowserMock {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: RuntimeMessage) {
-				sentMessages.push(message)
+				state.sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
 					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
 				}
@@ -81,14 +85,16 @@ function createBrowserMock(): BrowserMock {
 	(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 
 	return {
-			sentMessages,
-			reset() {
-				for (const key of Object.keys(storageState)) delete storageState[key]
-				sentMessages.length = 0;
-				(globalThis.browser.runtime as unknown as { lastError: undefined }).lastError = undefined
-			},
-		}
+		get sentMessages() {
+			return state.sentMessages
+		},
+		reset() {
+			for (const key of Object.keys(storageState)) delete storageState[key]
+			const runtime = globalThis.browser.runtime as { lastError: unknown }
+			runtime.lastError = null
+		},
 	}
+}
 
 const browserMock = createBrowserMock()
 
@@ -110,6 +116,9 @@ async function loadModules() {
 		...background,
 		...simulationUpdating,
 		...simulationMode,
+		requestBootstrapData: popupMessageHandlers.requestBootstrapData,
+		resetSettingsCache: settings.resetSettingsCache,
+		resetRpcListCache: storageVariables.resetRpcListCache,
 	}
 }
 
@@ -216,7 +225,14 @@ export async function main() {
 		defaultRpcs,
 		resetSimulatorStateFromConfig,
 		DEFAULT_BLOCK_MANIPULATION,
+		resetSettingsCache,
+		resetRpcListCache,
 	} = await modulesPromise
+	const resetTestState = () => {
+		browserMock.reset()
+		resetSettingsCache()
+		resetRpcListCache()
+	}
 
 	const activeAddress = defaultActiveAddresses[0]?.address
 	const rpcNetwork = defaultRpcs[0]
@@ -228,8 +244,25 @@ export async function main() {
 	const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
 
 	describe('popup clear reset', () => {
+		should('returns bootstrap state without sending popup updates', async () => {
+			resetTestState()
+			await browserStorageLocalSet({
+				activeSimulationAddress: activeAddress,
+				currentTabId: -1,
+				simulationMode: true,
+			})
+
+			const modules = await modulesPromise
+			const reply = (await modules.requestBootstrapData(typedPopupSimulator)) as PopupBootstrapData
+
+			assert.equal(browserMock.sentMessages.length, 0)
+			assert.equal(reply.fixedAddressRichList.length, 0)
+			assert.equal(reply.settings.openedPage.page, 'Home')
+			assert.equal(reply.tabState.tabId, -1)
+		})
+
 		should('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
-			browserMock.reset()
+			resetTestState()
 			await browserStorageLocalSet({
 				activeSimulationAddress: activeAddress,
 				interceptorTransactionStack: { operations: [] },
@@ -260,7 +293,7 @@ export async function main() {
 		})
 
 		should('updates the cached popup active address without restamping the simulation', async () => {
-			browserMock.reset()
+			resetTestState()
 			const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address
 			if (nextActiveAddress === undefined) throw new Error('test defaults are missing a second active address')
 			await browserStorageLocalSet({
@@ -307,7 +340,7 @@ export async function main() {
 		})
 
 		should('publish an empty popup visualisation even when previous state was done', async () => {
-			browserMock.reset()
+			resetTestState()
 			await browserStorageLocalSet({
 				activeSimulationAddress: activeAddress,
 				popupVisualisation: stalePopupVisualisation,
@@ -330,7 +363,7 @@ export async function main() {
 		})
 
 		should('clear the interceptor stack and refresh popup state during reset', async () => {
-			browserMock.reset()
+			resetTestState()
 			await browserStorageLocalSet({
 				activeSimulationAddress: activeAddress,
 				popupVisualisation: stalePopupVisualisation,
