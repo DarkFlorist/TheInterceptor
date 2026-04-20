@@ -48,7 +48,6 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService)
 }
 
 let confirmTransactionAbortController = new AbortController()
-
 export async function refreshConfirmTransactionSimulation(
 	simulator: Simulator,
 	activeAddress: bigint,
@@ -64,10 +63,11 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
+	const simulationStartedTimestamp = new Date()
 	const simulationInput = await getCurrentSimulationInput()
 	try {
 		const getNewVisualizedSimulationState = async () => {
@@ -86,10 +86,11 @@ export async function refreshConfirmTransactionSimulation(
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return { statusCode: 'failed' as const, data: {
 				...info,
+				simulationStartedTimestamp,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
 				simulationState: {
-					blockNumber: 0n,
-					simulationConductedTimestamp: new Date()
+					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
+					simulationConductedTimestamp: new Date(),
 				}
 			} }
 		}
@@ -99,6 +100,7 @@ export async function refreshConfirmTransactionSimulation(
 			statusCode: 'success' as const,
 			data: {
 				...info,
+				simulationStartedTimestamp,
 				...visualizedSimulatorState,
 				transactionToSimulate: {
 					...transactionToSimulate,
@@ -134,6 +136,7 @@ export async function refreshConfirmTransactionSimulation(
 		}
 		return { statusCode: 'failed' as const, data: {
 			...info,
+			simulationStartedTimestamp,
 			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
 			simulationState: {
 				blockNumber: 0n,
@@ -437,7 +440,7 @@ export async function popupMessageHandler(
 				case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator)
 				case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, parsedRequest)
 				case 'popup_refreshSimulation': {
-					updatePopupVisualisationIfNeeded(simulator, false, true)
+					await updatePopupVisualisationIfNeeded(simulator, false, false, true)
 					return
 				}
 				case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator)

@@ -1,21 +1,19 @@
-import { useComputed } from '@preact/signals'
+import { Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
 import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
-import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { Transaction } from '../Transactions.js'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 
 type ShowSuccessOrFailureParams = {
 	gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx
-	currentBlockNumber: undefined | bigint
-	rpcConnectionStatus: RpcConnectionStatus
-	activeAddress: bigint
-	simulateExecutionReply: SimulateExecutionReply | undefined
+	activeAddress: ReadonlySignal<bigint | undefined>
+	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
@@ -23,7 +21,29 @@ type ShowSuccessOrFailureParams = {
 const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGnosisSafeTransaction', data: { gnosisSafeMessage } })
 
 const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
-	if (simulateExecutionReply === undefined) {
+	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
+	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
+	const simTx = useComputed(() => simulateExecutionReply.value?.data.success === true ? simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1) : undefined)
+	const addressMetaData = useComputed(() => {
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		return simulateExecutionReply.value.data.result.addressBookEntries
+	})
+	const results = useComputed(() => {
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		return {
+			blockNumber: simulateExecutionReply.value.data.result.simulationState.blockNumber,
+			blockTimestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
+			simulationConductedTimestamp: simulateExecutionReply.value.data.result.simulationState.simulationConductedTimestamp,
+			addressBookEntries: simulateExecutionReply.value.data.result.addressBookEntries,
+			rpcNetwork: simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
+			tokenPriceEstimates: simulateExecutionReply.value.data.result.tokenPriceEstimates,
+			activeAddress: activeAddress.value!,
+			visualizedSimulationState: simulateExecutionReply.value.data.result.visualizedSimulationState,
+			namedTokenIds: simulateExecutionReply.value.data.result.namedTokenIds,
+		}
+	})
+
+	if (simulateExecutionReply.value === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
 			<button
 				class = { 'button is-primary' }
@@ -35,43 +55,27 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 		</div>
 	}
 
-	if (simulateExecutionReply.data.success === false) {
+	if (simulateExecutionReply.value.data.success === false) {
 		return <div style = 'display: grid; grid-template-rows: max-content' >
-			<ErrorComponent text = { simulateExecutionReply.data.errorMessage }/>
+			<ErrorComponent text = { errorText }/>
 		</div>
 	}
-	if (simulateExecutionReply.data.result.visualizedSimulationState.success === false) {
+	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
 		return <div style = 'display: grid; grid-template-rows: max-content' >
-			<ErrorComponent text = { JSON.stringify(simulateExecutionReply.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) }/>
+			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
-	const simTx = simulateExecutionReply.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
-	if (simTx === undefined) return <></>
-
-	const results = useComputed(() => {
-		if (simulateExecutionReply.data.success === false) throw new Error('failed simulation')
-		return {
-			blockNumber: simulateExecutionReply.data.result.simulationState.blockNumber,
-			blockTimestamp: simulateExecutionReply.data.result.simulationState.blockTimestamp,
-			simulationConductedTimestamp: simulateExecutionReply.data.result.simulationState.simulationConductedTimestamp,
-			addressBookEntries: simulateExecutionReply.data.result.addressBookEntries,
-			rpcNetwork: simulateExecutionReply.data.result.simulationState.rpcNetwork,
-			tokenPriceEstimates: simulateExecutionReply.data.result.tokenPriceEstimates,
-			activeAddress: activeAddress,
-			visualizedSimulationState: simulateExecutionReply.data.result.visualizedSimulationState,
-			namedTokenIds: simulateExecutionReply.data.result.namedTokenIds,
-		}
-	})
+	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
 
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
-			simTx = { simTx }
+			simTx = { simTx.value }
 			simulationAndVisualisationResults = { results }
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-			addressMetaData = { simulateExecutionReply.data.result.addressBookEntries }
+			addressMetaData = { addressMetaData }
 		/>
 	</div>
 }
@@ -84,39 +88,33 @@ type GnosisSafeVisualizerParams = {
 }
 
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
-	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
-	const [simulateExecutionReply, setSimulateExecutionReply] = useState<SimulateExecutionReply | undefined>(undefined)
-
-	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
+	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
+	const activeAddress = useSignal<bigint | undefined>(undefined)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') {
-				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-				setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
-				return false
-			}
+			if (parsed.method === 'popup_new_block_arrived') return false
 			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const reply = SimulateExecutionReply.parse(parsed)
+			const { role: _role, ...popupSimulateExecutionReply } = parsed
+			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
 			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return false
-			setSimulateExecutionReply(reply)
+			simulateExecutionReply.value = reply
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
+	}, [])
 
 	useEffect(() => {
-		setActiveAddress(param.activeAddress)
-		setSimulateExecutionReply(undefined)
+		activeAddress.value = param.activeAddress
+		simulateExecutionReply.value = undefined
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
-	if (activeAddress === undefined) return <></>
-		return <>
+	if (activeAddress.value === undefined) return <></>
+	return <>
 		<div class = 'notification transaction-importance-box'>
 			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>
 				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>
@@ -128,15 +126,13 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
 			<ShowSuccessOrFailure
 				gnosisSafeMessage = { param.gnosisSafeMessage }
-				currentBlockNumber = { currentBlockNumber }
-				rpcConnectionStatus = { rpcConnectionStatus }
 				simulateExecutionReply = { simulateExecutionReply }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				activeAddress = { activeAddress }
 			/>
 		</div>
-		{ simulateExecutionReply === undefined ? <></> :
+		{ simulateExecutionReply.value === undefined ? <></> :
 			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
 				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
 			</div>

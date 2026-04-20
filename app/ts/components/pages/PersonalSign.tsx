@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks'
+import { useSignal } from '@preact/signals'
 import { bigintSecondsToDate, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
@@ -23,6 +23,7 @@ import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { ReadonlySignal } from '@preact/signals'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -102,7 +103,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 			{ identifySignature(params.visualizedPersonalSignRequest).title }
 		</p>
 		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
-			<WebsiteOriginText { ...params.visualizedPersonalSignRequest.website } />
+			<WebsiteOriginText website = { params.visualizedPersonalSignRequest.website } />
 		</p>
 		{ removeSignedMessage !== undefined
 			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
@@ -381,10 +382,10 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 
 
 function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
-	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Extra details
 			</p>
@@ -392,7 +393,7 @@ function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: 
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
-		{ !showSummary
+		{ !showSummary.value
 			? <></>
 			: <>
 				<div class = 'card-content'>
@@ -408,9 +409,9 @@ function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: 
 }
 
 function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
-	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const showSummary = useSignal<boolean>(false)
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Raw message
 			</p>
@@ -418,7 +419,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
-		{ !showSummary
+		{ !showSummary.value
 			? <></>
 			: <ViewSelector id = 'raw_message'>
 				<ViewSelector.List>
@@ -480,9 +481,10 @@ export function isPossibleToSignMessage(visualizedPersonalSignRequest: Visualize
 	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
 }
 
-export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage }) {
-	if (pendingTransactionOrSignableMessage.type !== 'SignableMessage') return <></>
-	if (pendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <></>
-	if (pendingTransactionOrSignableMessage.visualizedPersonalSignRequest.isValidMessage !== false) return <></>
+export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined> }) {
+	const current = pendingTransactionOrSignableMessage.value
+	if (current?.type !== 'SignableMessage') return <></>
+	if (current.transactionOrMessageCreationStatus !== 'Simulated') return <></>
+	if (current.visualizedPersonalSignRequest.isValidMessage !== false) return <></>
 	return <ErrorComponent warning = { true } text = { 'The requested message format is invalid and cannot be signed.' }/>
 }

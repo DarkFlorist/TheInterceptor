@@ -13,12 +13,13 @@ import { Blockie } from './SVGBlockie.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
 import { InlineCard } from './InlineCard.js'
 import { getNativeTokenErc20 } from '../../background/metadataUtils.js'
+import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 type EtherParams = {
-	amount: bigint
+	amount: SignalOrValue<bigint>
 	showSign?: boolean
 	useFullTokenName?: boolean
-	rpcNetwork: RpcNetwork
+	rpcNetwork: SignalOrValue<RpcNetwork>
 	style?: JSX.CSSProperties
 	fontSize: 'normal' | 'big'
 }
@@ -34,14 +35,15 @@ export function Ether(param: EtherParams) {
 	</table>
 }
 type EtherAmountParams = {
-	amount: bigint
+	amount: SignalOrValue<bigint>
 	showSign?: boolean
 	style?: JSX.CSSProperties
 	fontSize: 'normal' | 'big'
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
+	const amount = resolveSignal(param.amount)
+	const sign = param.showSign ? (amount >= 0 ? ' + ' : ' - '): ''
 	const style: JSX.CSSProperties = {
 		display: 'inline-flex',
 		overflow: 'hidden',
@@ -53,9 +55,9 @@ export function EtherAmount(param: EtherAmountParams) {
 	}
 
 	return <>
-		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
+		<CopyToClipboard content = { bigintToDecimalString(abs(amount), 18n) } copyMessage = 'Ether amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
-				{ sign }<AbbreviatedValue amount = { abs(param.amount) } />
+				{ sign }<AbbreviatedValue amount = { abs(amount) } />
 			</p>
 		</CopyToClipboard>
 	</>
@@ -63,14 +65,15 @@ export function EtherAmount(param: EtherAmountParams) {
 
 type EtherSymbolParams = {
 	useFullTokenName?: boolean
-	rpcNetwork: RpcNetwork
+	rpcNetwork: SignalOrValue<RpcNetwork>
 	style?: JSX.CSSProperties
 	fontSize: 'normal' | 'big'
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
+	const rpcNetwork = resolveSignal(param.rpcNetwork)
 	return <TokenSymbol
-		tokenEntry = { getNativeTokenErc20(param.rpcNetwork) }
+		tokenEntry = { getNativeTokenErc20(rpcNetwork) }
 		useFullTokenName = { param.useFullTokenName }
 		style = { param.style }
 		renameAddressCallBack = { () => {} }
@@ -79,7 +82,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 }
 
 type TokenPriceParams = {
-	amount: bigint,
+	amount: SignalOrValue<bigint>,
 	quoteTokenEntry: Erc20TokenEntry
 	tokenPriceEstimate: TokenPriceEstimate
 	style?: JSX.CSSProperties
@@ -87,7 +90,7 @@ type TokenPriceParams = {
 }
 
 export function TokenPrice(param: TokenPriceParams) {
-	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
+	const value = getTokenAmountsWorth(resolveSignal(param.amount), param.tokenPriceEstimate)
 	const style = (param.style === undefined ? {} : param.style)
 	return <TokenWithAmount
 		amount = { value }
