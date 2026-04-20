@@ -28,7 +28,7 @@ export async function updateFetchSimulationStackRequestWithPendingRequest() {
 	return
 }
 
-export async function getSimulationStack(simulationState: SimulationState | undefined, version: SimulationStackVersion) {
+async function getSimulationStack(simulationState: SimulationState | undefined, version: SimulationStackVersion) {
 	switch (version) {
 		case '2.0.0': return { version, payload: getSimulatedStackV2(simulationState) } as const
 		case '1.0.0':
@@ -71,7 +71,7 @@ const userDeniedChange = {
 	}
 } as const
 
-export const openFetchSimulationStackDialog = async (
+const openFetchSimulationStackDialog = async (
 	simulationState: SimulationState | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
@@ -129,7 +129,7 @@ export const openFetchSimulationStackDialog = async (
 	}
 }
 
-export const getSimulationStackHash = (simulationState: SimulationStateInput | undefined) => {
+const getSimulationStackHash = (simulationState: SimulationStateInput | undefined) => {
 	if (simulationState === undefined) return 'undefined'
 	return getSimulationInputHash(simulationState)
 }

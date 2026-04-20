@@ -116,7 +116,7 @@ const RequestIsMainWindowOpen = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-export const PopupRequestsReplies = {
+const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -129,7 +129,7 @@ export const PopupRequestsReplies = {
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 }
 
-export type PopupRequestsReplies = {
+type PopupRequestsReplies = {
 	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<typeof PopupRequestsReplies[Key]>
 }
 
