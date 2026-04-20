@@ -19,10 +19,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
 
-export async function saveAddressBookEntry(
-	entryToAdd: AddressBookEntry | { type: 'error', error: string },
-	close: () => void,
-	sendMessage = sendPopupMessageToBackgroundPage,
+export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage = sendPopupMessageToBackgroundPage,
 ) {
 	if (entryToAdd.type === 'error') return
 	await sendMessage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd })
