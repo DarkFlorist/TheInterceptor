@@ -406,11 +406,10 @@ export async function requestBootstrapData(simulator: Simulator): Promise<PopupB
 	} satisfies TabState))
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
-	const [rpcConnectionStatus, rpcEntries, preSimulationBlockTimeManipulation, visualizedSimulatorState, latestUnexpectedError, activeAddresses, makeCurrentAddressRich] = await Promise.all([
+	const [rpcConnectionStatus, rpcEntries, preSimulationBlockTimeManipulation, latestUnexpectedError, activeAddresses, makeCurrentAddressRich] = await Promise.all([
 		getRpcConnectionStatus(),
 		getRpcList(),
 		getPreSimulationBlockTimeManipulation(),
-		getPopupVisualisationState(),
 		getLatestUnexpectedError(),
 		getActiveAddresses(),
 		getMakeCurrentAddressRich(),
@@ -428,7 +427,7 @@ export async function requestBootstrapData(simulator: Simulator): Promise<PopupB
 		tabId: currentTabId,
 		interceptorDisabled,
 		preSimulationBlockTimeManipulation,
-		visualizedSimulatorState,
+		visualizedSimulatorState: undefined,
 		websiteAccessAddressMetadata: [],
 	}
 }
