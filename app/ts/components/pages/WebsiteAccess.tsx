@@ -535,7 +535,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: Signal<Website
 
 	return (
 		<article class = 'flexy flexy-lg'>
-			<figure><i class = 'status-lg status-outline' style = { { '--fg-color': '#FF7272', '--outline': '1px solid' } }><TrashIcon /></i></figure>
+			<figure><i class = 'status-lg status-outline' style = { { '--fg-color': 'var(--status-danger-outline-color)', '--outline': '1px solid var(--status-danger-outline-color)' } }><TrashIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
 					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Remove Website Access</h1>

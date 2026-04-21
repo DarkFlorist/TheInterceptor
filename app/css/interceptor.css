@@ -25,6 +25,10 @@ body { font-family: "Inter" !important; }
 	--card-content-bg-color: #484848;
 	--card-header-bg-color: #404040;
 	--window-header-bg-color: #606060;
+	--surface-mid-color: #3e3e3e;
+	--surface-dark-color: #222222;
+	--layout-line-color: #505050;
+	--address-muted-bg-color: #757575;
 
 	--disabled-card-color: rgba(10, 10, 10, 0.6);
 	--primary-color: #58a5b3;
@@ -43,6 +47,13 @@ body { font-family: "Inter" !important; }
 	--highlighted-negative-color: #f77f76;
 	--warning-color: #FFC107;
 	--negative-dim-color: rgba(246, 104, 94, 0.5);
+	--status-warn-bg-color: #F5934B;
+	--status-warn-fg-color: #753100;
+	--status-danger-bg-color: #FF7272;
+	--status-danger-fg-color: #6B2626;
+	--status-danger-outline-color: #FF7272;
+	--status-dimmed-bg-color: #c05858;
+	--status-alert-text-color: #e6cb1f;
 
 	--text-color: #ffffff;
 	--subtitle-text-color: rgba(255, 255, 255, 0.7);
@@ -53,6 +64,17 @@ body { font-family: "Inter" !important; }
 	--dim-text-color: rgba(255, 255, 255, 0.8);
 	--alpha-005: rgba(255, 255, 255, 0.05);
 	--alpha-015: rgba(255, 255, 255, 0.15);
+	--white-color: #fff;
+	--black-color: #000000;
+	--white-alpha-20: #ffffff20;
+	--white-alpha-10: #ffffff10;
+	--white-alpha-08: #ffffff08;
+	--black-alpha-90: #00000090;
+	--black-alpha-d6: #000000d6;
+	--button-color: #77738ccc;
+	--checked-switch-color: #378b37;
+	--unchecked-switch-color: #922929;
+	--tooltip-color: #222222;
 
 	--big-font-size: 28px;
 	--normal-font-size: 14px;
@@ -101,24 +123,24 @@ svg[role="img"] {
 
 input[type=checkbox]:not([role=switch]) {
 	appearance: none;
-	background-color: #fff;
+	background-color: var(--white-color);
 	margin: 0;
 	font-size: 1.2em;
-	color: black;
+	color: var(--black-color);
 	place-content: center;
 	width: 1.15em;
 	height: 1.15em;
 	display: grid;
 	border-radius: 3px;
 	background-color: var(--unimportant-text-color);
-	border: 1px solid black;
+	border: 1px solid var(--black-color);
 }
 
 input[type=checkbox]:not([role=switch])::before {
 	content: '✔';
 	place-content: center;
 	display: flex;
-	color: black;
+	color: var(--black-color);
 	line-height: 1.15em;
 	width: 1.15em;
 	height: 1.15em;
@@ -126,7 +148,7 @@ input[type=checkbox]:not([role=switch])::before {
 	border-radius: 3px;
 	transition: 120ms transform ease-in-out;
 	background-color: var(--primary-color);
-	border: 1px solid black;
+	border: 1px solid var(--black-color);
 }
 
 input[type=checkbox]:not([role=switch]):checked::before {
@@ -137,7 +159,7 @@ input[type=checkbox]:not([role=switch]):checked::before {
 	position: fixed;
 	z-index: 9999;
 	cursor: default;
-	border: 1px solid white;
+	border: 1px solid var(--white-color);
 	background-color: var(--card-bg-color);
 	max-width: 100%;
 	font-size: 0.75rem;
@@ -403,7 +425,7 @@ li {
 .dropdown-content {
 	background-color: var(--card-content-bg-color);
 	box-shadow: 0px 8px 16px 0px rgb(0 0 0 / 20%);
-	border: 1px solid #ffffff20;
+	border: 1px solid var(--white-alpha-20);
 	position: absolute;
 	z-index: 20;
 	padding: 10px;
@@ -995,12 +1017,12 @@ strong { color: inherit }
 
 .btn--outline {
 	--btn-bg-color: transparent;
-	--btn-outline: 1px solid #ffffff20;
+	--btn-outline: 1px solid var(--white-alpha-20);
 }
 
-.btn--outline:hover:not(:disabled) { --btn-bg-color: #ffffff10 }
+.btn--outline:hover:not(:disabled) { --btn-bg-color: var(--white-alpha-10) }
 .btn--ghost { --btn-bg-color: transparent; }
-.btn--ghost:hover:not(:disabled) { --btn-bg-color: #ffffff10; }
+.btn--ghost:hover:not(:disabled) { --btn-bg-color: var(--white-alpha-10); }
 
 
 :where(.actions:has(.btn), .flex) {
@@ -1121,7 +1143,7 @@ summary:where(details[open] > *) {
 .dialog header, .dialog footer { display: grid; }
 
 .dialog::backdrop {
-	background: #00000090;
+	background: var(--black-alpha-90);
 	backdrop-filter: blur(1px);
 }
 
@@ -1195,7 +1217,7 @@ summary:where(details[open] > *) {
 .report {
 	padding: 0 2rem;
 	border-radius: 6px;
-	background: #3e3e3e;
+	background: var(--surface-mid-color);
 	place-content: center;
 	justify-items: center;
 }
@@ -1268,7 +1290,7 @@ fieldset label:has([type=radio]) {
 }
 
 fieldset label:has([type=radio]):focus-within {
-	background: #ffffff10;
+	background: var(--white-alpha-10);
 }
 
 fieldset label:has([type=radio]):before {
@@ -1277,13 +1299,13 @@ fieldset label:has([type=radio]):before {
 	width: 0.3125rem;
 	height: 0.3125rem;
 	border-radius: 100%;
-	outline: 1px solid white;
+	outline: 1px solid var(--white-color);
 	outline-offset: 0.1875rem;
 	margin: 0.1875rem;
 }
 
 fieldset label:has([type=radio]:checked):before {
-	background: white;
+	background: var(--white-color);
 }
 
 [type=radio]:where(label > *) {
@@ -1295,7 +1317,7 @@ fieldset label:has([type=radio]:checked):before {
 	display: grid;
 	--grid-cols: 1fr;
 	--gap-y: 0.5rem;
-	border: 1px solid #ffffff20;
+	border: 1px solid var(--white-alpha-20);
 	border-radius: 0.25rem;
 	padding: 0.5rem;
 	align-items: start;
@@ -1337,7 +1359,7 @@ fieldset label:has([type=radio]:checked):before {
 
 	.layout {
 		--grid-col: var(--grid-column, 2);
-		--line-color: #505050;
+		--line-color: var(--layout-line-color);
 		display: grid;
 		grid-column: var(--grid-col);
 		min-height: 100vh;
@@ -1415,8 +1437,8 @@ form[role='search'] input[type='search'] ~ button:focus {
 
 /* Switch Component */
 input[role=switch] {
-	--bg-color: #922929;
-	--checked-bg-color: #378b37;
+	--bg-color: var(--unchecked-switch-color);
+	--checked-bg-color: var(--checked-switch-color);
 	appearance: none;
 	width: 1.75rem;
 	background: var(--bg-color);
@@ -1426,7 +1448,7 @@ input[role=switch] {
 	border: 0 none;
 	cursor: pointer;
 	transition: background 400ms;
-	box-shadow: 0 0 1px inset #000000d6;
+	box-shadow: 0 0 1px inset var(--black-alpha-d6);
 }
 
 input[role=switch]:focus-visible {
@@ -1441,14 +1463,14 @@ input[role=switch]:checked {
 input[role=switch]:before {
 	content: '';
 	display: block;
-	background: white;
+	background: var(--white-color);
 	height: 1rem;
 	border-radius: 100%;
 	width: 1rem;
 	border: none;
 	transition: transform 200ms;
 	transform: scale(1);
-	box-shadow: 0 0 3px #000000d6;
+	box-shadow: 0 0 3px var(--black-alpha-d6);
 }
 
 input[role=switch]:checked:before {
@@ -1473,16 +1495,16 @@ input[role=switch]:checked:before {
 }
 
 .status-warn {
-	--bg-color: #F5934B;
-	--fg-color: #753100;
+	--bg-color: var(--status-warn-bg-color);
+	--fg-color: var(--status-warn-fg-color);
 }
 
 .status-danger {
-	--bg-color: #FF7272;
-	--fg-color: #6B2626;
+	--bg-color: var(--status-danger-bg-color);
+	--fg-color: var(--status-danger-fg-color);
 }
 
-.status-outline { --outline: #FF7272 }
+.status-outline { --outline: 1px solid var(--status-danger-outline-color) }
 .status-lg { font-size: 1.5rem }
 
 /* Customizations */
@@ -1508,13 +1530,13 @@ header:has(form[role='search']) h1 {
 	--heading-weight: normal;
 	--subheading-color: var(--disabled-text-color);
 	margin: 0;
-	border-bottom: 1px solid #ffffff10;
+	border-bottom: 1px solid var(--white-alpha-10);
 	position: relative;
 }
 
 [role=option]:has([type=radio]):focus-within,
 [role=option]:has([type=radio]):hover {
-	background: linear-gradient(to right, transparent 0%, #ffffff08 50%, transparent 100%);
+	background: linear-gradient(to right, transparent 0%, var(--white-alpha-08) 50%, transparent 100%);
 }
 
 [role=option] [type=radio] {
@@ -1610,7 +1632,6 @@ header:has(form[role='search']) h1 {
 
 .inline-card {
 	--bg-color: transparent;
-	--button-color: #77738ccc;
 	--button-color-hilite: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
@@ -1733,13 +1754,13 @@ header:has(form[role='search']) h1 {
 	}
 
 	&:has([role=alert]) {
-		--bg-status-color: #c05858; /* dark red */
+		--bg-status-color: var(--status-dimmed-bg-color); /* dark red */
 		min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + 4ch);
 
 	}
 
 	[role=alert] {
-		color: #e6cb1f; /* bright yellow */
+		color: var(--status-alert-text-color); /* bright yellow */
 		cursor: pointer;
 
 		&:has(+ *) { margin-right: 0.25em }
@@ -1749,7 +1770,6 @@ header:has(form[role='search']) h1 {
 
 .multiline-card {
 	--bg-color: transparent;
-	--button-color: #77738ccc;
 	--image-size: 2.25rem;
 	--min-text-width: 0;
 	--pad-x: 0;
@@ -1846,8 +1866,8 @@ header:has(form[role='search']) h1 {
 
 			&:hover, &:focus {
 				> span {
-					background: white;
-					color: black;
+					background: var(--white-color);
+					color: var(--black-color);
 
 					span { display: inline }
 					svg { display: none }
@@ -1856,7 +1876,7 @@ header:has(form[role='search']) h1 {
 
 			> span {
 				background: var(--button-color);
-				color: white;
+				color: var(--white-color);
 				font-size: 0.8em;
 				font-weight: 600;
 				padding-inline: 0.25em;
@@ -1879,8 +1899,8 @@ header:has(form[role='search']) h1 {
 }
 
 .tooltip {
-	background: #222222;
-	color: #ffffff;
+	background: var(--tooltip-color);
+	color: var(--white-color);
 	padding: 0.3125rem 0.6875rem;
 	border: 0 none;
 	border-radius: 4px;
@@ -1908,7 +1928,7 @@ header:has(form[role='search']) h1 {
 .timepicker-datetime-local {
 	background: unset;
 	color: var(--text-color);
-	border: 1px solid #ffffff20;
+	border: 1px solid var(--white-alpha-20);
 	border-radius: 4px;
 }
 
@@ -1943,7 +1963,7 @@ header:has(form[role='search']) h1 {
 .btn.is-danger {
   background-color: var(--negative-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--white-color);
 }
 
 .dropdown-chevron {
@@ -1963,9 +1983,9 @@ header:has(form[role='search']) h1 {
 	background-color: var(--card-content-bg-color);
 	border-bottom-left-radius: 0.25rem;
 	border-bottom-right-radius: 0.25rem;
-	border-left: 1px solid #ffffff20;
-	border-right: 1px solid #ffffff20;
-	border-bottom: 1px solid #ffffff20;
+	border-left: 1px solid var(--white-alpha-20);
+	border-right: 1px solid var(--white-alpha-20);
+	border-bottom: 1px solid var(--white-alpha-20);
 }
 
 input[type="number"] {
@@ -1979,5 +1999,5 @@ input[type="number"]:focus {
 .btn.is-primary {
 	background-color: var(--primary-color);
 	border-color: transparent;
-	color: #fff;
+	color: var(--white-color);
 }

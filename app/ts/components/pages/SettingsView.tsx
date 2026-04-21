@@ -206,7 +206,7 @@ const RpcListings = () => {
 		return (
 			<>
 				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
-					<p style = { { color: '#ffffff80' } }>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
+					<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
 					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load the default RPC list</button>
 				</aside>
 				<ul class = 'grid' style = '--gap-y: 0.5rem'>
