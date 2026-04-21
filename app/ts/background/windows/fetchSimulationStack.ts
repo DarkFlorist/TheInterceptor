@@ -10,12 +10,10 @@ import { replyToInterceptedRequest } from '../messageSending.js'
 import { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { SimulationState, SimulationStateInput } from '../../types/visualizer-types.js'
-import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
-import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { assertNever } from '../../utils/typescript.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { getCurrentSimulationInput } from '../simulationUpdating.js'
+import { getSimulationStack } from './getSimulationStack.js'
 
 let pendForUserReply: Future<FetchSimulationStackRequestConfirmation> | undefined = undefined
 
@@ -27,18 +25,6 @@ export async function updateFetchSimulationStackRequestWithPendingRequest() {
 	const promise = await getFetchSimulationStackRequestPromise()
 	if (promise) await sendPopupMessageToOpenWindows({ method: 'popup_fetchSimulationStackRequest', data: promise })
 	return
-}
-
-export async function getSimulationStack(simulationState: SimulationState | undefined, version: SimulationStackVersion) {
-	switch (version) {
-		case '2.0.0': return { version, payload: getSimulatedStackV2(simulationState) } as const
-		case '1.0.0':
-		case '1.0.1': {
-			const addressToMakeRich = await getAddressToMakeRich()
-			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } as const
-		}
-		default: assertNever(version)
-	}
 }
 
 export async function resolveFetchSimulationStackRequest(simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
