@@ -3,11 +3,24 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Signal } from '@preact/signals'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
-import { SimulatedInBlockNumber } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
+import { SimulatedInBlockNumber, getSimulationDisplayBlockNumber, getSimulationFreshnessColor } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { installDomMock } from './someTimeAgo.js'
 
 async function main() {
 	describe('SimulatedInBlockNumber', () => {
+		should('derives the displayed block number from the simulated block count', () => {
+			assert.equal(getSimulationDisplayBlockNumber(123n, 0), 123n)
+			assert.equal(getSimulationDisplayBlockNumber(123n, 1), 124n)
+			assert.equal(getSimulationDisplayBlockNumber(123n, 3), 126n)
+		})
+
+		should('treats the next block simulation as fresh', () => {
+			assert.equal(getSimulationFreshnessColor(124n, 123n, undefined), 'var(--positive-color)')
+			assert.equal(getSimulationFreshnessColor(124n, 124n, undefined), 'var(--positive-color)')
+			assert.equal(getSimulationFreshnessColor(124n, 125n, undefined), 'var(--warning-color)')
+			assert.equal(getSimulationFreshnessColor(124n, 126n, undefined), 'var(--negative-color)')
+		})
+
 		should('updates the rendered age when the simulation timestamp changes', async () => {
 			const dom = installDomMock()
 			const currentBlockNumber = new Signal<bigint | undefined>(123n)

@@ -636,6 +636,17 @@ export function TransactionCreated({ created } : { created: EthereumTimestamp })
 	</p>
 }
 
+export function getSimulationDisplayBlockNumber(baseBlockNumber: bigint, simulatedBlockCount: number) {
+	return simulatedBlockCount > 0 ? baseBlockNumber + BigInt(simulatedBlockCount) : baseBlockNumber
+}
+
+export function getSimulationFreshnessColor(simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, rpcConnectionStatus: RpcConnectionStatus | undefined) {
+	const isRpcConnected = rpcConnectionStatus === undefined || rpcConnectionStatus.isConnected
+	if (currentBlockNumber !== undefined && (currentBlockNumber === simulationBlockNumber || currentBlockNumber + 1n === simulationBlockNumber) && isRpcConnected) return 'var(--positive-color)'
+	if (currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber) return 'var(--warning-color)'
+	return 'var(--negative-color)'
+}
+
 export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: Signal<bigint | undefined>, simulationConductedTimestamp: Date, rpcConnectionStatus: Signal<RpcConnectionStatus> }) {
 	return <CopyToClipboard
 		content = { simulationBlockNumber.toString() }
@@ -644,10 +655,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 	>
 		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline; text-overflow: ellipsis; overflow: hidden;'>
 			{ 'Simulated ' }
-			<span style = { `font-weight: bold; font-family: monospace; color: ${
-				simulationBlockNumber === currentBlockNumber.value && (rpcConnectionStatus.value?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
-					currentBlockNumber.value !== undefined && simulationBlockNumber + 1n === currentBlockNumber.value ? 'var(--warning-color)' : 'var(--negative-color)'
-			} ` }>
+			<span style = { `font-weight: bold; font-family: monospace; color: ${ getSimulationFreshnessColor(simulationBlockNumber, currentBlockNumber.value, rpcConnectionStatus.value) } ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
 			</span>
 			{ ' ago' }
@@ -763,7 +771,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					<div class = 'log-cell' style = 'justify-content: center;'> </div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
-							simulationBlockNumber = { param.simulationAndVisualisationResults.value.blockNumber }
+							simulationBlockNumber = { getSimulationDisplayBlockNumber(param.simulationAndVisualisationResults.value.blockNumber, param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length) }
 							currentBlockNumber = { param.currentBlockNumber }
 							simulationConductedTimestamp = { param.simulationAndVisualisationResults.value.simulationConductedTimestamp }
 							rpcConnectionStatus = { param.rpcConnectionStatus }

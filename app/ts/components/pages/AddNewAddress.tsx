@@ -19,6 +19,13 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
 
+export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage = sendPopupMessageToBackgroundPage,
+) {
+	if (entryToAdd.type === 'error') return
+	await sendMessage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd })
+	close()
+}
+
 const readableAddressType = {
 	contact: 'Contact',
 	activeAddress: 'Active Address',
@@ -340,9 +347,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	async function modifyOrAddEntry() {
 		const entryToAdd = getCompleteAddressBookEntry()
-		if (entryToAdd.type === 'error') return
-		param.close()
-		await sendPopupMessageToBackgroundPage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd } )
+		await saveAddressBookEntry(entryToAdd, param.close)
 	}
 
 	async function createAndSwitch() {
