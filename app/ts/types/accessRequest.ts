@@ -33,6 +33,7 @@ type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransa
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
+	simulationStartedTimestamp: EthereumTimestamp,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransactionOrFailed,
 	signerName: SignerName,

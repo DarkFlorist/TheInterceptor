@@ -1,5 +1,6 @@
 import type { ComponentChild, ComponentChildren } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
+import { Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 interface Props {
 	children: ComponentChild | ComponentChild[]
@@ -13,8 +14,8 @@ export default function Container(props: Props) {
 	const copyAttribute = props.attribute || 'data-hint'
 	const toolTipAttribute = props.attribute || 'data-tooltip'
 
-	const [content, setContent] = useState('')
-	const [clickPosition, setClickPosition] = useState<{ x: number, y: number } | null>(null)
+	const content = useSignal('')
+	const clickPosition = useSignal<{ x: number, y: number } | null>(null)
 
 	const containerElementRef = useRef<HTMLDivElement | null>(null)
 	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -31,8 +32,8 @@ export default function Container(props: Props) {
 
 			if (copyMessageTimeoutIdRef.current !== null) return
 
-			setContent('')
-			setClickPosition(null)
+			content.value = ''
+			clickPosition.value = null
 		}
 
 		const click = (event: MouseEvent) => {
@@ -46,12 +47,12 @@ export default function Container(props: Props) {
 			clearTimeout(copyMessageTimeoutIdRef.current ?? undefined)
 			copyMessageTimeoutIdRef.current = null
 
-			setContent(event.target.getAttribute(copyAttribute) || '')
-			setClickPosition({ x: event.clientX, y: event.clientY })
+			content.value = event.target.getAttribute(copyAttribute) || ''
+			clickPosition.value = { x: event.clientX, y: event.clientY }
 
 			copyMessageTimeoutIdRef.current = setTimeout(() => {
-				setContent('')
-				setClickPosition(null)
+				content.value = ''
+				clickPosition.value = null
 				copyMessageTimeoutIdRef.current = null
 			}, parseInt(delayValue))
 		}
@@ -61,8 +62,8 @@ export default function Container(props: Props) {
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 			const tooltipContent = event.target.getAttribute(toolTipAttribute) || ''
 			toolTipTimeoutIdRef.current = setTimeout(() => {
-				setContent(tooltipContent)
-				setClickPosition({ x: event.clientX, y: event.clientY })
+				content.value = tooltipContent
+				clickPosition.value = { x: event.clientX, y: event.clientY }
 			}, 250)
 		}
 
@@ -81,7 +82,7 @@ export default function Container(props: Props) {
 
 	return (
 		<div ref = { containerElementRef } style = 'position: relative; overflow-x: hidden;'>
-			{ content && clickPosition && (
+			{ content.value && clickPosition.value && (
 				<Hint
 					content = { content }
 					template = { props.template }
@@ -94,9 +95,9 @@ export default function Container(props: Props) {
 }
 
 interface HintProps {
-	content: string
+	content: Signal<string>
 	template?: (content: string) => ComponentChildren
-	clickPosition: { x: number, y: number }
+	clickPosition: Signal<{ x: number, y: number } | null>
 }
 
 function calculatePosition(clickPositionX: number, clickPositionY: number, hintWidth: number) {
@@ -112,18 +113,19 @@ function calculatePosition(clickPositionX: number, clickPositionY: number, hintW
 
 function Hint(props: HintProps) {
 	const hintElementRef = useRef<HTMLSpanElement>(null)
-	const [dialogPosition, setDialogPosition] = useState({ left: -1000, top: -1000 })
+	const dialogPosition = useSignal({ left: -1000, top: -1000 })
 
-	useEffect(() => {
+	useSignalEffect(() => {
 		if (hintElementRef.current === null) return
+		if (props.clickPosition.value === null) return
 		const measuredWidth = hintElementRef.current.getBoundingClientRect().width
-		setDialogPosition(calculatePosition(props.clickPosition.x, props.clickPosition.y, measuredWidth))
-	}, [props.clickPosition])
+		dialogPosition.value = calculatePosition(props.clickPosition.value.x, props.clickPosition.value.y, measuredWidth)
+	})
 
 	return (
-		<div class = 'preact-hint' style = { dialogPosition }>
+		<div class = 'preact-hint' style = { dialogPosition.value }>
 			<span class = 'preact-hint__content' ref = { hintElementRef }>
-				{ props.template ? props.template(props.content) : props.content }
+				{ props.template ? props.template(props.content.value) : props.content.value }
 			</span>
 		</div>
 	)

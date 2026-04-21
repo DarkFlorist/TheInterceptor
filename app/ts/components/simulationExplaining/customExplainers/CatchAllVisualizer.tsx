@@ -11,7 +11,7 @@ import { EnsEventsExplainer } from './EnsEventExplainer.js'
 import { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { useComputed } from '@preact/signals'
+import { ReadonlySignal, useComputed } from '@preact/signals'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { RpcNetwork } from '../../../types/rpc.js'
 
@@ -86,11 +86,10 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 
 type CatchAllVisualizerParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	addressMetadata: readonly AddressBookEntry[]
-	rpcNetwork: RpcNetwork
+	addressMetadata: ReadonlySignal<readonly AddressBookEntry[]>
+	rpcNetwork: ReadonlySignal<RpcNetwork>
 }
 
 export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
@@ -154,7 +153,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 					textColor = { textColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					rpcNetwork = { param.rpcNetwork }
+					rpcNetwork = { param.rpcNetwork.value }
 				/>
 			</div>
 		</div>

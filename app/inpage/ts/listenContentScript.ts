@@ -61,7 +61,7 @@ function listenContentScript(connectionName: string | undefined) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
 				if (extensionPort === undefined) return
-				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [messageEvent] } })
+				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
 				return
 			}
 			try {
