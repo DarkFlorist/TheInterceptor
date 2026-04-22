@@ -1,6 +1,7 @@
 
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { PopupOrTabId } from './websiteAccessTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 import { CompleteVisualizedSimulation, NamedTokenId } from './visualizer-types.js'
 
@@ -116,6 +117,14 @@ const RequestIsMainWindowOpen = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+type PopupReadyAndListeningReply = funtypes.Static<typeof PopupReadyAndListeningReply>
+const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_readyAndListening_reply'),
+	data: funtypes.ReadonlyObject({
+		popupOrTabId: PopupOrTabId,
+	}),
+}).asReadonly()
+
 export const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
@@ -127,6 +136,7 @@ export const PopupRequestsReplies = {
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
+	popup_readyAndListening: PopupReadyAndListeningReply,
 }
 
 export type PopupRequestsReplies = {
@@ -150,6 +160,17 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') }),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_readyAndListening'),
+		data: funtypes.ReadonlyObject({
+			page: funtypes.Union(
+				funtypes.Literal('changeChain'),
+				funtypes.Literal('confirmTransaction'),
+				funtypes.Literal('interceptorAccess'),
+				funtypes.Literal('fetchSimulationStack'),
+			),
+		}),
+	}),
 )
 
 export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
@@ -167,5 +188,6 @@ export const PopupReplyOption = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
 	RequestIsMainWindowOpen,
+	PopupReadyAndListeningReply,
 	funtypes.Undefined,
 )

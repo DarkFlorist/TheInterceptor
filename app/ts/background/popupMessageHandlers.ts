@@ -1,8 +1,8 @@
 import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, setMakeCurrentAddressRich, setFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, BlockOrAllowExternalRequests, RemoveWebsiteAccess, AllowOrPreventAddressAccessForWebsite, RemoveWebsiteAddressAccess, ForceSetGasLimitForTransaction, RetrieveWebsiteAccess, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -36,6 +36,9 @@ import { RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedE
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
+import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
+import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
+import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -64,6 +67,59 @@ export async function getLastKnownCurrentTabId() {
 	if (tabs[0]?.id === undefined || tabs[0]?.url === undefined) return tabId
 	if (tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
+}
+
+export async function popupReadyAndListening(simulator: Simulator, page: PopupReadyAndListeningPage) {
+	switch (page) {
+		case 'changeChain': {
+			const promise = await getChainChangeConfirmationPromise()
+			if (promise === undefined) return undefined
+			await updateChainChangeViewWithPendingRequest()
+			return {
+				method: 'popup_readyAndListening_reply' as const,
+				data: {
+					popupOrTabId: promise.popupOrTabId,
+				},
+			}
+		}
+		case 'confirmTransaction': {
+			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const firstPendingTransaction = pendingTransactions[0]
+			if (firstPendingTransaction === undefined) return undefined
+			await updateConfirmTransactionView(simulator)
+			return {
+				method: 'popup_readyAndListening_reply' as const,
+				data: {
+					popupOrTabId: firstPendingTransaction.popupOrTabId,
+				},
+			}
+		}
+		case 'interceptorAccess': {
+			const pendingAccessRequests = await getPendingAccessRequests()
+			const firstPendingAccessRequest = pendingAccessRequests[0]
+			if (firstPendingAccessRequest === undefined) return undefined
+			await updateInterceptorAccessViewWithPendingRequests()
+			return {
+				method: 'popup_readyAndListening_reply' as const,
+				data: {
+					popupOrTabId: firstPendingAccessRequest.popupOrTabId,
+				},
+			}
+		}
+		case 'fetchSimulationStack': {
+			const promise = await getFetchSimulationStackRequestPromise()
+			if (promise === undefined) return undefined
+			await updateFetchSimulationStackRequestWithPendingRequest()
+			return {
+				method: 'popup_readyAndListening_reply' as const,
+				data: {
+					popupOrTabId: promise.popupOrTabId,
+				},
+			}
+		}
+		default:
+			assertNever(page)
+	}
 }
 
 async function getSignerAccount() {
