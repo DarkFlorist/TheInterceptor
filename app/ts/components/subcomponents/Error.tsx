@@ -24,11 +24,11 @@ export function ErrorComponent(props: ErrorProps) {
 	}
 	return (
 		<div style = { containerStyle }>
-			<div className = 'notification' style = { `background-color: ${ boxColor }; display: flex; align-items: center; padding: 10px`}>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
+			<div className = 'notification' style = { `background-color: ${ boxColor }; display: flex; align-items: flex-start; gap: 10px; padding: 10px;` }>
+				<span class = 'icon' style = 'margin-left: 0px; margin-right: 0px; width: 2em; height: 2em; min-width: 2em; min-height: 2em; flex: 0 0 auto;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
-				<p className = 'paragraph' style = { `margin-left: 10px; color: ${ textColor }` }> { resolveSignal(props.text) } </p>
+				<p className = 'paragraph' style = { `margin: 0px; min-width: 0; flex: 1; color: ${ textColor }; white-space: normal; overflow-wrap: anywhere; word-break: break-word;` }> { resolveSignal(props.text) } </p>
 			</div>
 		</div>
 	)
