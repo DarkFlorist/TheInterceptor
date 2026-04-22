@@ -64,7 +64,7 @@ async function main() {
 	const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 	const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
 	const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const { mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 
 	const baseTransaction = {
 		type: '1559',
@@ -152,6 +152,27 @@ async function main() {
 			assert.equal(simulationInput.length, 2)
 			assert.deepStrictEqual(simulationInput.map((block) => block.blockTimeManipulation), [
 				{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+				newDelay,
+			])
+		})
+
+		should('signing mode ignores the pre-simulation first-transaction delay', async () => {
+			await resetStack()
+			mockBrowser.__storage.simulationMode = false
+			mockBrowser.__storage.preSimulationBlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 13n, deltaUnit: 'Seconds' }
+
+			await setTransactionOrMessageBlockTimeManipulator(simulator, {
+				method: 'popup_setTransactionOrMessageBlockTimeManipulator',
+				data: {
+					transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
+					blockTimeManipulation: newDelay,
+				},
+			})
+
+			const simulationInput = await getCurrentSimulationInput()
+			assert.equal(simulationInput.length, 2)
+			assert.deepStrictEqual(simulationInput.map((block) => block.blockTimeManipulation), [
+				DEFAULT_BLOCK_MANIPULATION,
 				newDelay,
 			])
 		})
