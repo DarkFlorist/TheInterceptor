@@ -27,7 +27,7 @@ type TransferAddressParams = BeforeAfterAddress & {
 
 export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
 	return <>
-		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } style = { { '--bg-color' : '#757575' } } />
+		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } style = { { '--bg-color' : 'var(--address-muted-bg-color)' } } />
 		{ beforeAndAfter === undefined
 			? <></>
 			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
