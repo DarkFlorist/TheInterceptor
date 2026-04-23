@@ -30,6 +30,7 @@ import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interc
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -93,6 +94,7 @@ export function App() {
 	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
 	const boundaryResetKey = useSignal(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
+	const popupRefreshAppliedGeneration = useSignal(0)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
@@ -164,6 +166,14 @@ export function App() {
 	}, [])
 
 	useEffect(() => {
+		if (popupRefreshAppliedGeneration.value === 0) return
+		if (popupRefreshAppliedGeneration.value === 1) {
+			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
+		}
+		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.refreshRendered)
+	}, [popupRefreshAppliedGeneration.value])
+
+	useEffect(() => {
 		const setSimulationState = (
 			simState: SimulationState | undefined,
 			addressBookEntries: AddressBookEntries,
@@ -218,6 +228,8 @@ export function App() {
 			if (!wasLoaded) {
 				preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
 			}
+			markPerformance(POPUP_PERFORMANCE_MARKS.refreshComplete)
+			popupRefreshAppliedGeneration.value += 1
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery && appPage.value.page === 'Unknown') {

@@ -26,6 +26,7 @@ import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -167,6 +168,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
 			await updatePopupVisualisationIfNeeded(simulator, false)
+			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
@@ -383,6 +385,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			const transactionToSimulate = await transactionToSimulatePromise
 			const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
+			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
 
 			const pendingTransaction = {
 				type: 'Transaction' as const,
@@ -399,14 +402,16 @@ export async function openConfirmTransactionDialogForTransaction(
 			}
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(simulator)
+			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(simulator, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate))
 			if (transactionToSimulate.success) {
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
 				await updateConfirmTransactionView(simulator)
 			}
+			const popupVisualisation = await simulationResultsPromise
+			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
 			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 				if (transaction.type !== 'Transaction') return transaction
-				const popupVisualisation = await simulationResultsPromise
 				if (popupVisualisation === undefined) return transaction
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
 					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
