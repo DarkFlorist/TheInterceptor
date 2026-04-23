@@ -6,6 +6,7 @@ import { ComponentChildren, RefObject } from 'preact'
 import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { addressString, bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
+import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { ChainEntry, RpcEntries } from '../types/rpc.js'
@@ -171,12 +172,7 @@ export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: b
 export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBookEntry[], addressToFind: EthereumAddress) => {
 	const foundEntry = addressMetaData.find((entry) => entry.address === addressToFind)
 	if (foundEntry !== undefined) return foundEntry
-	return {
-		type: 'contact' as const,
-		name: checksummedAddress(addressToFind),
-		address: addressToFind,
-		entrySource: 'FilledIn' as const
-	}
+	return getFilledInContactEntry(addressToFind)
 }
 
 export const rpcEntriesToChainEntriesWithAllChainsEntry = (rpcEntries: RpcEntries): readonly ChainEntry[] => {
