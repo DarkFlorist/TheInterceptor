@@ -4,6 +4,7 @@ import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
+import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
 
 type ResolvedResponse = { responseState: 'failed', response: Response } | { responseState: 'success', response: unknown }
 
@@ -32,8 +33,13 @@ export class EthereumJSONRpcRequestHandler {
 			body: JSON.stringify({ jsonrpc: '2.0', id: requestId, ...serialized })
 		}
 		if (!this.caching) {
-			const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
-			return response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
+			const startedAt = performance.now()
+			try {
+				const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
+				return response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
+			} finally {
+				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
+			}
 		}
 		const hash = keccak256(toUtf8Bytes(JSON.stringify(serialized)))
 		if (bypassCache === false) {
@@ -45,6 +51,7 @@ export class EthereumJSONRpcRequestHandler {
 		}
 		const future = new Future<ResolvedResponse>()
 		this.pendingCache.set(hash, future)
+		const startedAt = performance.now()
 		try {
 			const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
 			const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
@@ -60,6 +67,7 @@ export class EthereumJSONRpcRequestHandler {
 				future.reject(new ErrorWithData('Unknown error', error))
 			}
 		} finally {
+			recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			this.pendingCache.delete(hash)
 		}
 		return await future

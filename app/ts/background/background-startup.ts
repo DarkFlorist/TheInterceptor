@@ -23,6 +23,7 @@ import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -256,6 +257,7 @@ async function startup() {
 	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections))
 	addWindowTabListeners(onCloseWindow, onCloseTab)
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
 }
 
 startup()
