@@ -1,6 +1,7 @@
 import * as assert from 'assert'
+import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 
@@ -14,6 +15,54 @@ type BrowserMock = {
 	reset: () => void
 	sentMessages: RuntimeMessage[]
 }
+
+type BrowserMockGlobals = {
+	runtime: {
+		lastError: { message?: string } | null | undefined
+		sendMessage: (message: RuntimeMessage) => Promise<unknown>
+		getManifest: () => { manifest_version: number }
+		onMessage: { addListener: () => undefined; removeListener: () => undefined }
+		onConnect: { addListener: () => undefined; removeListener: () => undefined }
+	}
+	storage: {
+		local: {
+			get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>
+			set: (items: Record<string, unknown>) => Promise<void>
+			remove: (keys: string | string[]) => Promise<void>
+		}
+	}
+	tabs: {
+		query: () => Promise<unknown[]>
+		get: () => Promise<undefined>
+		update: () => Promise<undefined>
+		onUpdated: { addListener: () => undefined; removeListener: () => undefined }
+		onRemoved: { addListener: () => undefined; removeListener: () => undefined }
+	}
+	windows: {
+		get: () => Promise<undefined>
+		update: () => Promise<undefined>
+	}
+	action: {
+		setIcon: () => Promise<undefined>
+		setTitle: () => Promise<undefined>
+		setBadgeText: () => Promise<undefined>
+		setBadgeBackgroundColor: () => Promise<undefined>
+	}
+	browserAction: {
+		setIcon: () => Promise<undefined>
+		setTitle: () => Promise<undefined>
+		setBadgeText: () => Promise<undefined>
+		setBadgeBackgroundColor: () => Promise<undefined>
+	}
+}
+
+const PopupSimulationChangedMessage = funtypes.ReadonlyObject({
+	role: funtypes.Literal('all'),
+	method: funtypes.Literal('popup_simulation_state_changed'),
+	data: funtypes.ReadonlyObject({
+		visualizedSimulatorState: CompleteVisualizedSimulationCodec,
+	}),
+}).asReadonly()
 
 function createBrowserMock(): BrowserMock {
 	const storageState: Record<string, unknown> = {}
@@ -30,7 +79,7 @@ function createBrowserMock(): BrowserMock {
 		for (const key of entries) delete storageState[key]
 	}
 
-	const browserMock: any = {
+	const browserMock = {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: RuntimeMessage) {
@@ -76,25 +125,25 @@ function createBrowserMock(): BrowserMock {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
-	}
+	} satisfies BrowserMockGlobals
 
 	const installBrowserGlobals = () => {
-		;(globalThis as any).browser = browserMock
-		;(globalThis as any).chrome = { runtime: { id: 'test-extension' } }
+		Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
+		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 	}
 
 	installBrowserGlobals()
 
 	return {
-			sentMessages,
-			reset() {
-				for (const key of Object.keys(storageState)) delete storageState[key]
-				sentMessages.length = 0
-				installBrowserGlobals()
-				browserMock.runtime.lastError = undefined
-			},
-		}
+		sentMessages,
+		reset() {
+			for (const key of Object.keys(storageState)) delete storageState[key]
+			sentMessages.length = 0
+			installBrowserGlobals()
+			browserMock.runtime.lastError = null
+		},
 	}
+}
 
 const browserMock = createBrowserMock()
 
@@ -213,11 +262,11 @@ function getSimulationStateChangedMessages(messages: RuntimeMessage[]) {
 }
 
 function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVisualizedSimulation) {
-	return serialize(MessageToPopup, {
+	return serialize(PopupSimulationChangedMessage, {
 		role: 'all',
 		method: 'popup_simulation_state_changed',
 		data: { visualizedSimulatorState: popupVisualisation },
-	} as any)
+	} as const)
 }
 
 export async function main() {
