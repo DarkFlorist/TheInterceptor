@@ -457,7 +457,13 @@ export async function refreshHomeData(simulator: Simulator, refreshSimulation = 
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
-	if (settings.activeRpcNetwork.httpsRpc !== undefined) makeSureInterceptorIsNotSleeping(simulator.ethereum)
+	if (
+		settings.activeRpcNetwork.httpsRpc !== undefined &&
+		typeof (simulator.ethereum as { isBlockPolling?: unknown }).isBlockPolling === 'function' &&
+		typeof (simulator.ethereum as { setBlockPolling?: unknown }).setBlockPolling === 'function'
+	) {
+		makeSureInterceptorIsNotSleeping(simulator.ethereum)
+	}
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const updatedPage: UpdateHomePage = {
