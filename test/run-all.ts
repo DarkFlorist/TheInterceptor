@@ -21,7 +21,6 @@ async function importValidateAndRun(relativeFilePath: string) {
 	const imported = await import(relativeFilePath)
 	if (!('main' in imported)) return
 	await imported.main()
-	await run()
 }
 
 await runIfRoot(async () => {
@@ -37,4 +36,5 @@ await runIfRoot(async () => {
 			await importValidateAndRun(relativeFilePath)
 		}
 	}
+	await run()
 }, import.meta)
