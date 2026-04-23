@@ -18,7 +18,6 @@ type BrowserMock = {
 function createBrowserMock(): BrowserMock {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
-
 	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
@@ -31,7 +30,7 @@ function createBrowserMock(): BrowserMock {
 		for (const key of entries) delete storageState[key]
 	}
 
-	globalThis.browser = {
+	const browserMock: any = {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: RuntimeMessage) {
@@ -77,15 +76,22 @@ function createBrowserMock(): BrowserMock {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
-	} as unknown as typeof globalThis.browser
-	(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
+	}
+
+	const installBrowserGlobals = () => {
+		;(globalThis as any).browser = browserMock
+		;(globalThis as any).chrome = { runtime: { id: 'test-extension' } }
+	}
+
+	installBrowserGlobals()
 
 	return {
 			sentMessages,
 			reset() {
 				for (const key of Object.keys(storageState)) delete storageState[key]
-				sentMessages.length = 0;
-				(globalThis.browser.runtime as unknown as { lastError: undefined }).lastError = undefined
+				sentMessages.length = 0
+				installBrowserGlobals()
+				browserMock.runtime.lastError = undefined
 			},
 		}
 	}
@@ -166,7 +172,14 @@ function buildStalePopupVisualisationState(
 }
 
 function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
+	let blockPolling = false
 	return {
+		isBlockPolling() {
+			return blockPolling
+		},
+		setBlockPolling(enabled: boolean) {
+			blockPolling = enabled
+		},
 		async getBlockNumber() {
 			return 123n
 		},
