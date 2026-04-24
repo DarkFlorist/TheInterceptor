@@ -15,12 +15,28 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, ImportIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { useEffect } from 'preact/hooks'
 import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
+
+function scheduleAfterPaint(callback: () => void) {
+	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
+		let secondFrame: number | undefined
+		const firstFrame = globalThis.requestAnimationFrame(() => {
+			secondFrame = globalThis.requestAnimationFrame(() => callback())
+		})
+		return () => {
+			globalThis.cancelAnimationFrame(firstFrame)
+			if (secondFrame !== undefined) globalThis.cancelAnimationFrame(secondFrame)
+		}
+	}
+	const timeout = globalThis.setTimeout(callback, 32)
+	return () => globalThis.clearTimeout(timeout)
+}
 
 type SignerExplanationParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
@@ -351,6 +367,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 export function Home(param: HomeParams) {
 	const disableReset = useSignal<boolean>(false)
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
+	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 
 	const activeSimulationAddress = useComputed(() =>
@@ -360,6 +377,17 @@ export function Home(param: HomeParams) {
 		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
 	)
 	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+
+	useEffect(() => {
+		if (!param.simulationMode.value || activeSimulationAddress.value === undefined) {
+			showPopupVisualisation.value = false
+			return
+		}
+		if (showPopupVisualisation.value) return
+		return scheduleAfterPaint(() => {
+			showPopupVisualisation.value = true
+		})
+	}, [param.simulationMode.value, activeSimulationAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -407,21 +435,27 @@ export function Home(param: HomeParams) {
 			rpcEntries = { param.rpcEntries }
 		/>
 
-		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <PopupVisualisation
-			simulationAndVisualisationResults = { param.simVisResults }
-			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-			disableReset = { disableReset }
-			resetSimulation = { resetSimulation }
-			currentBlockNumber = { param.currentBlockNumber }
-			activeSimulationAddress = { param.activeSimulationAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
-			rpcConnectionStatus = { param.rpcConnectionStatus }
-			simulationUpdatingState = { param.simulationUpdatingState }
-			simulationResultState = { param.simulationResultState }
-			openImportSimulation = { param.openImportSimulation }
-		/> : <> </> }
+		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
+			? showPopupVisualisation.value
+				? <PopupVisualisation
+					simulationAndVisualisationResults = { param.simVisResults }
+					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+					disableReset = { disableReset }
+					resetSimulation = { resetSimulation }
+					currentBlockNumber = { param.currentBlockNumber }
+					activeSimulationAddress = { param.activeSimulationAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
+					rpcConnectionStatus = { param.rpcConnectionStatus }
+					simulationUpdatingState = { param.simulationUpdatingState }
+					simulationResultState = { param.simulationResultState }
+					openImportSimulation = { param.openImportSimulation }
+				/>
+				: <section class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
+					<Spinner height = '3em'/>
+				</section>
+			: <></> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
 			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
