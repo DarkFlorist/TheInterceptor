@@ -14,6 +14,7 @@ import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult } from './windows/fetchSimulationStack.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHash(ethereumClientService, undefined, simulationState, request.params[0], request.params[1]) }
@@ -42,6 +43,7 @@ export async function sendTransaction(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
+	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
 	const action = await openConfirmTransactionDialogForTransaction(simulator, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
