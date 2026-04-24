@@ -369,10 +369,10 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		})
 
 		return {
-			addressBookEntries: [],
+			addressBookEntries: updatedMetadata.addressBookEntries,
 			tokenPriceEstimates: [],
 			tokenPriceQuoteToken: weth,
-			namedTokenIds: [],
+			namedTokenIds: updatedMetadata.namedTokenIds,
 			simulationState: refreshedSimulationState,
 			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
 		}
