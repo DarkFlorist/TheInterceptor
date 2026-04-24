@@ -4,6 +4,7 @@ import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/address
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { getFilledInContactEntry } from '../../utils/addressBookEntries.js'
 type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
 	erc20TokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
@@ -32,6 +33,24 @@ export type SummaryOutcome = {
 
 export class LogSummarizer {
 	private summary = new Map<string, BalanceChangeSummary>()
+	private fallbackAddressMetadata = new Map<string, AddressBookEntry>()
+
+	private addFallbackAddressMetadata = (entry: AddressBookEntry | undefined) => {
+		if (entry === undefined) return
+		this.fallbackAddressMetadata.set(addressString(entry.address), entry)
+	}
+
+	private addFallbackMetadataFromTransaction = (transaction: SimulatedAndVisualizedTransaction) => {
+		this.addFallbackAddressMetadata(transaction.transaction.from)
+		for (const tokenEvent of extractTokenEvents(transaction.events)) {
+			this.addFallbackAddressMetadata(tokenEvent.from)
+			this.addFallbackAddressMetadata(tokenEvent.to)
+		}
+	}
+
+	private getAddressMetadata = (address: string, addressMetaData: Map<string, AddressBookEntry>) => {
+		return addressMetaData.get(address) ?? this.fallbackAddressMetadata.get(address) ?? getFilledInContactEntry(BigInt(address))
+	}
 
 	private ensureAddressInSummary = (address: string) => {
 		if ( !this.summary.has(address)) {
@@ -194,6 +213,10 @@ export class LogSummarizer {
 	}
 
 	public constructor(transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) {
+		for (const transaction of transactions) {
+			if (transaction === undefined) continue
+			this.addFallbackMetadataFromTransaction(transaction)
+		}
 		this.summarizeToAddressChanges(transactions)
 		// remove addresses that ended up with no changes
 		const summaryEntriesArray = Array.from(this.summary.entries())
@@ -216,8 +239,7 @@ export class LogSummarizer {
 		for (const [address, _summary] of this.summary.entries()) {
 			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPriceEstimates, namedTokenIds)
 			if (summary === undefined) continue
-			const summaryFor = addressMetaData.get(address)
-			if (summaryFor === undefined) throw new Error(`Missing metadata for address: ${ address }`)
+			const summaryFor = this.getAddressMetadata(address, addressMetaData)
 			summaries.push({ summaryFor: summaryFor, ...summary })
 		}
 		return summaries
@@ -248,14 +270,13 @@ export class LogSummarizer {
 			return {
 				...metadata,
 				approvals: Array.from(approvals).map( ([addressToApprove, change]) => {
-					const approvedAddresMetadata = addressMetaData.get(addressToApprove)
-					if (approvedAddresMetadata === undefined) throw new Error('Missing metadata for address')
+					const approvedAddresMetadata = this.getAddressMetadata(addressToApprove, addressMetaData)
 					return { ...approvedAddresMetadata, change }
 				}),
 			}
 		})
 
-		const erc721TokenBalanceChanges: (Erc721Entry & { received: boolean, tokenId: bigint })[] = Array.from(addressSummary.erc721TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
+		const erc721TokenBalanceChanges = Array.from(addressSummary.erc721TokenBalanceChanges).flatMap(([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return Array.from(tokenIds).map(([tokenId, received]) => ({
@@ -263,23 +284,22 @@ export class LogSummarizer {
 				tokenId: BigInt(tokenId),
 				received,
 			}))
-		}).reduce((accumulator, value) => accumulator.concat(value), [] as (Erc721Entry & { received: boolean, tokenId: bigint })[])
+		})
 
-		const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.erc721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => {
+		const erc721TokenIdApprovalChanges = Array.from(addressSummary.erc721TokenIdApprovalChanges).flatMap( ([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return Array.from(approvals).map( ([tokenId, approvedAddress]) => {
-				const approvedMetadata = addressMetaData.get(approvedAddress)
-				if (approvedMetadata === undefined) throw new Error(`Missing metadata for address: ${ approvedAddress }`)
+				const approvedMetadata = this.getAddressMetadata(approvedAddress, addressMetaData)
 				return {
 					tokenEntry: metadata,
 					tokenId: BigInt(tokenId),
 					approvedEntry: approvedMetadata
 				}
 			})
-		}).reduce((accumulator, value) => accumulator.concat(value), [] as Erc721TokenApprovalChange[])
+		})
 
-		const erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[] = Array.from(addressSummary.erc1155TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
+		const erc1155TokenBalanceChanges = Array.from(addressSummary.erc1155TokenBalanceChanges).flatMap(([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return Array.from(tokenIds).map(([tokenId, changeAmount]) => ({
@@ -288,7 +308,7 @@ export class LogSummarizer {
 				tokenIdnName: namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === BigInt(tokenAddress) && namedTokenId.tokenId === BigInt(tokenId))?.tokenIdName,
 				changeAmount,
 			}))
-		}).reduce((accumulator, value) => accumulator.concat(value), [] as Erc1155TokenBalanceChange[])
+		})
 
 		const erc721and1155OperatorChanges: Erc721and1155OperatorChange[] = Array.from(addressSummary.erc721and1155OperatorChanges).map(([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)
@@ -299,8 +319,7 @@ export class LogSummarizer {
 					operator: undefined,
 				}
 			}
-			const operatorMetadata = addressMetaData.get(operator)
-			if (operatorMetadata === undefined) throw new Error(`Missing operator metadata: ${ operator }`)
+			const operatorMetadata = this.getAddressMetadata(operator, addressMetaData)
 			return {
 				...metadata,
 				operator: operatorMetadata,
