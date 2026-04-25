@@ -2,11 +2,11 @@ import { ethers, keccak256 } from 'ethers'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
-import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
+import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { EthTransactionReceiptResponse, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls } from '../RPCResponses.js'
 
 function parseRequest(data: string) {
@@ -14,6 +14,12 @@ function parseRequest(data: string) {
 	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
 	return jsonRpcResponse.result
 }
+
+function testBytes32(suffix: string) {
+	return `0x${suffix.padStart(64, '0')}`
+}
+
+const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 export async function main() {
 	const blockNumber = 8443561n
@@ -129,6 +135,208 @@ export async function main() {
 				yParity: signed.yParity === 'even' ? 0 : 1,
 			})
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
+		})
+
+		should('typed transaction v values 0x0 and 0x1 normalize to parity', async () => {
+			const base7702Transaction = {
+				type: '0x4',
+				from: '0x0000000000000000000000000000000000000001',
+				nonce: '0x0',
+				maxFeePerGas: '0x2',
+				maxPriorityFeePerGas: '0x1',
+				gas: '0x5208',
+				to: '0x0000000000000000000000000000000000000002',
+				value: '0x0',
+				input: '0x',
+				chainId: '0x1',
+				authorizationList: [{
+					chainId: '0x1',
+					address: '0x000000009b1d0af20d8c6d0a44e162d11f9b8f00',
+					nonce: '0x0',
+					yParity: '0x0',
+					r: '0x3',
+					s: '0x4',
+				}],
+				r: '0x1',
+				s: '0x2',
+				hash: testBytes32('31'),
+			} as const
+
+			const evenTransaction = EthereumSignedTransactionToSignedTransaction(EthereumSignedTransaction.parse({
+				...base7702Transaction,
+				v: '0x0',
+			}))
+			assert.equal(evenTransaction.type, '7702')
+			if (evenTransaction.type !== '7702') throw new Error('wrong transaction type')
+			assert.equal(evenTransaction.yParity, 'even')
+			assert.equal(evenTransaction.authorizationList[0]?.yParity, 'even')
+
+			const oddTransaction = EthereumSignedTransactionToSignedTransaction(EthereumSignedTransaction.parse({
+				...base7702Transaction,
+				v: '0x1',
+				hash: testBytes32('32'),
+				authorizationList: [{
+					...base7702Transaction.authorizationList[0],
+					yParity: '0x1',
+				}],
+			}))
+			assert.equal(oddTransaction.type, '7702')
+			if (oddTransaction.type !== '7702') throw new Error('wrong transaction type')
+			assert.equal(oddTransaction.yParity, 'odd')
+			assert.equal(oddTransaction.authorizationList[0]?.yParity, 'odd')
+		})
+
+		should('typed transaction with block data parses yParity without v', async () => {
+			const parsedTransaction = EthereumSignedTransactionWithBlockData.parse({
+				type: '0x4',
+				from: '0x0000000000000000000000000000000000000001',
+				nonce: '0x0',
+				gasPrice: '0x1',
+				maxFeePerGas: '0x2',
+				maxPriorityFeePerGas: '0x1',
+				gas: '0x5208',
+				to: '0x0000000000000000000000000000000000000002',
+				value: '0x0',
+				data: '0x',
+				input: '0x',
+				chainId: '0x1',
+				yParity: '0x0',
+				s: '0x2',
+				r: '0x1',
+				hash: testBytes32('33'),
+				blockHash: testBytes32('34'),
+				blockNumber: '0x1',
+				transactionIndex: '0x0',
+				authorizationList: [{
+					chainId: '0x1',
+					address: '0x000000009b1d0af20d8c6d0a44e162d11f9b8f00',
+					nonce: '0x0',
+					yParity: '0x0',
+					r: '0x3',
+					s: '0x4',
+				}],
+			})
+			assert.equal(parsedTransaction.type, '7702')
+			if (parsedTransaction.type !== '7702') throw new Error('wrong transaction type')
+			if (!('yParity' in parsedTransaction)) throw new Error('yParity missing')
+			assert.equal(parsedTransaction.yParity, 'even')
+			assert.equal('v' in parsedTransaction, false)
+		})
+
+		should('typed transaction parsers reject legacy-style v values', async () => {
+			const base7702Transaction = {
+				type: '0x4',
+				from: '0x0000000000000000000000000000000000000001',
+				nonce: '0x0',
+				maxFeePerGas: '0x2',
+				maxPriorityFeePerGas: '0x1',
+				gas: '0x5208',
+				to: '0x0000000000000000000000000000000000000002',
+				value: '0x0',
+				input: '0x',
+				chainId: '0x1',
+				authorizationList: [{
+					chainId: '0x1',
+					address: '0x000000009b1d0af20d8c6d0a44e162d11f9b8f00',
+					nonce: '0x0',
+					yParity: '0x0',
+					r: '0x3',
+					s: '0x4',
+				}],
+				r: '0x1',
+				s: '0x2',
+				hash: testBytes32('33'),
+			} as const
+
+			assert.throws(() => EthereumSignedTransaction.parse({
+				...base7702Transaction,
+				v: '0x1b',
+			}))
+			assert.throws(() => EthereumSignedTransaction.parse({
+				...base7702Transaction,
+				v: '0x1c',
+				hash: testBytes32('34'),
+			}))
+			assert.throws(() => EthereumSignedTransactionWithBlockData.parse({
+				...base7702Transaction,
+				gasPrice: '0x1',
+				data: '0x',
+				blockHash: testBytes32('35'),
+				blockNumber: '0x1',
+				transactionIndex: '0x0',
+				v: '0x1b',
+			}))
+		})
+
+		should('transaction receipt parses 7702 without authorization list fields', async () => {
+			const receipt = EthTransactionReceiptResponse.parse({
+				type: '0x4',
+				blockHash: testBytes32('41'),
+				blockNumber: '0x1',
+				transactionHash: testBytes32('42'),
+				transactionIndex: '0x0',
+				contractAddress: null,
+				cumulativeGasUsed: '0x5208',
+				gasUsed: '0x5208',
+				effectiveGasPrice: '0x1',
+				from: '0x0000000000000000000000000000000000000001',
+				to: '0x0000000000000000000000000000000000000002',
+				logs: [],
+				logsBloom: zeroBytes256,
+				status: '0x1',
+			})
+			if (receipt === null) throw new Error('receipt should not be null')
+			assert.equal(receipt.type, '7702')
+			assert.equal('authorizationList' in receipt, false)
+		})
+
+		should('typed transaction serializers use the correct prefix bytes', async () => {
+			const unsigned7702 = EthereumUnsignedTransaction.parse({
+				type: '0x4',
+				from: '0x0000000000000000000000000000000000000001',
+				nonce: '0x0',
+				maxFeePerGas: '0x2',
+				maxPriorityFeePerGas: '0x1',
+				gas: '0x5208',
+				to: '0x0000000000000000000000000000000000000002',
+				value: '0x0',
+				input: '0x',
+				chainId: '0x1',
+				authorizationList: [{
+					chainId: '0x1',
+					address: '0x000000009b1d0af20d8c6d0a44e162d11f9b8f00',
+					nonce: '0x0',
+				}],
+			})
+			const unsigned4844 = EthereumUnsignedTransaction.parse({
+				type: '0x3',
+				from: '0x0000000000000000000000000000000000000001',
+				nonce: '0x0',
+				maxFeePerGas: '0x2',
+				maxPriorityFeePerGas: '0x1',
+				gas: '0x5208',
+				to: '0x0000000000000000000000000000000000000002',
+				value: '0x0',
+				input: '0x',
+				chainId: '0x1',
+				maxFeePerBlobGas: '0x3',
+				blobVersionedHashes: [testBytes32('51')],
+			})
+
+			const serializedUnsigned7702 = serializeUnsignedTransactionToBytes(EthereumUnsignedTransactionToUnsignedTransaction(unsigned7702))
+			const serializedSigned7702 = serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(mockSignTransaction(unsigned7702)))
+			const serializedUnsigned4844 = serializeUnsignedTransactionToBytes(EthereumUnsignedTransactionToUnsignedTransaction(unsigned4844))
+			const serializedSigned4844 = serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(mockSignTransaction(unsigned4844)))
+
+			assert.equal(serializedUnsigned7702[0], 4)
+			assert.equal(serializedSigned7702[0], 4)
+			assert.equal(serializedUnsigned4844[0], 3)
+			assert.equal(serializedSigned4844[0], 3)
+		})
+
+		should('EthereumSignatureParity rejects unsupported values', async () => {
+			assert.throws(() => EthereumSignatureParity.parse('0x1c'))
+			assert.throws(() => EthereumSignatureParity.parse('0x2'))
 		})
 
 		should('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
