@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { getSomeTimeAgoText, SomeTimeAgo } from '../../app/ts/components/subcomponents/SomeTimeAgo.js'
 
 type AttributeMap = Record<string, string | undefined>
@@ -180,7 +180,7 @@ export function installDomMock() {
 
 async function main() {
 	describe('SomeTimeAgo', () => {
-		should('recomputes the displayed age when the timestamp moves forward', () => {
+		test('recomputes the displayed age when the timestamp moves forward', () => {
 			const now = new Date('2024-01-01T00:00:10.000Z')
 			const formatSeconds = (secondsDiff: number) => `${ Math.round(secondsDiff) }s`
 			const olderTimestamp = new Date('2024-01-01T00:00:05.000Z')
@@ -189,7 +189,7 @@ async function main() {
 			assert.equal(getSomeTimeAgoText(newerTimestamp, now, false, formatSeconds), '1s')
 		})
 
-		should('updates the rendered output when rerendered with a fresher timestamp', async () => {
+		test('updates the rendered output when rerendered with a fresher timestamp', async () => {
 			const dom = installDomMock()
 			const formatSeconds = (secondsDiff: number) => `${ Math.round(secondsDiff) }s`
 			const olderTimestamp = new Date('2024-01-01T00:00:05.000Z')
@@ -212,7 +212,5 @@ async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

@@ -1,5 +1,5 @@
 import { ethers, keccak256 } from 'ethers'
-import { describe, runIfRoot, should, run } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
@@ -68,7 +68,7 @@ export async function main() {
 			chainId: 1n,
 		} as const
 
-		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
+		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
@@ -77,7 +77,7 @@ export async function main() {
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 
-		should('ethers.recoverAddress should fail for mocked transaction', async () => {
+		test('ethers.recoverAddress should fail for mocked transaction', async () => {
 			const signed = EthereumSignedTransactionToSignedTransaction(mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
@@ -92,7 +92,7 @@ export async function main() {
 			)
 		})
 
-		should('ethers.recoverAddress works for positive case', async() => {
+		test('ethers.recoverAddress works for positive case', async() => {
 			const validTransaction = {
 				hash: '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
 				nonce: '0x15174',
@@ -131,7 +131,7 @@ export async function main() {
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
 		})
 
-		should('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
+		test('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
 			const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -176,7 +176,5 @@ export async function main() {
 	})
 }
 
-await runIfRoot(async  () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

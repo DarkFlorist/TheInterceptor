@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -58,7 +58,7 @@ function installBrowserMock() {
 
 async function main() {
 	describe('visualizeSimulatorState failed simulations', () => {
-		should('keeps fetched address metadata instead of returning an empty address book', async () => {
+		test('keeps fetched address metadata instead of returning an empty address book', async () => {
 			installBrowserMock()
 
 			const rpcNetwork = {
@@ -130,7 +130,5 @@ async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

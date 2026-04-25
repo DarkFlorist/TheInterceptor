@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { LogSummarizer } from '../../app/ts/simulation/services/LogSummarizer.js'
 import { SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { installDomMock } from './someTimeAgo.js'
@@ -158,7 +158,7 @@ const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulat
 
 async function main() {
 	describe('LogSummarizer fallback metadata', () => {
-		should('uses enriched event metadata when the external map is incomplete', () => {
+		test('uses enriched event metadata when the external map is incomplete', () => {
 			const simulatedTransaction = makeSimulatedTransaction()
 			const summarizer = new LogSummarizer([simulatedTransaction])
 			const externalMetadata = new Map<string, AddressBookEntry>([
@@ -173,7 +173,7 @@ async function main() {
 			assert.equal(recipientSummary?.summaryFor.name, recipientEntry.name)
 		})
 
-		should('uses enriched approval target metadata when ERC20 approval address is missing from the external map', () => {
+		test('uses enriched approval target metadata when ERC20 approval address is missing from the external map', () => {
 			const simulatedTransaction = createTransactionWithEvent({
 				type: 'TokenEvent',
 				isParsed: 'Parsed',
@@ -199,7 +199,7 @@ async function main() {
 			assert.equal(summary[0]?.erc20TokenApprovalChanges[0]?.approvals[0]?.name, operatorEntry.name)
 		})
 
-		should('uses enriched approved address metadata when ERC721 approval address is missing from the external map', () => {
+		test('uses enriched approved address metadata when ERC721 approval address is missing from the external map', () => {
 			const simulatedTransaction = createTransactionWithEvent({
 				type: 'TokenEvent',
 				isParsed: 'Parsed',
@@ -225,7 +225,7 @@ async function main() {
 			assert.equal(summary[0]?.erc721TokenIdApprovalChanges[0]?.approvedEntry.name, operatorEntry.name)
 		})
 
-		should('uses enriched operator metadata when ApprovalForAll operator is missing from the external map', () => {
+		test('uses enriched operator metadata when ApprovalForAll operator is missing from the external map', () => {
 			const approvalForAllLogInformation: TokenVisualizerNFTAllApprovalEvent = {
 				type: 'NFT All approval',
 				logObject: undefined,
@@ -252,7 +252,7 @@ async function main() {
 			assert.equal(summary[0]?.erc721and1155OperatorChanges[0]?.operator?.name, operatorEntry.name)
 		})
 
-		should('renders SimulationSummary with the fallback account name instead of crashing', async () => {
+		test('renders SimulationSummary with the fallback account name instead of crashing', async () => {
 			const dom = installDomMock()
 			const simulatedTransaction = makeSimulatedTransaction()
 			const simulationAndVisualisationResultsData: SimulationAndVisualisationResults = {
@@ -284,7 +284,5 @@ async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

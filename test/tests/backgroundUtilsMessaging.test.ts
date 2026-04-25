@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 
 const ASYNC_RESPONSE_CLOSED_MESSAGE = 'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
 
@@ -68,7 +68,7 @@ async function loadModules() {
 
 export async function main() {
 	describe('backgroundUtils messaging', () => {
-		should('ignore closed async response errors for popup fire-and-forget messages', async () => {
+		test('ignore closed async response errors for popup fire-and-forget messages', async () => {
 			const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
 			const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
@@ -78,7 +78,7 @@ export async function main() {
 			assert.equal(await getLatestUnexpectedError(), undefined)
 		})
 
-		should('ignore closed async response errors when broadcasting to open popups', async () => {
+		test('ignore closed async response errors when broadcasting to open popups', async () => {
 			const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
 			const { sendPopupMessageToOpenWindows, getLatestUnexpectedError } = await loadModules()
 
@@ -88,6 +88,6 @@ export async function main() {
 			assert.equal(await getLatestUnexpectedError(), undefined)
 		})
 	})
-
-	await runIfRoot(run, import.meta)
 }
+
+await main()

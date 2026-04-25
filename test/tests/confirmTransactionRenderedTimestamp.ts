@@ -2,7 +2,7 @@
 import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { installDomMock } from './someTimeAgo.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
@@ -233,7 +233,7 @@ async function main() {
 	const { serialize } = await import('../../app/ts/types/wire-types.js')
 	const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 	describe('ConfirmTransaction', () => {
-		should('updates the simulation age when a refreshed pending transaction arrives', async () => {
+		test('updates the simulation age when a refreshed pending transaction arrives', async () => {
 			const dom = installDomMock()
 			const browser = createBrowserMock()
 			const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
@@ -271,7 +271,7 @@ async function main() {
 			dom.restore()
 		})
 
-		should('updates the simulation age when the real refresh flow runs', async () => {
+		test('updates the simulation age when the real refresh flow runs', async () => {
 			const dom = installDomMock()
 			const browser = createBrowserMock()
 			const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
@@ -377,7 +377,5 @@ async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

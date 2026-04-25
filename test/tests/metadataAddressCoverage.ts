@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { getAddressesToIdentifyForVisualiserFromTransactions } from '../../app/ts/background/metadataUtils.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
@@ -70,7 +70,7 @@ function assertCommonAddresses(addresses: readonly bigint[]) {
 
 async function main() {
 	describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
-		should('covers ERC20 Transfer addresses from parsed args and the emitter address', () => {
+		test('covers ERC20 Transfer addresses from parsed args and the emitter address', () => {
 			const addresses = getAddressesForEvent({
 				type: 'TokenEvent',
 				address: TOKEN_ADDRESS,
@@ -90,7 +90,7 @@ async function main() {
 			assertCommonAddresses(addresses)
 		})
 
-		should('covers ERC20 Approval addresses from parsed args and the emitter address', () => {
+		test('covers ERC20 Approval addresses from parsed args and the emitter address', () => {
 			const addresses = getAddressesForEvent({
 				type: 'TokenEvent',
 				address: TOKEN_ADDRESS,
@@ -110,7 +110,7 @@ async function main() {
 			assertCommonAddresses(addresses)
 		})
 
-		should('covers WETH Deposit addresses from args plus the emitter address', () => {
+		test('covers WETH Deposit addresses from args plus the emitter address', () => {
 			const addresses = getAddressesForEvent({
 				type: 'TokenEvent',
 				address: TOKEN_ADDRESS,
@@ -129,7 +129,7 @@ async function main() {
 			assertCommonAddresses(addresses)
 		})
 
-		should('covers WETH Withdrawal addresses from args plus the emitter address', () => {
+		test('covers WETH Withdrawal addresses from args plus the emitter address', () => {
 			const addresses = getAddressesForEvent({
 				type: 'TokenEvent',
 				address: TOKEN_ADDRESS,
@@ -148,7 +148,7 @@ async function main() {
 			assertCommonAddresses(addresses)
 		})
 
-		should('covers ERC1155 TransferSingle addresses from parsed args and the emitter address', () => {
+		test('covers ERC1155 TransferSingle addresses from parsed args and the emitter address', () => {
 			const addresses = getAddressesForEvent({
 				type: 'TokenEvent',
 				address: TOKEN_ADDRESS,
@@ -169,7 +169,7 @@ async function main() {
 			assertCommonAddresses(addresses)
 		})
 
-		should('covers ERC1155 TransferBatch addresses from parsed args and the emitter address', () => {
+		test('covers ERC1155 TransferBatch addresses from parsed args and the emitter address', () => {
 			const addresses = getAddressesForEvent({
 				type: 'TokenEvent',
 				address: TOKEN_ADDRESS,
@@ -192,7 +192,5 @@ async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 
 type StorageState = Record<string, unknown>
 
@@ -117,7 +117,7 @@ async function main() {
 	}
 
 	describe('simulate delay editor', () => {
-		should('replacing an existing delay removes adjacent duplicate manipulators', async () => {
+		test('replacing an existing delay removes adjacent duplicate manipulators', async () => {
 			await resetStack()
 
 			await setTransactionOrMessageBlockTimeManipulator(simulator, {
@@ -137,7 +137,7 @@ async function main() {
 			assert.deepStrictEqual(stack.operations[1].blockTimeManipulation, newDelay)
 		})
 
-		should('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
+		test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
 			await resetStack()
 
 			await setTransactionOrMessageBlockTimeManipulator(simulator, {
@@ -156,7 +156,7 @@ async function main() {
 			])
 		})
 
-		should('signing mode ignores the pre-simulation first-transaction delay', async () => {
+		test('signing mode ignores the pre-simulation first-transaction delay', async () => {
 			await resetStack()
 			mockBrowser.__storage.simulationMode = false
 			mockBrowser.__storage.preSimulationBlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 13n, deltaUnit: 'Seconds' }
@@ -181,7 +181,5 @@ async function main() {
 	await updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

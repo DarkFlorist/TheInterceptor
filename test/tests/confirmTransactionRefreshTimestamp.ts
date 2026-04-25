@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as assert from 'assert'
 import { Interface } from 'ethers'
-import { run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 
 type RuntimeMessage = {
 	method?: string
@@ -302,7 +302,7 @@ async function main() {
 
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
-	should('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
+	test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 		browserMock.sentMessages.length = 0
 		// @ts-expect-error test shim uses a minimal simulator object
 		await modules.refreshPopupConfirmTransactionSimulation(simulator)
@@ -317,7 +317,5 @@ async function main() {
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, runIfRoot, should, run } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 
 type Listener = (event: { type: string, data?: unknown, detail?: unknown, ports?: readonly unknown[] }) => void
 
@@ -94,7 +94,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 2000) {
 
 export async function main() {
 	describe('inpage signer bridge', () => {
-		should('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
+		test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
 			const previousWindow = (globalThis as { window?: unknown }).window
 			const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 			const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow()
@@ -154,7 +154,5 @@ export async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

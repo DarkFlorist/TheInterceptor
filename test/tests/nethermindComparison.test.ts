@@ -3,7 +3,7 @@ import { appendTransactionToInputAndSimulate, getSimulatedBlock, getSimulatedTra
 import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
 import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../RPCResponses.js'
-import { describe, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
@@ -98,7 +98,7 @@ export async function main() {
 
 	describe('Nethermind testing', () => {
 
-		should('getBlock with true aligns with Nethermind', async () => {
+		test('getBlock with true aligns with Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
 			if (block === null) throw new Error('Block was null')
 			const serialized = GetBlockReturn.serialize(block)
@@ -107,7 +107,7 @@ export async function main() {
 			assert.equal(JSON.stringify(serialized, Object.keys(block).sort()), JSON.stringify(expected, Object.keys(expected).sort()))
 		})
 
-		should('getBlock with false aligns with Nethermind', async () => {
+		test('getBlock with false aligns with Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, false)
 			if (block === null) throw new Error('Block was null')
 			const serialized = GetBlockReturn.serialize(block)
@@ -116,7 +116,7 @@ export async function main() {
 			assert.equal(JSON.stringify(serialized, Object.keys(block).sort()), JSON.stringify(expected, Object.keys(expected).sort()))
 		})
 
-		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
+		test('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
 			if (block === null) throw new Error('Block was null')
 			const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState.simulationStateInput, [{
@@ -136,7 +136,7 @@ export async function main() {
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(requiredFields))
 		})
 
-		should('get transaction by hash aligns with Nethermind', async () => {
+		test('get transaction by hash aligns with Nethermind', async () => {
 			const transaction = await getSimulatedTransactionByHash(ethereum, undefined, simulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
 			if (transaction === null) throw new Error('Transaction is not found')
 
@@ -148,3 +148,5 @@ export async function main() {
 		})
 	})
 }
+
+await main()

@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 
 type RuntimeMessage = {
 	method?: string
@@ -290,7 +290,7 @@ export async function main() {
 	const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
 
 	describe('popup clear reset', () => {
-		should('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
+		test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
 			browserMock.reset()
 			await browserStorageLocalSet({
 				activeSimulationAddress: activeAddress,
@@ -321,7 +321,7 @@ export async function main() {
 			assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
 		})
 
-		should('updates the cached popup active address without restamping the simulation', async () => {
+		test('updates the cached popup active address without restamping the simulation', async () => {
 			browserMock.reset()
 			const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address
 			if (nextActiveAddress === undefined) throw new Error('test defaults are missing a second active address')
@@ -368,7 +368,7 @@ export async function main() {
 			assert.equal((homePageMessage as { data: { settings: { activeSimulationAddress: bigint | undefined } } }).data.settings.activeSimulationAddress, nextActiveAddress)
 		})
 
-		should('publish an empty popup visualisation even when previous state was done', async () => {
+		test('publish an empty popup visualisation even when previous state was done', async () => {
 			browserMock.reset()
 			await browserStorageLocalSet({
 				activeSimulationAddress: activeAddress,
@@ -391,7 +391,7 @@ export async function main() {
 			assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 		})
 
-		should('clear the interceptor stack and refresh popup state during reset', async () => {
+		test('clear the interceptor stack and refresh popup state during reset', async () => {
 			browserMock.reset()
 			await browserStorageLocalSet({
 				activeSimulationAddress: activeAddress,
@@ -417,7 +417,5 @@ export async function main() {
 	})
 }
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+
+await main()

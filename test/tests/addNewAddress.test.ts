@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { saveAddressBookEntry } from '../../app/ts/components/pages/AddNewAddress.js'
 
 const sampleAddressBookEntry = {
@@ -11,7 +11,7 @@ const sampleAddressBookEntry = {
 
 export async function main() {
 	describe('add new address save flow', () => {
-		should('waits for the save message to finish before closing the popup', async () => {
+		test('waits for the save message to finish before closing the popup', async () => {
 			const calls: string[] = []
 			await saveAddressBookEntry(sampleAddressBookEntry, () => {
 				calls.push('close')
@@ -24,7 +24,7 @@ export async function main() {
 			assert.deepEqual(calls, ['send:start', 'send:end', 'close'])
 		})
 
-		should('does not close the popup when the entry is invalid', async () => {
+		test('does not close the popup when the entry is invalid', async () => {
 			let closed = false
 			let sent = false
 
@@ -38,6 +38,6 @@ export async function main() {
 			assert.equal(closed, false)
 		})
 	})
-
-	await runIfRoot(run, import.meta)
 }
+
+await main()
