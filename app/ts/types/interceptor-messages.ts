@@ -13,7 +13,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './ac
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
@@ -556,6 +556,10 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		activeAddresses: AddressBookEntries,
+		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
+		makeCurrentAddressRich: funtypes.Boolean,
+		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 		websiteAccessAddressMetadata: AddressBookEntries,
 		tabState: TabState,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),

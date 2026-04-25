@@ -9,7 +9,7 @@ import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
-import { getActiveAddresses, identifyAddress } from './metadataUtils.js'
+import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, InterceptorStackOperation, InterceptorTransactionStack, ModifyAddressWindowState } from '../types/visualizer-types.js'
@@ -39,6 +39,7 @@ import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationSta
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -439,44 +440,24 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 	if (tab === undefined) await openInNewTab()
 }
 
-export async function requestNewHomeData(simulator: Simulator, requestAbortController: AbortController | undefined) {
-	// Metadata edits only need the cached visualisation metadata to be refreshed.
-	await refreshHomeData(simulator, false, requestAbortController)
+export async function requestNewHomeData(simulator: Simulator) {
+	const updatedPage = await buildHomePageUpdate(simulator, { richDataSource: 'cached' })
+	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 }
 
 export async function refreshHomeData(simulator: Simulator, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
-	const currentSettings = await getSettings()
-	if (currentSettings.simulationMode) await updateSimulationMetadata(simulator.ethereum, requestAbortController)
-	if (refreshSimulation) await updatePopupVisualisationIfNeeded(simulator, false, false, true)
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
-	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
-	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
-
-	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationState())
-	const tabId = await getLastKnownCurrentTabId()
-	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
-	const settings = await settingsPromise
-	if (settings.activeRpcNetwork.httpsRpc !== undefined) makeSureInterceptorIsNotSleeping(simulator.ethereum)
-	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
-	const updatedPage: UpdateHomePage = {
-		method: 'popup_UpdateHomePage' as const,
-		data: {
-			visualizedSimulatorState: await visualizedSimulatorStatePromise,
-			websiteAccessAddressMetadata: await getAddressMetadataForAccess(settings.websiteAccess),
-			tabState,
-			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
-			currentBlockNumber: simulator.ethereum.getCachedBlock()?.number,
-			settings: settings,
-			rpcConnectionStatus: await rpcConnectionStatusPromise,
-			tabId,
-			rpcEntries: await rpcEntriesPromise,
-			interceptorDisabled,
-			preSimulationBlockTimeManipulation: await preSimulationBlockTimeManipulationPromise
-		}
+	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
+	try {
+		const currentSettings = await getSettings()
+		if (currentSettings.simulationMode) await updateSimulationMetadata(simulator.ethereum, requestAbortController)
+		if (refreshSimulation) await updatePopupVisualisationIfNeeded(simulator, false, false, true)
+		const settings = await getSettings()
+		if (settings.activeRpcNetwork.httpsRpc !== undefined) makeSureInterceptorIsNotSleeping(simulator.ethereum)
+		const updatedPage = await buildHomePageUpdate(simulator, { requestAbortController, richDataSource: 'fresh' })
+		await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
+	} finally {
+		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
 	}
-	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 }
 
 export async function settingsOpened() {
@@ -500,10 +481,10 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await requestNewHomeData(simulator, requestAbortController)
+	return await requestNewHomeData(simulator)
 }
 
 export async function importSettings(settingsData: ImportSettings) {
@@ -832,6 +813,70 @@ export const requestActiveAddresses = async () => ({ type: 'RequestActiveAddress
 export const requestSimulationMode = async () => ({ type: 'RequestSimulationModeReply' as const, simulationMode: (await getSettings()).simulationMode })
 
 export const requestLatestUnexpectedError = async () => ({ type: 'RequestLatestUnexpectedErrorReply' as const, latestUnexpectedError: await getLatestUnexpectedError() })
+
+async function getCachedRichData() {
+	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
+		getMakeCurrentAddressRich(),
+		getFixedAddressRichList(),
+	])
+	return {
+		richList: await Promise.all(fixedAddressRichList.map(async(element) => (
+			{ ...element, addressBookEntry: await getActiveAddressEntry(element.address) }
+		))),
+		makeCurrentAddressRich,
+	}
+}
+
+async function buildHomePageUpdate(
+	simulator: Simulator,
+	{
+		requestAbortController,
+		richDataSource,
+	}: {
+		requestAbortController?: AbortController
+		richDataSource: 'cached' | 'fresh'
+	}
+): Promise<UpdateHomePage> {
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
+	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = silenceChromeUnCaughtPromise(getPopupVisualisationState())
+	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
+	const latestUnexpectedErrorPromise = silenceChromeUnCaughtPromise(getLatestUnexpectedError())
+	const richDataPromise = silenceChromeUnCaughtPromise(
+		richDataSource === 'fresh'
+			? requestMakeMeRichList(simulator.ethereum, requestAbortController)
+			: getCachedRichData()
+	)
+	const tabId = await getLastKnownCurrentTabId()
+	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
+	const settings = await settingsPromise
+	const tabState = await tabStatePromise
+	const websiteOrigin = tabState.website?.websiteOrigin
+	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
+	const richData = await richDataPromise
+	return {
+		method: 'popup_UpdateHomePage' as const,
+		data: {
+			visualizedSimulatorState: await visualizedSimulatorStatePromise,
+			activeAddresses: await activeAddressesPromise,
+			richList: richData.richList,
+			makeCurrentAddressRich: richData.makeCurrentAddressRich,
+			latestUnexpectedError: await latestUnexpectedErrorPromise,
+			websiteAccessAddressMetadata: await getAddressMetadataForAccess(settings.websiteAccess),
+			tabState,
+			activeSigningAddressInThisTab: tabState.activeSigningAddress,
+			currentBlockNumber: simulator.ethereum.getCachedBlock()?.number,
+			settings,
+			rpcConnectionStatus: await rpcConnectionStatusPromise,
+			tabId,
+			rpcEntries: await rpcEntriesPromise,
+			interceptorDisabled,
+			preSimulationBlockTimeManipulation: await preSimulationBlockTimeManipulationPromise,
+		}
+	}
+}
 
 export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	const simulationState = await getUpdatedSimulationState(ethereumClientService)
