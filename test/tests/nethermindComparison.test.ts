@@ -2,7 +2,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { appendTransactionToInputAndSimulate, getSimulatedBlock, getSimulatedTransactionByHash, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
 import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../RPCResponses.js'
+import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_getBlockByNumber_7702_invalid_auth_yParity_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../RPCResponses.js'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
@@ -27,6 +27,10 @@ class MockEthereumJSONRpcRequestHandler {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber': return `0x${ 8443561n.toString(16) }`
 			case 'eth_getBlockByNumber': {
+				if (rpcRequest.params[0] === 8443562n) {
+					if (rpcRequest.params[1] !== true) throw new Error('Compatibility block only supports full transactions')
+					return parseRequest(eth_getBlockByNumber_7702_invalid_auth_yParity_true)
+				}
 				if (rpcRequest.params[0] !== 8443561n && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
@@ -114,6 +118,10 @@ export async function main() {
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			assertIsObject(expected)
 			assert.equal(JSON.stringify(serialized, Object.keys(block).sort()), JSON.stringify(expected, Object.keys(expected).sort()))
+		})
+
+		test('getBlock rejects non-spec 7702 authorization parity values', async () => {
+			await assert.rejects(async () => await ethereum.getBlock(undefined, 8443562n, true))
 		})
 
 		test('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {

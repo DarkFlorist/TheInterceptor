@@ -72,7 +72,7 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 	} })
 }
 
-export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true) {
 	const tabState = await getTabState(socket.tabId)
 	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
 
@@ -83,7 +83,10 @@ export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabCon
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+		const requestSignerAccountsMessage = requestAccounts
+			? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
+			: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
+		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, requestSignerAccountsMessage)
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
