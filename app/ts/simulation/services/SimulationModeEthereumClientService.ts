@@ -627,6 +627,13 @@ export const getSimulatedBlockNumber = async (ethereumClientService: EthereumCli
 	return await ethereumClientService.getBlockNumber(requestAbortController)
 }
 
+function getSignedTransactionV(transaction: EthereumSendableSignedTransaction): bigint {
+	if ('v' in transaction && transaction.v !== undefined) return transaction.v
+	if (!('yParity' in transaction)) throw new Error('Signed transaction is missing both v and yParity.')
+	if (transaction.type === 'legacy') return (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
+	return transaction.yParity === 'even' ? 0n : 1n
+}
+
 export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | null> => {
 	// try to see if the transaction is in our queue
 	if (simulationState === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
@@ -634,13 +641,13 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	for (const [blockDelta, block] of simulationState.simulatedBlocks.entries()) {
 		for (const [transactionIndex, simulatedTransaction] of block.simulatedTransactions.entries()) {
 			if (hash === simulatedTransaction.preSimulationTransaction.signedTransaction.hash) {
-				const v = 'v' in simulatedTransaction.preSimulationTransaction.signedTransaction ? simulatedTransaction.preSimulationTransaction.signedTransaction.v : (simulatedTransaction.preSimulationTransaction.signedTransaction.yParity === 'even' ? 0n : 1n)
+				const v = getSignedTransactionV(simulatedTransaction.preSimulationTransaction.signedTransaction)
 				const additionalParams = {
 					blockHash: getHashOfSimulatedBlock(simulationState, blockDelta),
 					blockNumber: simulationState.blockNumber + BigInt(blockDelta) + 1n,
 					transactionIndex: BigInt(transactionIndex),
 					data: simulatedTransaction.preSimulationTransaction.signedTransaction.input,
-					v : v,
+					v,
 				}
 				if ('gasPrice' in simulatedTransaction.preSimulationTransaction.signedTransaction) {
 					return {
