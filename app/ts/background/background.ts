@@ -324,9 +324,37 @@ function getProviderHandler(method: string) {
 	}
 }
 
+function replyWithEmptyAccounts(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+}
+
+function requestNeedsSimulationState(method: string) {
+	switch (method) {
+		case 'eth_getBlockByHash':
+		case 'eth_getBlockByNumber':
+		case 'eth_getBalance':
+		case 'eth_estimateGas':
+		case 'eth_getTransactionByHash':
+		case 'eth_getTransactionReceipt':
+		case 'eth_call':
+		case 'eth_blockNumber':
+		case 'eth_getCode':
+		case 'eth_getTransactionCount':
+		case 'interceptor_getSimulationStack':
+		case 'eth_getLogs':
+		case 'eth_newFilter':
+		case 'eth_getFilterChanges':
+		case 'eth_getFilterLogs':
+			return true
+		default:
+			return false
+	}
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulator: Simulator, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections): Promise<unknown> => {
-	const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
-	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, await getSettings())
+	const settings = await getSettings()
+	const activeAddress = await getActiveAddress(settings, socket.tabId)
+	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, settings)
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...ERROR_INTERCEPTOR_DISABLED })
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
@@ -339,15 +367,21 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 	if (access === 'hasAccess' && activeAddress === undefined && request.method === 'eth_requestAccounts') {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
-		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket)
+		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 		if (account.length === 0) return refuseAccess(websiteTabConnections, request)
+		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
+		return result
+	}
+	if (access === 'hasAccess' && activeAddress === undefined && request.method === 'eth_accounts' && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
+		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
+		if (account.length === 0) return replyWithEmptyAccounts(websiteTabConnections, request)
 		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
 		return result
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
 		switch (request.method) {
-			case 'eth_accounts': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
 			// if user has not given access, assume we are on chain 1
 			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
@@ -369,7 +403,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 async function handleContentScriptMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
 		const settings = await getSettings()
-		const simulationState = settings.simulationMode ? await getUpdatedSimulationState(simulator.ethereum) : undefined
+		const simulationState = settings.simulationMode && requestNeedsSimulationState(request.method) ? await getUpdatedSimulationState(simulator.ethereum) : undefined
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error: unknown) {
