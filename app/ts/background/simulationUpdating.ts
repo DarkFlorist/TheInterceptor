@@ -306,16 +306,21 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = await ethereum.getBlock(undefined)
 	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : simulationInput.map((block) => (
 		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
 	))
-	const newSimulationState = await createSimulationState(ethereum, undefined, baseFeeFixedInputStateBlocks)
-	// rerun the simulation if nonce issues are found after fixing the nonce issues
-	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, newSimulationState)
-	if (nonceFixed.nonceFixed) return await createSimulationState(ethereum, undefined, nonceFixed.simulationStateInput)
-	return newSimulationState
+	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
+	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
+}
+
+export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
+}
+
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
