@@ -1,9 +1,3 @@
-import * as assert from 'assert'
-import { h, render } from 'preact'
-import { act } from 'preact/test-utils'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
-import { getSomeTimeAgoText, SomeTimeAgo } from '../../app/ts/components/subcomponents/SomeTimeAgo.js'
-
 type AttributeMap = Record<string, string | undefined>
 
 class TestNode {
@@ -86,7 +80,19 @@ class TestElement extends TestNode {
 	tagName: string
 	nodeName: string
 	attributes: AttributeMap = {}
-	style: Record<string, string> = {}
+	style = {
+		setProperty: (name: string, value: string) => {
+			this.style[name] = value
+		},
+		removeProperty: (name: string) => {
+			delete this.style[name]
+		},
+		getPropertyValue: (name: string) => this.style[name] ?? '',
+	} as Record<string, string> & {
+		setProperty: (name: string, value: string) => void
+		removeProperty: (name: string) => void
+		getPropertyValue: (name: string) => string
+	}
 
 	constructor(ownerDocument: TestDocument, tagName: string) {
 		super(ownerDocument)
@@ -104,6 +110,9 @@ class TestElement extends TestNode {
 
 	addEventListener() {}
 	removeEventListener() {}
+	showPopover() {}
+	hidePopover() {}
+	togglePopover() {}
 
 	getAttribute(name: string) {
 		return this.attributes[name] ?? null
@@ -178,41 +187,32 @@ export function installDomMock() {
 	}
 }
 
-async function main() {
-	describe('SomeTimeAgo', () => {
-		should('recomputes the displayed age when the timestamp moves forward', () => {
-			const now = new Date('2024-01-01T00:00:10.000Z')
-			const formatSeconds = (secondsDiff: number) => `${ Math.round(secondsDiff) }s`
-			const olderTimestamp = new Date('2024-01-01T00:00:05.000Z')
-			const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
-			assert.equal(getSomeTimeAgoText(olderTimestamp, now, false, formatSeconds), '5s')
-			assert.equal(getSomeTimeAgoText(newerTimestamp, now, false, formatSeconds), '1s')
-		})
+export function installDateMock(initialNow: Date | string | number) {
+	const RealDate = Date
+	let currentNow = new RealDate(initialNow).getTime()
 
-		should('updates the rendered output when rerendered with a fresher timestamp', async () => {
-			const dom = installDomMock()
-			const formatSeconds = (secondsDiff: number) => `${ Math.round(secondsDiff) }s`
-			const olderTimestamp = new Date('2024-01-01T00:00:05.000Z')
-			const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
+	class MockDate extends RealDate {
+		constructor(value?: string | number | Date) {
+			super(value === undefined ? currentNow : value)
+		}
 
-			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
-				render(h(SomeTimeAgo, { priorTimestamp: olderTimestamp, diffToText: formatSeconds }), dom.document.body)
-			})
-			assert.equal(dom.document.body.textContent, '5s')
+		static now() {
+			return currentNow
+		}
 
-			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
-				render(h(SomeTimeAgo, { priorTimestamp: newerTimestamp, diffToText: formatSeconds }), dom.document.body)
-			})
-			assert.equal(dom.document.body.textContent, '1s')
+		static parse = RealDate.parse
+		static UTC = RealDate.UTC
+	}
 
-			dom.restore()
-		})
-	})
+	// @ts-expect-error test shim intentionally overrides the global Date constructor
+	globalThis.Date = MockDate
+
+	return {
+		setNow(nextNow: Date | string | number) {
+			currentNow = new RealDate(nextNow).getTime()
+		},
+		restore() {
+			globalThis.Date = RealDate
+		},
+	}
 }
-
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
