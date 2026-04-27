@@ -5,8 +5,10 @@ import { describe, run, runIfRoot, should } from '../micro-should.js'
 import { getSomeTimeAgoText, SomeTimeAgo } from '../../app/ts/components/subcomponents/SomeTimeAgo.js'
 
 type AttributeMap = Record<string, string | undefined>
+type RenderContainer = Parameters<typeof render>[1]
 
 class TestNode {
+	readonly nodeType: number = 0
 	parentNode: TestNode | null = null
 	childNodes: TestNode[] = []
 	ownerDocument: TestDocument
@@ -15,15 +17,18 @@ class TestNode {
 		this.ownerDocument = ownerDocument
 	}
 
-	appendChild(node: TestNode) {
+	appendChild(node: RenderContainer) {
+		if (!(node instanceof TestNode)) throw new Error('Expected TestNode')
 		if (node.parentNode !== null) node.parentNode.removeChild(node)
 		node.parentNode = this
 		this.childNodes.push(node)
 		return node
 	}
 
-	insertBefore(node: TestNode, before: TestNode | null) {
+	insertBefore(node: RenderContainer, before: RenderContainer | null) {
+		if (!(node instanceof TestNode)) throw new Error('Expected TestNode')
 		if (before === null || before === undefined) return this.appendChild(node)
+		if (!(before instanceof TestNode)) throw new Error('Expected TestNode')
 		if (node.parentNode !== null) node.parentNode.removeChild(node)
 		node.parentNode = this
 		const index = this.childNodes.indexOf(before)
@@ -32,14 +37,17 @@ class TestNode {
 		return node
 	}
 
-	removeChild(node: TestNode) {
+	removeChild(node: RenderContainer) {
+		if (!(node instanceof TestNode)) throw new Error('Expected TestNode')
 		const index = this.childNodes.indexOf(node)
 		if (index >= 0) this.childNodes.splice(index, 1)
 		node.parentNode = null
 		return node
 	}
 
-	replaceChild(node: TestNode, oldNode: TestNode) {
+	replaceChild(node: RenderContainer, oldNode: RenderContainer) {
+		if (!(node instanceof TestNode)) throw new Error('Expected TestNode')
+		if (!(oldNode instanceof TestNode)) throw new Error('Expected TestNode')
 		const index = this.childNodes.indexOf(oldNode)
 		if (index < 0) return this.appendChild(node)
 		if (node.parentNode !== null) node.parentNode.removeChild(node)
@@ -49,8 +57,8 @@ class TestNode {
 		return oldNode
 	}
 
-	get firstChild() {
-		return this.childNodes[0]
+	get firstChild(): TestNode | null {
+		return this.childNodes[0] ?? null
 	}
 
 	get textContent(): string {
@@ -61,10 +69,16 @@ class TestNode {
 		this.childNodes = value === '' ? [] : [new TestTextNode(this.ownerDocument, value)]
 		for (const node of this.childNodes) node.parentNode = this
 	}
+
+	contains(node: RenderContainer | null): boolean {
+		if (node === null) return false
+		if (this === node) return true
+		return this.childNodes.some((child) => child.contains(node))
+	}
 }
 
 class TestTextNode extends TestNode {
-	nodeType = 3
+	readonly nodeType = 3
 	data: string
 
 	constructor(ownerDocument: TestDocument, data: string) {
@@ -82,7 +96,7 @@ class TestTextNode extends TestNode {
 }
 
 class TestElement extends TestNode {
-	nodeType = 1
+	readonly nodeType = 1
 	tagName: string
 	nodeName: string
 	attributes: AttributeMap = {}
@@ -115,11 +129,6 @@ class TestElement extends TestNode {
 
 	set textContent(value: string) {
 		super.textContent = value
-	}
-
-	contains(node: TestNode): boolean {
-		if (this === node) return true
-		return this.childNodes.some((child) => child === node || (child instanceof TestElement && child.contains(node)))
 	}
 }
 
@@ -196,13 +205,11 @@ async function main() {
 			const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
 
 			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
 				render(h(SomeTimeAgo, { priorTimestamp: olderTimestamp, diffToText: formatSeconds }), dom.document.body)
 			})
 			assert.equal(dom.document.body.textContent, '5s')
 
 			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
 				render(h(SomeTimeAgo, { priorTimestamp: newerTimestamp, diffToText: formatSeconds }), dom.document.body)
 			})
 			assert.equal(dom.document.body.textContent, '1s')

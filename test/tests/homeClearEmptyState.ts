@@ -122,7 +122,7 @@ async function main() {
 						preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
 						fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 						openImportSimulation: () => undefined,
-					}), dom.document.body as unknown as Element)
+					}), dom.document.body)
 				})
 
 				await act(() => {

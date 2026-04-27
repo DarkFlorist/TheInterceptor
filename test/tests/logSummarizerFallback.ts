@@ -152,7 +152,6 @@ const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulat
 		renameAddressCallBack: () => undefined,
 		rpcConnectionStatus: new Signal(undefined),
 	}),
-	// @ts-expect-error test shim uses a lightweight container
 	dom.document.body)
 }
 
