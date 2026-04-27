@@ -5,7 +5,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { createSimulationState, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
@@ -72,6 +72,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 	class MockEthereumJSONRpcRequestHandler {
 		public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
+		public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined }[] = []
 
 		public clearCache = () => {}
 
@@ -90,17 +91,17 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 					const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
 						? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
 						: undefined
-					return createMockEthSimulateV1Result(
-						rpcRequest.params[0]?.blockStateCalls.length ?? 0,
-						aggregate3BalanceQueryCount,
-					)
+					const blockStateCallCount = rpcRequest.params[0]?.blockStateCalls.length ?? 0
+					this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount })
+					return createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
 				}
 				default: throw new Error(`unsupported method ${ rpcRequest.method }`)
 			}
 		}
 	}
 
-	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+	const requestHandler = new MockEthereumJSONRpcRequestHandler()
+	const ethereum = new EthereumClientService(requestHandler, async () => {}, async () => {}, rpcNetwork)
 
 	describe('SimulationModeEthereumClientService', () => {
 		const exampleTransaction = {
@@ -698,6 +699,126 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				}] as const
 
 				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
+				if (firstBlock === null) throw new Error('first simulated block missing')
+				const logs = await getSimulatedLogs(ethereum, undefined, simulationState, { blockHash: firstBlock.hash })
+
+				assert.equal(logs.length, 1)
+				assert.equal(logs[0]?.blockHash, firstBlock.hash)
+				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
+			})
+
+			test('execution-only simulation skips token balance follow-up simulation', async () => {
+				const simulationStateInput = [{
+					stateOverrides: {},
+					transactions: [{
+						signedTransaction: mockSignTransaction({
+							...exampleTransaction,
+							nonce: 0n,
+						}),
+						website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+						created: new Date(),
+						originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+						transactionIdentifier: 10n,
+					}],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				requestHandler.ethSimulateV1Calls.length = 0
+				const fullSimulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (fullSimulationState.success === false) throw new Error('simulation unexpectedly failed')
+				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), true)
+
+				requestHandler.ethSimulateV1Calls.length = 0
+				const executionSimulationState = await createExecutionSimulationState(ethereum, undefined, simulationStateInput)
+				if (executionSimulationState.success === false) throw new Error('simulation unexpectedly failed')
+				assert.equal(requestHandler.ethSimulateV1Calls.length, 1)
+				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), false)
+			})
+
+			test('execution-only receipt uses execution block placement after gas splitting', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 10n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 11n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
+				if (secondHash === undefined) throw new Error('second transaction hash missing')
+				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 2n, true)
+				if (secondBlock === null) throw new Error('second simulated block missing')
+				const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, secondHash)
+				if (receipt === null) throw new Error('receipt missing')
+
+				assert.equal(receipt.blockNumber, blockNumber + 2n)
+				assert.equal(receipt.blockHash, secondBlock.hash)
+				assert.equal(receipt.transactionIndex, 0n)
+				assert.equal(receipt.cumulativeGasUsed, receipt.gasUsed)
+			})
+
+			test('execution-only logs honor the first simulated execution block hash after gas splitting', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 12n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 13n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
 				if (firstBlock === null) throw new Error('first simulated block missing')

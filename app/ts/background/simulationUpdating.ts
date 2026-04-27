@@ -1,6 +1,6 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -317,6 +317,10 @@ export const prepareSimulationInputForRpc = async (simulationInput: SimulationSt
 
 export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
+}
+
+export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService): Promise<ExecutionSimulationState> => {
+	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput)
 }
 
 export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {

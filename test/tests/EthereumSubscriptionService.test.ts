@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { ethers } from 'ethers'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { createSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -166,7 +166,7 @@ async function loadModules() {
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
 			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, undefined)
-			const simulationState = await createSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
 			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, simulationState)
@@ -236,7 +236,7 @@ async function loadModules() {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const simulationState = await createSimulationState(ethereum, undefined, splitSimulationInput)
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => simulationState)
