@@ -1,139 +1,114 @@
+import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { searchWebsiteAccess } from '../../app/ts/background/websiteAccessSearch.js'
 import { WebsiteAccess, WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 
-// Helper function to create test data
 const createWebsiteAccess = (title: string | undefined, origin: string, addresses: string[] = []): WebsiteAccess => ({
 	website: { title, websiteOrigin: origin, icon: undefined },
-	addressAccess: addresses.length ? addresses.map(addr => ({ address: EthereumAddress.parse(addr), access: true })) : undefined
+	addressAccess: addresses.length ? addresses.map(addr => ({ address: EthereumAddress.parse(addr), access: true })) : undefined,
 })
 
-export async function main() {
-	const testData: WebsiteAccessArray = [
-		createWebsiteAccess('Ethereum Foundation', 'ethereum.org', ['0x0000000000000000000000000000000000000123']),
-		createWebsiteAccess('Uniswap', 'app.uniswap.org', ['0x0000000000000000000000000000000000000789']),
-		createWebsiteAccess(undefined, 'etherscan.io', ['0x0000000000000000000000000000000000000abc']),
-		createWebsiteAccess('OpenSea', 'opensea.io', []),
-		createWebsiteAccess('Lunaria', 'lunaria.dark.florist', []),
-		createWebsiteAccess('MultiAddress DApp', 'multi.dapp', [
-			'0x0000000000000000000000000000000000001234',
-			'0x0000000000000000000000000000000000012345',
-			'0x0000000000000000000000000000000000789abc'
-		]),
-	]
+const testData: WebsiteAccessArray = [
+	createWebsiteAccess('Ethereum Foundation', 'ethereum.org', ['0x0000000000000000000000000000000000000123']),
+	createWebsiteAccess('Uniswap', 'app.uniswap.org', ['0x0000000000000000000000000000000000000789']),
+	createWebsiteAccess(undefined, 'etherscan.io', ['0x0000000000000000000000000000000000000abc']),
+	createWebsiteAccess('OpenSea', 'opensea.io'),
+	createWebsiteAccess('Lunaria', 'lunaria.dark.florist'),
+	createWebsiteAccess('MultiAddress DApp', 'multi.dapp', [
+		'0x0000000000000000000000000000000000001234',
+		'0x0000000000000000000000000000000000012345',
+		'0x0000000000000000000000000000000000789abc',
+	]),
+]
 
-	describe('searchWebsiteAccess', () => {
-		test('return original array reference for empty query', () => {
-			const result = searchWebsiteAccess('', testData)
-			return result === testData
-		})
-
-		test('return all entries for whitespace-only query', () => {
-			const result = searchWebsiteAccess('   ', testData)
-			return result.length === testData.length
-		})
-
-		test('match partial word "lu" with Lunaria', () => {
-			const result = searchWebsiteAccess('lu', testData)
-			return result[0] === testData[4] // Lunaria should be first match
-		})
-
-		test('find website by title', () => {
-			const result = searchWebsiteAccess('ethereum', testData)
-			return result[0] === testData[0] // Ethereum Foundation should be first
-		})
-
-		test('find website by origin', () => {
-			const result = searchWebsiteAccess('uniswap', testData)
-			return result[0] === testData[1] // Uniswap should be first
-		})
-
-		test('find website by ethereum address', () => {
-			const result = searchWebsiteAccess('0x123', testData)
-			// Should match both Ethereum Foundation (0x...123) and MultiAddress DApp (0x...1234, 0x...12345)
-			return result.length >= 2 &&
-				result.some(entry => entry.website.websiteOrigin === 'ethereum.org') &&
-				result.some(entry => entry.website.websiteOrigin === 'multi.dapp')
-		})
-
-		test('match website with undefined title', () => {
-			const result = searchWebsiteAccess('etherscan', testData)
-			return result[0] === testData[2]
-		})
-
-		test('prioritize exact matches over partial matches', () => {
-			const result = searchWebsiteAccess('etherscan', testData)
-			// etherscan.io should be first (exact match), ethereum.org should be second (partial match)
-			return result[0] === testData[2] && result[1] === testData[0]
-		})
-
-		test('rank longer matches higher', () => {
-			const result = searchWebsiteAccess('swap', testData)
-			if (!result.length) return false
-			return result[0]?.website.websiteOrigin === 'https://uniswap.org'
-		})
-
-		test('sort matches by match length in descending order', () => {
-			// Create test data with similar but different length matches
-			const testEntries: WebsiteAccessArray = [
-				createWebsiteAccess('Swap', 'https://swap.org'),
-				createWebsiteAccess('Uniswap', 'https://uniswap.org'),
-				createWebsiteAccess('SwapMeet', 'https://swapmeet.org')
-			]
-			const result = searchWebsiteAccess('swap', testEntries)
-			if (!result.length) return false
-			return result[0]?.website.websiteOrigin === 'https://uniswap.org' && // longest match
-				result[1]?.website.websiteOrigin === 'https://swapmeet.org' && // second longest
-				result[2]?.website.websiteOrigin === 'https://swap.org' // shortest match
-		})
-
-		test('match non-sequential characters', () => {
-			const result = searchWebsiteAccess('usp', testData)
-			return result.some((x) => x.website.websiteOrigin === 'https://uniswap.org')
-		})
-
-		test('find partial ethereum address matches', () => {
-			const result = searchWebsiteAccess('0x1234', testData)
-			return result.some((x) => x.addressAccess?.some((addr) => addressString(addr.address).toLowerCase().includes('0x1234')))
-		})
-
-		test('perform case-insensitive search', () => {
-			const result = searchWebsiteAccess('ETHEREUM', testData)
-			return result[0] === testData[0]
-		})
-
-		test('match mixed case patterns', () => {
-			const result = searchWebsiteAccess('UnIsWaP', testData)
-			return result.some((x) => x.website.websiteOrigin === 'https://uniswap.org')
-		})
-
-		test('handle URLs with special characters', () => {
-			const result = searchWebsiteAccess('https://', testData)
-			return result.length > 0
-		})
-
-		test('safely handle regex special characters', () => {
-			const result = searchWebsiteAccess('.*+?^${}()|[]\\', testData)
-			return result.length === 0 // Should not throw and return no matches
-		})
-
-		test('support unicode characters', () => {
-			const unicodeTestData: WebsiteAccessArray = [
-				createWebsiteAccess('Café', 'https://café.org'),
-				createWebsiteAccess('München', 'https://münich.de'),
-				createWebsiteAccess('東京', 'https://東京.jp')
-			]
-			const result1 = searchWebsiteAccess('café', unicodeTestData)
-			const result2 = searchWebsiteAccess('münich', unicodeTestData)
-			const result3 = searchWebsiteAccess('東京', unicodeTestData)
-			return result1[0]?.website.websiteOrigin === 'https://café.org' &&
-				result2[0]?.website.websiteOrigin === 'https://münich.de' &&
-				result3[0]?.website.websiteOrigin === 'https://東京.jp'
-		})
+describe('searchWebsiteAccess', () => {
+	test('returns the original array reference for an empty query', () => {
+		assert.equal(searchWebsiteAccess('', testData), testData)
 	})
-}
 
+	test('returns all entries for a whitespace-only query', () => {
+		assert.equal(searchWebsiteAccess('   ', testData).length, testData.length)
+	})
 
-await main()
+	test('matches a partial title and ranks Lunaria first', () => {
+		assert.equal(searchWebsiteAccess('lu', testData)[0], testData[4])
+	})
+
+	test('finds websites by title', () => {
+		assert.equal(searchWebsiteAccess('ethereum', testData)[0], testData[0])
+	})
+
+	test('finds websites by origin', () => {
+		assert.equal(searchWebsiteAccess('uniswap', testData)[0], testData[1])
+	})
+
+	test('finds websites by ethereum address', () => {
+		const result = searchWebsiteAccess('0x123', testData)
+		assert.equal(result.length >= 2, true)
+		assert.equal(result.some(entry => entry.website.websiteOrigin === 'ethereum.org'), true)
+		assert.equal(result.some(entry => entry.website.websiteOrigin === 'multi.dapp'), true)
+	})
+
+	test('matches websites with an undefined title by origin', () => {
+		assert.equal(searchWebsiteAccess('etherscan', testData)[0], testData[2])
+	})
+
+	test('ranks longer fuzzy matches ahead of shorter ones', () => {
+		const entries: WebsiteAccessArray = [
+			createWebsiteAccess('Swap', 'swap.org'),
+			createWebsiteAccess('Spread Letters', 'sxxwxxaxxpp.org'),
+		]
+		const result = searchWebsiteAccess('swap', entries)
+		assert.deepEqual(result.map(entry => entry.website.websiteOrigin), ['sxxwxxaxxpp.org', 'swap.org'])
+	})
+
+	test('sorts multiple matches by descending fuzzy match length', () => {
+		const entries: WebsiteAccessArray = [
+			createWebsiteAccess('Shortest', 'swap.org'),
+			createWebsiteAccess('Middle', 'sxxwxxap.org'),
+			createWebsiteAccess('Longest', 'sxxwxxaxxpp.org'),
+		]
+		const result = searchWebsiteAccess('swap', entries)
+		assert.deepEqual(result.map(entry => entry.website.websiteOrigin), ['sxxwxxaxxpp.org', 'sxxwxxap.org', 'swap.org'])
+	})
+
+	test('matches non-sequential characters', () => {
+		assert.equal(searchWebsiteAccess('usp', testData).some((entry) => entry.website.websiteOrigin === 'app.uniswap.org'), true)
+	})
+
+	test('finds partial ethereum address matches', () => {
+		const result = searchWebsiteAccess('0x1234', testData)
+		assert.equal(result.some((entry) => entry.website.websiteOrigin === 'multi.dapp'), true)
+		assert.equal(result.some((entry) => entry.addressAccess?.some((addr) => addressString(addr.address).endsWith('1234'))), true)
+	})
+
+	test('performs a case-insensitive search', () => {
+		assert.equal(searchWebsiteAccess('ETHEREUM', testData)[0], testData[0])
+	})
+
+	test('matches mixed-case patterns', () => {
+		assert.equal(searchWebsiteAccess('UnIsWaP', testData).some((entry) => entry.website.websiteOrigin === 'app.uniswap.org'), true)
+	})
+
+	test('handles URLs with special characters in the query', () => {
+		assert.equal(searchWebsiteAccess('.org', testData).length > 0, true)
+	})
+
+	test('treats regex special characters as plain text', () => {
+		assert.equal(searchWebsiteAccess('.*+?^${}()|[]\\', testData).length, 0)
+	})
+
+	test('supports unicode characters', () => {
+		const unicodeTestData: WebsiteAccessArray = [
+			createWebsiteAccess('Café', 'café.org'),
+			createWebsiteAccess('München', 'münich.de'),
+			createWebsiteAccess('東京', '東京.jp'),
+		]
+
+		assert.equal(searchWebsiteAccess('café', unicodeTestData)[0]?.website.websiteOrigin, 'café.org')
+		assert.equal(searchWebsiteAccess('münich', unicodeTestData)[0]?.website.websiteOrigin, 'münich.de')
+		assert.equal(searchWebsiteAccess('東京', unicodeTestData)[0]?.website.websiteOrigin, '東京.jp')
+	})
+})

@@ -92,67 +92,62 @@ async function waitFor(condition: () => boolean, timeoutMs = 2000) {
 	}
 }
 
-export async function main() {
-	describe('inpage signer bridge', () => {
-		test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
-			const previousWindow = (globalThis as { window?: unknown }).window
-			const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
-			const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow()
-			;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
-			if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
-				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
-					public detail: T
-					constructor(type: string, init?: CustomEventInit<T>) {
-						super(type)
-						this.detail = init?.detail as T
-					}
-					public initCustomEvent(): void {}
+describe('inpage signer bridge', () => {
+	test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow()
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
 				}
+				public initCustomEvent(): void {}
 			}
+		}
 
-			try {
-				await import('../../app/inpage/ts/inpage.js')
-				await waitFor(() => signerRequests.length >= 1)
-				assert.deepEqual(signerRequests, ['eth_chainId'])
+		try {
+			await import('../../app/inpage/ts/inpage.js')
+			await waitFor(() => signerRequests.length >= 1)
+			assert.deepEqual(signerRequests, ['eth_chainId'])
 
-				fakeWindow.dispatchEvent({
-					type: 'message',
-					data: {
-						interceptorApproved: true,
-						type: 'result',
-						method: 'request_signer_to_eth_accounts',
-						result: [],
-					},
-				})
-				await waitFor(() => signerRequests.includes('eth_accounts'))
-				assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts'])
-				await waitFor(() => backgroundEthAccountsReplies.length === 1)
-				assert.deepEqual((backgroundEthAccountsReplies[0] as { accounts?: unknown }).accounts, signerAccounts)
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_eth_accounts',
+					result: [],
+				},
+			})
+			await waitFor(() => signerRequests.includes('eth_accounts'))
+			assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts'])
+			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			assert.deepEqual((backgroundEthAccountsReplies[0] as { accounts?: unknown }).accounts, signerAccounts)
 
-				fakeWindow.dispatchEvent({
-					type: 'message',
-					data: {
-						interceptorApproved: true,
-						type: 'result',
-						method: 'request_signer_to_eth_requestAccounts',
-						result: [],
-					},
-				})
-				await waitFor(() => signerRequests.filter((method) => method === 'eth_requestAccounts').length === 1)
-				assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts', 'eth_requestAccounts'])
-				await waitFor(() => backgroundEthAccountsReplies.length === 2)
-				assert.deepEqual((backgroundEthAccountsReplies[1] as { accounts?: unknown }).accounts, signerAccounts)
-			} finally {
-				;(globalThis as { window?: unknown }).window = previousWindow
-				if (previousCustomEvent === undefined) {
-					delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
-				} else {
-					;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
-				}
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_eth_requestAccounts',
+					result: [],
+				},
+			})
+			await waitFor(() => signerRequests.filter((method) => method === 'eth_requestAccounts').length === 1)
+			assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts', 'eth_requestAccounts'])
+			await waitFor(() => backgroundEthAccountsReplies.length === 2)
+			assert.deepEqual((backgroundEthAccountsReplies[1] as { accounts?: unknown }).accounts, signerAccounts)
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
 			}
-		})
+		}
 	})
-}
-
-
-await main()
+})

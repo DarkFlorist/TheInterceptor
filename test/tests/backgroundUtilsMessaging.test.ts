@@ -66,28 +66,24 @@ async function loadModules() {
 	}
 }
 
-export async function main() {
-	describe('backgroundUtils messaging', () => {
-		test('ignore closed async response errors for popup fire-and-forget messages', async () => {
-			const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
-			const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
+describe('backgroundUtils messaging', () => {
+	test('ignore closed async response errors for popup fire-and-forget messages', async () => {
+		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
+		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
-			await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 
-			assert.equal(storageState.latestUnexpectedError, undefined)
-			assert.equal(await getLatestUnexpectedError(), undefined)
-		})
-
-		test('ignore closed async response errors when broadcasting to open popups', async () => {
-			const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
-			const { sendPopupMessageToOpenWindows, getLatestUnexpectedError } = await loadModules()
-
-			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-
-			assert.equal(storageState.latestUnexpectedError, undefined)
-			assert.equal(await getLatestUnexpectedError(), undefined)
-		})
+		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
-}
 
-await main()
+	test('ignore closed async response errors when broadcasting to open popups', async () => {
+		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
+		const { sendPopupMessageToOpenWindows, getLatestUnexpectedError } = await loadModules()
+
+		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+
+		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+})

@@ -5,7 +5,7 @@ import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { LogSummarizer } from '../../app/ts/simulation/services/LogSummarizer.js'
 import { SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
-import { installDomMock } from './someTimeAgo.js'
+import { installDomMock } from './domMock.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import type { AddressBookEntry, ContactEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent, TokenVisualizerNFTAllApprovalEvent } from '../../app/ts/types/EnrichedEthereumData.js'
@@ -156,133 +156,128 @@ const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulat
 	dom.document.body)
 }
 
-async function main() {
-	describe('LogSummarizer fallback metadata', () => {
-		test('uses enriched event metadata when the external map is incomplete', () => {
-			const simulatedTransaction = makeSimulatedTransaction()
-			const summarizer = new LogSummarizer([simulatedTransaction])
-			const externalMetadata = new Map<string, AddressBookEntry>([
-				[addressString(tokenEntry.address), tokenEntry],
-				[addressString(senderEntry.address), senderEntry],
-			])
+describe('LogSummarizer fallback metadata', () => {
+	test('uses enriched event metadata when the external map is incomplete', () => {
+		const simulatedTransaction = makeSimulatedTransaction()
+		const summarizer = new LogSummarizer([simulatedTransaction])
+		const externalMetadata = new Map<string, AddressBookEntry>([
+			[addressString(tokenEntry.address), tokenEntry],
+			[addressString(senderEntry.address), senderEntry],
+		])
 
-			const summary = summarizer.getSummary(externalMetadata, [], [])
-			const recipientSummary = summary.find((entry) => entry.summaryFor.address === RECIPIENT_ADDRESS)
+		const summary = summarizer.getSummary(externalMetadata, [], [])
+		const recipientSummary = summary.find((entry) => entry.summaryFor.address === RECIPIENT_ADDRESS)
 
-			assert.notEqual(recipientSummary, undefined)
-			assert.equal(recipientSummary?.summaryFor.name, recipientEntry.name)
-		})
+		assert.notEqual(recipientSummary, undefined)
+		assert.equal(recipientSummary?.summaryFor.name, recipientEntry.name)
+	})
 
-		test('uses enriched approval target metadata when ERC20 approval address is missing from the external map', () => {
-			const simulatedTransaction = createTransactionWithEvent({
-				type: 'TokenEvent',
-				isParsed: 'Parsed',
-				name: 'Approval',
-				signature: 'Approval(address,address,uint256)',
-				args: [],
-				address: TOKEN_ADDRESS,
-				loggersAddressBookEntry: tokenEntry,
-				data: new Uint8Array(),
-				topics: [],
-				logInformation: {
-					type: 'ERC20',
-					logObject: undefined,
-					from: senderEntry,
-					to: operatorEntry,
-					token: tokenEntry,
-					amount: 10n,
-					isApproval: true,
-				},
-			})
-
-			const summary = getSummaryForTransaction(simulatedTransaction, [tokenEntry, senderEntry])
-			assert.equal(summary[0]?.erc20TokenApprovalChanges[0]?.approvals[0]?.name, operatorEntry.name)
-		})
-
-		test('uses enriched approved address metadata when ERC721 approval address is missing from the external map', () => {
-			const simulatedTransaction = createTransactionWithEvent({
-				type: 'TokenEvent',
-				isParsed: 'Parsed',
-				name: 'Approval',
-				signature: 'Approval(address,address,uint256)',
-				args: [],
-				address: ERC721_TOKEN_ADDRESS,
-				loggersAddressBookEntry: erc721TokenEntry,
-				data: new Uint8Array(),
-				topics: [],
-				logInformation: {
-					type: 'ERC721',
-					logObject: undefined,
-					from: senderEntry,
-					to: operatorEntry,
-					token: erc721TokenEntry,
-					tokenId: 1n,
-					isApproval: true,
-				},
-			}, erc721TokenEntry)
-
-			const summary = getSummaryForTransaction(simulatedTransaction, [erc721TokenEntry, senderEntry])
-			assert.equal(summary[0]?.erc721TokenIdApprovalChanges[0]?.approvedEntry.name, operatorEntry.name)
-		})
-
-		test('uses enriched operator metadata when ApprovalForAll operator is missing from the external map', () => {
-			const approvalForAllLogInformation: TokenVisualizerNFTAllApprovalEvent = {
-				type: 'NFT All approval',
+	test('uses enriched approval target metadata when ERC20 approval address is missing from the external map', () => {
+		const simulatedTransaction = createTransactionWithEvent({
+			type: 'TokenEvent',
+			isParsed: 'Parsed',
+			name: 'Approval',
+			signature: 'Approval(address,address,uint256)',
+			args: [],
+			address: TOKEN_ADDRESS,
+			loggersAddressBookEntry: tokenEntry,
+			data: new Uint8Array(),
+			topics: [],
+			logInformation: {
+				type: 'ERC20',
 				logObject: undefined,
 				from: senderEntry,
 				to: operatorEntry,
-				token: erc1155TokenEntry,
-				allApprovalAdded: true,
+				token: tokenEntry,
+				amount: 10n,
 				isApproval: true,
-			}
-			const simulatedTransaction = createTransactionWithEvent({
-				type: 'TokenEvent',
-				isParsed: 'Parsed',
-				name: 'ApprovalForAll',
-				signature: 'ApprovalForAll(address,address,bool)',
-				args: [],
-				address: ERC1155_TOKEN_ADDRESS,
-				loggersAddressBookEntry: erc1155TokenEntry,
-				data: new Uint8Array(),
-				topics: [],
-				logInformation: approvalForAllLogInformation,
-			}, erc1155TokenEntry)
-
-			const summary = getSummaryForTransaction(simulatedTransaction, [erc1155TokenEntry, senderEntry])
-			assert.equal(summary[0]?.erc721and1155OperatorChanges[0]?.operator?.name, operatorEntry.name)
+			},
 		})
 
-		test('renders SimulationSummary with the fallback account name instead of crashing', async () => {
-			const dom = installDomMock()
-			const simulatedTransaction = makeSimulatedTransaction()
-			const simulationAndVisualisationResultsData: SimulationAndVisualisationResults = {
-				blockNumber: 1n,
-				blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
-				simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
-				addressBookEntries: [tokenEntry, senderEntry],
-				rpcNetwork,
-				tokenPriceEstimates: [],
-				visualizedSimulationState: {
-					success: true,
-					visualizedBlocks: [{
-						simulatedAndVisualizedTransactions: [simulatedTransaction],
-						visualizedPersonalSignRequests: [],
-						blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
-					}],
-				},
-				namedTokenIds: [],
-			}
-			const simulationAndVisualisationResults = new Signal(simulationAndVisualisationResultsData)
-
-			await act(() => {
-				renderSimulationSummary(dom, simulationAndVisualisationResults)
-			})
-
-			assert.equal(dom.document.body.textContent?.includes(recipientEntry.name), true)
-			dom.restore()
-		})
+		const summary = getSummaryForTransaction(simulatedTransaction, [tokenEntry, senderEntry])
+		assert.equal(summary[0]?.erc20TokenApprovalChanges[0]?.approvals[0]?.name, operatorEntry.name)
 	})
-}
 
+	test('uses enriched approved address metadata when ERC721 approval address is missing from the external map', () => {
+		const simulatedTransaction = createTransactionWithEvent({
+			type: 'TokenEvent',
+			isParsed: 'Parsed',
+			name: 'Approval',
+			signature: 'Approval(address,address,uint256)',
+			args: [],
+			address: ERC721_TOKEN_ADDRESS,
+			loggersAddressBookEntry: erc721TokenEntry,
+			data: new Uint8Array(),
+			topics: [],
+			logInformation: {
+				type: 'ERC721',
+				logObject: undefined,
+				from: senderEntry,
+				to: operatorEntry,
+				token: erc721TokenEntry,
+				tokenId: 1n,
+				isApproval: true,
+			},
+		}, erc721TokenEntry)
 
-await main()
+		const summary = getSummaryForTransaction(simulatedTransaction, [erc721TokenEntry, senderEntry])
+		assert.equal(summary[0]?.erc721TokenIdApprovalChanges[0]?.approvedEntry.name, operatorEntry.name)
+	})
+
+	test('uses enriched operator metadata when ApprovalForAll operator is missing from the external map', () => {
+		const approvalForAllLogInformation: TokenVisualizerNFTAllApprovalEvent = {
+			type: 'NFT All approval',
+			logObject: undefined,
+			from: senderEntry,
+			to: operatorEntry,
+			token: erc1155TokenEntry,
+			allApprovalAdded: true,
+			isApproval: true,
+		}
+		const simulatedTransaction = createTransactionWithEvent({
+			type: 'TokenEvent',
+			isParsed: 'Parsed',
+			name: 'ApprovalForAll',
+			signature: 'ApprovalForAll(address,address,bool)',
+			args: [],
+			address: ERC1155_TOKEN_ADDRESS,
+			loggersAddressBookEntry: erc1155TokenEntry,
+			data: new Uint8Array(),
+			topics: [],
+			logInformation: approvalForAllLogInformation,
+		}, erc1155TokenEntry)
+
+		const summary = getSummaryForTransaction(simulatedTransaction, [erc1155TokenEntry, senderEntry])
+		assert.equal(summary[0]?.erc721and1155OperatorChanges[0]?.operator?.name, operatorEntry.name)
+	})
+
+	test('renders SimulationSummary with the fallback account name instead of crashing', async () => {
+		const dom = installDomMock()
+		const simulatedTransaction = makeSimulatedTransaction()
+		const simulationAndVisualisationResultsData: SimulationAndVisualisationResults = {
+			blockNumber: 1n,
+			blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			addressBookEntries: [tokenEntry, senderEntry],
+			rpcNetwork,
+			tokenPriceEstimates: [],
+			visualizedSimulationState: {
+				success: true,
+				visualizedBlocks: [{
+					simulatedAndVisualizedTransactions: [simulatedTransaction],
+					visualizedPersonalSignRequests: [],
+					blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+				}],
+			},
+			namedTokenIds: [],
+		}
+		const simulationAndVisualisationResults = new Signal(simulationAndVisualisationResultsData)
+
+		await act(() => {
+			renderSimulationSummary(dom, simulationAndVisualisationResults)
+		})
+
+		assert.equal(dom.document.body.textContent?.includes(recipientEntry.name), true)
+		dom.restore()
+	})
+})

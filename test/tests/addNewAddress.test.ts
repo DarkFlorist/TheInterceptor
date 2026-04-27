@@ -9,35 +9,31 @@ const sampleAddressBookEntry = {
 	entrySource: 'User',
 } as const
 
-export async function main() {
-	describe('add new address save flow', () => {
-		test('waits for the save message to finish before closing the popup', async () => {
-			const calls: string[] = []
-			await saveAddressBookEntry(sampleAddressBookEntry, () => {
-				calls.push('close')
-			}, async () => {
-				calls.push('send:start')
-				await Promise.resolve()
-				calls.push('send:end')
-			})
-
-			assert.deepEqual(calls, ['send:start', 'send:end', 'close'])
+describe('add new address save flow', () => {
+	test('waits for the save message to finish before closing the popup', async () => {
+		const calls: string[] = []
+		await saveAddressBookEntry(sampleAddressBookEntry, () => {
+			calls.push('close')
+		}, async () => {
+			calls.push('send:start')
+			await Promise.resolve()
+			calls.push('send:end')
 		})
 
-		test('does not close the popup when the entry is invalid', async () => {
-			let closed = false
-			let sent = false
-
-			await saveAddressBookEntry({ type: 'error', error: 'invalid' }, () => {
-				closed = true
-			}, async () => {
-				sent = true
-			})
-
-			assert.equal(sent, false)
-			assert.equal(closed, false)
-		})
+		assert.deepEqual(calls, ['send:start', 'send:end', 'close'])
 	})
-}
 
-await main()
+	test('does not close the popup when the entry is invalid', async () => {
+		let closed = false
+		let sent = false
+
+		await saveAddressBookEntry({ type: 'error', error: 'invalid' }, () => {
+			closed = true
+		}, async () => {
+			sent = true
+		})
+
+		assert.equal(sent, false)
+		assert.equal(closed, false)
+	})
+})
