@@ -28,6 +28,8 @@ export type PreparedEthSimulateV1InputBlock = {
 export type PreparedEthSimulateV1Input = {
 	readonly request: EthSimulateV1Params
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
+	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
+	readonly blockOverrides: readonly BlockOverrides[]
 }
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
@@ -326,6 +328,8 @@ export class EthereumClientService {
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {
 			inputBlocks: preparedBlocks,
+			rpcBlocks,
+			blockOverrides,
 			request: {
 				method: 'eth_simulateV1',
 				params: [{
