@@ -619,6 +619,95 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				assert.equal(secondBlock.number, firstBlock.number + 1n)
 			})
 
+			test('state-based receipt uses execution block placement after gas splitting', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 10n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 11n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
+				if (secondHash === undefined) throw new Error('second transaction hash missing')
+				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 2n, true)
+				if (secondBlock === null) throw new Error('second simulated block missing')
+				const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, secondHash)
+				if (receipt === null) throw new Error('receipt missing')
+
+				assert.equal(receipt.blockNumber, blockNumber + 2n)
+				assert.equal(receipt.blockHash, secondBlock.hash)
+				assert.equal(receipt.transactionIndex, 0n)
+				assert.equal(receipt.cumulativeGasUsed, receipt.gasUsed)
+			})
+
+			test('state-based logs honor the first simulated execution block hash after gas splitting', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 12n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 13n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
+				if (firstBlock === null) throw new Error('first simulated block missing')
+				const logs = await getSimulatedLogs(ethereum, undefined, simulationState, { blockHash: firstBlock.hash })
+
+				assert.equal(logs.length, 1)
+				assert.equal(logs[0]?.blockHash, firstBlock.hash)
+				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
+			})
 			test('execution-only simulation skips token balance follow-up simulation', async () => {
 				const simulationStateInput = [{
 					stateOverrides: {},

@@ -280,6 +280,36 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
 }
 
+type SimulationResultsHeaderParams = {
+	openImportSimulation: () => void
+	disableReset?: ReadonlySignal<boolean>
+	resetSimulation?: () => void
+}
+
+function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
+	return <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+		<div class = 'log-cell' style = 'justify-content: left;'>
+			<p className = 'h1'> Simulation Results </p>
+		</div>
+		<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
+			<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
+				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+					<ImportIcon/>
+				</span>
+				<span>Import Simulation Stack</span>
+			</button>
+			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
+				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+						<BroomIcon />
+					</span>
+					<span>Clear</span>
+				</button>
+			}
+		</div>
+	</div>
+}
+
 function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
 		if (param.simulationAndVisualisationResults.value === undefined) return true
@@ -296,30 +326,15 @@ function PopupVisualisation(param: SimulationStateParam) {
 	}
 
 	if (currentResults === undefined) {
-		return <div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+		return <div>
+			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } />
+			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+		</div>
 	}
 	const definedSimulationResults = param.simulationAndVisualisationResults as ReadonlySignal<SimulationAndVisualisationResults>
 
 	return <div>
-		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
-			<div class = 'log-cell' style = 'justify-content: left;'>
-				<p className = 'h1'> Simulation Results </p>
-			</div>
-			<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
-				<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<ImportIcon/>
-					</span>
-					<span>Import Simulation Stack</span>
-				</button>
-				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<BroomIcon />
-					</span>
-					<span>Clear</span>
-				</button>
-			</div>
-		</div>
+		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 		{ currentResults.visualizedSimulationState.success === false ? <>
 			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
