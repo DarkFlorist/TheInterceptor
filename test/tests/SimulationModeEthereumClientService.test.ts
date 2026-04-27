@@ -1,5 +1,5 @@
 import { ethers, keccak256 } from 'ethers'
-import { describe, runIfRoot, should, run } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
@@ -58,7 +58,6 @@ function testBytes32(suffix: string) {
 
 const zeroBytes256 = `0x${'0'.repeat(512)}`
 
-export async function main() {
 	const blockNumber = 8443561n
 	const rpcNetwork = {
 		name: 'Goerli',
@@ -118,7 +117,7 @@ export async function main() {
 			chainId: 1n,
 		} as const
 
-		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
+		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
@@ -127,7 +126,7 @@ export async function main() {
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 
-		should('ethers.recoverAddress should fail for mocked transaction', async () => {
+		test('ethers.recoverAddress should fail for mocked transaction', async () => {
 			const signed = EthereumSignedTransactionToSignedTransaction(mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
@@ -142,7 +141,7 @@ export async function main() {
 			)
 		})
 
-		should('ethers.recoverAddress works for positive case', async() => {
+		test('ethers.recoverAddress works for positive case', async() => {
 			const validTransaction = {
 				hash: '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
 				nonce: '0x15174',
@@ -181,7 +180,7 @@ export async function main() {
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
 		})
 
-		should('typed transaction v values 0x0 and 0x1 normalize to parity', async () => {
+		test('typed transaction v values 0x0 and 0x1 normalize to parity', async () => {
 			const base7702Transaction = {
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -230,7 +229,7 @@ export async function main() {
 			assert.equal(oddTransaction.authorizationList[0]?.yParity, 'odd')
 		})
 
-		should('typed transaction with block data parses yParity without v', async () => {
+		test('typed transaction with block data parses yParity without v', async () => {
 			const parsedTransaction = EthereumSignedTransactionWithBlockData.parse({
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -267,7 +266,7 @@ export async function main() {
 			assert.equal('v' in parsedTransaction, false)
 		})
 
-		should('typed transaction parsers reject legacy-style v values', async () => {
+		test('typed transaction parsers reject legacy-style v values', async () => {
 			const base7702Transaction = {
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -312,7 +311,7 @@ export async function main() {
 			}))
 		})
 
-		should('transaction receipt parses 7702 without authorization list fields', async () => {
+		test('transaction receipt parses 7702 without authorization list fields', async () => {
 			const receipt = EthTransactionReceiptResponse.parse({
 				type: '0x4',
 				blockHash: testBytes32('41'),
@@ -334,7 +333,7 @@ export async function main() {
 			assert.equal('authorizationList' in receipt, false)
 		})
 
-		should('typed transaction serializers use the correct prefix bytes', async () => {
+		test('typed transaction serializers use the correct prefix bytes', async () => {
 			const unsigned7702 = EthereumUnsignedTransaction.parse({
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -378,12 +377,12 @@ export async function main() {
 			assert.equal(serializedSigned4844[0], 3)
 		})
 
-		should('EthereumSignatureParity rejects unsupported values', async () => {
+		test('EthereumSignatureParity rejects unsupported values', async () => {
 			assert.throws(() => EthereumSignatureParity.parse('0x1c'))
 			assert.throws(() => EthereumSignatureParity.parse('0x2'))
 		})
 
-		should('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
+		test('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
 			const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -426,7 +425,7 @@ export async function main() {
 			assert.equal(groupedBlock.calls[1]?.gasUsed, 0x6dd4n)
 		})
 
-			should('input-based block number counts split execution blocks', async () => {
+			test('input-based block number counts split execution blocks', async () => {
 				const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -461,7 +460,7 @@ export async function main() {
 				assert.equal(await getSimulatedBlockNumberFromInput(ethereum, undefined, splitSimulationStateInput), blockNumber + 2n)
 			})
 
-			should('input-based block number ignores the default empty simulation block', async () => {
+			test('input-based block number ignores the default empty simulation block', async () => {
 				const emptySimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [],
@@ -473,7 +472,7 @@ export async function main() {
 				assert.equal(await getSimulatedBlockNumberFromInput(ethereum, undefined, emptySimulationStateInput), blockNumber)
 			})
 
-			should('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
+			test('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
 			const simulationStateInput = [{
 				stateOverrides: {},
 				transactions: [{
@@ -503,7 +502,7 @@ export async function main() {
 				assert.equal(roundTripped.number, latestBlock.number)
 			})
 
-			should('input-based simulated block hash changes when transaction contents change', async () => {
+			test('input-based simulated block hash changes when transaction contents change', async () => {
 				const baseSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [{
@@ -539,7 +538,7 @@ export async function main() {
 				assert.notEqual(firstBlock.hash, secondBlock.hash)
 			})
 
-			should('input-based transaction lookup uses execution block positions after gas splitting', async () => {
+			test('input-based transaction lookup uses execution block positions after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -580,7 +579,7 @@ export async function main() {
 				assert.equal(found.transactionIndex, 0n)
 			})
 
-			should('input-based execution blocks link together after gas splitting', async () => {
+			test('input-based execution blocks link together after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [
@@ -620,7 +619,7 @@ export async function main() {
 				assert.equal(secondBlock.number, firstBlock.number + 1n)
 			})
 
-			should('execution-only simulation skips token balance follow-up simulation', async () => {
+			test('execution-only simulation skips token balance follow-up simulation', async () => {
 				const simulationStateInput = [{
 					stateOverrides: {},
 					transactions: [{
@@ -650,7 +649,7 @@ export async function main() {
 				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), false)
 			})
 
-			should('execution-only receipt uses execution block placement after gas splitting', async () => {
+			test('execution-only receipt uses execution block placement after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [
@@ -697,7 +696,7 @@ export async function main() {
 				assert.equal(receipt.cumulativeGasUsed, receipt.gasUsed)
 			})
 
-			should('execution-only logs honor the first simulated execution block hash after gas splitting', async () => {
+			test('execution-only logs honor the first simulated execution block hash after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [
@@ -740,9 +739,3 @@ export async function main() {
 				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
 			})
 		})
-	}
-
-await runIfRoot(async  () => {
-	await main()
-	await run()
-}, import.meta)
