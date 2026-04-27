@@ -286,12 +286,8 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return isEmptySimulation(param.simulationAndVisualisationResults.value)
 	})
 
-	const definedSimulationResults = useComputed(() => {
-		const currentResults = param.simulationAndVisualisationResults.value
-		if (currentResults === undefined) throw new Error('Simulation results are required')
-		return currentResults
-	})
-	const computedAddressBookEntries = useComputed(() => definedSimulationResults.value.addressBookEntries)
+	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value?.addressBookEntries ?? [])
+	const currentResults = param.simulationAndVisualisationResults.value
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
@@ -299,9 +295,10 @@ function PopupVisualisation(param: SimulationStateParam) {
 		</div>
 	}
 
-	if (param.simulationAndVisualisationResults.value === undefined) {
+	if (currentResults === undefined) {
 		return <div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 	}
+	const definedSimulationResults = param.simulationAndVisualisationResults as ReadonlySignal<SimulationAndVisualisationResults>
 
 	return <div>
 		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
@@ -324,8 +321,8 @@ function PopupVisualisation(param: SimulationStateParam) {
 			</div>
 		</div>
 
-		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ? <>
-			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+		{ currentResults.visualizedSimulationState.success === false ? <>
+			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
 				<TransactionsAndSignedMessages
 					simulationAndVisualisationResults = { definedSimulationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
@@ -335,7 +332,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					addressMetaData = { computedAddressBookEntries }
 				/>
 		</> : <>
-			{ isEmpty.value || param.simulationAndVisualisationResults.value === undefined ?
+			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
