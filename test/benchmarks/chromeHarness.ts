@@ -448,7 +448,7 @@ export async function ensureExtensionDirReady(extensionDir = EXTENSION_DIR) {
 	try {
 		await access(path.join(extensionDir, 'manifest.json'), fsConstants.constants.R_OK)
 	} catch {
-		throw new Error(`Missing ${ path.join(extensionDir, 'manifest.json') }. Run \`npm run setup-chrome\` before the Chrome benchmark.`)
+		throw new Error(`Missing ${ path.join(extensionDir, 'manifest.json') }. Run \`bun run setup-chrome\` before the Chrome benchmark.`)
 	}
 }
 

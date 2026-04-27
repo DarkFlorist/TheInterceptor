@@ -2,8 +2,9 @@
 	"name": "interceptor-extension",
 	"private": true,
 	"type": "module",
+	"packageManager": "bun@1.3.12",
 	"scripts": {
-		"test": "bun --bun tsc --project tsconfig-test.json && bun ./test/js/test/run-all.js",
+		"test": "bun test",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",

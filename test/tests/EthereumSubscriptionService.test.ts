@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { ethers } from 'ethers'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
@@ -84,7 +84,6 @@ async function loadModules() {
 	}
 }
 
-export async function main() {
 	const blockNumber = 8443561n
 	const rpcNetwork = {
 		name: 'Goerli',
@@ -161,7 +160,7 @@ export async function main() {
 	}] as const
 
 	describe('EthereumSubscriptionService', () => {
-		should('eth_getFilterChanges only returns newly simulated logs once', async () => {
+		test('eth_getFilterChanges only returns newly simulated logs once', async () => {
 			installBrowserMock()
 			const { createNewFilter, getEthFilterChanges, getEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
@@ -182,7 +181,7 @@ export async function main() {
 			assert.equal(storedFilter.calledInlastBlock, blockNumber + 1n)
 		})
 
-		should('newHeads emits each simulated execution block after a gas split', async () => {
+		test('newHeads emits each simulated execution block after a gas split', async () => {
 			installBrowserMock()
 			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock } = await loadModules()
 			const ethereum = createEthereum()
@@ -252,9 +251,3 @@ export async function main() {
 			assert.deepEqual(emittedBlockNumbers, [blockNumber, blockNumber + 1n, blockNumber + 2n])
 		})
 	})
-}
-
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
