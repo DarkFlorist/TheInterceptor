@@ -1,6 +1,6 @@
 import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
-import { handleInterceptedRequest, popupMessageHandler } from './background.js'
+import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
@@ -196,10 +196,10 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(simulator, false, false)
 				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
 				await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
-				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections)
+				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
-			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections)
+			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
 		}
 		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
