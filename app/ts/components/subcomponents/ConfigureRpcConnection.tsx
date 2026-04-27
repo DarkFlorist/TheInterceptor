@@ -158,10 +158,10 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 }
 
 type ConfigureRpcFormProps = {
-	defaultValues?: RpcEntry,
-	onCancel: () => void
+	defaultValues?: RpcEntry | undefined,
+	onCancel: () => void | undefined
 	onSave: (rpcEntry: RpcEntry) => void
-	onRemove?: (rpcUrl: string) => void
+	onRemove?: ((rpcUrl: string) => void) | undefined
 }
 
 const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
@@ -252,7 +252,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 			<main class = 'grid' style = '--gap-y: 0.5rem'>
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
-					<RpcUrlField defaultValue = { defaultValues?.httpsRpc } />
+					<RpcUrlField { ...(defaultValues?.httpsRpc !== undefined ? { defaultValue: defaultValues.httpsRpc } : {}) } />
 					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
@@ -289,7 +289,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 const RPC_URL_FETCH_DEBOUNCE = 600
 
-const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
+const RpcUrlField = ({ defaultValue }: { defaultValue?: string | undefined }) => {
 	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
 	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)

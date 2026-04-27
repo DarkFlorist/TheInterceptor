@@ -10,10 +10,14 @@
 		"declaration": true,
 		"declarationMap": true,
 		"strict": true,
+		"exactOptionalPropertyTypes": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
+		"noImplicitOverride": true,
+		"noPropertyAccessFromIndexSignature": true,
 		"noUncheckedIndexedAccess": true,
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact",
@@ -24,4 +28,3 @@
 		"./app/ts/**/*.tsx",
 	],
 }
-

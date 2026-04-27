@@ -99,7 +99,7 @@ async function main() {
 	} as never
 
 	const resetStack = async () => {
-		mockBrowser.__storage.interceptorTransactionStack = {
+		mockBrowser.__storage['interceptorTransactionStack'] = {
 			operations: [
 				{ type: 'Transaction', preSimulationTransaction: tx1 },
 				{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 5n, deltaUnit: 'Seconds' } },
@@ -107,13 +107,13 @@ async function main() {
 				{ type: 'Transaction', preSimulationTransaction: tx2 },
 			],
 		}
-		delete mockBrowser.__storage.popupVisualisation
-		delete mockBrowser.__storage.preSimulationBlockTimeManipulation
-		delete mockBrowser.__storage.makeCurrentAddressRich
-		delete mockBrowser.__storage.fixedAddressRichList
-		delete mockBrowser.__storage.simulationMode
-		delete mockBrowser.__storage.activeSimulationAddress
-		delete mockBrowser.__storage.activeRpcNetwork
+		delete mockBrowser.__storage['popupVisualisation']
+		delete mockBrowser.__storage['preSimulationBlockTimeManipulation']
+		delete mockBrowser.__storage['makeCurrentAddressRich']
+		delete mockBrowser.__storage['fixedAddressRichList']
+		delete mockBrowser.__storage['simulationMode']
+		delete mockBrowser.__storage['activeSimulationAddress']
+		delete mockBrowser.__storage['activeRpcNetwork']
 	}
 
 	describe('simulate delay editor', () => {
@@ -158,8 +158,8 @@ async function main() {
 
 		should('signing mode ignores the pre-simulation first-transaction delay', async () => {
 			await resetStack()
-			mockBrowser.__storage.simulationMode = false
-			mockBrowser.__storage.preSimulationBlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 13n, deltaUnit: 'Seconds' }
+			mockBrowser.__storage['simulationMode'] = false
+			mockBrowser.__storage['preSimulationBlockTimeManipulation'] = { type: 'AddToTimestamp', deltaToAdd: 13n, deltaUnit: 'Seconds' }
 
 			await setTransactionOrMessageBlockTimeManipulator(simulator, {
 				method: 'popup_setTransactionOrMessageBlockTimeManipulator',

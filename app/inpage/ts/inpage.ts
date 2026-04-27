@@ -217,7 +217,10 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
-			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
+			return await this.sendMessageToBackgroundPage({
+				method: methodAndParams.method,
+				...(methodAndParams.params !== undefined ? { params: methodAndParams.params } : {}),
+			})
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
 			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error: error, request: methodAndParams })

@@ -7,13 +7,13 @@ import { Tooltip, TooltipConfig } from './Tooltip.js'
 type InlineCardProps = {
 	icon: () => JSX.Element
 	label: string
-	copyValue?: string
-	noCopy?: boolean
-	style?: JSX.CSSProperties
-	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement>
-	statusMessageDuration?: number
-	warningMessage?: string
-	noExpandButtons?: boolean
+	copyValue?: string | undefined
+	noCopy?: boolean | undefined
+	style?: JSX.CSSProperties | undefined
+	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement> | undefined
+	statusMessageDuration?: number | undefined
+	warningMessage?: string | undefined
+	noExpandButtons?: boolean | undefined
 }
 
 export const InlineCard = (props: InlineCardProps) => {

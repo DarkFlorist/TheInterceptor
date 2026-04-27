@@ -4,8 +4,8 @@ import { Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 interface Props {
 	children: ComponentChild | ComponentChild[]
-	attribute?: string
-	template?: (content: string) => ComponentChildren
+	attribute?: string | undefined
+	template?: ((content: string) => ComponentChildren) | undefined
 }
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
@@ -96,7 +96,7 @@ export default function Container(props: Props) {
 
 interface HintProps {
 	content: Signal<string>
-	template?: (content: string) => ComponentChildren
+	template?: ((content: string) => ComponentChildren) | undefined
 	clickPosition: Signal<{ x: number, y: number } | null>
 }
 

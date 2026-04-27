@@ -10,7 +10,7 @@ type TestFunction = (() => void) | (() => Promise<void>)
 type TestCase = {
 	message: string
 	test: TestFunction
-	skip?: boolean
+	skip?: boolean | undefined
 }
 
 type ShouldParams = {

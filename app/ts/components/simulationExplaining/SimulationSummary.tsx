@@ -584,7 +584,7 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 
 type TransactionHeaderParams = {
 	simTx: MaybeSimulatedTransaction
-	removeTransactionOrSignedMessage?: () => void
+	removeTransactionOrSignedMessage?: (() => void) | undefined
 }
 
 export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : TransactionHeaderParams) {

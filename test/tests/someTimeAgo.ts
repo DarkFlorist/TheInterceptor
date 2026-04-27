@@ -72,11 +72,11 @@ class TestTextNode extends TestNode {
 		this.data = data
 	}
 
-	get textContent() {
+	override get textContent() {
 		return this.data
 	}
 
-	set textContent(value: string) {
+	override set textContent(value: string) {
 		this.data = value
 	}
 }
@@ -109,11 +109,11 @@ class TestElement extends TestNode {
 		return this.attributes[name] ?? null
 	}
 
-	get textContent() {
+	override get textContent() {
 		return super.textContent
 	}
 
-	set textContent(value: string) {
+	override set textContent(value: string) {
 		super.textContent = value
 	}
 

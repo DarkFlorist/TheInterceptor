@@ -74,7 +74,7 @@ export async function main() {
 
 			await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 
-			assert.equal(storageState.latestUnexpectedError, undefined)
+			assert.equal(storageState['latestUnexpectedError'], undefined)
 			assert.equal(await getLatestUnexpectedError(), undefined)
 		})
 
@@ -84,7 +84,7 @@ export async function main() {
 
 			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 
-			assert.equal(storageState.latestUnexpectedError, undefined)
+			assert.equal(storageState['latestUnexpectedError'], undefined)
 			assert.equal(await getLatestUnexpectedError(), undefined)
 		})
 	})

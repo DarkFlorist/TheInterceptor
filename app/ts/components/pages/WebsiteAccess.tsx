@@ -232,14 +232,16 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 	)
 }
 
-const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) => {
+const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' | undefined }) => {
 	switch (status) {
 		case 'blocked':
 			return <span class = 'status-warn' role = 'img' title = 'External Request Blocked' aria-label = 'External Request Blocked'><RequestBlockedIcon /></span>
 		case 'disabled':
 			return <span class = 'status-danger' role = 'img' title = 'Protection Disabled' aria-label = 'Protection Disabled'><InterceptorDisabledIcon /></span>
 		case undefined:
-			return <></>
+			return null
+		default:
+			return null
 	}
 }
 

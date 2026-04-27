@@ -277,17 +277,25 @@ export async function changeActiveAddressAndChain(
 	websiteTabConnections: WebsiteTabConnections,
 	change: {
 		simulationMode: boolean,
-		activeAddress?: bigint,
-		rpcNetwork?: RpcNetwork,
+		activeAddress?: bigint | undefined,
+		rpcNetwork?: RpcNetwork | undefined,
 	},
 ) {
 
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressforRichList()
 
 	if (change.simulationMode) {
-		await changeSimulationMode({ ...change, ...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {} })
+		await changeSimulationMode({
+			simulationMode: change.simulationMode,
+			...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
+			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+		})
 	} else {
-		await changeSimulationMode({ ...change, ...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {} })
+		await changeSimulationMode({
+			simulationMode: change.simulationMode,
+			...('activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+		})
 	}
 
 	const updatedSettings = await getSettings()
@@ -331,11 +339,15 @@ function replyWithEmptyAccounts(websiteTabConnections: WebsiteTabConnections, re
 	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 }
 
+function getRequestWithDefinedParams(request: InterceptedRequest) {
+	return 'params' in request && request.params !== undefined ? { ...request, params: request.params } : request
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulator: Simulator, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections): Promise<unknown> => {
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, settings)
-	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...ERROR_INTERCEPTOR_DISABLED })
+	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
@@ -382,6 +394,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 
 async function handleContentScriptMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
+		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
 		let simulationInputPromise: Promise<SimulationStateInput | undefined> | undefined = undefined
 		let simulationStatePromise: Promise<SimulationState | undefined> | undefined = undefined
@@ -400,18 +413,18 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 			return await simulationStatePromise
 		}
 		const resolved = await handleRPCRequest(simulator, getSimulationInput, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
-		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
+		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if ((error instanceof Error && isFailedToFetchError(error))) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
+			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
 		}
 		if (error instanceof JsonRpcResponseError) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...error.serialize() })
+			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() })
 		}
 		handleUnexpectedError(error)
 		return replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result',
-			...request,
+			...getRequestWithDefinedParams(request),
 			error: {
 				code: 123456,
 				message: 'Unknown error'

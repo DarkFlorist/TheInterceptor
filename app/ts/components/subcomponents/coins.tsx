@@ -17,10 +17,10 @@ import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 type EtherParams = {
 	amount: SignalOrValue<bigint>
-	showSign?: boolean
-	useFullTokenName?: boolean
+	showSign?: boolean | undefined
+	useFullTokenName?: boolean | undefined
 	rpcNetwork: SignalOrValue<RpcNetwork>
-	style?: JSX.CSSProperties
+	style?: JSX.CSSProperties | undefined
 	fontSize: 'normal' | 'big'
 }
 
@@ -36,8 +36,8 @@ export function Ether(param: EtherParams) {
 }
 type EtherAmountParams = {
 	amount: SignalOrValue<bigint>
-	showSign?: boolean
-	style?: JSX.CSSProperties
+	showSign?: boolean | undefined
+	style?: JSX.CSSProperties | undefined
 	fontSize: 'normal' | 'big'
 }
 
@@ -64,9 +64,9 @@ export function EtherAmount(param: EtherAmountParams) {
 }
 
 type EtherSymbolParams = {
-	useFullTokenName?: boolean
+	useFullTokenName?: boolean | undefined
 	rpcNetwork: SignalOrValue<RpcNetwork>
-	style?: JSX.CSSProperties
+	style?: JSX.CSSProperties | undefined
 	fontSize: 'normal' | 'big'
 }
 
@@ -85,7 +85,7 @@ type TokenPriceParams = {
 	amount: SignalOrValue<bigint>,
 	quoteTokenEntry: Erc20TokenEntry
 	tokenPriceEstimate: TokenPriceEstimate
-	style?: JSX.CSSProperties
+	style?: JSX.CSSProperties | undefined
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -106,13 +106,13 @@ type TokenSymbolParams = (
 	{
 		tokenEntry: Erc1155Entry | Erc721Entry
 		tokenId: bigint | undefined
-		tokenIdName?: string
+		tokenIdName?: string | undefined
 	} | {
 		tokenEntry: Erc20TokenEntry
 	}
 ) & {
-	useFullTokenName?: boolean
-	style?: JSX.CSSProperties
+	useFullTokenName?: boolean | undefined
+	style?: JSX.CSSProperties | undefined
 	renameAddressCallBack: RenameAddressCallBack
 	fontSize: 'normal' | 'big'
 }
@@ -168,7 +168,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 
 type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
 	amount: bigint
-	showSign?: boolean
+	showSign?: boolean | undefined
 }
 
 export function TokenAmount(param: TokenAmountParams) {

@@ -289,15 +289,16 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (inputedAddressBigInt === undefined) return { type: 'error', error: 'Address is not valid' }
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
 		if (incompleteAddressBookEntry.abi !== undefined && !isValidAbi(incompleteAddressBookEntry.abi)) return { type: 'error', error: 'Abi is not valid' }
-		const abi = incompleteAddressBookEntry.abi || undefined
 		const base = {
 			name,
 			address: inputedAddressBigInt,
-			declarativeNetRequestBlockMode: incompleteAddressBookEntry.declarativeNetRequestBlockMode,
-			useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
 			askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 			chainId: incompleteAddressBookEntry.chainId,
 			entrySource: 'User' as const,
+			...(incompleteAddressBookEntry.declarativeNetRequestBlockMode !== undefined ? { declarativeNetRequestBlockMode: incompleteAddressBookEntry.declarativeNetRequestBlockMode } : {}),
+			...(incompleteAddressBookEntry.useAsActiveAddress !== undefined ? { useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress } : {}),
+			...(incompleteAddressBookEntry.logoUri !== undefined ? { logoUri: incompleteAddressBookEntry.logoUri } : {}),
+			...(incompleteAddressBookEntry.abi !== undefined ? { abi: incompleteAddressBookEntry.abi } : {}),
 		}
 
 		switch(incompleteAddressBookEntry.type) {
@@ -307,8 +308,6 @@ export function AddNewAddress(param: AddAddressParam) {
 					...base,
 					type: 'ERC721' as const,
 					symbol: incompleteAddressBookEntry.symbol,
-					logoUri: incompleteAddressBookEntry.logoUri,
-					abi,
 				}
 			}
 			case 'ERC1155': {
@@ -317,9 +316,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					...base,
 					type: 'ERC1155' as const,
 					symbol: incompleteAddressBookEntry.symbol,
-					logoUri: incompleteAddressBookEntry.logoUri,
 					decimals: undefined,
-					abi,
 				}
 			}
 			case 'ERC20': {
@@ -330,16 +327,15 @@ export function AddNewAddress(param: AddAddressParam) {
 					type: 'ERC20' as const,
 					symbol: incompleteAddressBookEntry.symbol,
 					decimals: incompleteAddressBookEntry.decimals,
-					logoUri: incompleteAddressBookEntry.logoUri,
-					abi,
 				}
 			}
-			case 'contact':
+			case 'contact': return {
+				...base,
+				type: 'contact' as const,
+			}
 			case 'contract': return {
 				...base,
-				type: incompleteAddressBookEntry.type,
-				logoUri: incompleteAddressBookEntry.logoUri,
-				abi,
+				type: 'contract' as const,
 			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)
 		}
