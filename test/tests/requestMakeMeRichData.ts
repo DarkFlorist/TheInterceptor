@@ -104,8 +104,8 @@ export async function main() {
 					if (address === failingAddress) throw new Error('boom')
 					return new Uint8Array()
 				},
-					getChainId: () => 1n,
-				} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService
+				getChainId: () => 1n,
+			} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService
 
 			const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined))
 			assert.equal(reply.type, 'RequestMakeMeRichDataReply')
@@ -128,6 +128,85 @@ export async function main() {
 			const richList = await withSilencedConsole(async () => await getFixedAddressRichList())
 			assert.deepEqual(richList, [])
 			assert.deepEqual(storageState.fixedAddressRichList, [])
+		})
+
+		should('recovers from corrupt makeCurrentAddressRich storage by resetting it to false', async () => {
+			const storageState = installBrowserMock()
+			const { requestMakeMeRichList } = await loadModules()
+			storageState.makeCurrentAddressRich = null
+
+			const reply = await withSilencedConsole(async () => await requestMakeMeRichList({} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService, undefined))
+
+			assert.equal(reply.type, 'RequestMakeMeRichDataReply')
+			assert.equal(reply.makeCurrentAddressRich, false)
+			assert.equal(storageState.makeCurrentAddressRich, false)
+		})
+	})
+
+	describe('startup storage recovery', () => {
+		should('recovers active addresses from corrupt user address book storage', async () => {
+			const storageState = installBrowserMock()
+			const { requestActiveAddresses, defaultActiveAddresses, getUserAddressBookEntries } = await loadModules()
+			storageState.userAddressBookEntriesV3 = null
+
+			const reply = await withSilencedConsole(async () => await requestActiveAddresses())
+
+			assert.equal(reply.type, 'RequestActiveAddressesReply')
+			assert.deepEqual(reply.activeAddresses, defaultActiveAddresses)
+			assert.ok(Array.isArray(storageState.userAddressBookEntriesV3))
+			assert.deepEqual(await getUserAddressBookEntries(), defaultActiveAddresses)
+		})
+
+		should('recovers latest unexpected error from corrupt storage by clearing it', async () => {
+			const storageState = installBrowserMock()
+			const { requestLatestUnexpectedError } = await loadModules()
+			storageState.latestUnexpectedError = null
+
+			const reply = await withSilencedConsole(async () => await requestLatestUnexpectedError())
+
+			assert.equal(reply.type, 'RequestLatestUnexpectedErrorReply')
+			assert.equal(reply.latestUnexpectedError, undefined)
+			assert.equal(storageState.latestUnexpectedError, undefined)
+		})
+
+		should('recovers simulationMode from corrupt settings storage', async () => {
+			const storageState = installBrowserMock()
+			const { requestSimulationMode } = await loadModules()
+			storageState.simulationMode = 'invalid'
+
+			const reply = await withSilencedConsole(async () => await requestSimulationMode())
+
+			assert.equal(reply.type, 'RequestSimulationModeReply')
+			assert.equal(reply.simulationMode, true)
+			assert.equal(storageState.simulationMode, true)
+		})
+
+		should('recovers corrupt websiteAccess without resetting valid settings keys', async () => {
+			const storageState = installBrowserMock()
+			const { getSettings } = await loadModules()
+			storageState.websiteAccess = [null]
+			storageState.simulationMode = false
+
+			const settings = await withSilencedConsole(async () => await getSettings())
+
+			assert.deepEqual(settings.websiteAccess, [])
+			assert.equal(settings.simulationMode, false)
+			assert.deepEqual(storageState.websiteAccess, [])
+			assert.equal(storageState.simulationMode, false)
+		})
+
+		should('recovers corrupt openedPageV2 without resetting valid settings keys', async () => {
+			const storageState = installBrowserMock()
+			const { getSettings } = await loadModules()
+			storageState.openedPageV2 = null
+			storageState.useSignersAddressAsActiveAddress = true
+
+			const settings = await withSilencedConsole(async () => await getSettings())
+
+			assert.deepEqual(settings.openedPage, { page: 'Home' })
+			assert.equal(settings.useSignersAddressAsActiveAddress, true)
+			assert.deepEqual(storageState.openedPageV2, { page: 'Home' })
+			assert.equal(storageState.useSignersAddressAsActiveAddress, true)
 		})
 	})
 

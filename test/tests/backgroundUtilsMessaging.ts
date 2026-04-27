@@ -63,7 +63,26 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/types/interceptor-reply-messages.js'),
+	}
+}
+
+async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
+	const originalConsole = {
+		error: console.error,
+		trace: console.trace,
+		warn: console.warn,
+	}
+	console.error = () => undefined
+	console.trace = () => undefined
+	console.warn = () => undefined
+	try {
+		return await runWithConsoleSilenced()
+	} finally {
+		console.error = originalConsole.error
+		console.trace = originalConsole.trace
+		console.warn = originalConsole.warn
 	}
 }
 
@@ -117,6 +136,75 @@ export async function main() {
 				richList: [],
 				makeCurrentAddressRich: true,
 			})
+		})
+
+		should('parses latest unexpected error replies with the requested reply parser', async () => {
+			installBrowserMock('unused')
+			const { sendPopupMessageWithReply, PopupReplyOption } = await loadModules()
+			const timestamp = new Date('2024-01-01T00:00:00.000Z')
+			globalThis.browser.runtime.sendMessage = async () => PopupReplyOption.serialize({
+				type: 'RequestLatestUnexpectedErrorReply',
+				latestUnexpectedError: {
+					method: 'popup_UnexpectedErrorOccured',
+					data: { timestamp, message: 'boom' },
+				},
+			})
+
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
+
+			assert.equal(reply?.type, 'RequestLatestUnexpectedErrorReply')
+			assert.equal(reply?.latestUnexpectedError?.data.message, 'boom')
+			assert.equal(reply?.latestUnexpectedError?.data.timestamp.valueOf(), timestamp.valueOf())
+		})
+
+		should('reports request-specific parse errors for mismatched popup replies', async () => {
+			const storageState = installBrowserMock('unused')
+			const { sendPopupMessageWithReply, PopupReplyOption, getLatestUnexpectedError } = await loadModules()
+			globalThis.browser.runtime.sendMessage = async () => PopupReplyOption.serialize({
+				type: 'RequestSimulationModeReply',
+				simulationMode: true,
+			})
+
+			const reply = await withSilencedConsole(async () => await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' }))
+			const latestUnexpectedError = await getLatestUnexpectedError()
+
+			assert.equal(reply, undefined)
+			assert.equal(typeof storageState.latestUnexpectedError, 'object')
+			assert.equal(latestUnexpectedError?.method, 'popup_UnexpectedErrorOccured')
+			assert.ok(latestUnexpectedError?.data.message.includes('RequestLatestUnexpectedErrorReply'))
+			assert.ok(!latestUnexpectedError?.data.message.includes('RequestMakeMeRichDataReply'))
+		})
+
+		should('returns the complete visualized simulation reply instead of dropping it', async () => {
+			installBrowserMock('unused')
+			globalThis.browser.runtime.sendMessage = async () => undefined
+			const { popupMessageHandler, PopupRequestsReplies } = await loadModules()
+
+			const reply = await popupMessageHandler(
+				new Map() as unknown as import('../../app/ts/types/user-interface-types.js').WebsiteTabConnections,
+				{} as unknown as import('../../app/ts/simulation/simulator.js').Simulator,
+				{ method: 'popup_requestCompleteVisualizedSimulation' },
+				{
+					activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+					openedPage: { page: 'Home' },
+					useSignersAddressAsActiveAddress: false,
+					websiteAccess: [],
+					activeRpcNetwork: {
+						name: 'Ethereum Mainnet',
+						chainId: 1n,
+						httpsRpc: 'https://ethereum.dark.florist',
+						currencyName: 'Ether',
+						currencyTicker: 'ETH',
+						currencyLogoUri: '../img/ethereum.svg',
+						primary: true,
+						minimized: true,
+					},
+					simulationMode: true,
+				},
+			)
+
+			const parsedReply = PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.parse(reply)
+			assert.equal(parsedReply.type, 'RequestCompleteVisualizedSimulationReply')
 		})
 	})
 
