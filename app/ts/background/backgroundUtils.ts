@@ -61,7 +61,9 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 
 export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
 	try {
-		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
+		const reply = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
+		if (reply === null) return undefined as PopupRequestsReplyReturn<Request>
+		return PopupReplyOption.parse(reply) as PopupRequestsReplyReturn<Request>
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isIgnorableClosedMessageChannelError(error)) return undefined

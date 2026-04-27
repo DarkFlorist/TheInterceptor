@@ -63,6 +63,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/types/interceptor-reply-messages.js'),
 	}
 }
 
@@ -86,6 +87,36 @@ export async function main() {
 
 			assert.equal(storageState.latestUnexpectedError, undefined)
 			assert.equal(await getLatestUnexpectedError(), undefined)
+		})
+
+		should('treat a raw null popup reply as undefined', async () => {
+			const storageState = installBrowserMock('unused')
+			globalThis.browser.runtime.sendMessage = async () => null
+			const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
+
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
+
+			assert.equal(reply, undefined)
+			assert.equal(storageState.latestUnexpectedError, undefined)
+			assert.equal(await getLatestUnexpectedError(), undefined)
+		})
+
+		should('parses a normal popup reply round-trip', async () => {
+			installBrowserMock('unused')
+			const { sendPopupMessageWithReply, PopupReplyOption } = await loadModules()
+			globalThis.browser.runtime.sendMessage = async () => PopupReplyOption.serialize({
+				type: 'RequestMakeMeRichDataReply',
+				richList: [],
+				makeCurrentAddressRich: true,
+			})
+
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
+
+			assert.deepEqual(reply, {
+				type: 'RequestMakeMeRichDataReply',
+				richList: [],
+				makeCurrentAddressRich: true,
+			})
 		})
 	})
 

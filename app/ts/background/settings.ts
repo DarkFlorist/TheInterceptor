@@ -130,7 +130,16 @@ export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean)
 export const getMakeCurrentAddressRich = async() => (await browserStorageLocalGet('makeCurrentAddressRich'))?.makeCurrentAddressRich ?? false
 
 export const setFixedMakeMeRichList = async (fixedAdressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList: fixedAdressRichList })
-export const getFixedAddressRichList = async() => (await browserStorageLocalGet('fixedAddressRichList'))?.fixedAddressRichList ?? []
+export async function getFixedAddressRichList() {
+	try {
+		return (await browserStorageLocalGet('fixedAddressRichList'))?.fixedAddressRichList ?? []
+	} catch (error) {
+		console.warn('Fixed rich list was corrupt:')
+		console.warn(error)
+		await browserStorageLocalSet({ fixedAddressRichList: [] })
+		return []
+	}
+}
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
 	return await browserStorageLocalSet({

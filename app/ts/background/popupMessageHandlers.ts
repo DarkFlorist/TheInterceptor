@@ -18,7 +18,7 @@ import { isJSON } from '../utils/json.js'
 import { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
+import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
 import { ethers } from 'ethers'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
@@ -817,9 +817,24 @@ export async function setTransactionOrMessageBlockTimeManipulator(simulator: Sim
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
 	const makeMeRichPromise = silenceChromeUnCaughtPromise(getMakeCurrentAddressRich())
 	const fixedAddressRichList = await getFixedAddressRichList()
-	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => (
-		{ ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
-	))
+	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
+		try {
+			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
+		} catch (error) {
+			const address = checksummedAddress(element.address)
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+			await handleUnexpectedError(new Error(`Failed to identify rich list address ${ address }: ${ errorMessage }`))
+			return {
+				...element,
+				addressBookEntry: {
+					type: 'contact' as const,
+					name: address,
+					address: element.address,
+					entrySource: 'FilledIn' as const,
+				}
+			}
+		}
+	})
 	return {
 		type: 'RequestMakeMeRichDataReply' as const,
 		richList: await Promise.all(fixedRichListPromises),
