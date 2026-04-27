@@ -300,7 +300,7 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 				}
 			}
 			await Promise.all([
-				sendPopupMessageToOpenWindows(messagePendingTransactions, 'confirmTransaction'),
+				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
 				sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 			])
 			return
@@ -332,7 +332,7 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 					}
 				}
 				await Promise.all([
-					sendPopupMessageToOpenWindows(messagePendingTransactions, 'confirmTransaction'),
+					sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
 					sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
 				])
 				return

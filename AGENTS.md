@@ -1,7 +1,7 @@
 # Agent Notes
 
-- After making code changes, run `npm test`.
-- After making code changes, run `npm run setup-chrome`.
+- After making code changes, run `bun test`.
+- After making code changes, run `bun run setup-chrome`.
 - Do not stop after local edits if either validation step fails; fix the failures or explain the blocker clearly.
 - Prefer targeted changes that keep the existing architecture intact unless a broader refactor is explicitly requested.
 - Do not use TypeScript directive comments such as `// @ts-expect-error`, `// @ts-ignore`, or `// @ts-nocheck`; fix the type problem directly or restructure the code so the types are correct.
