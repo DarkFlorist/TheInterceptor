@@ -6,6 +6,9 @@ import { ImportSimulationStack } from '../../app/ts/components/pages/ImportSimul
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 import { installDomMock } from './someTimeAgo.js'
 
+type RenderedVNode = Parameters<typeof render>[0]
+type RenderTarget = Parameters<typeof render>[1]
+
 type TestTreeNode = {
 	tagName?: string
 	textContent?: string
@@ -32,6 +35,10 @@ function findButtonByText(node: TestTreeNode, text: string) {
 	return findElementsByTagName(node, 'BUTTON').find((button) => button.textContent?.trim() === text)
 }
 
+function renderIntoTestContainer(vnode: RenderedVNode, container: TestTreeNode) {
+	render(vnode, container as unknown as RenderTarget)
+}
+
 async function main() {
 	describe('ImportSimulationStack', () => {
 		should('renders the simulation stack as a multiline textarea and preserves pasted text', async () => {
@@ -39,8 +46,7 @@ async function main() {
 			const simulationInput = new Signal('{\n  "foo": "bar"\n}')
 
 			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
-				render(h(ImportSimulationStack, { close: () => undefined, simulationInput }), dom.document.body)
+				renderIntoTestContainer(h(ImportSimulationStack, { close: () => undefined, simulationInput }), dom.document.body)
 			})
 
 			const textareas = findElementsByTagName(dom.document.body, 'TEXTAREA')
@@ -60,8 +66,7 @@ async function main() {
 			const simulationInput = new Signal('not json')
 
 			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
-				render(h(ImportSimulationStack, { close: () => undefined, simulationInput }), dom.document.body)
+				renderIntoTestContainer(h(ImportSimulationStack, { close: () => undefined, simulationInput }), dom.document.body)
 			})
 
 			const [textarea] = findElementsByTagName(dom.document.body, 'TEXTAREA')
@@ -79,8 +84,7 @@ async function main() {
 			const simulationInput = new Signal('{\n  "foo": "bar"\n}')
 
 			await act(() => {
-				// @ts-expect-error test shim uses a lightweight container
-				render(h(ImportSimulationStack, { close: () => undefined, simulationInput }), dom.document.body)
+				renderIntoTestContainer(h(ImportSimulationStack, { close: () => undefined, simulationInput }), dom.document.body)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('The input needs to be valid Interceptor Simulation Stack Export:'), true)
