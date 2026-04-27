@@ -708,7 +708,6 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)
 				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
 			})
-
 			test('execution-only simulation skips token balance follow-up simulation', async () => {
 				const simulationStateInput = [{
 					stateOverrides: {},

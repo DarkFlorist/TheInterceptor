@@ -23,13 +23,11 @@ describe('SomeTimeAgo', () => {
 		const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
 
 		await act(() => {
-			// @ts-expect-error test shim uses a lightweight container
 			render(h(SomeTimeAgo, { priorTimestamp: olderTimestamp, diffToText: formatSeconds }), dom.document.body)
 		})
 		assert.equal(dom.document.body.textContent, '5s')
 
 		await act(() => {
-			// @ts-expect-error test shim uses a lightweight container
 			render(h(SomeTimeAgo, { priorTimestamp: newerTimestamp, diffToText: formatSeconds }), dom.document.body)
 		})
 		assert.equal(dom.document.body.textContent, '1s')
