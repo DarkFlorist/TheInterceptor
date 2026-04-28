@@ -82,8 +82,8 @@ export function handleERC1155TransferBatch(eventLog: EthereumEvent): TokenVisual
 	if (eventLog.topics.length !== 4) throw new Error('Malformed ERC1155 TransferBatch Event')
 	const parsed = parseEventIfPossible(new Interface(Erc1155ABI), eventLog)
 	if (parsed === null || parsed.name !== 'TransferBatch') throw new Error('Malformed ERC1155 TransferBatch Event')
-	return [...Array(parsed.args._ids.length)].map((_, index) => {
-		if (parsed.args._ids[index] === undefined || parsed.args._values[index] === undefined || eventLog.topics[1] === undefined || eventLog.topics[2] === undefined || eventLog.topics[3] === undefined) throw new Error('Malformed ERC1155 TransferBatch Event')
+	return [...Array(parsed.args['_ids'].length)].map((_, index) => {
+		if (parsed.args['_ids'][index] === undefined || parsed.args['_values'][index] === undefined || eventLog.topics[1] === undefined || eventLog.topics[2] === undefined || eventLog.topics[3] === undefined) throw new Error('Malformed ERC1155 TransferBatch Event')
 		return {
 			type: 'ERC1155' as const,
 			operator: eventLog.topics[1],
@@ -91,8 +91,8 @@ export function handleERC1155TransferBatch(eventLog: EthereumEvent): TokenVisual
 			to: eventLog.topics[3],
 			tokenAddress: eventLog.address,
 			isApproval: false as const,
-			tokenId: BigInt(parsed.args._ids[index]),
-			amount: BigInt(parsed.args._values[index]),
+			tokenId: BigInt(parsed.args['_ids'][index]),
+			amount: BigInt(parsed.args['_values'][index]),
 			originalLogObject: eventLog,
 		}
 	})

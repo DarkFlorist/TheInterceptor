@@ -48,7 +48,7 @@ export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20Toke
 		symbol: rpcEntry?.currencyTicker ?? 'ETH',
 		decimals: 18n,
 		logoUri: rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry ? rpcEntry.currencyLogoUri : ETHEREUM_COIN_ICON,
-		chainId: rpcEntry?.chainId,
+		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 }
 
@@ -61,44 +61,56 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	}
 	const addrString = addressString(address)
 	const addressData = contractMetadata.get(addrString)
-	if (addressData) return {
-		...addressData,
-		address: address,
-		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
-		type: 'contract',
-		entrySource: 'DarkFloristMetadata',
-		chainId: rpcEntry?.chainId
+	if (addressData) {
+		const { logoUri, ...rest } = addressData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'contract',
+			entrySource: 'DarkFloristMetadata',
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	const tokenData = tokenMetadata.get(addrString)
-	if (tokenData) return {
-		...tokenData,
-		address: address,
-		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'ERC20',
-		entrySource: 'DarkFloristMetadata',
-		chainId: rpcEntry?.chainId
+	if (tokenData) {
+		const { logoUri, ...rest } = tokenData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'ERC20',
+			entrySource: 'DarkFloristMetadata',
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	const erc721TokenData = erc721Metadata.get(addrString)
-	if (erc721TokenData) return {
-		...erc721TokenData,
-		address: address,
-		logoUri: erc721TokenData.logoUri ? `${ getFullLogoUri(erc721TokenData.logoUri) }` : undefined,
-		type: 'ERC721',
-		entrySource: 'DarkFloristMetadata',
-		chainId: rpcEntry?.chainId
+	if (erc721TokenData) {
+		const { logoUri, ...rest } = erc721TokenData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'ERC721',
+			entrySource: 'DarkFloristMetadata',
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	const erc1155TokenData = erc1155Metadata.get(addrString)
-	if (erc1155TokenData) return {
-		...erc1155TokenData,
-		address: address,
-		logoUri: erc1155TokenData.logoUri ? `${ getFullLogoUri(erc1155TokenData.logoUri) }` : undefined,
-		type: 'ERC1155',
-		entrySource: 'DarkFloristMetadata',
-		decimals: undefined,
-		chainId: rpcEntry?.chainId
+	if (erc1155TokenData) {
+		const { logoUri, ...rest } = erc1155TokenData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'ERC1155',
+			entrySource: 'DarkFloristMetadata',
+			decimals: undefined,
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	if (address === MOCK_ADDRESS) return {
@@ -107,14 +119,14 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: '../../img/contracts/rhino.png',
 		type: 'contact',
 		entrySource: 'Interceptor',
-		chainId: rpcEntry?.chainId
+		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 	if (address === 0n) return {
 		address: address,
 		name: '0x0 Address',
 		type: 'contact',
 		entrySource: 'Interceptor',
-		chainId: rpcEntry?.chainId
+		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 	return undefined
 }

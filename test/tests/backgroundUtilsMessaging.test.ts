@@ -73,7 +73,7 @@ describe('backgroundUtils messaging', () => {
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(storageState['latestUnexpectedError'], undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
@@ -83,7 +83,7 @@ describe('backgroundUtils messaging', () => {
 
 		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(storageState['latestUnexpectedError'], undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 })

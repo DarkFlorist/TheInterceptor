@@ -118,13 +118,13 @@ const resetStack = async () => {
 			{ type: 'Transaction', preSimulationTransaction: tx2 },
 		],
 	}))
-	delete mockBrowser.__storage.popupVisualisation
-	delete mockBrowser.__storage.preSimulationBlockTimeManipulation
-	delete mockBrowser.__storage.makeCurrentAddressRich
-	delete mockBrowser.__storage.fixedAddressRichList
-	delete mockBrowser.__storage.simulationMode
-	delete mockBrowser.__storage.activeSimulationAddress
-	delete mockBrowser.__storage.activeRpcNetwork
+	delete mockBrowser.__storage['popupVisualisation']
+	delete mockBrowser.__storage['preSimulationBlockTimeManipulation']
+	delete mockBrowser.__storage['makeCurrentAddressRich']
+	delete mockBrowser.__storage['fixedAddressRichList']
+	delete mockBrowser.__storage['simulationMode']
+	delete mockBrowser.__storage['activeSimulationAddress']
+	delete mockBrowser.__storage['activeRpcNetwork']
 }
 
 describe('simulate delay editor', () => {
