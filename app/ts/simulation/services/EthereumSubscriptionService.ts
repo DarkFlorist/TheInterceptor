@@ -19,13 +19,23 @@ function generateId(len: number) {
 
 export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionOrFilterId: string) {
 	const changes = await updateEthereumSubscriptionsAndFilters((subscriptions: EthereumSubscriptionsAndFilters) => {
-		return subscriptions.filter((subscription) => subscription.subscriptionOrFilterId !== subscriptionOrFilterId
-			&& subscription.subscriptionCreatorSocket.tabId === socket.tabId // only allow the same tab and connection to remove the subscription
-			&& subscription.subscriptionCreatorSocket.connectionName === socket.connectionName
-		)
+		return subscriptions.filter((subscription) => {
+			const sameSubscription = subscription.subscriptionOrFilterId === subscriptionOrFilterId
+			const sameSocket = subscription.subscriptionCreatorSocket.tabId === socket.tabId
+				&& subscription.subscriptionCreatorSocket.connectionName === socket.connectionName
+			return !(sameSubscription && sameSocket) // only allow the same tab and connection to remove the subscription
+		})
 	})
-	if (changes.oldSubscriptions.find((sub) => sub.subscriptionOrFilterId === subscriptionOrFilterId) !== undefined
-		&& changes.newSubscriptions.find((sub) => sub.subscriptionOrFilterId === subscriptionOrFilterId) === undefined
+	if (changes.oldSubscriptions.find((sub) =>
+		sub.subscriptionOrFilterId === subscriptionOrFilterId
+		&& sub.subscriptionCreatorSocket.tabId === socket.tabId
+		&& sub.subscriptionCreatorSocket.connectionName === socket.connectionName
+	) !== undefined
+		&& changes.newSubscriptions.find((sub) =>
+			sub.subscriptionOrFilterId === subscriptionOrFilterId
+			&& sub.subscriptionCreatorSocket.tabId === socket.tabId
+			&& sub.subscriptionCreatorSocket.connectionName === socket.connectionName
+		) === undefined
 	) {
 		return true // subscription was found and removed
 	}
