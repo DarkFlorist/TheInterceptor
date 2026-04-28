@@ -4,7 +4,7 @@ import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
 import { EthereumSubscriptionsAndFilters, SimulationState } from '../../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getSimulatedBlock, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
+import { getSimulatedBlock, getSimulatedBlockNumber, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 import { WebsiteSocket } from '../../utils/requests.js'
 import { getUpdatedSimulationState } from '../../background/background.js'
@@ -95,7 +95,7 @@ export async function createEthereumSubscription(params: EthSubscribeParams, sub
 }
 
 export async function createNewFilter(params: EthNewFilter, subscriptionCreatorSocket: WebsiteSocket, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined) {
-	const calledInlastBlock = simulationState?.blockNumber || await ethereumClientService.getBlockNumber(requestAbortController)
+	const calledInlastBlock = await getSimulatedBlockNumber(ethereumClientService, requestAbortController, simulationState)
 	const subscriptionOrFilterId = generateId(40)
 	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
 		return subscriptionsAndfilters.concat({ type: 'eth_newFilter', subscriptionOrFilterId, params, subscriptionCreatorSocket, calledInlastBlock })
@@ -108,10 +108,15 @@ export async function getEthFilterChanges(filterId: string, ethereumClientServic
 	const filter = filtersAndSubscriptions.find((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId)
 	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
 	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
-	const calledInlastBlock = simulationState?.blockNumber || await ethereumClientService.getBlockNumber(requestAbortController)
-	const logs = await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, { ...filter, fromBlock: filter.calledInlastBlock })
+	const calledInlastBlock = await getSimulatedBlockNumber(ethereumClientService, requestAbortController, simulationState)
+	if (calledInlastBlock <= filter.calledInlastBlock) return []
+	const logs = await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, {
+		...filter.params.params[0],
+		fromBlock: filter.calledInlastBlock + 1n,
+		toBlock: calledInlastBlock,
+	})
 	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters) => {
-		return subscriptionsAndfilters.map((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId ? { ...subscriptionOrfilter, calledInlastBlock } : filter)
+		return subscriptionsAndfilters.map((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId ? { ...subscriptionOrfilter, calledInlastBlock } : subscriptionOrfilter)
 	})
 	return logs
 }
