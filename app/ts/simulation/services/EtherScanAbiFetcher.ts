@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers } from '../../utils/viem.js'
 import { EtherscanGetABIResult, EtherscanSourceCodeResult, SourcifyMetadataResult } from '../../types/etherscan.js'
 import { EthereumAddress } from '../../types/wire-types.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'

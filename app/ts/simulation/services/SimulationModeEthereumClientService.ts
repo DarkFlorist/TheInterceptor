@@ -3,7 +3,7 @@ import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction, EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import { Interface, ethers, hashMessage, keccak256, toUtf8Bytes } from 'ethers'
+import { Interface, hashMessage, hashTypedData, keccak256, privateKeyToAccount, toUtf8Bytes } from '../../utils/viem.js'
 import { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
@@ -14,7 +14,6 @@ import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverr
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
-import { getMessageAndDomainHash } from '../../utils/eip712.js'
 import { deduplicateByFunction } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import { ErrorWithCodeAndOptionalData } from '../../types/error.js'
@@ -714,7 +713,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	const block = await ethereumClientService.getBlock(requestAbortController)
 	if (block === null) throw new Error('The latest block is null')
 
-	const atInterface = new ethers.Interface(['function at(address) returns (bytes)'])
+	const atInterface = new Interface(['function at(address) returns (bytes)'])
 	const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
 
 	const getCodeTransaction = {
@@ -968,7 +967,7 @@ export const getSimulatedCodeFromInput = async (
 			getCodeReturn: await ethereumClientService.getCode(address, blockTag, requestAbortController)
 		} as const
 	}
-	const atInterface = new ethers.Interface(['function at(address) returns (bytes)'])
+	const atInterface = new Interface(['function at(address) returns (bytes)'])
 	const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
 	const getCodeTransaction = {
 		type: '1559',
@@ -1307,22 +1306,22 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
 const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => getHashOfSimulatedBlockFromInput(simulationState.simulationStateInput, blockDelta)
 
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage(params.params[0])
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: stringToUint8Array(params.params[0]) })
 
-export const simulatePersonalSign = (params: SignMessageParams, signingAddress: EthereumAddress) => {
-	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
+export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
+	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY) as `0x${ string }`)
 	switch (params.method) {
 		case 'eth_signTypedData': throw new Error('No support for eth_signTypedData')
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4': {
-			const messageHash = getMessageAndDomainHash(params).messageHash
-			const signature = wallet.signMessageSync(messageHash)
+			const messageHash = hashTypedData(params.params[1])
+			const signature = await account.signTypedData(params.params[1])
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
-			signature: wallet.signMessageSync(stringToUint8Array(params.params[0])),
+			signature: await account.signMessage({ message: { raw: stringToUint8Array(params.params[0]) } }),
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
@@ -1344,8 +1343,8 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	if (balanceQueries.length === 0) return []
 	const deduplicatedBalanceQueries = deduplicateByFunction(balanceQueries, (query: BalanceQuery) => `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : '' }`)
 	const IMulticall3 = new Interface(Multicall3ABI)
-	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
-	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
+	const erc20TokenInterface = new Interface(['function balanceOf(address account) view returns (uint256)'])
+	const erc1155TokenInterface = new Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
 	const tokenAndEthBalancesInputData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [deduplicatedBalanceQueries.map((balanceQuery) => {
 		if (balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type === 'ERC20') {
 			return {
@@ -1400,7 +1399,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	})
 }
 
-export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: EthereumEvent) => {
+export const parseEventIfPossible = (ethersInterface: Interface, log: EthereumEvent) => {
 	try {
 		return ethersInterface.parseLog({ topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
 	} catch (error) {
@@ -1408,7 +1407,7 @@ export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: Eth
 	}
 }
 
-export const parseTransactionInputIfPossible = (ethersInterface: ethers.Interface, data: EthereumData, value: EthereumQuantity) => {
+export const parseTransactionInputIfPossible = (ethersInterface: Interface, data: EthereumData, value: EthereumQuantity) => {
 	try {
 		return ethersInterface.parseTransaction({ data: dataStringWith0xStart(data), value })
 	} catch (error) {
@@ -1423,7 +1422,7 @@ const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { t
 		'event Transfer(address indexed from, address indexed to, uint256 value)',
 		'event Approval(address indexed owner, address indexed spender, uint256 value)',
 	]
-	const erc20 = new ethers.Interface(erc20ABI)
+	const erc20 = new Interface(erc20ABI)
 	const tokenOwners: { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] = []
 	for (const log of events) {
 		const parsed = parseEventIfPossible(erc20, log)
@@ -1452,7 +1451,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 		'event TransferSingle(address operator, address from, address to, uint256 id, uint256 value)',
 		'event TransferBatch(address indexed _operator, address indexed _from, address indexed _to, uint256[] _ids, uint256[] _values)',
 	]
-	const erc20 = new ethers.Interface(erc1155ABI)
+	const erc20 = new Interface(erc1155ABI)
 	const tokenOwners: { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] = []
 	for (const log of events) {
 		const parsed = parseEventIfPossible(erc20, log)

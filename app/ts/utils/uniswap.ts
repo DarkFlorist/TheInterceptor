@@ -1,4 +1,4 @@
-import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from "ethers"
+import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from './viem.js'
 import { EthereumAddress } from "../types/wire-types.js"
 import { addressString } from "./bigint.js"
 import { networkPriceSources } from "../background/settings.js"

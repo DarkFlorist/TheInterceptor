@@ -1,4 +1,4 @@
-import { ethers, keccak256 } from 'ethers'
+import { ethers, keccak256 } from '../../app/ts/utils/viem.js'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -132,13 +132,11 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)
 			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
-			assert.throws(() => ethers.recoverAddress(digest, {
+			await assert.rejects(async () => await ethers.recoverAddress(digest, {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
 					yParity: signed.yParity === 'even' ? 0 : 1,
-				}),
-				'Error: invalid point'
-			)
+				}))
 		})
 
 		test('ethers.recoverAddress works for positive case', async() => {
@@ -172,7 +170,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
 
-			const addr = ethers.recoverAddress(digest, {
+			const addr = await ethers.recoverAddress(digest, {
 				r: bytes32String(signed.r),
 				s: bytes32String(signed.s),
 				yParity: signed.yParity === 'even' ? 0 : 1,

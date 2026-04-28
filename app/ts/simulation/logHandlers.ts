@@ -1,7 +1,7 @@
 import { bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Erc1155ABI } from '../utils/abi.js'
-import { Interface } from 'ethers'
+import { Interface } from '../utils/viem.js'
 import { EthereumEvent } from '../types/ethSimulate-types.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { extractENSFuses } from '../utils/ethereumNameService.js'

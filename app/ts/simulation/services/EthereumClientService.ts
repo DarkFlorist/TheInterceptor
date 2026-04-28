@@ -2,7 +2,7 @@ import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlock
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { AbiCoder, Signature, ethers } from 'ethers'
+import { AbiCoder, Signature, ethers } from '../../utils/viem.js'
 import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result, EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
@@ -299,7 +299,10 @@ export class EthereumClientService {
 
 			// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
 			const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
-			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => ({ key: getMappingsMemorySlot(encodePackedHash(simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor))), value: sign.fakeSignedFor })))
+			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => {
+				const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
+				return { key: getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), value: sign.fakeSignedFor }
+			}))
 			const stateSets = signatureStructs.reduce((acc, current) => {
 				acc[current.key] = current.value
 				return acc

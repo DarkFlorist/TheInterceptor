@@ -14,7 +14,7 @@ import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handle
 import { RpcEntry } from '../types/rpc.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
-import { Interface } from 'ethers'
+import { Interface } from '../utils/viem.js'
 import { getAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
 import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
@@ -125,7 +125,7 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 	try {
 		const valuesWithTypes = parsed.args.map((value, index) => {
 			const solidityType = argTypes[index]
-			const paramName = parsed.fragment.inputs[index]?.name
+			const paramName = parsed.fragment.inputs?.[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
 			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
 			const isArray = solidityType.includes('[')
@@ -164,7 +164,7 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 		if (parsed.args.length !== argTypes.length) return nonParsed
 		const valuesWithTypes = parsed.args.map((value, index) => {
 			const solidityType = argTypes[index]
-			const paramName = parsed.fragment.inputs[index]?.name
+			const paramName = parsed.fragment.inputs?.[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
 			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
 			const isArray = solidityType.includes('[')

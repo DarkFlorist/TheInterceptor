@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { ethers } from 'ethers'
+import { ethers } from '../../app/ts/utils/viem.js'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'

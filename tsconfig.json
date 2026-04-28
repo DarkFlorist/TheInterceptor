@@ -18,6 +18,7 @@
 		"noImplicitOverride": true,
 		"noPropertyAccessFromIndexSignature": true,
 		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact",
 		"lib": ["ES2021", "DOM"]

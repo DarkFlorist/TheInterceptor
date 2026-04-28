@@ -1,4 +1,4 @@
-import { ethers, isValidName, namehash } from 'ethers'
+import { ethers, isValidName, namehash } from './viem.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { addressStringWithout0x, bytes32String, stringToUint8Array } from './bigint.js'
 import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_RESOLVER, CANNOT_SET_TTL, CANNOT_TRANSFER, CANNOT_UNWRAP, CAN_DO_EVERYTHING, CAN_EXTEND_EXPIRY, ENS_TOKEN_WRAPPER, IS_DOT_ETH, MOCK_ADDRESS, PARENT_CANNOT_CONTROL } from './constants.js'

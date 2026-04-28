@@ -1,6 +1,4 @@
-import { AbiCoder } from 'ethers'
-import { Result } from 'ethers'
-import { ErrorFragment, Interface, ErrorDescription } from 'ethers'
+import { AbiCoder, Interface, type Result } from './viem.js'
 import { printError } from './errors.js'
 import { ErrorWithCodeAndOptionalData } from '../types/error.js'
 
@@ -15,11 +13,13 @@ enum ErrorType {
 	UnknownError = 'UnknownError',
 }
 
+type ErrorAbiItem = ReturnType<Interface['getErrorAbiItems']>[number]
+
 type DecodedError = {
 	type: ErrorType
 	reason: string
 	data: string | undefined
-	fragment: ErrorFragment | undefined
+	fragment: ErrorAbiItem | undefined
 	selector: string | undefined
 	name: string | undefined
 	signature: string | undefined
@@ -30,37 +30,43 @@ type ErrorResultFormatterParam = {
 	data: string | undefined
 	reason: string
 	args?: Result
-	fragment?: ErrorFragment
+	fragment?: ErrorAbiItem
 	selector?: string
 	name?: string
+	signature?: string
 }
 
 type ErrorResultFormatter = (params: ErrorResultFormatterParam) => DecodedError
 
 const formatReason = (reason: string, defaultReason: string): string => reason.trim() !== '' ? reason : defaultReason
 
-const baseErrorResult: (params: ErrorResultFormatterParam & { type: ErrorType } ) => DecodedError = ({ type, data, reason, fragment, args, selector, name }) => {
-	const res: DecodedError = {
-		type,
-		reason: formatReason(reason, 'Unknown error'),
-		data: data ?? undefined,
-		fragment: undefined,
-		args: args ?? new Result(),
-		selector: selector ?? undefined,
-		name: name ?? undefined,
-		signature: undefined,
-	}
-	if (fragment) return { ...res, ...new ErrorDescription(fragment, fragment.selector, args ?? new Result()) }
-	return res
-}
+const baseErrorResult: (params: ErrorResultFormatterParam & { type: ErrorType } ) => DecodedError = ({ type, data, reason, fragment, args, selector, name, signature }) => ({
+	type,
+	reason: formatReason(reason, 'Unknown error'),
+	data: data ?? undefined,
+	fragment,
+	args,
+	selector: selector ?? undefined,
+	name: name ?? undefined,
+	signature: signature ?? undefined,
+})
 
 const emptyErrorResult: ErrorResultFormatter = ({ data, reason }) => baseErrorResult({ type: ErrorType.EmptyError, data, reason })
-const revertErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args }) => baseErrorResult({ type: ErrorType.RevertError, reason, data, fragment, args })
+const revertErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args, selector, name, signature }) => baseErrorResult({ type: ErrorType.RevertError, reason, data, fragment, args, selector, name, signature })
 const unknownErrorResult: ErrorResultFormatter = ({ data, reason, name }) => baseErrorResult({ type: ErrorType.UnknownError, reason: formatReason(reason, 'Unknown error'), data, name })
-const panicErrorResult: ErrorResultFormatter = ({ data, reason, args }) => baseErrorResult({ type: ErrorType.PanicError, reason, data, args })
-const customErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args }) => {
-	const selector = data?.slice(0, 10)
-	return baseErrorResult({ type: ErrorType.CustomError, reason: formatReason(reason, `No ABI for custom error ${ selector }`), data, fragment, args, selector, name: selector })
+const panicErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args, selector, name, signature }) => baseErrorResult({ type: ErrorType.PanicError, reason, data, fragment, args, selector, name, signature })
+const customErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args, selector, name, signature }) => {
+	const resolvedSelector = selector ?? data?.slice(0, 10)
+	return baseErrorResult({
+		type: ErrorType.CustomError,
+		reason: formatReason(reason, `No ABI for custom error ${ resolvedSelector }`),
+		data,
+		fragment,
+		args,
+		selector: resolvedSelector,
+		name: name ?? resolvedSelector,
+		signature,
+	})
 }
 
 interface ErrorHandler {
@@ -79,12 +85,13 @@ class RevertErrorHandler implements ErrorHandler {
 		if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x'})
 		const encodedReason = error.data.slice(ERROR_STRING_PREFIX.length)
 		const abi = new AbiCoder()
+		const fragment = new Interface(['error Error(string)']).getErrorAbiItems()[0]
+		if (fragment === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: error.data })
 		try {
-			const fragment = ErrorFragment.from('Error(string)')
-			const args = abi.decode(fragment.inputs, `0x${ encodedReason }`)
+			const args = abi.decode(fragment.inputs ?? [], `0x${ encodedReason }`)
 			const reason = args[0] as string
-			return revertErrorResult({ data: error.data, fragment, reason, args })
-		} catch (e) {
+			return revertErrorResult({ data: error.data, fragment, reason, args, selector: ERROR_STRING_PREFIX, name: 'Error', signature: 'Error(string)' })
+		} catch {
 			return unknownErrorResult({ reason: 'Unknown error returned', data: error.data })
 		}
 	}
@@ -96,12 +103,13 @@ class PanicErrorHandler implements ErrorHandler {
 		if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x'})
 		const encodedReason = error.data.slice(PANIC_CODE_PREFIX.length)
 		const abi = new AbiCoder()
+		const fragment = new Interface(['error Panic(uint256)']).getErrorAbiItems()[0]
+		if (fragment === undefined) return unknownErrorResult({ reason: 'Unknown panic error', data: error.data })
 		try {
-			const fragment = ErrorFragment.from('Panic(uint256)')
-			const args = abi.decode(fragment.inputs, `0x${encodedReason}`)
+			const args = abi.decode(fragment.inputs ?? [], `0x${encodedReason}`)
 			const reason = panicErrorCodeToReason(args[0] as bigint) ?? 'Unknown panic code'
-			return panicErrorResult({ data: error.data, fragment, reason, args })
-		} catch (e) {
+			return panicErrorResult({ data: error.data, fragment, reason, args, selector: PANIC_CODE_PREFIX, name: 'Panic', signature: 'Panic(uint256)' })
+		} catch {
 			return unknownErrorResult({ reason: 'Unknown panic error', data: error.data })
 		}
 	}
@@ -115,8 +123,8 @@ class CustomErrorHandler implements ErrorHandler {
 		if (error.data === undefined) return customErrorResult(result)
 		const customError = errorInterface.parseError(error.data)
 		if (customError === null) return customErrorResult(result)
-		const { fragment, args, name: reason } = customError
-		return customErrorResult({ ...result, fragment, reason, args })
+		const { fragment, args, name: reason, selector, signature } = customError
+		return customErrorResult({ ...result, fragment, reason, args, selector, name: customError.name, signature })
 	}
 }
 
@@ -148,7 +156,7 @@ const errorHandlers: ErrorHandler[] = handlers.map((handler) => ({ predicate: ha
 
 export const decodeEthereumError = (errorInterfaces: readonly Interface[], error: ErrorWithCodeAndOptionalData): DecodedError => {
 	try {
-		const errorInterface = new Interface(errorInterfaces.flatMap((iface) => iface.fragments.filter((fragment) => ErrorFragment.isFragment(fragment))))
+		const errorInterface = new Interface(errorInterfaces.flatMap((iface) => iface.getErrorAbiItems()))
 		for (const { predicate, handle } of errorHandlers) {
 			if (predicate(error)) return handle(errorInterface, error)
 		}

@@ -1,4 +1,4 @@
-import { keccak256, toUtf8Bytes } from 'ethers'
+import { keccak256, toUtf8Bytes } from '../utils/viem.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { SimulationStateInput } from '../types/visualizer-types.js'

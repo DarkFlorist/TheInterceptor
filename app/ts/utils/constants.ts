@@ -1,4 +1,4 @@
-import { ethers, namehash } from 'ethers'
+import { ethers, namehash } from './viem.js'
 import { CHAIN_NAMES } from './chainNames.js'
 
 // common contract addresses
@@ -11,7 +11,28 @@ export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeee
 // export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 
 export const Multicall3ABI = [
-	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
+	{
+		type: 'function',
+		name: 'aggregate3',
+		stateMutability: 'payable',
+		inputs: [{
+			name: 'calls',
+			type: 'tuple[]',
+			components: [
+				{ name: 'target', type: 'address' },
+				{ name: 'allowFailure', type: 'bool' },
+				{ name: 'callData', type: 'bytes' },
+			],
+		}],
+		outputs: [{
+			name: 'returnData',
+			type: 'tuple[]',
+			components: [
+				{ name: 'success', type: 'bool' },
+				{ name: 'returnData', type: 'bytes' },
+			],
+		}],
+	},
 	'function getEthBalance(address) returns (uint256)',
 ]
 

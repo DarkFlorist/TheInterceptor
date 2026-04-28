@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { Interface } from 'ethers'
+import { Interface } from '../../app/ts/utils/viem.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'

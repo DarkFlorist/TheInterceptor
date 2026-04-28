@@ -1,4 +1,4 @@
-import { Interface } from 'ethers'
+import { Interface } from '../../utils/viem.js'
 import { MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'

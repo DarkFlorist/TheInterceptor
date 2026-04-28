@@ -1,4 +1,4 @@
-import { Interface } from 'ethers'
+import { Interface } from './viem.js'
 import { Erc20ABI, Erc721ABI } from './abi.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { IEthereumClientService } from '../simulation/services/EthereumClientService.js'

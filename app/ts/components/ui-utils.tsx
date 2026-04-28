@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers } from '../utils/viem.js'
 import { useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'

@@ -1,4 +1,4 @@
-import { InterfaceAbi } from 'ethers'
+import { type InterfaceAbi } from './viem.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from './constants.js'
 

@@ -7,7 +7,7 @@ import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { isValidName, namehash } from 'ethers'
+import { isValidName, namehash } from '../../utils/viem.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 
 type EditEnsNamedHashParams = {

@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers } from '../../utils/viem.js'
 import { useEffect } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'

@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { encodeRlp } from './viem.js'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { DistributiveOmit, assertNever } from './typescript.js'
@@ -164,12 +164,13 @@ function parityFromV(v: bigint): 'even' | 'odd' {
 }
 
 type RlpEncodeableData = Uint8Array | RlpEncodeableData[]
+type RlpValue = `0x${ string }` | RlpValue[]
 export function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
-	function rlpEncodeArray(data: RlpEncodeableData): ethers.RlpStructuredData {
+	function rlpEncodeArray(data: RlpEncodeableData): RlpValue {
 		if (!Array.isArray(data)) return `0x${ dataString(data) }`
-		return data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)
+		return data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`) as RlpValue[]
 	}
-	return stringToUint8Array(ethers.encodeRlp(data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)))
+	return stringToUint8Array(encodeRlp(data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)))
 }
 
 function rlpEncodeSignedLegacyTransactionPayload(transaction: DistributiveOmit<ISignedTransactionLegacy, 'hash'>): Uint8Array {

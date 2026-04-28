@@ -1,7 +1,7 @@
 import { addressString } from '../utils/bigint.js'
 import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
-import { Interface } from 'ethers'
+import { Interface } from '../utils/viem.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'

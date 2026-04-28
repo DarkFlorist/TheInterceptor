@@ -1,4 +1,4 @@
-import { Interface, Result } from 'ethers'
+import { Interface, type Result } from '../utils/viem.js'
 import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { CompoundTimeLock } from '../utils/abi.js'
 import { addressString, bigintSecondsToDate, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'

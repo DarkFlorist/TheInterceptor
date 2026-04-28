@@ -5,7 +5,7 @@ import { MaybeSimulatedTransaction, SimulatedAndVisualizedTransaction, Simulated
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { Interface } from 'ethers'
+import { Interface } from '../../utils/viem.js'
 import { CompoundGovernanceAbi } from '../../utils/abi.js'
 import { addressString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
