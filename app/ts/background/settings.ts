@@ -149,7 +149,7 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 }
 
 export const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.websiteAccess ?? []
-const websiteAccessSemaphore = new Semaphore(1)
+const websiteAccessSemaphore = Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		return await browserStorageLocalSet({ websiteAccess: updateFunc(await getWebsiteAccess()) })

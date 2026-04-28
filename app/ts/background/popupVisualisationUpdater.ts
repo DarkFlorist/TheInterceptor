@@ -67,7 +67,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 	return await getPopupVisualisationState()
 }
 
-const updateSimulationVisualisationSemaphore = new Semaphore(1)
+const updateSimulationVisualisationSemaphore = Semaphore(1)
 export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined) {
 	return await updateSimulationVisualisationSemaphore.execute(async () => {
 		if (abortController?.signal.aborted) return

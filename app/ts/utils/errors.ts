@@ -3,35 +3,64 @@ import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 
-export class ErrorWithData extends Error {
-	public constructor(message: string, public data: unknown) {
-		super(message)
-		Object.setPrototypeOf(this, ErrorWithData.prototype)
+const errorWithDataBrand = Symbol('ErrorWithData')
+const jsonRpcResponseErrorBrand = Symbol('JsonRpcResponseError')
+
+export type ErrorWithData = Error & {
+	readonly data: unknown
+	readonly [errorWithDataBrand]: true
+}
+
+export function ErrorWithData(message: string, data: unknown): ErrorWithData {
+	return Object.assign(new Error(message), {
+		data,
+		[errorWithDataBrand]: true as const,
+	})
+}
+
+export type SerializedJsonRpcResponseError = {
+	readonly jsonrpc: '2.0'
+	readonly id: string | number
+	readonly error: {
+		readonly message: string
+		readonly code: number
+		readonly data?: string
 	}
 }
 
-export class JsonRpcResponseError extends Error {
-	public readonly id: string | number
-	public readonly code: number
-	public readonly data: string | undefined
-	public constructor(jsonRpcResponse: JsonRpcErrorResponse) {
-		super(jsonRpcResponse.error.message)
-		this.code = jsonRpcResponse.error.code
-		this.id = jsonRpcResponse.id
-		this.data = jsonRpcResponse.error.data
-		Object.setPrototypeOf(this, JsonRpcResponseError.prototype)
-	}
-	public serialize() {
-		return {
+export type JsonRpcResponseError = Error & {
+	readonly id: string | number
+	readonly code: number
+	readonly data: string | undefined
+	readonly [jsonRpcResponseErrorBrand]: true
+	serialize(): SerializedJsonRpcResponseError
+}
+
+export function JsonRpcResponseError(jsonRpcResponse: JsonRpcErrorResponse): JsonRpcResponseError {
+	const message = jsonRpcResponse.error.message
+	const code = jsonRpcResponse.error.code
+	const id = jsonRpcResponse.id
+	const data = jsonRpcResponse.error.data
+
+	return Object.assign(new Error(message), {
+		id,
+		code,
+		data,
+		[jsonRpcResponseErrorBrand]: true as const,
+		serialize: () => ({
 			jsonrpc: '2.0' as const,
-			id: this.id,
+			id,
 			error: {
-				message: this.message,
-				code: this.code,
-				...(this.data !== undefined ? { data: this.data } : {}),
+				message,
+				code,
+				...(data !== undefined ? { data } : {}),
 			},
-		}
-	}
+		}),
+	})
+}
+
+export function isJsonRpcResponseError(error: unknown): error is JsonRpcResponseError {
+	return typeof error === 'object' && error !== null && jsonRpcResponseErrorBrand in error
 }
 
 export function isFailedToFetchError(error: Error) {

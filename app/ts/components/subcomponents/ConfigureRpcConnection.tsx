@@ -13,7 +13,7 @@ import { EthereumJSONRpcRequestHandler } from '../../simulation/services/Ethereu
 import { EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { XMarkIcon } from './icons.js'
 import { FetchRequest } from 'ethers'
-import { JsonRpcResponseError } from '../../utils/errors.js'
+import { isJsonRpcResponseError } from '../../utils/errors.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url: string) => void
@@ -47,7 +47,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 
 	const validateEthSimulateSupport = async (url: string) => {
 		// test eth_simulate request
-		const requestHandler = new EthereumJSONRpcRequestHandler(url)
+		const requestHandler = EthereumJSONRpcRequestHandler(url)
 		const ethSimulateV1ParamObject: EthSimulateV1Params['params'][0] = {
 			blockStateCalls: [{
 				blockOverrides: {
@@ -85,7 +85,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 
 			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error: unknown) {
-			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
+			if (isJsonRpcResponseError(error)) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
 			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC eth_simulateV1 validation error', error)
 			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')

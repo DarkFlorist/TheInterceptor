@@ -239,7 +239,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
 		const simulationState = await getUpdatedSimulationState(ethereumClientService)
-		if (simulationState?.success === false) throw new JsonRpcResponseError(simulationState?.jsonRpcError)
+		if (simulationState?.success === false) throw JsonRpcResponseError(simulationState?.jsonRpcError)
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : {

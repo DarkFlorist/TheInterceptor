@@ -13,7 +13,7 @@ import { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signi
 import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
-import { JsonRpcResponseError } from '../../utils/errors.js'
+import { isJsonRpcResponseError, JsonRpcResponseError } from '../../utils/errors.js'
 import { getMessageAndDomainHash } from '../../utils/eip712.js'
 import { deduplicateByFunction } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
@@ -223,7 +223,7 @@ export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { 
 
 export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	if (blockTag === 'finalized' || simulationState === undefined) return await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	const blockNumToUseForSim = blockTag === 'latest' || blockTag === 'pending' ? simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length) : blockTag
 	const blockNumToUseForChain = blockTag === 'latest' || blockTag === 'pending' ? blockTag : min(blockTag, await ethereumClientService.getBlockNumber(requestAbortController))
 	let addedTransactions = 0n
@@ -244,7 +244,7 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, data: PartialEthereumTransaction, blockDelta: number | undefined = undefined): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> => {
 	if (simulationState === undefined) return { gas: await ethereumClientService.estimateGas(data, requestAbortController) }
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, sendAddress)
 	const block = await getSimulatedBlock(ethereumClientService, requestAbortController, simulationState)
@@ -275,7 +275,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 	} catch (error: unknown) {
-		if (error instanceof JsonRpcResponseError) {
+		if (isJsonRpcResponseError(error)) {
 			const safeParsedData = EthereumData.safeParse(error.data)
 			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
 		}
@@ -391,7 +391,7 @@ export const inspectSimulationInput = async (
 			groupedEthSimulateV1CallResult,
 		}
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) return { success: false, base, jsonRpcError: error.serialize() }
+		if (isJsonRpcResponseError(error)) return { success: false, base, jsonRpcError: error.serialize() }
 		throw error
 	}
 }
@@ -621,7 +621,7 @@ export const getDeployedContractAddress = (from: EthereumAddress, nonce: Ethereu
 
 export const getSimulatedTransactionReceipt = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ExecutionSimulationState | undefined, hash: bigint): Promise<EthTransactionReceiptResponse> => {
 	if (simulationState === undefined) { return await ethereumClientService.getTransactionReceipt(hash, requestAbortController) }
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	const getTransactionSpecificFields = (signedTransaction: EthereumSendableSignedTransaction) => {
 		switch(signedTransaction.type) {
 			case 'legacy':
@@ -686,7 +686,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 export const getSimulatedBalance = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
 	if (simulationState === undefined || await canQueryNodeDirectly(simulationState, blockTag)) return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 	const ethBalances = new Map<bigint, bigint>()
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	for (const block of simulationState.simulatedBlocks) {
 		for (const [overrideAddress, override] of Object.entries(block.stateOverrides)) {
 			if (override?.balance !== undefined) ethBalances.set(EthereumQuantity.parse(overrideAddress), override.balance)
@@ -735,7 +735,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		const parsed = atInterface.decodeFunctionResult('at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed.toString()) } as const
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
+		if (isJsonRpcResponseError(error)) return { statusCode: 'failure' } as const
 		throw error
 	}
 }
@@ -905,7 +905,7 @@ const simulatedCallWithPreparedInputContext = async (
 		try {
 			return { result: EthereumData.parse(ethereumClientService.call(params, 'finalized', requestAbortController)) }
 		} catch(error: unknown) {
-			if (error instanceof JsonRpcResponseError) {
+			if (isJsonRpcResponseError(error)) {
 				const safeParsedData = EthereumData.safeParse(error.data)
 				return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
 			}
@@ -930,7 +930,7 @@ const simulatedCallWithPreparedInputContext = async (
 		if (callResult.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) {
+		if (isJsonRpcResponseError(error)) {
 			const safeParsedData = EthereumData.safeParse(error.data)
 			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
 		}
@@ -988,7 +988,7 @@ export const getSimulatedCodeFromInput = async (
 		const parsed = atInterface.decodeFunctionResult('at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed.toString()) } as const
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
+		if (isJsonRpcResponseError(error)) return { statusCode: 'failure' } as const
 		throw error
 	}
 }
@@ -1055,7 +1055,7 @@ export const simulateEstimateGasFromInput = async (
 		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n)
 		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 	} catch (error: unknown) {
-		if (error instanceof JsonRpcResponseError) {
+		if (isJsonRpcResponseError(error)) {
 			const safeParsedData = EthereumData.safeParse(error.data)
 			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
 		}
@@ -1068,7 +1068,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	return {
 		author: parentBlock.miner,
 		difficulty: parentBlock.difficulty,
@@ -1099,7 +1099,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 
 export async function getSimulatedBlockByHash(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, blockHash: EthereumBytes32, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes> {
 	if (simulationState !== undefined) {
-		if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+		if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 		const blockDelta = simulationState.simulatedBlocks.findIndex((_block, index) => getHashOfSimulatedBlock(simulationState, index) === blockHash)
 		if (blockDelta < 0) return await ethereumClientService.getBlockByHash(blockHash, requestAbortController, fullObjects)
 		const block = await getSimulatedMockBlock(ethereumClientService, requestAbortController, simulationState, blockDelta)
@@ -1116,7 +1116,7 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 	if (simulationState === undefined || blockTag === 'finalized' || await canQueryNodeDirectly(simulationState, blockTag)) {
 		return await ethereumClientService.getBlock(requestAbortController, blockTag, fullObjects)
 	}
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	const blockDelta = blockTag === 'latest' || blockTag === 'pending' ? simulationState.simulatedBlocks.length - 1 : Math.max(Number(blockTag - simulationState.blockNumber), 0) - 1
 	if (blockDelta < 0) return await ethereumClientService.getBlock(requestAbortController, blockTag, fullObjects)
 	const block = await getSimulatedMockBlock(ethereumClientService, requestAbortController, simulationState, blockDelta)
@@ -1170,7 +1170,7 @@ const resolveLogsBlockTag = (blockTag: EthereumBlockTag, latestBlockNumber: bigi
 
 export const getSimulatedLogs = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ExecutionSimulationState | undefined, logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
 	if (simulationState === undefined) return await ethereumClientService.getLogs(logFilter, requestAbortController)
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	const executionBlocks = await createPreparedSimulatedExecutionBlocks(ethereumClientService, requestAbortController, simulationState)
 
 	const toBlock = 'toBlock' in logFilter && logFilter.toBlock !== undefined ? logFilter.toBlock : 'latest'
@@ -1218,7 +1218,7 @@ function getSignedTransactionV(transaction: EthereumSendableSignedTransaction): 
 export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | null> => {
 	// try to see if the transaction is in our queue
 	if (simulationState === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
-	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	if (simulationState.success === false) throw JsonRpcResponseError(simulationState.jsonRpcError)
 	for (const [blockDelta, block] of simulationState.simulatedBlocks.entries()) {
 		for (const [transactionIndex, simulatedTransaction] of block.simulatedTransactions.entries()) {
 			if (hash === simulatedTransaction.preSimulationTransaction.signedTransaction.hash) {
@@ -1254,7 +1254,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		try {
 			return { result: EthereumData.parse(ethereumClientService.call(params, 'finalized', requestAbortController)) }
 		} catch(error: unknown) {
-			if (error instanceof JsonRpcResponseError) {
+			if (isJsonRpcResponseError(error)) {
 				const safeParsedData = EthereumData.safeParse(error.data)
 				return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
 			}
@@ -1281,7 +1281,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		if (callResult?.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) {
+		if (isJsonRpcResponseError(error)) {
 			const safeParsedData = EthereumData.safeParse(error.data)
 			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
 		}

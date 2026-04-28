@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { Interface } from 'ethers'
 import { h, render } from 'preact'
@@ -8,6 +7,9 @@ import { installDateMock, installDomMock } from './domMock.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
+const setGlobal = (property: string, value: unknown) => {
+	Object.defineProperty(globalThis, property, { configurable: true, writable: true, value })
+}
 
 function createBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
@@ -20,11 +22,10 @@ function createBrowserMock() {
 		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
 
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.browser = {
+	const browser = {
 		runtime: {
 			lastError: null,
-			async sendMessage(message: any) {
+			async sendMessage(message: { method?: string }) {
 				for (const listener of [...listeners]) listener(message)
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
 					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
@@ -80,11 +81,11 @@ function createBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
+	setGlobal('browser', browser)
+	setGlobal('chrome', { runtime: { id: 'test-extension' } })
 
 	return {
-		storage: globalThis.browser.storage,
+		storage: browser.storage,
 		dispatch(message: unknown) {
 			for (const listener of [...listeners]) listener(message)
 		},
@@ -297,7 +298,7 @@ describe('ConfirmTransaction', () => {
 				}
 			},
 		}
-		const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const simulator = {
 			ethereum,
 			tokenPriceService: {

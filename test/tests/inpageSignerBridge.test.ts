@@ -3,6 +3,28 @@ import { describe, test } from 'bun:test'
 
 type Listener = (event: { type: string, data?: unknown, detail?: unknown, ports?: readonly unknown[] }) => void
 
+const setGlobal = (property: string, value: unknown) => {
+	Object.defineProperty(globalThis, property, { configurable: true, writable: true, value })
+}
+
+function createCustomEventPolyfill() {
+	function CustomEventPolyfill<T = unknown>(type: string, init?: CustomEventInit<T>) {
+		const event = new Event(type)
+		Object.defineProperty(event, 'detail', {
+			configurable: true,
+			enumerable: true,
+			value: init?.detail,
+		})
+		return event
+	}
+
+	Object.setPrototypeOf(CustomEventPolyfill, Event)
+	Object.defineProperty(CustomEventPolyfill, 'prototype', { value: Event.prototype })
+	Object.defineProperty(CustomEventPolyfill.prototype, 'initCustomEvent', { value() {} })
+
+	return CustomEventPolyfill
+}
+
 function createFakeWindow() {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
@@ -97,16 +119,9 @@ describe('inpage signer bridge', () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 		const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow()
-		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		setGlobal('window', fakeWindow)
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
-			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
-				public detail: T
-				constructor(type: string, init?: CustomEventInit<T>) {
-					super(type)
-					this.detail = init?.detail as T
-				}
-				public initCustomEvent(): void {}
-			}
+			setGlobal('CustomEvent', createCustomEventPolyfill())
 		}
 
 		try {
@@ -142,11 +157,11 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundEthAccountsReplies.length === 2)
 			assert.deepEqual((backgroundEthAccountsReplies[1] as { accounts?: unknown }).accounts, signerAccounts)
 		} finally {
-			;(globalThis as { window?: unknown }).window = previousWindow
+			setGlobal('window', previousWindow)
 			if (previousCustomEvent === undefined) {
 				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 			} else {
-				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+				setGlobal('CustomEvent', previousCustomEvent)
 			}
 		}
 	})

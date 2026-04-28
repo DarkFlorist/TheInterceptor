@@ -66,7 +66,7 @@ function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
 	if (isParsedInputModel(model)) {
 		return <ParsedInput { ...model }/>
 	} else {
-		return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
+		return <ParsedInput { ...model } value = { OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
 	}
 }
 

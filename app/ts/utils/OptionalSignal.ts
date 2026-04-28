@@ -1,47 +1,63 @@
-import { ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
+import { Signal, batch, useSignalEffect } from '@preact/signals'
 import { useMemo } from 'preact/hooks'
 
-export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements ReadonlySignal<Signal<T> | undefined> {
-	private inner: Signal<T> | undefined
+export interface OptionalSignal<T> {
+	get value(): T | undefined
+	set value(newValue: T | undefined)
+	get deepValue(): T | undefined
+	set deepValue(newValue: T | undefined)
+	deepPeek(): T | undefined
+	clear(): void
+	set(newValue: T | undefined): void
+}
 
-	public constructor(value: Signal<T> | T | undefined, startUndefined?: boolean) {
-		super(value === undefined || startUndefined === true ? undefined : value instanceof Signal ? value : new Signal(value))
-		this.set = this.set.bind(this)
-		if (this.value instanceof Signal) this.inner = this.value
-	}
+export function OptionalSignal<T>(value: Signal<T> | T | undefined, startUndefined?: boolean): OptionalSignal<T> {
+	const initialValue = value === undefined || startUndefined === true ? undefined : value instanceof Signal ? value : new Signal(value)
+	const signal = new Signal<Signal<T> | undefined>(initialValue)
+	let inner = initialValue
 
-	public get deepValue() {
-		const inner = this.value
-		if (inner === undefined) return undefined
-		return inner.value
-	}
+	const optionalSignal: OptionalSignal<T> = {
+		get value() {
+			return optionalSignal.deepValue
+		},
+		set value(newValue: T | undefined) {
+			optionalSignal.deepValue = newValue
+		},
+		get deepValue() {
+			const current = signal.value
+			if (current === undefined) return undefined
+			return current.value
+		},
+		set deepValue(newValue: T | undefined) {
+			if (newValue === undefined) {
+				signal.value = undefined
+				return
+			}
 
-	public set deepValue(newValue: T | undefined) {
-		if (newValue === undefined) {
-			this.value = undefined
-		} else {
 			batch(() => {
-				if (this.inner === undefined) this.inner = new Signal(newValue)
-				else this.inner.value = newValue
-				this.value = this.inner
+				if (inner === undefined) inner = new Signal(newValue)
+				else inner.value = newValue
+				signal.value = inner
 			})
-		}
+		},
+		deepPeek() {
+			const current = signal.peek()
+			if (current === undefined) return undefined
+			return current.peek()
+		},
+		clear() {
+			signal.value = undefined
+		},
+		set(newValue: T | undefined) {
+			optionalSignal.deepValue = newValue
+		},
 	}
 
-	public readonly deepPeek = () => {
-		const inner = this.peek()
-		if (inner === undefined) return undefined
-		return inner.peek()
-	}
-
-	public readonly clear = () => { this.value = undefined }
-
-	// convenience function for when you want pass a setter to a function; note that this is `this` bound in the constructor
-	public set(newValue: T | undefined) { this.deepValue = newValue }
+	return optionalSignal
 }
 
 export function useOptionalSignal<T>(value: Signal<T> | T | undefined, startUndefined?: boolean) {
-	return useMemo(() => new OptionalSignal<T>(value, startUndefined), [])
+	return useMemo(() => OptionalSignal<T>(value, startUndefined), [])
 }
 
 export const useOptionalComputed = <T>(computeFn: () => T | undefined) => {

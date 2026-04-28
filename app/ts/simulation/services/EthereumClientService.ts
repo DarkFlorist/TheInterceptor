@@ -20,6 +20,38 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
 }
 
+export interface EthereumClientService {
+	getRpcEntry(): RpcEntry
+	getNewBlockAttemptCallback(): (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
+	getOnErrorBlockCallback(): (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
+	getCachedBlock(): EthereumBlockHeader | undefined
+	cleanup(): void
+	isBlockPolling(): boolean
+	setBlockPolling(enabled: boolean): void
+	estimateGas(data: PartialEthereumTransaction, requestAbortController: AbortController | undefined): Promise<bigint>
+	getStorageAt(contract: bigint, slot: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined): Promise<ReturnType<typeof EthGetStorageAtResponse.parse>>
+	getTransactionCount(address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined): Promise<bigint>
+	getTransactionReceipt(hash: bigint, requestAbortController: AbortController | undefined): Promise<ReturnType<typeof EthTransactionReceiptResponse.parse>>
+	getBalance(address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined): Promise<bigint>
+	getCode(address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined): Promise<Uint8Array>
+	getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
+	getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
+	getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+	getBlockByHash(blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects?: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
+	getChainId(): bigint
+	getLogs(logFilter: EthGetLogsRequest, requestAbortController: AbortController | undefined): Promise<ReturnType<typeof EthGetLogsResponse.parse>>
+	getBlockNumber(requestAbortController: AbortController | undefined): Promise<bigint>
+	getGasPrice(requestAbortController: AbortController | undefined): Promise<bigint>
+	getTransactionByHash(hash: bigint, requestAbortController: AbortController | undefined): Promise<ReturnType<typeof EthereumSignedTransactionWithBlockData.parse> | null>
+	call(transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>>, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined): Promise<string>
+	ethSimulateV1(blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined): Promise<ReturnType<typeof EthSimulateV1Result.parse>>
+	prepareEthSimulateV1Input(simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input>
+	ethSimulateV1Input(simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Params>
+	simulatePrepared(simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<{ prepared: PreparedEthSimulateV1Input, result: ReturnType<typeof EthSimulateV1Result.parse> }>
+	simulate(simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<ReturnType<typeof EthSimulateV1Result.parse>>
+	web3ClientVersion(requestAbortController: AbortController | undefined): Promise<string>
+}
+
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export type PreparedEthSimulateV1InputBlock = {
 	readonly inputBlock: SimulationStateInputMinimalDataBlock
@@ -31,164 +63,158 @@ export type PreparedEthSimulateV1Input = {
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }
-export class EthereumClientService {
-	private cachedBlock: EthereumBlockHeader | undefined = undefined
-	private cacheRefreshTimer: NodeJS.Timeout | undefined = undefined
-	private retrievingBlock = false
-	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
-	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
-	private requestHandler
-	private rpcEntry
 
-	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
-		this.requestHandler = requestHandler
-		this.newBlockAttemptCallback = newBlockAttemptCallback
-		this.onErrorBlockCallback = onErrorBlockCallback
-		this.rpcEntry = rpcEntry
+export function EthereumClientService(
+	requestHandler: IEthereumJSONRpcRequestHandler,
+	newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>,
+	onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>,
+	rpcEntry: RpcEntry,
+): EthereumClientService {
+	let cachedBlock: EthereumBlockHeader | undefined = undefined
+	let cacheRefreshTimer: NodeJS.Timeout | undefined = undefined
+	let retrievingBlock = false
 
-		if (this.rpcEntry.httpsRpc !== requestHandler.rpcUrl) throw new Error('The URL values for rpcEntry and requestHander must match')
+	if (rpcEntry.httpsRpc !== requestHandler.rpcUrl) throw new Error('The URL values for rpcEntry and requestHander must match')
+
+	const getRpcEntry = () => rpcEntry
+	const getNewBlockAttemptCallback = () => newBlockAttemptCallback
+	const getOnErrorBlockCallback = () => onErrorBlockCallback
+
+	const getCachedBlock = () => {
+		const currentCachedBlock = cachedBlock
+		if (currentCachedBlock === undefined || currentCachedBlock === null) return undefined
+		if ((Date.now() - currentCachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE) return undefined
+		return currentCachedBlock
 	}
 
-	public readonly getRpcEntry = () => this.rpcEntry
+	const isBlockPolling = () => cacheRefreshTimer !== undefined
 
-	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
-	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
-
-	public getCachedBlock = () => {
-		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
-		// if the block is older than MAX_BLOCK_CACHE block intervals, invalidate cache
-		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE) return undefined
-		return this.cachedBlock
+	const updateCache = async () => {
+		if (retrievingBlock) return
+		try {
+			retrievingBlock = true
+			const response = await requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, undefined, true, 6000)
+			if (cacheRefreshTimer === undefined) return
+			const newBlock = EthereumBlockHeader.parse(response)
+			if (newBlock === null) return
+			console.info(`${ getCurrentTimestampString() } Current block number: ${ newBlock.number } on ${ getRpcEntry().name }`)
+			const gotNewBlock = cachedBlock?.number !== newBlock.number
+			if (gotNewBlock) requestHandler.clearCache()
+			cachedBlock = newBlock
+			await newBlockAttemptCallback(newBlock, service, gotNewBlock)
+		} catch(error: unknown) {
+			return await onErrorBlockCallback(service, error)
+		} finally {
+			retrievingBlock = false
+		}
 	}
-	public cleanup = () => this.setBlockPolling(false)
 
-	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
-
-	public readonly setBlockPolling = (enabled: boolean) => {
-		if (enabled && this.cacheRefreshTimer === undefined) {
+	const setBlockPolling = (enabled: boolean) => {
+		if (enabled && cacheRefreshTimer === undefined) {
 			const now = Date.now()
-
-			// query block everytime clock hits time % 12 + 7
-			this.updateCache()
+			updateCache()
 			const timeToTarget = Math.floor(now / 1000 / TIME_BETWEEN_BLOCKS) * 1000 * TIME_BETWEEN_BLOCKS + 7 * 1000 - now
-			this.cacheRefreshTimer = setTimeout(() => { // wait until the clock is just right ( % 12 + 7 ), an then start querying every TIME_BETWEEN_BLOCKS secs
-				this.updateCache()
-				this.cacheRefreshTimer = setInterval(this.updateCache, TIME_BETWEEN_BLOCKS * 1000)
-			}, timeToTarget > 0 ? timeToTarget : timeToTarget + TIME_BETWEEN_BLOCKS * 1000 )
+			cacheRefreshTimer = setTimeout(() => {
+				updateCache()
+				cacheRefreshTimer = setInterval(updateCache, TIME_BETWEEN_BLOCKS * 1000)
+			}, timeToTarget > 0 ? timeToTarget : timeToTarget + TIME_BETWEEN_BLOCKS * 1000)
 			return
 		}
 		if (!enabled) {
-			clearTimeout(this.cacheRefreshTimer)
-			clearInterval(this.cacheRefreshTimer)
-			this.cacheRefreshTimer = undefined
-			this.cachedBlock = undefined
-			return
+			clearTimeout(cacheRefreshTimer)
+			clearInterval(cacheRefreshTimer)
+			cacheRefreshTimer = undefined
+			cachedBlock = undefined
 		}
 	}
 
-	private readonly updateCache = async () => {
-		if (this.retrievingBlock) return
-		try {
-			this.retrievingBlock = true
-			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, undefined, true, 6000)
-			if (this.cacheRefreshTimer === undefined) return
-			const newBlock = EthereumBlockHeader.parse(response)
-			if (newBlock === null) return
-			console.info(`${ getCurrentTimestampString() } Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
-			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
-			if (gotNewBlock) this.requestHandler.clearCache()
-			this.cachedBlock = newBlock
-			await this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
-		} catch(error: unknown) {
-			return await this.onErrorBlockCallback(this, error)
-		} finally {
-			this.retrievingBlock = false
-		}
+	const cleanup = () => {
+		setBlockPolling(false)
 	}
 
-	public readonly estimateGas = async (data: PartialEthereumTransaction, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_estimateGas', params: [data] }, requestAbortController )
+	const estimateGas = async (data: PartialEthereumTransaction, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_estimateGas', params: [data] }, requestAbortController)
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getStorageAt = async (contract: bigint, slot: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getStorageAt', params: [contract, slot, blockTag] }, requestAbortController)
+	const getStorageAt = async (contract: bigint, slot: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getStorageAt', params: [contract, slot, blockTag] }, requestAbortController)
 		return EthGetStorageAtResponse.parse(response)
 	}
 
-	public readonly getTransactionCount = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionCount', params: [address, blockTag] }, requestAbortController)
+	const getTransactionCount = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getTransactionCount', params: [address, blockTag] }, requestAbortController)
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getTransactionReceipt = async (hash: bigint, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionReceipt', params: [hash] }, requestAbortController)
+	const getTransactionReceipt = async (hash: bigint, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getTransactionReceipt', params: [hash] }, requestAbortController)
 		return EthTransactionReceiptResponse.parse(response)
 	}
 
-	public readonly getBalance = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBalance', params: [address, blockTag] }, requestAbortController)
+	const getBalance = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getBalance', params: [address, blockTag] }, requestAbortController)
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController)
+	const getCode = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController)
 		return EthereumData.parse(response)
 	}
 
-	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
-	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
-	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
-		const cached = this.getCachedBlock()
+	async function getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
+	async function getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
+	async function getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+	async function getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+		const cached = getCachedBlock()
 		if (cached && (blockTag === 'latest' || blockTag === cached.number)) {
 			if (fullObjects === false) return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
 			return cached
 		}
-		if (fullObjects === false) return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
-		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }, requestAbortController))
+		if (fullObjects === false) return EthereumBlockHeaderWithTransactionHashes.parse(await requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
+		return EthereumBlockHeader.parse(await requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }, requestAbortController))
 	}
 
-	public async getBlockByHash(blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
-		const cached = this.getCachedBlock()
-		if (cached && (cached.hash === blockHash)) {
-			if (fullObjects === false) {
-				return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
-			}
+	const getBlockByHash = async (blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> => {
+		const cached = getCachedBlock()
+		if (cached && cached.hash === blockHash) {
+			if (fullObjects === false) return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
 			return cached
 		}
-		if (fullObjects === false) {
-			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, false] }))
-		}
-		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }, requestAbortController))
+		if (fullObjects === false) return EthereumBlockHeaderWithTransactionHashes.parse(await requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, false] }))
+		return EthereumBlockHeader.parse(await requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }, requestAbortController))
 	}
 
-	public readonly getChainId = () => this.getRpcEntry().chainId
+	const getChainId = () => getRpcEntry().chainId
 
-	public readonly getLogs = async (logFilter: EthGetLogsRequest, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] }, requestAbortController)
+	const getLogs = async (logFilter: EthGetLogsRequest, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] }, requestAbortController)
 		return EthGetLogsResponse.parse(response)
 	}
 
-	public readonly getBlockNumber = async (requestAbortController: AbortController | undefined) => {
-		const cached = this.getCachedBlock()
+	const getBlockNumber = async (requestAbortController: AbortController | undefined) => {
+		const cached = getCachedBlock()
 		if (cached) return cached.number
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_blockNumber' }, requestAbortController)
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_blockNumber' }, requestAbortController)
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getGasPrice = async(requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_gasPrice' }, requestAbortController)
+	const getGasPrice = async (requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_gasPrice' }, requestAbortController)
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
+	const getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
 		if (response === null) return null
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 
-	public readonly call = async (transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>>, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+	const call = async (
+		transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>>,
+		blockTag: EthereumBlockTag,
+		requestAbortController: AbortController | undefined,
+	) => {
 		if (transaction.to === null) throw new Error('To cannot be null')
 		const params = {
 			...(transaction.to !== undefined ? { to: transaction.to } : {}),
@@ -198,12 +224,13 @@ export class EthereumClientService {
 			...transaction.maxFeePerGas !== undefined && transaction.maxPriorityFeePerGas !== undefined ? { gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas } : {},
 			...(transaction.gasLimit !== undefined ? { gas: transaction.gasLimit } : {}),
 		}
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] }, requestAbortController)
-		return response as string
+		const response = await requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] }, requestAbortController)
+		if (typeof response !== 'string') throw new Error('eth_call returned a non-string result')
+		return response
 	}
 
-	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const parentBlock = await this.getBlock(requestAbortController)
+	const ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		const parentBlock = await getBlock(requestAbortController)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		const call = {
 			method: 'eth_simulateV1',
@@ -214,11 +241,15 @@ export class EthereumClientService {
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		] } as const
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(call))
+		return EthSimulateV1Result.parse(await requestHandler.jsonRpcRequest(call))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
-		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
+	const prepareEthSimulateV1Input = async (
+		simulationStateInput: SimulationStateInputMinimalData,
+		blockNumber: bigint,
+		requestAbortController: AbortController | undefined,
+	): Promise<PreparedEthSimulateV1Input> => {
+		const parentBlock = await getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
@@ -234,10 +265,10 @@ export class EthereumClientService {
 				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
 				if (currentChunkGasSum + transaction.gas <= gasLimit) {
 					currentChunk.push(transaction)
-					currentChunkGasSum = currentChunkGasSum + transaction.gas
+					currentChunkGasSum += transaction.gas
 				} else {
 					transactionChunks.push(currentChunk)
-					currentChunk = [ transaction ]
+					currentChunk = [transaction]
 					currentChunkGasSum = transaction.gas
 				}
 			}
@@ -245,7 +276,6 @@ export class EthereumClientService {
 			return transactionChunks
 		}
 
-		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
 		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.signedTransaction) })) }))
 		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
@@ -280,7 +310,7 @@ export class EthereumClientService {
 			previousBlockOverride = newBlockOverride
 		}
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, currentBlockOverrides: BlockOverrides) => {
 			const transactionsWithRemoveZeroPricedOnes = block.transactions.map((transaction) => {
 				if (transaction.signedTransaction.type !== '1559') return transaction.signedTransaction
 				const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction.signedTransaction
@@ -293,20 +323,18 @@ export class EthereumClientService {
 
 			const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
 				const sig = Signature.from(messageHashAndSignature.signature)
-				const packed = BigInt(ethers.keccak256(coder.encode(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v, sig.r, sig.s])))
-				return packed
+				return BigInt(ethers.keccak256(coder.encode(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v, sig.r, sig.s])))
 			}
 
-			// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
 			const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
 			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => ({ key: getMappingsMemorySlot(encodePackedHash(simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor))), value: sign.fakeSignedFor })))
-			const stateSets = signatureStructs.reduce((acc, current) => {
-				acc[current.key] = current.value
-				return acc
-			}, {} as { [key: string]: bigint } )
+			const stateSets: { [key: string]: bigint } = {}
+			for (const current of signatureStructs) {
+				stateSets[current.key] = current.value
+			}
 			return {
 				calls: transactionsWithRemoveZeroPricedOnes,
-				blockOverrides,
+				blockOverrides: currentBlockOverrides,
 				stateOverrides: {
 					...block.signedMessages.length > 0 ? {
 						[addressString(ecRecoverAddress)]: {
@@ -325,7 +353,7 @@ export class EthereumClientService {
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
 			return await getBlockStateCall(block, blockOverrideForBlock)
 		}))
-		if (parentBlock === null) throw new Error('The latest block is null')
+
 		return {
 			inputBlocks: preparedBlocks,
 			rpcBlocks,
@@ -341,25 +369,57 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
-		return (await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)).request
+	const ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		return (await prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)).request
 	}
 
-	public readonly simulatePrepared = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
-		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+	const simulatePrepared = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		const prepared = await prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
 		return {
 			prepared,
-			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
+			result: EthSimulateV1Result.parse(await requestHandler.jsonRpcRequest(prepared.request)),
 		}
 	}
 
-	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
-		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
+	const simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		const input = await ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+		return EthSimulateV1Result.parse(await requestHandler.jsonRpcRequest(input))
 	}
 
-	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'web3_clientVersion', params: [] }, requestAbortController)
+	const web3ClientVersion = async (requestAbortController: AbortController | undefined) => {
+		const response = await requestHandler.jsonRpcRequest({ method: 'web3_clientVersion', params: [] }, requestAbortController)
 		return funtypes.String.parse(response)
 	}
+
+	const service: EthereumClientService = {
+		getRpcEntry,
+		getNewBlockAttemptCallback,
+		getOnErrorBlockCallback,
+		getCachedBlock,
+		cleanup,
+		isBlockPolling,
+		setBlockPolling,
+		estimateGas,
+		getStorageAt,
+		getTransactionCount,
+		getTransactionReceipt,
+		getBalance,
+		getCode,
+		getBlock,
+		getBlockByHash,
+		getChainId,
+		getLogs,
+		getBlockNumber,
+		getGasPrice,
+		getTransactionByHash,
+		call,
+		ethSimulateV1,
+		prepareEthSimulateV1Input,
+		ethSimulateV1Input,
+		simulatePrepared,
+		simulate,
+		web3ClientVersion,
+	}
+
+	return service
 }

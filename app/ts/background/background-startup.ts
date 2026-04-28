@@ -91,7 +91,7 @@ async function migrateAddressBook() {
 }
 migrateAddressBook()
 
-const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
+const pendingRequestLimiter = Semaphore(40) // only allow 40 requests pending globally
 
 async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
@@ -229,7 +229,7 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
-	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	const simulator = Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 		await catchAllErrorsAndCall(async () => {
 			if (changeInfo.status !== 'complete') return

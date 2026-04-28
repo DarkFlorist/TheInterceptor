@@ -85,26 +85,19 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 			if (logSignature === ENS_NAME_UNWRAPPED) return { logInformation: handleEnsNameUnWrapped(parsedEvent), type: 'ENS' as const, subType: 'ENSNameUnwrapped' as const }
 			if (logSignature === ENS_NAME_WRAPPED) return { logInformation: handleNameWrapped(parsedEvent), type: 'ENS' as const, subType: 'ENSNameWrapped' as const }
 			if (logSignature === ENS_EXPIRY_EXTENDED) return { logInformation: handleEnsExpiryExtended(parsedEvent), type: 'ENS' as const, subType: 'ENSExpiryExtended' as const }
-			// TransferSingle (index_topic_1 address operator, index_topic_2 address from, index_topic_3 address to, uint256 id, uint256 value)
-		}
-		else if (parsedEvent.loggersAddressBookEntry.address === ENS_ETH_REGISTRAR_CONTROLLER) {
+		} else if (parsedEvent.loggersAddressBookEntry.address === ENS_ETH_REGISTRAR_CONTROLLER) {
 			if (logSignature === ENS_CONTROLLER_NAME_REGISTERED) return { logInformation: handleControllerNameRegistered(parsedEvent), type: 'ENS' as const, subType: 'ENSControllerNameRegistered' as const }
 			if (logSignature === ENS_CONTROLLER_NAME_RENEWED) return { logInformation: handleEnsControllerNameRenewed(parsedEvent), type: 'ENS' as const, subType: 'ENSControllerNameRenewed' as const }
-		}
-		else if(parsedEvent.loggersAddressBookEntry.address === ENS_ETHEREUM_NAME_SERVICE) {
+		} else if(parsedEvent.loggersAddressBookEntry.address === ENS_ETHEREUM_NAME_SERVICE) {
 			if (logSignature === ENS_BASE_REGISTRAR_NAME_RENEWED) return { logInformation: handleBaseRegistrarNameRenewed(parsedEvent), type: 'ENS' as const, subType: 'ENSBaseRegistrarNameRenewed' as const }
 			if (logSignature === ENS_BASE_REGISTRAR_NAME_REGISTERED) return { logInformation: handleBaseRegistrarNameRegistered(parsedEvent), type: 'ENS' as const, subType: 'ENSBaseRegistrarNameRegistered' as const }
-			// Transfer (index_topic_1 address from, index_topic_2 address to, index_topic_3 uint256 tokenId)
-			// ApprovalForAll (index_topic_1 address owner, index_topic_2 address operator, bool approved)
-		}
-		else if(parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK) {
+		} else if(parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK) {
 			if (logSignature === ENS_TRANSFER) return { logInformation: handleEnsTransfer(parsedEvent), type: 'ENS' as const, subType: 'ENSTransfer' as const }
 			if (logSignature === ENS_NEW_OWNER) return { logInformation: handleEnsNewOwner(parsedEvent), type: 'ENS' as const, subType: 'ENSNewOwner' as const }
 			if (logSignature === ENS_NEW_RESOLVER) return { logInformation: handleEnsNewResolver(parsedEvent), type: 'ENS' as const, subType: 'ENSNewResolver' as const }
 			if (logSignature === ENS_NEW_TTL) return { logInformation: handleEnsNewTtl(parsedEvent), type: 'ENS' as const, subType: 'ENSNewTTL' as const }
 			if (logSignature === ENS_EXPIRY_EXTENDED) return { logInformation: handleEnsExpiryExtended(parsedEvent), type: 'ENS' as const, subType: 'ENSExpiryExtended' as const }
-		}
-		else if(parsedEvent.loggersAddressBookEntry.address === ENS_REVERSE_REGISTRAR) {
+		} else if(parsedEvent.loggersAddressBookEntry.address === ENS_REVERSE_REGISTRAR) {
 			if (logSignature === ENS_REVERSE_CLAIMED) return { logInformation: handleEnsReverseClaimed(parsedEvent), type: 'ENS' as const, subType: 'ENSReverseClaimed' as const }
 		}
 	}
@@ -132,7 +125,6 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
 			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
 			if (typeof value === 'object' && value !== null && 'hash' in value) {
-				// this field is stored as a hash instead as an original object
 				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
 			}
 			return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
@@ -152,7 +144,6 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 
 export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await promiseAllMapAbortSafe(events, async (event) => {
-		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
 		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
 		const abi = getAbi(loggersAddressBookEntry)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
@@ -171,7 +162,6 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
 			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
 			if (typeof value === 'object' && value !== null && 'hash' in value) {
-				// this field is stored as a hash instead as an original object
 				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
 			}
 			return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
@@ -210,31 +200,49 @@ export const runProtectorsForTransaction = async (simulationState: SimulationSta
 }
 
 type NewBlockCallBack = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>
-export class Simulator {
-	public ethereum: EthereumClientService
-	public tokenPriceService: TokenPriceService
-	private newBlockAttemptCallback: NewBlockCallBack
-	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, tokenPriceCacheAge = 60000) {
-		this.newBlockAttemptCallback = newBlockAttemptCallback
-		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
-			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
-			onErrorBlockCallback,
-			rpcNetwork
-		)
-		this.tokenPriceService = new TokenPriceService(this.ethereum, tokenPriceCacheAge)
+
+export interface Simulator {
+	readonly ethereum: EthereumClientService
+	readonly tokenPriceService: TokenPriceService
+	cleanup(): void
+	reset(rpcNetwork: RpcEntry): void
+}
+
+export function Simulator(
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockCallBack,
+	onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>,
+	tokenPriceCacheAge = 60000,
+): Simulator {
+	let ethereum = EthereumClientService(
+		EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
+		async (blockHeader: EthereumBlockHeader, currentEthereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, currentEthereumClientService, isNewBlock, simulator),
+		onErrorBlockCallback,
+		rpcNetwork,
+	)
+	let tokenPriceService = TokenPriceService(ethereum, tokenPriceCacheAge)
+
+	const simulator: Simulator = {
+		get ethereum() {
+			return ethereum
+		},
+		get tokenPriceService() {
+			return tokenPriceService
+		},
+		cleanup() {
+			ethereum.cleanup()
+		},
+		reset(nextRpcNetwork: RpcEntry) {
+			simulator.cleanup()
+			ethereum = EthereumClientService(
+				EthereumJSONRpcRequestHandler(nextRpcNetwork.httpsRpc, true),
+				async (blockHeader: EthereumBlockHeader, currentEthereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, currentEthereumClientService, isNewBlock, simulator),
+				ethereum.getOnErrorBlockCallback(),
+				nextRpcNetwork,
+			)
+			tokenPriceService = TokenPriceService(ethereum, tokenPriceService.cacheAge)
+		},
 	}
 
-	public cleanup = () => this.ethereum.cleanup()
-
-	public reset = (rpcNetwork: RpcEntry) => {
-		this.cleanup()
-		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
-			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await this.newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
-			this.ethereum.getOnErrorBlockCallback(),
-			rpcNetwork
-		)
-		this.tokenPriceService = new TokenPriceService(this.ethereum, this.tokenPriceService.cacheAge)
-	}
+	return simulator
 }

@@ -1,7 +1,8 @@
-import { Component, type ComponentChild, type ComponentChildren, type JSX } from 'preact'
+import type { ComponentChild, ComponentChildren, JSX } from 'preact'
 import { Signal } from '@preact/signals'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import { useErrorBoundary } from 'preact/hooks'
 
 interface ErrorProps {
 	text: SignalOrValue<ComponentChild>
@@ -68,30 +69,18 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	)
 }
 
-
-type ErrorBoundaryState = { error: Error, timestamp: Date } | { error: undefined, timestamp: undefined }
-
-export class ErrorBoundary extends Component<{ children?: ComponentChildren, onError?: (error: Error) => void }, ErrorBoundaryState> {
-	override state: ErrorBoundaryState = { error: undefined, timestamp: undefined }
-
-	static override getDerivedStateFromError(error: Error): ErrorBoundaryState {
-		return { error, timestamp: new Date() }
-	}
-
-	override componentDidCatch(error: Error) {
+export function ErrorBoundary(props: { children?: ComponentChildren, onError?: (error: Error) => void }): JSX.Element | null {
+	const [caughtError, resetError] = useErrorBoundary((error) => {
 		console.error('Caught rendering error:', error)
-		this.props.onError?.(error)
+		props.onError?.(error)
+	})
+
+	if (caughtError !== undefined) {
+		if (props.onError !== undefined) return null
+		return <UnexpectedError error = { { message: caughtError.message, timestamp: new Date() } } close = { resetError } />
 	}
 
-	dismiss = () => this.setState({ error: undefined })
-
-	override render() {
-		if (this.state.error !== undefined) {
-			if (this.props.onError !== undefined) return null
-			return <UnexpectedError error = { { message: this.state.error.message, timestamp: this.state.timestamp } } close = { this.dismiss } />
-		}
-		return this.props.children
-	}
+	return <>{ props.children }</>
 }
 
 export type CaughtError = { message: string, timestamp: Date }

@@ -139,7 +139,7 @@ const createTransactionWithEvent = (event: SimulatedAndVisualizedTransaction['ev
 })
 
 const getSummaryForTransaction = (simulatedTransaction: SimulatedAndVisualizedTransaction, externalEntries: readonly AddressBookEntry[]) => {
-	const summarizer = new LogSummarizer([simulatedTransaction])
+	const summarizer = LogSummarizer([simulatedTransaction])
 	const externalMetadata = new Map<string, AddressBookEntry>(externalEntries.map((entry) => [addressString(entry.address), entry]))
 	return summarizer.getSummary(externalMetadata, [], [])
 }
@@ -158,7 +158,7 @@ const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulat
 describe('LogSummarizer fallback metadata', () => {
 	test('uses enriched event metadata when the external map is incomplete', () => {
 		const simulatedTransaction = makeSimulatedTransaction()
-		const summarizer = new LogSummarizer([simulatedTransaction])
+		const summarizer = LogSummarizer([simulatedTransaction])
 		const externalMetadata = new Map<string, AddressBookEntry>([
 			[addressString(tokenEntry.address), tokenEntry],
 			[addressString(senderEntry.address), senderEntry],

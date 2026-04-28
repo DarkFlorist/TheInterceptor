@@ -55,10 +55,8 @@ const makeMockBrowser = () => {
 }
 
 const mockBrowser = makeMockBrowser()
-// @ts-expect-error test shim for extension APIs
-globalThis.browser = mockBrowser
-// @ts-expect-error test shim for extension APIs
-globalThis.chrome = { runtime: { id: 'test-extension' } }
+Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: mockBrowser })
+Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
@@ -102,12 +100,16 @@ const tx1 = makePreSimulationTransaction(1n)
 const tx2 = makePreSimulationTransaction(2n)
 const newDelay = { type: 'AddToTimestamp', deltaToAdd: 11n, deltaUnit: 'Seconds' } as const
 
-const simulator = {
+const simulator: Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[0] = {
 	ethereum: {
 		getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
 	},
-	tokenPriceService: {},
-} as never
+	tokenPriceService: {
+		estimateEthereumPricesForTokens: async () => [],
+	},
+	cleanup() {},
+	reset() {},
+}
 
 const resetStack = async () => {
 	await updateInterceptorTransactionStack(() => ({

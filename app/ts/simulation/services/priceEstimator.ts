@@ -19,63 +19,72 @@ interface CachedTokenPriceEstimate {
 }
 const IMulticall3 = new Interface(Multicall3ABI)
 
-export class TokenPriceService {
-	private cachedPrices = new Map<string, Map<string, CachedTokenPriceEstimate> > // quoteTokenAddress -> tokenAddress -> TokenPriceEstimate
-	public cacheAge: number
-	private ethereumClientService: EthereumClientService
-	constructor(ethereumClientService: EthereumClientService, cacheAge: number) {
-		this.cacheAge = cacheAge
-		this.ethereumClientService = ethereumClientService
-	}
+export interface TokenPriceService {
+	readonly cacheAge: number
+	cleanUpCacheIfNeeded(): void
+	estimateEthereumPricesForTokens(requestAbortController: AbortController | undefined, quoteToken: Erc20TokenEntry, tokens: TokenDecimals[]): Promise<TokenPriceEstimate[]>
+}
 
-	public cleanUpCacheIfNeeded() {
+export function TokenPriceService(ethereumClientService: EthereumClientService, cacheAge: number): TokenPriceService {
+	const cachedPrices = new Map<string, Map<string, CachedTokenPriceEstimate>>()
+
+	const cleanUpCacheIfNeeded = () => {
 		const currentTime = new Date()
-		this.cachedPrices.forEach((quoteTokenAddressCache, quoteTokenAddressString)  => {
+		cachedPrices.forEach((quoteTokenAddressCache, quoteTokenAddressString) => {
 			quoteTokenAddressCache.forEach((estimate, tokenAddressString) => {
-				if (currentTime.getTime() - estimate.estimateCalculated.getTime() > this.cacheAge) {
+				if (currentTime.getTime() - estimate.estimateCalculated.getTime() > cacheAge) {
 					quoteTokenAddressCache.delete(tokenAddressString)
 				}
 			})
-			if (quoteTokenAddressCache.size === 0) this.cachedPrices.delete(quoteTokenAddressString)
+			if (quoteTokenAddressCache.size === 0) cachedPrices.delete(quoteTokenAddressString)
 		})
 	}
 
-	private async getTokenPrice(requestAbortController: AbortController | undefined, token: TokenDecimals, quoteToken: Erc20TokenEntry) {
+	const getTokenPrice = async (requestAbortController: AbortController | undefined, token: TokenDecimals, quoteToken: Erc20TokenEntry) => {
 		const poolAddresses = calculateUniswapLikePools(token.address, quoteToken.address)
 		if (!poolAddresses) return undefined
 
 		const uniswapSpotCalls = constructUniswapLikeSpotCalls(token.address, quoteToken.address, poolAddresses)
 
 		const callData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [uniswapSpotCalls]))
-		const callTransaction = { type: '1559', to: MULTICALL3, value: 0n, input: callData, }
-		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereumClientService.call(callTransaction, 'latest', requestAbortController))[0]
+		const callTransaction = { type: '1559', to: MULTICALL3, value: 0n, input: callData } as const
+		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await ethereumClientService.call(callTransaction, 'latest', requestAbortController))[0]
 		const prices = calculatePricesFromUniswapLikeReturnData(multicallReturnData, poolAddresses)
 		if (prices.length === 0) return undefined
 		return {
 			token,
 			quoteToken,
-			// Use pool with most TVL
 			price: prices.reduce((highestLiq, p) => p.liquidity > highestLiq.liquidity ? p : highestLiq).price
 		}
 	}
 
-	public async estimateEthereumPricesForTokens(requestAbortController: AbortController | undefined, quoteToken: Erc20TokenEntry, tokens: TokenDecimals[]) : Promise<TokenPriceEstimate[]> {
+	const estimateEthereumPricesForTokens = async (
+		requestAbortController: AbortController | undefined,
+		quoteToken: Erc20TokenEntry,
+		tokens: TokenDecimals[],
+	): Promise<TokenPriceEstimate[]> => {
 		if (tokens.length === 0) return []
-		this.cleanUpCacheIfNeeded()
+		cleanUpCacheIfNeeded()
 		const quoteTokenAddressString = addressString(quoteToken.address)
 		return (await promiseAllMapAbortSafe(tokens, async (token) => {
 			const tokenAddressString = addressString(token.address)
 			if (token.address === quoteToken.address) return { token, quoteToken, price: 10n ** quoteToken.decimals }
-			const cachedEstimate = this.cachedPrices.get(quoteTokenAddressString)?.get(tokenAddressString)
+			const cachedEstimate = cachedPrices.get(quoteTokenAddressString)?.get(tokenAddressString)
 			if (cachedEstimate !== undefined && (cachedEstimate.estimate === undefined || cachedEstimate.estimate.token.decimals === token.decimals)) {
 				return cachedEstimate.estimate
 			}
-			const estimate = await silenceChromeUnCaughtPromise(this.getTokenPrice(requestAbortController, token, quoteToken))
-			const quoteTokenAddressCache = getWithDefault(this.cachedPrices, quoteTokenAddressString, new Map<string, CachedTokenPriceEstimate>() )
+			const estimate = await silenceChromeUnCaughtPromise(getTokenPrice(requestAbortController, token, quoteToken))
+			const quoteTokenAddressCache = getWithDefault(cachedPrices, quoteTokenAddressString, new Map<string, CachedTokenPriceEstimate>())
 			quoteTokenAddressCache.set(tokenAddressString, { estimate, estimateCalculated: new Date() })
-			this.cachedPrices.set(quoteTokenAddressString, quoteTokenAddressCache)
+			cachedPrices.set(quoteTokenAddressString, quoteTokenAddressCache)
 			return estimate
 		})).filter((tokenPrice): tokenPrice is TokenPriceEstimate => tokenPrice !== undefined)
+	}
+
+	return {
+		get cacheAge() { return cacheAge },
+		cleanUpCacheIfNeeded,
+		estimateEthereumPricesForTokens,
 	}
 }
 

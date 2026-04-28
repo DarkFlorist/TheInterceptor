@@ -232,7 +232,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
 let previousDecralativeNetRequestBlockIdentifier = ''
-const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
+const updateDeclarativeNetRequestBlocksSemaphore = Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)

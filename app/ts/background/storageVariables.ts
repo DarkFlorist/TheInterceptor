@@ -19,7 +19,7 @@ import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
 
-const pendingTransactionsSemaphore = new Semaphore(1)
+const pendingTransactionsSemaphore = Semaphore(1)
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	try {
 		return (await browserStorageLocalGet2('pendingTransactionsAndMessages'))?.pendingTransactionsAndMessages ?? []
@@ -75,7 +75,7 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
 }
 
-const simulationResultsSemaphore = new Semaphore(1)
+const simulationResultsSemaphore = Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults: CompleteVisualizedSimulation = {
 		simulationUpdatingState: 'done' as const,
@@ -137,7 +137,7 @@ const getTabAllStateKeys = async () => {
 export const clearTabStates = async () => await browser.storage.local.remove(await getTabAllStateKeys())
 export const getAllTabStates = async () => Object.values(TabStateItems.parse(await browser.storage.local.get(await getTabAllStateKeys()))).filter((state): state is TabState => state !== undefined)
 
-const tabStateSemaphore = new Semaphore(1)
+const tabStateSemaphore = Semaphore(1)
 export async function updateTabState(tabId: number, updateFunc: (prevState: TabState) => TabState) {
 	return await tabStateSemaphore.execute(async () => {
 		const previousState = await getTabState(tabId)
@@ -148,7 +148,7 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 }
 
 export const getPendingAccessRequests = async () => (await browserStorageLocalGet('pendingInterceptorAccessRequests'))?.pendingInterceptorAccessRequests ?? []
-const pendingAccessRequestsSemaphore = new Semaphore(1)
+const pendingAccessRequestsSemaphore = Semaphore(1)
 export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequests) => Promise<PendingAccessRequests>) {
 	return await pendingAccessRequestsSemaphore.execute(async () => {
 		const previous = await getPendingAccessRequests()
@@ -183,7 +183,7 @@ export async function getRpcConnectionStatus() {
 
 export const getEthereumSubscriptionsAndFilters = async () => (await browserStorageLocalGet('ethereumSubscriptionsAndFilters'))?.ethereumSubscriptionsAndFilters ?? []
 
-const ethereumSubscriptionsSemaphore = new Semaphore(1)
+const ethereumSubscriptionsSemaphore = Semaphore(1)
 export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevState: EthereumSubscriptionsAndFilters) => EthereumSubscriptionsAndFilters) {
 	return await ethereumSubscriptionsSemaphore.execute(async () => {
 		const oldSubscriptions = await getEthereumSubscriptionsAndFilters()
@@ -254,7 +254,7 @@ export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainI
 	return entries
 }
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
+const userAddressBookEntriesSemaphore = Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
@@ -287,7 +287,7 @@ export const getLatestUnexpectedError = async () => (await browserStorageLocalGe
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []
 
-const ensNodeHashesSemaphore = new Semaphore(1)
+const ensNodeHashesSemaphore = Semaphore(1)
 export async function addEnsNodeHash(name: string) {
 	if (!isValidName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
@@ -300,7 +300,7 @@ export async function addEnsNodeHash(name: string) {
 
 export const getEnsLabelHashes = async () => (await browserStorageLocalGet('ensLabelHashes'))?.ensLabelHashes ?? []
 
-const ensLabelHashesSemaphore = new Semaphore(1)
+const ensLabelHashesSemaphore = Semaphore(1)
 export async function addEnsLabelHash(label: string) {
 	const entry = { label, labelHash: bytesToUnsigned(keccak_256(label)) }
 	await ensLabelHashesSemaphore.execute(async () => {
@@ -310,7 +310,7 @@ export async function addEnsLabelHash(label: string) {
 	})
 }
 
-const interceptorTransactionStackSemaphore = new Semaphore(1)
+const interceptorTransactionStackSemaphore = Semaphore(1)
 export const getInterceptorTransactionStack = async () => (await browserStorageLocalGet('interceptorTransactionStack'))?.interceptorTransactionStack ?? { operations: [] }
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
 	return await interceptorTransactionStackSemaphore.execute(async () => {

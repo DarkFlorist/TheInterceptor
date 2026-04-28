@@ -32,6 +32,11 @@ export type ChromeSession = {
 	close: () => Promise<void>
 }
 
+type PendingRequest = {
+	resolve: (value: unknown) => void
+	reject: (reason: Error) => void
+}
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const EXTENSION_DIR = path.join(REPO_ROOT, 'app')
 
@@ -75,72 +80,76 @@ async function waitForCondition(condition: () => Promise<boolean> | boolean, tim
 	}
 }
 
-export class CdpConnection {
-	private socket: WebSocket | undefined
-	private nextId = 1
-	private pending = new Map<number, {
-		resolve: (value: unknown) => void
-		reject: (reason: Error) => void
-	}>()
-	private eventListeners = new Map<string, Set<(params: unknown) => void>>()
+export interface CdpConnection {
+	readonly url: string
+	connect(): Promise<void>
+	send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>
+	on(eventName: string, listener: (params: unknown) => void): void
+	off(eventName: string, listener: (params: unknown) => void): void
+	evaluate<T = unknown>(expression: string, options?: { awaitPromise?: boolean, userGesture?: boolean }): Promise<T | undefined>
+	close(): void
+}
 
-	public constructor(public readonly url: string) {}
+export function CdpConnection(url: string): CdpConnection {
+	let socket: WebSocket | undefined = undefined
+	let nextId = 1
+	let pending = new Map<number, PendingRequest>()
+	const eventListeners = new Map<string, Set<(params: unknown) => void>>()
 
-	public async connect() {
-		if (this.socket !== undefined) return
-		await new Promise<void>((resolve, reject) => {
-			const socket = new WebSocket(this.url)
-			socket.onopen = () => {
-				this.socket = socket
-				socket.onmessage = (event) => this.handleMessage(event)
-				socket.onerror = () => {
-					reject(new Error(`Failed to connect to CDP websocket ${ this.url }`))
-				}
-				socket.onclose = () => {
-					const pending = this.pending
-					this.pending = new Map()
-					for (const { reject: rejectPending } of pending.values()) {
-						rejectPending(new Error(`CDP websocket closed for ${ this.url }`))
-					}
-					this.socket = undefined
-				}
-				resolve()
-			}
-			socket.onerror = () => {
-				reject(new Error(`Failed to open CDP websocket ${ this.url }`))
-			}
-		})
-	}
-
-	private handleMessage(event: MessageEvent) {
+	const handleMessage = (event: MessageEvent) => {
 		const data = typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data as ArrayBuffer)
 		const message = JSON.parse(data) as { id?: number, method?: string, params?: unknown, result?: unknown, error?: { message?: string, code?: number } }
 		if (message.id !== undefined) {
-			const pending = this.pending.get(message.id)
-			if (pending === undefined) return
-			this.pending.delete(message.id)
+			const pendingRequest = pending.get(message.id)
+			if (pendingRequest === undefined) return
+			pending.delete(message.id)
 			if (message.error !== undefined) {
-				pending.reject(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`))
+				pendingRequest.reject(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`))
 				return
 			}
-			pending.resolve(message.result)
+			pendingRequest.resolve(message.result)
 			return
 		}
 		if (message.method === undefined) return
-		const listeners = this.eventListeners.get(message.method)
+		const listeners = eventListeners.get(message.method)
 		if (listeners === undefined) return
 		for (const listener of listeners) listener(message.params)
 	}
 
-	public async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-		await this.connect()
-		const socket = this.socket
-		if (socket === undefined) throw new Error(`CDP websocket ${ this.url } is not connected`)
-		const id = this.nextId
-		this.nextId += 1
+	const connect = async () => {
+		if (socket !== undefined) return
+		await new Promise<void>((resolve, reject) => {
+			const nextSocket = new WebSocket(url)
+			nextSocket.onopen = () => {
+				socket = nextSocket
+				nextSocket.onmessage = (event) => handleMessage(event)
+				nextSocket.onerror = () => {
+					reject(new Error(`Failed to connect to CDP websocket ${ url }`))
+				}
+				nextSocket.onclose = () => {
+					const pendingRequests = pending
+					pending = new Map()
+					for (const { reject: rejectPending } of pendingRequests.values()) {
+						rejectPending(new Error(`CDP websocket closed for ${ url }`))
+					}
+					socket = undefined
+				}
+				resolve()
+			}
+			nextSocket.onerror = () => {
+				reject(new Error(`Failed to open CDP websocket ${ url }`))
+			}
+		})
+	}
+
+	const send = async <T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
+		await connect()
+		if (socket === undefined) throw new Error(`CDP websocket ${ url } is not connected`)
+		const id = nextId
+		nextId += 1
 		const promise = new Promise<T>((resolve, reject) => {
-			this.pending.set(id, {
-				resolve: resolve as (value: unknown) => void,
+			pending.set(id, {
+				resolve: (value) => resolve(value as T),
 				reject,
 			})
 		})
@@ -148,21 +157,21 @@ export class CdpConnection {
 		return await promise
 	}
 
-	public on(eventName: string, listener: (params: unknown) => void) {
-		const listeners = this.eventListeners.get(eventName) ?? new Set<(params: unknown) => void>()
+	const on = (eventName: string, listener: (params: unknown) => void) => {
+		const listeners = eventListeners.get(eventName) ?? new Set<(params: unknown) => void>()
 		listeners.add(listener)
-		this.eventListeners.set(eventName, listeners)
+		eventListeners.set(eventName, listeners)
 	}
 
-	public off(eventName: string, listener: (params: unknown) => void) {
-		const listeners = this.eventListeners.get(eventName)
+	const off = (eventName: string, listener: (params: unknown) => void) => {
+		const listeners = eventListeners.get(eventName)
 		if (listeners === undefined) return
 		listeners.delete(listener)
-		if (listeners.size === 0) this.eventListeners.delete(eventName)
+		if (listeners.size === 0) eventListeners.delete(eventName)
 	}
 
-	public async evaluate<T = unknown>(expression: string, options: { awaitPromise?: boolean, userGesture?: boolean } = {}) {
-		const result = await this.send<{
+	const evaluate = async <T = unknown>(expression: string, options: { awaitPromise?: boolean, userGesture?: boolean } = {}) => {
+		const result = await send<{
 			result: { value?: T, type?: string, description?: string, unserializableValue?: string }
 			exceptionDetails?: { text?: string, exception?: { description?: string } }
 		}>('Runtime.evaluate', {
@@ -177,9 +186,19 @@ export class CdpConnection {
 		return result.result.value
 	}
 
-	public close() {
-		this.socket?.close()
-		this.socket = undefined
+	const close = () => {
+		socket?.close()
+		socket = undefined
+	}
+
+	return {
+		url,
+		connect,
+		send,
+		on,
+		off,
+		evaluate,
+		close,
 	}
 }
 
@@ -310,7 +329,7 @@ function killChromeProcessGroup(chromeProcess: ReturnType<typeof spawnChrome>, s
 export async function connectTarget(browserDebugPort: number, targetId: string) {
 	const target = await waitForTarget(browserDebugPort, (item) => item.id === targetId, 15_000, `target ${ targetId }`)
 	if (target.webSocketDebuggerUrl === undefined) throw new Error(`Target ${ targetId } does not expose a websocket debugger URL`)
-	const connection = new CdpConnection(target.webSocketDebuggerUrl)
+	const connection = CdpConnection(target.webSocketDebuggerUrl)
 	await connection.connect()
 	return connection
 }
@@ -502,7 +521,7 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise
 	})
 	const browserVersion = await readVersion(browserDebugPort)
 	if (browserVersion.webSocketDebuggerUrl === undefined) throw new Error('Chrome did not expose a browser websocket debugger URL')
-	const browserConnection = new CdpConnection(browserVersion.webSocketDebuggerUrl)
+	const browserConnection = CdpConnection(browserVersion.webSocketDebuggerUrl)
 	await browserConnection.connect()
 	return {
 		profileDir,

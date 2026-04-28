@@ -71,7 +71,7 @@ export async function updateExtensionBadge() {
 }
 
 export async function retrieveWebsiteDetails(tabId: number) {
-	const waitForLoadedFuture = new Future<void>
+	const waitForLoadedFuture = new Future<void>()
 
 	// wait for the tab to be fully loaded
 	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {

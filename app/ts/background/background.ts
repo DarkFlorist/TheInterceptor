@@ -16,7 +16,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput, mockSignTransaction, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
+import { handleUnexpectedError, isFailedToFetchError, isJsonRpcResponseError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
@@ -116,7 +116,7 @@ export async function refreshConfirmTransactionSimulation(
 	} catch (error) {
 		if (error instanceof Error && isNewBlockAbort(error)) return undefined
 		if (error instanceof Error && isFailedToFetchError(error)) return undefined
-		if (!(error instanceof JsonRpcResponseError)) throw error
+		if (!isJsonRpcResponseError(error)) throw error
 
 		const extractToAbi = async () => {
 			const params = transactionToSimulate.originalRequestParameters.params[0]
@@ -273,7 +273,7 @@ const keepTrackOfPreviousAddressforRichList = async () => {
 	await setFixedMakeMeRichList([...richList, { address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' as const }])
 }
 
-const changeActiveAddressAndChainSemaphore = new Semaphore(1)
+const changeActiveAddressAndChainSemaphore = Semaphore(1)
 export async function changeActiveAddressAndChain(
 	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
@@ -430,7 +430,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		if ((error instanceof Error && isFailedToFetchError(error))) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
 		}
-		if (error instanceof JsonRpcResponseError) {
+		if (isJsonRpcResponseError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() })
 		}
 		handleUnexpectedError(error)

@@ -497,7 +497,7 @@ type AccountChangesCardParams = {
 }
 
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds, activeAddress }: AccountChangesCardParams) {
-	const logSummarizer = new LogSummarizer([simTx])
+	const logSummarizer = LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.value.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds.value)
 	const showSummary = useSignal<boolean>(false)
@@ -675,7 +675,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return <></>
 	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
 	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
-	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
+	const logSummarizer = LogSummarizer(simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.value.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)

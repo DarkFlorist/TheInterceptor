@@ -96,34 +96,33 @@ async function loadModules() {
 		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 	}
 
-	class MockEthereumJSONRpcRequestHandler {
-		public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
-
-		public clearCache = () => {}
-
-		public getChainId = async () => 5n
-
-		public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
-			switch (rpcRequest.method) {
-				case 'eth_blockNumber': return `0x${ blockNumber.toString(16) }`
-				case 'eth_getBlockByNumber': {
-					if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
-					if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
-					return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
+	function MockEthereumJSONRpcRequestHandler() {
+		return {
+			rpcUrl: 'https://rpc.dark.florist/flipcardtrustone',
+			clearCache() {},
+			async getChainId() { return 5n },
+			async jsonRpcRequest(rpcRequest: EthereumJsonRpcRequest) {
+				switch (rpcRequest.method) {
+					case 'eth_blockNumber': return `0x${ blockNumber.toString(16) }`
+					case 'eth_getBlockByNumber': {
+						if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
+						if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
+						return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
+					}
+					case 'eth_getLogs': return []
+					case 'eth_simulateV1': {
+						const lastCallInput = rpcRequest.params[0]?.blockStateCalls.at(-1)?.calls[0]?.input
+						const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
+							? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
+							: undefined
+						return createMockEthSimulateV1Result(
+							rpcRequest.params[0]?.blockStateCalls.length ?? 0,
+							aggregate3BalanceQueryCount,
+						)
+					}
+					default: throw new Error(`unsupported method ${ rpcRequest.method }`)
 				}
-				case 'eth_getLogs': return []
-				case 'eth_simulateV1': {
-					const lastCallInput = rpcRequest.params[0]?.blockStateCalls.at(-1)?.calls[0]?.input
-					const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
-						? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
-						: undefined
-					return createMockEthSimulateV1Result(
-						rpcRequest.params[0]?.blockStateCalls.length ?? 0,
-						aggregate3BalanceQueryCount,
-					)
-				}
-				default: throw new Error(`unsupported method ${ rpcRequest.method }`)
-			}
+			},
 		}
 	}
 
@@ -140,7 +139,7 @@ async function loadModules() {
 		chainId: 1n,
 	} as const
 
-	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+	const createEthereum = () => EthereumClientService(MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
 	const createSimulationInput = (gas: bigint, nonce: bigint, transactionIdentifier: bigint) => [{
 		stateOverrides: {},
 		transactions: [{

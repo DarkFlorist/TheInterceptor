@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { Interface } from 'ethers'
 import { describe, test } from 'bun:test'
@@ -10,6 +9,9 @@ type RuntimeMessage = {
 }
 
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
+const setGlobal = (property: string, value: unknown) => {
+	Object.defineProperty(globalThis, property, { configurable: true, writable: true, value })
+}
 
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
@@ -27,8 +29,7 @@ function createBrowserMock() {
 		for (const key of entries) delete storageState[key]
 	}
 
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.browser = {
+	const browser = {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: RuntimeMessage) {
@@ -73,17 +74,17 @@ function createBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
+	setGlobal('browser', browser)
+	setGlobal('chrome', { runtime: { id: 'test-extension' } })
 
 	return {
+		browser,
 		sentMessages,
 		storageState,
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
-			// @ts-expect-error test shim intentionally overrides extension globals
-			globalThis.browser.runtime.lastError = undefined
+			browser.runtime.lastError = undefined
 		},
 	}
 }
@@ -220,12 +221,14 @@ const fakeRequestHandler = {
 		}
 	},
 }
-const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
-const simulator = {
+const ethereum = modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+const simulator: Parameters<typeof modules.refreshPopupConfirmTransactionSimulation>[0] = {
 	ethereum,
 	tokenPriceService: {
 		estimateEthereumPricesForTokens: async () => [],
 	},
+	cleanup() {},
+	reset() {},
 }
 
 const activeAddress = modules.defaultActiveAddresses[0]?.address
@@ -315,7 +318,6 @@ await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
-	// @ts-expect-error test shim uses a minimal simulator object
 	await modules.refreshPopupConfirmTransactionSimulation(simulator)
 	const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
 	if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')

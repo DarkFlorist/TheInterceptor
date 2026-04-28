@@ -68,14 +68,14 @@ interface ErrorHandler {
 	handle: (errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData) => DecodedError
 }
 
-class EmptyErrorHandler implements ErrorHandler {
-	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data === '0x' }
-	public handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError { return emptyErrorResult({ data: error.data, reason: error.message }) }
+const emptyErrorHandler: ErrorHandler = {
+	predicate(error) { return error.data === '0x' },
+	handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError { return emptyErrorResult({ data: error.data, reason: error.message }) }
 }
 
-class RevertErrorHandler implements ErrorHandler {
-	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data !== undefined && error.data.startsWith(ERROR_STRING_PREFIX) }
-	public handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
+const revertErrorHandler: ErrorHandler = {
+	predicate(error) { return error.data !== undefined && error.data.startsWith(ERROR_STRING_PREFIX) },
+	handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
 		if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x'})
 		const encodedReason = error.data.slice(ERROR_STRING_PREFIX.length)
 		const abi = new AbiCoder()
@@ -87,12 +87,12 @@ class RevertErrorHandler implements ErrorHandler {
 		} catch (e) {
 			return unknownErrorResult({ reason: 'Unknown error returned', data: error.data })
 		}
-	}
+	},
 }
 
-class PanicErrorHandler implements ErrorHandler {
-	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data !== undefined && error.data.startsWith(PANIC_CODE_PREFIX) }
-	public handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
+const panicErrorHandler: ErrorHandler = {
+	predicate(error) { return error.data !== undefined && error.data.startsWith(PANIC_CODE_PREFIX) },
+	handle(_errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
 		if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x'})
 		const encodedReason = error.data.slice(PANIC_CODE_PREFIX.length)
 		const abi = new AbiCoder()
@@ -104,12 +104,12 @@ class PanicErrorHandler implements ErrorHandler {
 		} catch (e) {
 			return unknownErrorResult({ reason: 'Unknown panic error', data: error.data })
 		}
-	}
+	},
 }
 
-class CustomErrorHandler implements ErrorHandler {
-	public predicate(error: ErrorWithCodeAndOptionalData): boolean { return error.data !== undefined && error.data !== '0x' && !error.data.startsWith(ERROR_STRING_PREFIX) && !error.data.startsWith(PANIC_CODE_PREFIX) }
-	public handle(errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
+const customErrorHandler: ErrorHandler = {
+	predicate(error) { return error.data !== undefined && error.data !== '0x' && !error.data.startsWith(ERROR_STRING_PREFIX) && !error.data.startsWith(PANIC_CODE_PREFIX) },
+	handle(errorInterface: Interface | undefined, error: ErrorWithCodeAndOptionalData): DecodedError {
 		const result: Parameters<typeof customErrorResult>[0] = { data: error.data, reason: error.message }
 		if (errorInterface === undefined) return customErrorResult(result)
 		if (error.data === undefined) return customErrorResult(result)
@@ -117,7 +117,7 @@ class CustomErrorHandler implements ErrorHandler {
 		if (customError === null) return customErrorResult(result)
 		const { fragment, args, name: reason } = customError
 		return customErrorResult({ ...result, fragment, reason, args })
-	}
+	},
 }
 
 // From Hardhat's panic codes
@@ -138,13 +138,12 @@ const panicErrorCodeToReason = (errorCode: bigint): string | undefined => {
 	}
 }
 
-const handlers = [
-	new EmptyErrorHandler(),
-	new RevertErrorHandler(),
-	new PanicErrorHandler(),
-	new CustomErrorHandler(),
+const errorHandlers: ErrorHandler[] = [
+	emptyErrorHandler,
+	revertErrorHandler,
+	panicErrorHandler,
+	customErrorHandler,
 ]
-const errorHandlers: ErrorHandler[] = handlers.map((handler) => ({ predicate: handler.predicate, handle: handler.handle }))
 
 export const decodeEthereumError = (errorInterfaces: readonly Interface[], error: ErrorWithCodeAndOptionalData): DecodedError => {
 	try {

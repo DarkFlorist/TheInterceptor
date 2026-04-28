@@ -16,48 +16,42 @@ function parseRequest(data: string) {
 	return jsonRpcResponse.result
 }
 
-class MockEthereumJSONRpcRequestHandler {
-	public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
-
-	public clearCache = () => {}
-
-	public getChainId = async () => 5n
-
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
-		switch (rpcRequest.method) {
-			case 'eth_blockNumber': return `0x${ 8443561n.toString(16) }`
-			case 'eth_getBlockByNumber': {
-				if (rpcRequest.params[0] === 8443562n) {
-					if (rpcRequest.params[1] !== true) throw new Error('Compatibility block only supports full transactions')
-					return parseRequest(eth_getBlockByNumber_7702_invalid_auth_yParity_true)
+function MockEthereumJSONRpcRequestHandler() {
+	return {
+		rpcUrl: 'https://rpc.dark.florist/flipcardtrustone',
+		clearCache() {},
+		async getChainId() { return 5n },
+		async jsonRpcRequest(rpcRequest: EthereumJsonRpcRequest) {
+			switch (rpcRequest.method) {
+				case 'eth_blockNumber': return `0x${ 8443561n.toString(16) }`
+				case 'eth_getBlockByNumber': {
+					if (rpcRequest.params[0] === 8443562n) {
+						if (rpcRequest.params[1] !== true) throw new Error('Compatibility block only supports full transactions')
+						return parseRequest(eth_getBlockByNumber_7702_invalid_auth_yParity_true)
+					}
+					if (rpcRequest.params[0] !== 8443561n && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
+					if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
+					return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 				}
-				if (rpcRequest.params[0] !== 8443561n && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
-				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
-				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
+				case 'eth_simulateV1': {
+					if (areEqualUint8Arrays(rpcRequest.params[0]?.blockStateCalls[1]?.calls[0]?.input, stringToUint8Array('0x82ad56cb0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000100000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000da9dfa130df4de4673b89022ee50ff26f6ea73cf00000000000000000000000000000000000000000000000000000000'))) {
+						return parseRequest(eth_simulateV1_get_eth_balance_multicall)
+					}
+					if (areEqualUint8Arrays(rpcRequest.params[0]?.blockStateCalls[1]?.calls[0]?.input, stringToUint8Array('0x82ad56cb000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000'))) {
+						return parseRequest(eth_simulateV1_get_eth_balance_multicall)
+					}
+					if (rpcRequest.params[0]?.blockStateCalls.length === 2) return parseRequest(eth_simulateV1_dummy_call_result_2calls)
+					return parseRequest(eth_simulateV1_dummy_call_result)
+				}
+				case 'eth_getTransactionByHash': {
+					if (rpcRequest.params[0] === 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn) {
+						return parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
+					}
+					throw new Error('unsupported Hash')
+				}
+				default: throw new Error(`unsupported method ${ rpcRequest.method }`)
 			}
-			case 'eth_simulateV1': {
-				if (areEqualUint8Arrays(rpcRequest.params[0]?.blockStateCalls[1]?.calls[0]?.input, stringToUint8Array('0x82ad56cb0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000100000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000da9dfa130df4de4673b89022ee50ff26f6ea73cf00000000000000000000000000000000000000000000000000000000'))) {
-					// get eth balance query
-					return parseRequest(eth_simulateV1_get_eth_balance_multicall)
-				}
-				if (areEqualUint8Arrays(rpcRequest.params[0]?.blockStateCalls[1]?.calls[0]?.input, stringToUint8Array('0x82ad56cb000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000'))) {
-					// get eth balance query
-					return parseRequest(eth_simulateV1_get_eth_balance_multicall)
-				}
-				if (rpcRequest.params[0]?.blockStateCalls.length === 2) {
-					return parseRequest(eth_simulateV1_dummy_call_result_2calls)
-				}
-				return parseRequest(eth_simulateV1_dummy_call_result)
-			}
-			case 'eth_getTransactionByHash': {
-				if (rpcRequest.params[0] === 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn) {
-					return parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
-				}
-				throw new Error('unsupported Hash')
-			}
-			default: new Error(`unsupported method ${ rpcRequest.method }`)
-		}
-		return
+		},
 	}
 }
 
@@ -73,7 +67,7 @@ const rpcNetwork = {
 	weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 }
 
-const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+const ethereum = EthereumClientService(MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
 
 const simulationState: SimulationState = {
 	blockNumber: blockNumber,

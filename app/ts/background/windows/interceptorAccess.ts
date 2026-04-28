@@ -25,7 +25,7 @@ type OpenedDialogWithListeners = {
 
 let openedDialog: OpenedDialogWithListeners = undefined
 
-const pendingInterceptorAccessSemaphore = new Semaphore(1)
+const pendingInterceptorAccessSemaphore = Semaphore(1)
 
 const onCloseWindowOrTab = async (simulator: Simulator, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
@@ -76,7 +76,7 @@ export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabCon
 	const tabState = await getTabState(socket.tabId)
 	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
 
-	const future = new Future<void>
+	const future = new Future<void>()
 	const listener = createInternalMessageListener( (message: WindowMessage) => {
 		if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve()
 	})

@@ -4,7 +4,7 @@ import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { MockRequestHandler } from '../MockRequestHandler.js'
 
-const requestHandler = new MockRequestHandler()
+const requestHandler = MockRequestHandler()
 
 const rpcEntry = {
 	name: 'Goerli',
@@ -16,7 +16,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(requestHandler, async () => {}, async () => {}, rpcEntry)
+const ethereum = EthereumClientService(requestHandler, async () => {}, async () => {}, rpcEntry)
 
 describe('getAddressMetaData', () => {
 	test('contain USDC Coin', async () => {
