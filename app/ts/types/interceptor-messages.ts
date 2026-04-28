@@ -502,8 +502,16 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 	data: funtypes.Unknown
 }).asReadonly()
 
-export type UpdateConfirmTransactionDialogPendingTransactions = funtypes.Static<typeof UpdateConfirmTransactionDialogPendingTransactions>
-export const UpdateConfirmTransactionDialogPendingTransactions = funtypes.ReadonlyObject({
+type UpdateConfirmTransactionDialogPendingTransactionsValue = {
+	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
+	readonly data: {
+		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+		readonly currentBlockNumber: bigint
+	}
+}
+
+export type UpdateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactionsValue
+export const UpdateConfirmTransactionDialogPendingTransactions: funtypes.Codec<UpdateConfirmTransactionDialogPendingTransactionsValue> = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),

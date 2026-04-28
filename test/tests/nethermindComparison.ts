@@ -117,8 +117,6 @@ export async function main() {
 		})
 
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
-			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
-			if (block === null) throw new Error('Block was null')
 			const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState.simulationStateInput, [{
 				signedTransaction: mockSignTransaction(exampleTransaction),
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -126,14 +124,26 @@ export async function main() {
 				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
 				transactionIdentifier: 1n,
 			}])
-			const nextBlock = await getSimulatedBlock(ethereum, undefined, newState, blockNumber + 2n, true)
+			const nextBlock = await getSimulatedBlock(ethereum, undefined, newState, blockNumber + 1n, true)
 			if (nextBlock === null) throw new Error('Block was null')
-			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
 
-			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
-			assertIsObject(expected)
-			const requiredFields = Object.keys(expected).sort()
+			const expectedSimulationResult = parseRequest(eth_simulateV1_dummy_call_result)
+			if (!Array.isArray(expectedSimulationResult)) throw new Error('Expected simulated result to be an array')
+			const expectedSimulatedBlock = expectedSimulationResult[0]
+			assertIsObject(expectedSimulatedBlock)
+			const requiredFields = [...Object.keys(expectedSimulatedBlock).filter((key) => key !== 'calls'), 'author'].sort()
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(requiredFields))
+			assert.equal(nextBlock.hash, expectedSimulatedBlock.hash)
+			assert.equal(nextBlock.parentHash, expectedSimulatedBlock.parentHash)
+			assert.equal(nextBlock.logsBloom, expectedSimulatedBlock.logsBloom)
+			assert.equal(nextBlock.mixHash, expectedSimulatedBlock.mixHash)
+			assert.equal(nextBlock.receiptsRoot, expectedSimulatedBlock.receiptsRoot)
+			assert.equal(nextBlock.stateRoot, expectedSimulatedBlock.stateRoot)
+			assert.equal(nextBlock.size, expectedSimulatedBlock.size)
+			assert.equal(nextBlock.transactionsRoot, expectedSimulatedBlock.transactionsRoot)
+			assert.equal(nextBlock.withdrawalsRoot, expectedSimulatedBlock.withdrawalsRoot)
+			assert.equal(nextBlock.gasUsed, expectedSimulatedBlock.gasUsed)
+			assert.equal(nextBlock.baseFeePerGas, expectedSimulatedBlock.baseFeePerGas)
 		})
 
 		should('get transaction by hash aligns with Nethermind', async () => {

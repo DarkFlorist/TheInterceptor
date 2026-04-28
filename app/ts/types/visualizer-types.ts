@@ -10,7 +10,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
-import { EthSimulateV1CallResult, EthSimulateV1Params, StateOverrides } from './ethSimulate-types.js'
+import { EthSimulateV1BlockHeader, EthSimulateV1CallResult, EthSimulateV1Params, StateOverrides } from './ethSimulate-types.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import { ReadonlySignal } from '@preact/signals'
@@ -190,14 +190,19 @@ export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationS
 export const SimulationStateInputMinimalData = funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
 
 export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
-export const SimulationStateBlock = funtypes.ReadonlyObject({
-	stateOverrides: StateOverrides,
-	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
-	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
-	blockTimestamp: EthereumTimestamp,
-	blockTimeManipulation: BlockTimeManipulation,
-	blockBaseFeePerGas: EthereumQuantity,
-})
+export const SimulationStateBlock = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		stateOverrides: StateOverrides,
+		simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
+		signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
+		blockTimestamp: EthereumTimestamp,
+		blockTimeManipulation: BlockTimeManipulation,
+		blockBaseFeePerGas: EthereumQuantity,
+	}),
+	funtypes.ReadonlyPartial({
+		blockHeader: EthSimulateV1BlockHeader,
+	}),
+)
 
 type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
 const SimulationStateSuccess = funtypes.ReadonlyObject({

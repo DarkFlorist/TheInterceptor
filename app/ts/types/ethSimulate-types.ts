@@ -1,5 +1,5 @@
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes16, EthereumBytes32, EthereumBytes256, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
 type AccountOverride = funtypes.Static<typeof AccountOverride>
@@ -125,16 +125,52 @@ export const EthSimulateV1CallResult = funtypes.Union(EthSimulateCallResultFailu
 export type EthSimulateV1CallResults = funtypes.Static<typeof EthSimulateV1CallResults>
 export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1CallResult)
 
-type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
-const EthSimulateV1BlockResult = funtypes.ReadonlyObject({
-	number: EthereumQuantity,
-	hash: EthereumBytes32,
-	timestamp: EthereumQuantity,
-	gasLimit: EthereumQuantitySmall,
-	gasUsed: EthereumQuantitySmall,
-	baseFeePerGas: EthereumQuantity,
-	calls: EthSimulateV1CallResults,
+type EthSimulateV1Withdrawal = funtypes.Static<typeof EthSimulateV1Withdrawal>
+const EthSimulateV1Withdrawal = funtypes.ReadonlyObject({
+	index: EthereumQuantity,
+	validatorIndex: EthereumQuantity,
+	address: EthereumAddress,
+	amount: EthereumQuantity,
 })
+
+export type EthSimulateV1BlockHeader = funtypes.Static<typeof EthSimulateV1BlockHeader>
+export const EthSimulateV1BlockHeader = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		number: EthereumQuantity,
+		hash: EthereumBytes32,
+		timestamp: EthereumQuantity,
+		gasLimit: EthereumQuantitySmall,
+		gasUsed: EthereumQuantitySmall,
+		baseFeePerGas: EthereumQuantity,
+		difficulty: EthereumQuantity,
+		extraData: EthereumData,
+		logsBloom: EthereumBytes256,
+		miner: EthereumAddress,
+		mixHash: EthereumBytes32,
+		nonce: EthereumBytes16,
+		parentHash: EthereumBytes32,
+		receiptsRoot: EthereumBytes32,
+		sha3Uncles: EthereumBytes32,
+		size: EthereumQuantity,
+		stateRoot: EthereumBytes32,
+		transactions: funtypes.ReadonlyArray(EthereumBytes32),
+		transactionsRoot: EthereumBytes32,
+		uncles: funtypes.ReadonlyArray(EthereumBytes32),
+	}),
+	funtypes.ReadonlyPartial({
+		excessBlobGas: EthereumQuantity,
+		blobGasUsed: EthereumQuantity,
+		parentBeaconBlockRoot: EthereumBytes32,
+		withdrawalsRoot: EthereumBytes32,
+		withdrawals: funtypes.ReadonlyArray(EthSimulateV1Withdrawal),
+		totalDifficulty: EthereumQuantity,
+	}),
+)
+
+export type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
+export const EthSimulateV1BlockResult = funtypes.Intersect(EthSimulateV1BlockHeader, funtypes.ReadonlyObject({
+	calls: EthSimulateV1CallResults,
+}))
 
 export type EthSimulateV1Result = funtypes.Static<typeof EthSimulateV1Result>
 export const EthSimulateV1Result = funtypes.ReadonlyArray(EthSimulateV1BlockResult)
