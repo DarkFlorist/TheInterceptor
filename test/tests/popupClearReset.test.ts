@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 
 type RuntimeMessage = {
 	method?: string
@@ -269,155 +269,148 @@ function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVi
 	} as const)
 }
 
-export async function main() {
-	const {
-		updatePopupVisualisationIfNeeded,
-		browserStorageLocalGet,
-		browserStorageLocalSet,
-		defaultActiveAddresses,
-		defaultRpcs,
-		resetSimulatorStateFromConfig,
-		DEFAULT_BLOCK_MANIPULATION,
-	} = await modulesPromise
+const {
+	updatePopupVisualisationIfNeeded,
+	browserStorageLocalGet,
+	browserStorageLocalSet,
+	defaultActiveAddresses,
+	defaultRpcs,
+	resetSimulatorStateFromConfig,
+	DEFAULT_BLOCK_MANIPULATION,
+} = await modulesPromise
 
-	const activeAddress = defaultActiveAddresses[0]?.address
-	const rpcNetwork = defaultRpcs[0]
-	if (activeAddress === undefined || rpcNetwork === undefined) throw new Error('test defaults are missing')
+const activeAddress = defaultActiveAddresses[0]?.address
+const rpcNetwork = defaultRpcs[0]
+if (activeAddress === undefined || rpcNetwork === undefined) throw new Error('test defaults are missing')
 
-	const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
-	const fakeSimulator = { ethereum: createFakeEthereum(rpcNetwork), tokenPriceService: {} }
-	const typedPopupSimulator = fakeSimulator as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
-	const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
+const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
+const fakeSimulator = { ethereum: createFakeEthereum(rpcNetwork), tokenPriceService: {} }
+const typedPopupSimulator = fakeSimulator as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
+const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
 
-	describe('popup clear reset', () => {
-		should('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
-			browserMock.reset()
-			await browserStorageLocalSet({
-				activeSimulationAddress: activeAddress,
-				interceptorTransactionStack: { operations: [] },
-			})
-			const modules = await modulesPromise
-			const currentSimulationInput = await modules.getCurrentSimulationInput()
-			const matchingPopupVisualisation = {
-				...stalePopupVisualisation,
-				simulationState: {
-					...stalePopupVisualisation.simulationState,
-					simulationStateInput: currentSimulationInput,
-				},
-			}
-			await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
-			const storedPopupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
-			assert.ok(storedPopupVisualisation)
-			const storedSimulationState = storedPopupVisualisation.simulationState
-			assert.ok(storedSimulationState)
-			assert.equal(
-				modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
-				modules.getPopupVisualisationFingerprint(storedSimulationState.simulationStateInput, storedSimulationState.rpcNetwork, storedSimulationState.blockNumber),
-			)
-
-			const popupVisualisation = await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false, true)
-			assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
-			assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
-			assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+describe('popup clear reset', () => {
+	test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({
+			activeSimulationAddress: activeAddress,
+			interceptorTransactionStack: { operations: [] },
 		})
+		const modules = await modulesPromise
+		const currentSimulationInput = await modules.getCurrentSimulationInput()
+		const matchingPopupVisualisation = {
+			...stalePopupVisualisation,
+			simulationState: {
+				...stalePopupVisualisation.simulationState,
+				simulationStateInput: currentSimulationInput,
+			},
+		}
+		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
+		const storedPopupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.ok(storedPopupVisualisation)
+		const storedSimulationState = storedPopupVisualisation.simulationState
+		assert.ok(storedSimulationState)
+		assert.equal(
+			modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
+			modules.getPopupVisualisationFingerprint(storedSimulationState.simulationStateInput, storedSimulationState.rpcNetwork, storedSimulationState.blockNumber),
+		)
 
-		should('updates the cached popup active address without restamping the simulation', async () => {
-			browserMock.reset()
-			const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address
-			if (nextActiveAddress === undefined) throw new Error('test defaults are missing a second active address')
-			await browserStorageLocalSet({
-				activeSimulationAddress: nextActiveAddress,
-				simulationMode: true,
-				currentTabId: -1,
-				interceptorTransactionStack: { operations: [] },
-			})
-			await browser.storage.local.set({
-				'tabState_-1': {
-					tabId: -1,
-					website: undefined,
-					signerConnected: false,
-					signerName: 'NoSignerDetected',
-					signerAccounts: [],
-					signerAccountError: undefined,
-					signerChain: undefined,
-					tabIconDetails: { icon: '../img/head.png', iconReason: 'The website has not requested to connect to The Interceptor.' },
-					activeSigningAddress: undefined,
-				},
-			} as never)
-			const modules = await modulesPromise
-			const currentSimulationInput = await modules.getCurrentSimulationInput()
-			const matchingPopupVisualisation = {
-				...stalePopupVisualisation,
-				simulationState: {
-					...stalePopupVisualisation.simulationState,
-					simulationStateInput: currentSimulationInput,
-				},
-			}
-			await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
-
-			const { refreshHomeData } = modules
-			await refreshHomeData(typedPopupSimulator, false, undefined)
-
-			const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
-			assert.ok(popupVisualisation)
-			assert.equal('activeAddress' in popupVisualisation, false)
-			assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
-
-			const homePageMessage = browserMock.sentMessages.find((message) => message.method === 'popup_UpdateHomePage')
-			assert.ok(homePageMessage)
-			assert.equal((homePageMessage as { data: { settings: { activeSimulationAddress: bigint | undefined } } }).data.settings.activeSimulationAddress, nextActiveAddress)
-		})
-
-		should('publish an empty popup visualisation even when previous state was done', async () => {
-			browserMock.reset()
-			await browserStorageLocalSet({
-				activeSimulationAddress: activeAddress,
-				popupVisualisation: stalePopupVisualisation,
-				interceptorTransactionStack: { operations: [] },
-			})
-
-			await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false)
-
-			const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
-			assert.ok(popupVisualisation)
-			assert.equal(popupVisualisation.simulationUpdatingState, 'done')
-			assert.equal(popupVisualisation.simulationResultState, 'done')
-			assert.equal(popupVisualisation.simulationId, stalePopupVisualisation.simulationId + 1)
-			assert.equal(popupVisualisation.simulationState, undefined)
-			assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
-
-			const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
-			assert.equal(changedMessages.length > 0, true)
-			assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
-		})
-
-		should('clear the interceptor stack and refresh popup state during reset', async () => {
-			browserMock.reset()
-			await browserStorageLocalSet({
-				activeSimulationAddress: activeAddress,
-				popupVisualisation: stalePopupVisualisation,
-				interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
-			})
-
-			await resetSimulatorStateFromConfig(typedResetSimulator)
-
-			const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
-			const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
-			assert.deepEqual(interceptorTransactionStack, { operations: [] })
-			assert.ok(popupVisualisation)
-			assert.equal(popupVisualisation.simulationUpdatingState, 'done')
-			assert.equal(popupVisualisation.simulationResultState, 'done')
-			assert.equal(popupVisualisation.simulationState, undefined)
-			assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
-
-			const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
-			assert.equal(changedMessages.length > 0, true)
-			assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
-		})
+		const popupVisualisation = await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false, true)
+		assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
+		assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
 	})
-}
 
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+	test('updates the cached popup active address without restamping the simulation', async () => {
+		browserMock.reset()
+		const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address
+		if (nextActiveAddress === undefined) throw new Error('test defaults are missing a second active address')
+		await browserStorageLocalSet({
+			activeSimulationAddress: nextActiveAddress,
+			simulationMode: true,
+			currentTabId: -1,
+			interceptorTransactionStack: { operations: [] },
+		})
+		await browser.storage.local.set({
+			'tabState_-1': {
+				tabId: -1,
+				website: undefined,
+				signerConnected: false,
+				signerName: 'NoSignerDetected',
+				signerAccounts: [],
+				signerAccountError: undefined,
+				signerChain: undefined,
+				tabIconDetails: { icon: '../img/head.png', iconReason: 'The website has not requested to connect to The Interceptor.' },
+				activeSigningAddress: undefined,
+			},
+		} as never)
+		const modules = await modulesPromise
+		const currentSimulationInput = await modules.getCurrentSimulationInput()
+		const matchingPopupVisualisation = {
+			...stalePopupVisualisation,
+			simulationState: {
+				...stalePopupVisualisation.simulationState,
+				simulationStateInput: currentSimulationInput,
+			},
+		}
+		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
+
+		const { refreshHomeData } = modules
+		await refreshHomeData(typedPopupSimulator, false, undefined)
+
+		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.ok(popupVisualisation)
+		assert.equal('activeAddress' in popupVisualisation, false)
+		assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
+
+		const homePageMessage = browserMock.sentMessages.find((message) => message.method === 'popup_UpdateHomePage')
+		assert.ok(homePageMessage)
+		assert.equal((homePageMessage as { data: { settings: { activeSimulationAddress: bigint | undefined } } }).data.settings.activeSimulationAddress, nextActiveAddress)
+	})
+
+	test('publish an empty popup visualisation even when previous state was done', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({
+			activeSimulationAddress: activeAddress,
+			popupVisualisation: stalePopupVisualisation,
+			interceptorTransactionStack: { operations: [] },
+		})
+
+		await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false)
+
+		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.ok(popupVisualisation)
+		assert.equal(popupVisualisation.simulationUpdatingState, 'done')
+		assert.equal(popupVisualisation.simulationResultState, 'done')
+		assert.equal(popupVisualisation.simulationId, stalePopupVisualisation.simulationId + 1)
+		assert.equal(popupVisualisation.simulationState, undefined)
+		assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
+
+		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
+		assert.equal(changedMessages.length > 0, true)
+		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
+	})
+
+	test('clear the interceptor stack and refresh popup state during reset', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({
+			activeSimulationAddress: activeAddress,
+			popupVisualisation: stalePopupVisualisation,
+			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
+		})
+
+		await resetSimulatorStateFromConfig(typedResetSimulator)
+
+		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
+		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.deepEqual(interceptorTransactionStack, { operations: [] })
+		assert.ok(popupVisualisation)
+		assert.equal(popupVisualisation.simulationUpdatingState, 'done')
+		assert.equal(popupVisualisation.simulationResultState, 'done')
+		assert.equal(popupVisualisation.simulationState, undefined)
+		assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
+
+		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
+		assert.equal(changedMessages.length > 0, true)
+		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
+	})
+})

@@ -28,6 +28,8 @@ export type PreparedEthSimulateV1InputBlock = {
 export type PreparedEthSimulateV1Input = {
 	readonly request: EthSimulateV1Params
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
+	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
+	readonly blockOverrides: readonly BlockOverrides[]
 }
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
@@ -189,12 +191,12 @@ export class EthereumClientService {
 	public readonly call = async (transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>>, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		if (transaction.to === null) throw new Error('To cannot be null')
 		const params = {
-			to: transaction.to,
-			from: transaction.from,
-			data: transaction.input,
-			value: transaction.value,
+			...(transaction.to !== undefined ? { to: transaction.to } : {}),
+			...(transaction.from !== undefined ? { from: transaction.from } : {}),
+			...(transaction.input !== undefined ? { data: transaction.input } : {}),
+			...(transaction.value !== undefined ? { value: transaction.value } : {}),
 			...transaction.maxFeePerGas !== undefined && transaction.maxPriorityFeePerGas !== undefined ? { gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas } : {},
-			gas: transaction.gasLimit
+			...(transaction.gasLimit !== undefined ? { gas: transaction.gasLimit } : {}),
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] }, requestAbortController)
 		return response as string
@@ -326,6 +328,8 @@ export class EthereumClientService {
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {
 			inputBlocks: preparedBlocks,
+			rpcBlocks,
+			blockOverrides,
 			request: {
 				method: 'eth_simulateV1',
 				params: [{

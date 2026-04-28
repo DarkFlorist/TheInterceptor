@@ -4,6 +4,7 @@ import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/address
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { getFilledInContactEntry } from '../../utils/addressBookEntries.js'
 
 type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
@@ -17,6 +18,7 @@ type BalanceChangeSummary = {
 }
 
 type SummaryState = ReadonlyMap<string, BalanceChangeSummary>
+type FallbackAddressMetadata = ReadonlyMap<string, AddressBookEntry>
 
 export type Erc1155TokenBalanceChange = (Erc1155Entry & { changeAmount: bigint, tokenId: bigint })
 export type Erc721and1155OperatorChange = ((Erc721Entry | Erc1155Entry) & { operator: AddressBookEntry | undefined })
@@ -93,6 +95,30 @@ const isEmptyBalanceChangeSummary = (summary: BalanceChangeSummary) => {
 		summary.erc1155TokenBalanceChanges.size === 0 &&
 		summary.erc721and1155OperatorChanges.size === 0
 	)
+}
+
+const buildFallbackAddressMetadata = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]): FallbackAddressMetadata => {
+	const fallbackAddressMetadata = new Map<string, AddressBookEntry>()
+
+	const addFallbackAddressMetadata = (entry: AddressBookEntry | undefined) => {
+		if (entry === undefined) return
+		fallbackAddressMetadata.set(addressString(entry.address), entry)
+	}
+
+	for (const transaction of transactions) {
+		if (transaction === undefined) continue
+		addFallbackAddressMetadata(transaction.transaction.from)
+		for (const tokenEvent of extractTokenEvents(transaction.events)) {
+			addFallbackAddressMetadata(tokenEvent.from)
+			addFallbackAddressMetadata(tokenEvent.to)
+		}
+	}
+
+	return fallbackAddressMetadata
+}
+
+const getAddressMetadata = (address: string, addressMetaData: ReadonlyMap<string, AddressBookEntry>, fallbackAddressMetadata: FallbackAddressMetadata) => {
+	return addressMetaData.get(address) ?? fallbackAddressMetadata.get(address) ?? getFilledInContactEntry(BigInt(address))
 }
 
 const applyErc721Change = (state: SummaryState, from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata): SummaryState => {
@@ -243,7 +269,7 @@ const buildSummaryState = (transactions: readonly (SimulatedAndVisualizedTransac
 	return new Map(Array.from(summaryState.entries()).filter(([_address, summary]) => !isEmptyBalanceChangeSummary(summary)))
 }
 
-const materializeSummaryForAddress = (summaryState: SummaryState, address: string, addressMetaData: ReadonlyMap<string, AddressBookEntry>, tokenPriceEstimates: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
+const materializeSummaryForAddress = (summaryState: SummaryState, fallbackAddressMetadata: FallbackAddressMetadata, address: string, addressMetaData: ReadonlyMap<string, AddressBookEntry>, tokenPriceEstimates: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
 	const addressSummary = summaryState.get(address)
 	if (addressSummary === undefined) return undefined
 
@@ -267,11 +293,10 @@ const materializeSummaryForAddress = (summaryState: SummaryState, address: strin
 		if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		return {
 			...metadata,
-			approvals: Array.from(approvals).map(([approvedAddress, change]) => {
-				const approvedAddressMetadata = addressMetaData.get(approvedAddress)
-				if (approvedAddressMetadata === undefined) throw new Error('Missing metadata for address')
-				return { ...approvedAddressMetadata, change }
-			}),
+			approvals: Array.from(approvals).map(([approvedAddress, change]) => ({
+				...getAddressMetadata(approvedAddress, addressMetaData, fallbackAddressMetadata),
+				change,
+			})),
 		}
 	})
 
@@ -288,15 +313,11 @@ const materializeSummaryForAddress = (summaryState: SummaryState, address: strin
 	const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.erc721TokenIdApprovalChanges).flatMap(([tokenAddress, approvals]) => {
 		const metadata = addressMetaData.get(tokenAddress)
 		if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
-		return Array.from(approvals).map(([tokenId, approvedAddress]) => {
-			const approvedMetadata = addressMetaData.get(approvedAddress)
-			if (approvedMetadata === undefined) throw new Error(`Missing metadata for address: ${ approvedAddress }`)
-			return {
-				tokenEntry: metadata,
-				tokenId: BigInt(tokenId),
-				approvedEntry: approvedMetadata
-			}
-		})
+		return Array.from(approvals).map(([tokenId, approvedAddress]) => ({
+			tokenEntry: metadata,
+			tokenId: BigInt(tokenId),
+			approvedEntry: getAddressMetadata(approvedAddress, addressMetaData, fallbackAddressMetadata),
+		}))
 	})
 
 	const erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[] = Array.from(addressSummary.erc1155TokenBalanceChanges).flatMap(([tokenAddress, tokenIds]) => {
@@ -319,11 +340,9 @@ const materializeSummaryForAddress = (summaryState: SummaryState, address: strin
 				operator: undefined,
 			}
 		}
-		const operatorMetadata = addressMetaData.get(operator)
-		if (operatorMetadata === undefined) throw new Error(`Missing operator metadata: ${ operator }`)
 		return {
 			...metadata,
-			operator: operatorMetadata,
+			operator: getAddressMetadata(operator, addressMetaData, fallbackAddressMetadata),
 		}
 	})
 
@@ -337,19 +356,23 @@ const materializeSummaryForAddress = (summaryState: SummaryState, address: strin
 	}
 }
 
+const buildSummaryArtifacts = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) => ({
+	summaryState: buildSummaryState(transactions),
+	fallbackAddressMetadata: buildFallbackAddressMetadata(transactions),
+})
+
 export const summarizeLogsForAddress = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[], address: string, addressMetaData: ReadonlyMap<string, AddressBookEntry>, tokenPriceEstimates: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
-	return materializeSummaryForAddress(buildSummaryState(transactions), address, addressMetaData, tokenPriceEstimates, namedTokenIds)
+	const { summaryState, fallbackAddressMetadata } = buildSummaryArtifacts(transactions)
+	return materializeSummaryForAddress(summaryState, fallbackAddressMetadata, address, addressMetaData, tokenPriceEstimates, namedTokenIds)
 }
 
 export const summarizeLogs = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[], addressMetaData: ReadonlyMap<string, AddressBookEntry>, tokenPriceEstimates: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
-	const summaryState = buildSummaryState(transactions)
+	const { summaryState, fallbackAddressMetadata } = buildSummaryArtifacts(transactions)
 	const summaries: SummaryOutcome[] = []
 	for (const [address] of summaryState.entries()) {
-		const summary = materializeSummaryForAddress(summaryState, address, addressMetaData, tokenPriceEstimates, namedTokenIds)
+		const summary = materializeSummaryForAddress(summaryState, fallbackAddressMetadata, address, addressMetaData, tokenPriceEstimates, namedTokenIds)
 		if (summary === undefined) continue
-		const summaryFor = addressMetaData.get(address)
-		if (summaryFor === undefined) throw new Error(`Missing metadata for address: ${ address }`)
-		summaries.push({ summaryFor, ...summary })
+		summaries.push({ summaryFor: getAddressMetadata(address, addressMetaData, fallbackAddressMetadata), ...summary })
 	}
 	return summaries
 }

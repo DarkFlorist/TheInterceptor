@@ -1,4 +1,4 @@
-import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
+import { addressString, addressStringWithout0x, bytesToUnsigned } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
@@ -18,6 +18,7 @@ import { keccak_256 } from '@noble/hashes/sha3'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
+import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -27,12 +28,9 @@ export async function getActiveAddressEntry(address: bigint): Promise<AddressBoo
 	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
 	if (identifiedAddress?.useAsActiveAddress) return identifiedAddress
 	return {
-		type: 'contact' as const,
-		name: checksummedAddress(address),
+		...getFilledInContactEntry(address),
 		useAsActiveAddress: true,
-		address: address,
 		askForAddressAccess: true,
-		entrySource: 'FilledIn'
 	}
 }
 
@@ -50,7 +48,7 @@ export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20Toke
 		symbol: rpcEntry?.currencyTicker ?? 'ETH',
 		decimals: 18n,
 		logoUri: rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry ? rpcEntry.currencyLogoUri : ETHEREUM_COIN_ICON,
-		chainId: rpcEntry?.chainId,
+		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 }
 
@@ -63,44 +61,56 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	}
 	const addrString = addressString(address)
 	const addressData = contractMetadata.get(addrString)
-	if (addressData) return {
-		...addressData,
-		address: address,
-		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
-		type: 'contract',
-		entrySource: 'DarkFloristMetadata',
-		chainId: rpcEntry?.chainId
+	if (addressData) {
+		const { logoUri, ...rest } = addressData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'contract',
+			entrySource: 'DarkFloristMetadata',
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	const tokenData = tokenMetadata.get(addrString)
-	if (tokenData) return {
-		...tokenData,
-		address: address,
-		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'ERC20',
-		entrySource: 'DarkFloristMetadata',
-		chainId: rpcEntry?.chainId
+	if (tokenData) {
+		const { logoUri, ...rest } = tokenData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'ERC20',
+			entrySource: 'DarkFloristMetadata',
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	const erc721TokenData = erc721Metadata.get(addrString)
-	if (erc721TokenData) return {
-		...erc721TokenData,
-		address: address,
-		logoUri: erc721TokenData.logoUri ? `${ getFullLogoUri(erc721TokenData.logoUri) }` : undefined,
-		type: 'ERC721',
-		entrySource: 'DarkFloristMetadata',
-		chainId: rpcEntry?.chainId
+	if (erc721TokenData) {
+		const { logoUri, ...rest } = erc721TokenData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'ERC721',
+			entrySource: 'DarkFloristMetadata',
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	const erc1155TokenData = erc1155Metadata.get(addrString)
-	if (erc1155TokenData) return {
-		...erc1155TokenData,
-		address: address,
-		logoUri: erc1155TokenData.logoUri ? `${ getFullLogoUri(erc1155TokenData.logoUri) }` : undefined,
-		type: 'ERC1155',
-		entrySource: 'DarkFloristMetadata',
-		decimals: undefined,
-		chainId: rpcEntry?.chainId
+	if (erc1155TokenData) {
+		const { logoUri, ...rest } = erc1155TokenData
+		return {
+			...rest,
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+			address: address,
+			type: 'ERC1155',
+			entrySource: 'DarkFloristMetadata',
+			decimals: undefined,
+			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
+		}
 	}
 
 	if (address === MOCK_ADDRESS) return {
@@ -109,14 +119,14 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		logoUri: '../../img/contracts/rhino.png',
 		type: 'contact',
 		entrySource: 'Interceptor',
-		chainId: rpcEntry?.chainId
+		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 	if (address === 0n) return {
 		address: address,
 		name: '0x0 Address',
 		type: 'contact',
 		entrySource: 'Interceptor',
-		chainId: rpcEntry?.chainId
+		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 	return undefined
 }
@@ -127,46 +137,46 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	const addrString = addressString(address)
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
 	const chainId = ethereumClientService.getChainId()
-	const getEntry = (tokenIdentification: IdentifiedAddress) => {
+	const getEntry = (tokenIdentification: IdentifiedAddress): AddressBookEntry => {
 		switch (tokenIdentification.type) {
 			case 'ERC20': return {
 				name: tokenIdentification.name,
 				address,
 				symbol: tokenIdentification.symbol,
 				decimals: tokenIdentification.decimals,
-				type: 'ERC20' as const,
-				entrySource: 'OnChain' as const,
+				type: 'ERC20',
+				entrySource: 'OnChain',
 				chainId
 			}
 			case 'ERC1155': return {
 				name: ethers.getAddress(addrString),
 				address,
 				symbol: '???',
-				type: 'ERC1155' as const,
+				type: 'ERC1155',
 				decimals: undefined,
-				entrySource: 'OnChain' as const,
+				entrySource: 'OnChain',
 				chainId
 			}
 			case 'ERC721': return {
 				name: tokenIdentification.name,
 				address,
 				symbol: tokenIdentification.symbol,
-				type: 'ERC721' as const,
-				entrySource: 'OnChain' as const,
+				type: 'ERC721',
+				entrySource: 'OnChain',
 				chainId
 			}
 			case 'contract': return {
 				address,
 				name: ethers.getAddress(addrString),
-				type: 'contract' as const,
-				entrySource: 'OnChain' as const,
+				type: 'contract',
+				entrySource: 'OnChain',
 				chainId
 			}
 			case 'EOA': return {
 				address,
 				name: ethers.getAddress(addrString),
-				type: 'contact' as const,
-				entrySource: 'OnChain' as const,
+				type: 'contact',
+				entrySource: 'OnChain',
 				chainId
 			}
 			default: assertNever(tokenIdentification)
@@ -185,19 +195,23 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	}).filter((address): address is bigint => address !== undefined)
 }
 
-export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
-	const eventAndTransactionArguments = [...events.flatMap((event) => event.type !== 'NonParsed' ? event.args : []), ...inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])]
-	const addressesInEventsAndInputData = getAddressesForSolidityTypes(eventAndTransactionArguments)
-	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
+export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
+	const addressesToFetchMetadata = [
+		...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]),
+		...getAddressesForSolidityTypes(inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])),
+	]
 
 	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	}
 
-	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
+	return Array.from(new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS]).values())
+}
 
-	return await promiseAllMapAbortSafe(Array.from(deDuplicated.values()), (address) => identifyAddress(ethereumClientService, requestAbortController, address))
+export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
+	const addressesToIdentify = getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput)
+	return await promiseAllMapAbortSafe(addressesToIdentify, (address) => identifyAddress(ethereumClientService, requestAbortController, address))
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {

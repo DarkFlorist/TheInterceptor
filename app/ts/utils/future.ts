@@ -18,8 +18,8 @@ export class Future<T> implements PromiseLike<T> {
 	public get asPromise() { return this.promise }
 
 	public readonly then = <TResult1 = T, TResult2 = never>(
-		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null,
-		onrejected?: ((reason: Error) => TResult2 | PromiseLike<TResult2>) | undefined | null
+		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | null,
+		onrejected?: ((reason: Error) => TResult2 | PromiseLike<TResult2>) | null
 	): PromiseLike<TResult1 | TResult2> => {
 		return this.promise.then(onfulfilled, onrejected)
 	}
