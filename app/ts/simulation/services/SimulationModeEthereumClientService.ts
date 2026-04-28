@@ -606,7 +606,7 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	if (toBlock === 'finalized' || fromBlock === 'finalized') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	if ('blockHash' in logFilter) {
 		const blockDelta = simulationState.simulatedBlocks.findIndex((_block, index) => logFilter.blockHash === getHashOfSimulatedBlock(simulationState, index))
-		if (blockDelta > 0) return getLogsOfSimulatedBlock(simulationState, blockDelta, logFilter)
+		if (blockDelta >= 0) return getLogsOfSimulatedBlock(simulationState, blockDelta, logFilter)
 	}
 	if (simulationState && (toBlock === 'latest' || toBlock > simulationState.blockNumber)) {
 		const logParamsToNode = fromBlock !== 'latest' && fromBlock >= simulationState.blockNumber ? { ...logFilter, fromBlock: simulationState.blockNumber - BigInt(simulationState.simulatedBlocks.length), toBlock: simulationState.blockNumber - BigInt(simulationState.simulatedBlocks.length) } : { ...logFilter, toBlock: simulationState.blockNumber - BigInt(simulationState.simulatedBlocks.length) }

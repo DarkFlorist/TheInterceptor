@@ -5,8 +5,9 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, getSimulatedLogs, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { SimulationState } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls } from '../RPCResponses.js'
 
 function parseRequest(data: string) {
@@ -67,6 +68,57 @@ export async function main() {
 			input: new Uint8Array(0),
 			chainId: 1n,
 		} as const
+		const buildSimulationStateWithOneTransaction = (): SimulationState => {
+			const signedTransaction = mockSignTransaction(exampleTransaction)
+			const logData = new Uint8Array(32)
+			logData[31] = 10
+			return {
+				blockNumber,
+				blockTimestamp: new Date(0),
+				rpcNetwork,
+				baseFeePerGas: 0n,
+				simulationConductedTimestamp: new Date(0),
+				success: true,
+				simulatedBlocks: [{
+					simulatedTransactions: [{
+						realizedGasPrice: 1n,
+						preSimulationTransaction: {
+							signedTransaction,
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 1n,
+						},
+						ethSimulateV1CallResult: {
+							status: 'success',
+							returnData: new Uint8Array(0),
+							gasUsed: 0x5208n,
+							logs: [{
+								address: 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeen,
+								topics: [
+									0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3efn,
+									0x000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045n,
+									0x000000000000000000000000da9dfa130df4de4673b89022ee50ff26f6ea73cfn,
+								],
+								data: logData,
+								blockNumber: blockNumber + 1n,
+								transactionHash: signedTransaction.hash,
+								transactionIndex: 0n,
+								blockHash: 1n,
+								logIndex: 0n,
+							}],
+						},
+						tokenBalancesAfter: [],
+					}],
+					signedMessages: [],
+					stateOverrides: {},
+					blockTimestamp: new Date(12_000),
+					blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+					blockBaseFeePerGas: 0n,
+				}],
+				simulationStateInput: [],
+			}
+		}
 
 		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
@@ -172,6 +224,14 @@ export async function main() {
 			assert.equal(groupedBlock.calls.length, 2)
 			assert.equal(groupedBlock.calls[0]?.gasUsed, 0x5208n)
 			assert.equal(groupedBlock.calls[1]?.gasUsed, 0x6dd4n)
+		})
+
+		should('getSimulatedLogs resolves blockHash filters for the first simulated block', async () => {
+			const newState = buildSimulationStateWithOneTransaction()
+			const logs = await getSimulatedLogs(ethereum, undefined, newState, { blockHash: 0n })
+
+			assert.equal(logs.length, 1)
+			assert.equal(logs[0]?.blockHash, 0n)
 		})
 	})
 }
