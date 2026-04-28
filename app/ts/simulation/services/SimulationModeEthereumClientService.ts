@@ -50,6 +50,8 @@ const transactionQueueTotalGasLimit = (simulatedTransactions: readonly Simulated
 	return simulatedTransactions.reduce((a, b) => a + b.preSimulationTransaction.signedTransaction.gas, 0n)
 }
 
+const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
+
 export const simulationGasLeft = (simulationStateBlock: SimulationStateBlock | undefined, blockHeader: EthereumBlockHeader) => {
 	if (blockHeader === null) throw new Error('The latest block is null')
 	if (simulationStateBlock === undefined) return blockHeader.gasLimit * 1023n / 1024n
@@ -72,8 +74,8 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 		// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
 		let index = 0
 		for (const block of simulationState.simulatedBlocks) {
-			const currBlockNum = simulationState.blockNumber + BigInt(index) + 1n
-			if (blockNumToUseForSim > currBlockNum) break
+			const currBlockNum = getSimulationBlockNumber(simulationState, index)
+			if (blockNumToUseForSim < currBlockNum) break
 			for (const signed of block.simulatedTransactions) {
 				if (signed.preSimulationTransaction.signedTransaction.from === address) addedTransactions += 1n
 			}
@@ -350,10 +352,9 @@ export const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader,
 }
 
 const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
-	if (simulationState === undefined
-		|| blockTag === 'finalized'
+	if (blockTag === 'finalized'
 		|| (simulationState.success && simulationState.simulatedBlocks.length === 0)
-		|| (simulationState.success && typeof blockTag === 'bigint' && blockTag <= simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length))
+		|| (simulationState.success && typeof blockTag === 'bigint' && blockTag <= simulationState.blockNumber)
 	){
 		return true
 	}
@@ -566,7 +567,7 @@ const getLogsOfSimulatedBlock = (simulationState: SimulationState, blockDelta: n
 				transactionIndex: BigInt(transactionIndex),
 				transactionHash: sim.preSimulationTransaction.signedTransaction.hash,
 				blockHash: getHashOfSimulatedBlock(simulationState, blockDelta),
-				blockNumber: simulationState.blockNumber + BigInt(blockDelta) + 1n,
+				blockNumber: getSimulationBlockNumber(simulationState, blockDelta),
 				address: event.address,
 				data: event.data,
 				topics: event.topics
@@ -609,22 +610,27 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 		if (blockDelta >= 0) return getLogsOfSimulatedBlock(simulationState, blockDelta, logFilter)
 	}
 	if (simulationState && (toBlock === 'latest' || toBlock > simulationState.blockNumber)) {
-		const logParamsToNode = fromBlock !== 'latest' && fromBlock >= simulationState.blockNumber ? { ...logFilter, fromBlock: simulationState.blockNumber - BigInt(simulationState.simulatedBlocks.length), toBlock: simulationState.blockNumber - BigInt(simulationState.simulatedBlocks.length) } : { ...logFilter, toBlock: simulationState.blockNumber - BigInt(simulationState.simulatedBlocks.length) }
+		const logParamsToNode = fromBlock === 'latest' || (typeof fromBlock === 'bigint' && fromBlock > simulationState.blockNumber)
+			? undefined
+			: { ...logFilter, toBlock: simulationState.blockNumber }
 
-		const fromBlockNum = fromBlock === 'latest' ? simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length) : fromBlock
-		const toBlockNum = toBlock === 'latest' ? simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length) : toBlock
+		const latestSimulatedBlockNumber = simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length)
+		const fromBlockNum = fromBlock === 'latest' ? latestSimulatedBlockNumber : fromBlock
+		const toBlockNum = toBlock === 'latest' ? latestSimulatedBlockNumber : toBlock
 		const blockDeltas = simulationState.simulatedBlocks.map((_block, blockDelta) => {
-			const thisBlockNum = simulationState.blockNumber + BigInt(blockDelta) + 1n
+			const thisBlockNum = getSimulationBlockNumber(simulationState, blockDelta)
 			if (thisBlockNum >= fromBlockNum && thisBlockNum <= toBlockNum) return blockDelta
 			return undefined
 		}).filter((blockDelta): blockDelta is number => blockDelta !== undefined)
-		return [...await ethereumClientService.getLogs(logParamsToNode, requestAbortController), ...blockDeltas.flatMap((blockDelta) => getLogsOfSimulatedBlock(simulationState, blockDelta, logFilter))]
+		const logsFromNode = logParamsToNode === undefined ? [] : await ethereumClientService.getLogs(logParamsToNode, requestAbortController)
+		return [...logsFromNode, ...blockDeltas.flatMap((blockDelta) => getLogsOfSimulatedBlock(simulationState, blockDelta, logFilter))]
 	}
 	return await ethereumClientService.getLogs(logFilter, requestAbortController)
 }
 export const getSimulatedBlockNumber = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined) => {
-	if (simulationState !== undefined) return (await ethereumClientService.getBlockNumber(requestAbortController)) + 1n
-	return await ethereumClientService.getBlockNumber(requestAbortController)
+	if (simulationState === undefined) return await ethereumClientService.getBlockNumber(requestAbortController)
+	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	return simulationState.blockNumber + BigInt(simulationState.simulatedBlocks.length)
 }
 
 export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | null> => {

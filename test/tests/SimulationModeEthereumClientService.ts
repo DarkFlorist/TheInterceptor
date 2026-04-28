@@ -5,7 +5,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { DEFAULT_BLOCK_MANIPULATION, getSimulatedLogs, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, getSimulatedBlockNumber, getSimulatedLogs, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { SimulationState } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls } from '../RPCResponses.js'
@@ -224,6 +224,25 @@ export async function main() {
 			assert.equal(groupedBlock.calls.length, 2)
 			assert.equal(groupedBlock.calls[0]?.gasUsed, 0x5208n)
 			assert.equal(groupedBlock.calls[1]?.gasUsed, 0x6dd4n)
+		})
+
+		should('getSimulatedBlockNumber counts the full simulated depth', async () => {
+			const simulationState: SimulationState = {
+				blockNumber,
+				blockTimestamp: new Date(0),
+				rpcNetwork,
+				baseFeePerGas: 0n,
+				simulationConductedTimestamp: new Date(0),
+				success: true,
+				simulatedBlocks: [
+					{ simulatedTransactions: [], signedMessages: [], stateOverrides: {}, blockTimestamp: new Date(1), blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, blockBaseFeePerGas: 0n },
+					{ simulatedTransactions: [], signedMessages: [], stateOverrides: {}, blockTimestamp: new Date(2), blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, blockBaseFeePerGas: 0n },
+					{ simulatedTransactions: [], signedMessages: [], stateOverrides: {}, blockTimestamp: new Date(3), blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, blockBaseFeePerGas: 0n },
+				],
+				simulationStateInput: [],
+			}
+
+			assert.equal(await getSimulatedBlockNumber(ethereum, undefined, simulationState), blockNumber + 3n)
 		})
 
 		should('getSimulatedLogs resolves blockHash filters for the first simulated block', async () => {
