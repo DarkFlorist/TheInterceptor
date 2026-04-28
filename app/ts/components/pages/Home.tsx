@@ -280,18 +280,44 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
 }
 
+type SimulationResultsHeaderParams = {
+	openImportSimulation: () => void
+	disableReset?: ReadonlySignal<boolean>
+	resetSimulation?: () => void
+}
+
+function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
+	return <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+		<div class = 'log-cell' style = 'justify-content: left;'>
+			<p className = 'h1'> Simulation Results </p>
+		</div>
+		<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
+			<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
+				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+					<ImportIcon/>
+				</span>
+				<span>Import Simulation Stack</span>
+			</button>
+			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
+				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+						<BroomIcon />
+					</span>
+					<span>Clear</span>
+				</button>
+			}
+		</div>
+	</div>
+}
+
 function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
 		if (param.simulationAndVisualisationResults.value === undefined) return true
 		return isEmptySimulation(param.simulationAndVisualisationResults.value)
 	})
 
-	const definedSimulationResults = useComputed(() => {
-		const currentResults = param.simulationAndVisualisationResults.value
-		if (currentResults === undefined) throw new Error('Simulation results are required')
-		return currentResults
-	})
-	const computedAddressBookEntries = useComputed(() => definedSimulationResults.value.addressBookEntries)
+	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value?.addressBookEntries ?? [])
+	const currentResults = param.simulationAndVisualisationResults.value
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
@@ -299,33 +325,19 @@ function PopupVisualisation(param: SimulationStateParam) {
 		</div>
 	}
 
-	if (param.simulationAndVisualisationResults.value === undefined) {
-		return <div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+	if (currentResults === undefined) {
+		return <div>
+			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } />
+			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+		</div>
 	}
+	const definedSimulationResults = param.simulationAndVisualisationResults as ReadonlySignal<SimulationAndVisualisationResults>
 
 	return <div>
-		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
-			<div class = 'log-cell' style = 'justify-content: left;'>
-				<p className = 'h1'> Simulation Results </p>
-			</div>
-			<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
-				<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<ImportIcon/>
-					</span>
-					<span>Import Simulation Stack</span>
-				</button>
-				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<BroomIcon />
-					</span>
-					<span>Clear</span>
-				</button>
-			</div>
-		</div>
+		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
-		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ? <>
-			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+		{ currentResults.visualizedSimulationState.success === false ? <>
+			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
 				<TransactionsAndSignedMessages
 					simulationAndVisualisationResults = { definedSimulationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
@@ -335,7 +347,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					addressMetaData = { computedAddressBookEntries }
 				/>
 		</> : <>
-			{ isEmpty.value || param.simulationAndVisualisationResults.value === undefined ?
+			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>

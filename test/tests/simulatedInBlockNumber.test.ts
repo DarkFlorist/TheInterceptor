@@ -29,13 +29,11 @@ describe('SimulatedInBlockNumber', () => {
 		const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
 
 		await act(() => {
-			// @ts-expect-error test shim uses a lightweight container
 			render(h(SimulatedInBlockNumber, { simulationBlockNumber: 123n, currentBlockNumber, simulationConductedTimestamp: olderTimestamp, rpcConnectionStatus }), dom.document.body)
 		})
 		assert.equal(dom.document.body.textContent?.includes('Simulated 5s ago'), true)
 
 		await act(() => {
-			// @ts-expect-error test shim uses a lightweight container
 			render(h(SimulatedInBlockNumber, { simulationBlockNumber: 123n, currentBlockNumber, simulationConductedTimestamp: newerTimestamp, rpcConnectionStatus }), dom.document.body)
 		})
 		assert.equal(dom.document.body.textContent?.includes('Simulated 1s ago'), true)
