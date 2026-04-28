@@ -387,21 +387,21 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 		}
 	}
 
-	const blockNum = await ethereumClientService.getBlockNumber(requestAbortController)
 	for (const [blockDelta, block] of simulationState.simulatedBlocks.entries()) {
 		for (const [transactionIndex, simulatedTransaction] of block.simulatedTransactions.entries()) {
 			cumGas += simulatedTransaction.ethSimulateV1CallResult.gasUsed
 			if (hash === simulatedTransaction.preSimulationTransaction.signedTransaction.hash) {
+				const simulatedBlockNumber = simulationState.blockNumber + BigInt(blockDelta) + 1n
 				return {
 					...getTransactionSpecificFields(simulatedTransaction.preSimulationTransaction.signedTransaction),
 					blockHash: getHashOfSimulatedBlock(simulationState, blockDelta),
-					blockNumber: blockNum + BigInt(blockDelta) + 1n,
+					blockNumber: simulatedBlockNumber,
 					transactionHash: simulatedTransaction.preSimulationTransaction.signedTransaction.hash,
 					transactionIndex: BigInt(transactionIndex),
 					contractAddress: simulatedTransaction.preSimulationTransaction.signedTransaction.to !== null ? null : getDeployedContractAddress(simulatedTransaction.preSimulationTransaction.signedTransaction.from, simulatedTransaction.preSimulationTransaction.signedTransaction.nonce),
 					cumulativeGasUsed: cumGas,
 					gasUsed: simulatedTransaction.ethSimulateV1CallResult.gasUsed,
-					effectiveGasPrice: calculateRealizedEffectiveGasPrice(simulatedTransaction.preSimulationTransaction.signedTransaction, simulationState.baseFeePerGas),
+					effectiveGasPrice: calculateRealizedEffectiveGasPrice(simulatedTransaction.preSimulationTransaction.signedTransaction, block.blockBaseFeePerGas),
 					from: simulatedTransaction.preSimulationTransaction.signedTransaction.from,
 					to: simulatedTransaction.preSimulationTransaction.signedTransaction.to,
 					logs: simulatedTransaction.ethSimulateV1CallResult.status === 'success'
@@ -412,7 +412,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 							logIndex: BigInt(currentLogIndex + logIndex),
 							data: x.data,
 							topics: x.topics,
-							blockNumber: blockNum,
+							blockNumber: simulatedBlockNumber,
 							transactionIndex: BigInt(transactionIndex),
 							transactionHash: simulatedTransaction.preSimulationTransaction.signedTransaction.hash
 						}))

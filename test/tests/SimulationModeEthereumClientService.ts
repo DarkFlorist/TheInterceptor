@@ -5,7 +5,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { DEFAULT_BLOCK_MANIPULATION, getSimulatedLogs, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, getSimulatedLogs, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { SimulationState } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls } from '../RPCResponses.js'
@@ -232,6 +232,19 @@ export async function main() {
 
 			assert.equal(logs.length, 1)
 			assert.equal(logs[0]?.blockHash, 0n)
+		})
+
+		should('getSimulatedTransactionReceipt keeps receipt and log block numbers in sync', async () => {
+			const newState = buildSimulationStateWithOneTransaction()
+
+			const transactionHash = newState.success ? newState.simulatedBlocks[0]?.simulatedTransactions[0]?.preSimulationTransaction.signedTransaction.hash : undefined
+			if (transactionHash === undefined) throw new Error('Simulated transaction hash missing')
+
+			const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, newState, transactionHash)
+			if (receipt === null) throw new Error('Receipt was null')
+
+			assert.equal(receipt.blockNumber, blockNumber + 1n)
+			assert.equal(receipt.logs[0]?.blockNumber, blockNumber + 1n)
 		})
 	})
 }
