@@ -92,7 +92,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
 }
 
-export function useWebsiteAccess() {
+function useWebsiteAccess() {
 	const context = useContext(WebsiteAccessContext)
 	if (!context) throw new Error('useWebsiteAccess can only be used within children components of WebsiteAccessProvider')
 	return context

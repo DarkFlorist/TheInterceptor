@@ -64,8 +64,7 @@ const numberAsBigIntParser: funtypes.ParsedValue<funtypes.Number, bigint>['confi
 	},
 }
 
-export const NumberAsBigInt = funtypes.Number.withParser(numberAsBigIntParser)
-export type NumberAsBigInt = funtypes.Static<typeof NumberAsBigInt>
+const NumberAsBigInt = funtypes.Number.withParser(numberAsBigIntParser)
 
 export type Eip712Number = funtypes.Static<typeof Eip712Number>
 export const Eip712Number = funtypes.Union(EthereumQuantity, NonHexBigInt, NumberAsBigInt)

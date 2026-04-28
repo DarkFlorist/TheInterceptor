@@ -125,7 +125,7 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export const PopupRequestsReplies = {
+const popupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -137,10 +137,6 @@ export const PopupRequestsReplies = {
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
-}
-
-export type PopupRequestsReplies = {
-	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<typeof PopupRequestsReplies[Key]>
 }
 
 export type RequestAbiAndNameFromBlockExplorer = funtypes.Static<typeof RequestAbiAndNameFromBlockExplorer>
@@ -174,7 +170,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 )
 
 export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
-export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof PopupRequestsReplies ? PopupRequestsReplies[Request['method']] : undefined
+export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof popupRequestsReplies ? funtypes.Static<typeof popupRequestsReplies[Request['method']]> | undefined : undefined
 
 export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
 export const PopupReplyOption = funtypes.Union(

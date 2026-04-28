@@ -257,7 +257,7 @@ function FirstCard(param: FirstCardParams) {
 	</>
 }
 
-export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
+const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
 	if (simulationAndVisualisationResults.visualizedSimulationState.success === false) return false
 	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
 		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
