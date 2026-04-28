@@ -33,7 +33,7 @@ export type PreparedEthSimulateV1Input = {
 }
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
-	private cacheRefreshTimer: NodeJS.Timeout | undefined = undefined
+	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>

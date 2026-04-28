@@ -14,7 +14,7 @@ import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverr
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
-import { deduplicateByFunction } from '../../utils/array.js'
+import { deduplicateByFunction, last } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
@@ -1012,7 +1012,7 @@ export const getSimulatedBalanceFromInput = async (
 		executionBlocksToApply.map((block) => block.inputBlock),
 		[{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: address, type: 'ERC20' }],
 	)
-	const balance = tokenBalances.at(-1)?.balance
+	const balance = last(tokenBalances)?.balance
 	if (balance !== undefined) return balance
 	return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 }
@@ -1300,7 +1300,7 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 	}
 	const simulationStateInputWithNewTransactions = simulationStateInput !== undefined ? [...simulationStateInput, newTransactions] : [newTransactions]
 	const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared(simulationStateInputWithNewTransactions, await ethereumClientService.getBlockNumber(requestAbortController), requestAbortController)
-	return groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult).at(-1)?.calls || []
+	return last(groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult))?.calls || []
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation

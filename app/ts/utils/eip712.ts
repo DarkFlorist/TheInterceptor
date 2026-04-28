@@ -55,8 +55,8 @@ const isInvalidReservedType = (type: string): boolean => {
 	if (/^u?fixed[0-9]+x[0-9]+$/.test(type)) {
 		const nums = type.match(/[0-9]+/g)
 		if (!Array.isArray(nums)) return true
-		const mRaw = nums.at(0)
-		const nRaw = nums.at(1)
+		const mRaw = nums[0]
+		const nRaw = nums[1]
 		if (mRaw === undefined || nRaw === undefined) return true
 		const m = parseInt(mRaw)
 		const n = parseInt(nRaw)

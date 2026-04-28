@@ -11,6 +11,7 @@ import { BlockTimeManipulation, NonSimulatedAndVisualizedTransaction, PreSimulat
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
+import { last } from '../utils/array.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, bigintSecondsToDate, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
@@ -243,7 +244,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : {
-			gas: simulationGasLeft(simulationState?.simulatedBlocks.at(-1), await ethereumClientService.getBlock(undefined))
+			gas: simulationGasLeft(last(simulationState?.simulatedBlocks ?? []), await ethereumClientService.getBlock(undefined))
 		}
 		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
 		const metaTransaction: PreSimulationTransaction = {

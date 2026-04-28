@@ -25,6 +25,7 @@ import { ConfirmTransactionTransactionSingleVisualization } from '../types/acces
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 import { Interface } from '../utils/viem.js'
+import { last } from '../utils/array.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
@@ -92,7 +93,7 @@ export async function refreshConfirmTransactionSimulation(
 			} }
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
-		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
+		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
 		return {
 			statusCode: 'success' as const,
 			data: {
