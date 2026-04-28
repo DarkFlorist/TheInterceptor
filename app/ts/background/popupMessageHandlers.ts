@@ -833,7 +833,7 @@ async function buildHomePageUpdate(
 		requestAbortController,
 		richDataSource,
 	}: {
-		requestAbortController?: AbortController | undefined
+		requestAbortController?: AbortController
 		richDataSource: 'cached' | 'fresh'
 	}
 ): Promise<UpdateHomePage> {

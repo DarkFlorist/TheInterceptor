@@ -23,16 +23,16 @@ type DecodedError = {
 	selector: string | undefined
 	name: string | undefined
 	signature: string | undefined
-	args?: Result | undefined
+	args?: Result
 }
 
 type ErrorResultFormatterParam = {
 	data: string | undefined
 	reason: string
-	args?: Result | undefined
-	fragment?: ErrorFragment | undefined
-	selector?: string | undefined
-	name?: string | undefined
+	args?: Result
+	fragment?: ErrorFragment
+	selector?: string
+	name?: string
 }
 
 type ErrorResultFormatter = (params: ErrorResultFormatterParam) => DecodedError

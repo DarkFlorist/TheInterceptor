@@ -9,7 +9,6 @@
 		"sourceMap": false,
 		"inlineSources": false,
 		"strict": true,
-		"exactOptionalPropertyTypes": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true,

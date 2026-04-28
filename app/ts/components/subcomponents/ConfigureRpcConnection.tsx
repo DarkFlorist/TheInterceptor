@@ -107,7 +107,7 @@ function useQueryRpc() {
 	return context
 }
 
-export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undefined }) => {
+export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const rpcEntries = useRpcConnectionsList()
 	const modalRef = useRef<HTMLDialogElement>(null)
 
@@ -158,10 +158,10 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 }
 
 type ConfigureRpcFormProps = {
-	defaultValues?: RpcEntry | undefined,
+	defaultValues?: RpcEntry,
 	onCancel: () => void | undefined
 	onSave: (rpcEntry: RpcEntry) => void
-	onRemove?: ((rpcUrl: string) => void) | undefined
+	onRemove?: (rpcUrl: string) => void
 }
 
 const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
@@ -289,7 +289,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 const RPC_URL_FETCH_DEBOUNCE = 600
 
-const RpcUrlField = ({ defaultValue }: { defaultValue?: string | undefined }) => {
+const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
 	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)

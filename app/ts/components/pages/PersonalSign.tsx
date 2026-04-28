@@ -35,7 +35,7 @@ type SignatureCardParams = {
 
 type SignatureHeaderParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
-	removeTransactionOrSignedMessage?: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
+	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 }
 
 export function identifySignature(data: VisualizedPersonalSignRequest) {

@@ -232,7 +232,7 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 	)
 }
 
-const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' | undefined }) => {
+const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) => {
 	switch (status) {
 		case 'blocked':
 			return <span class = 'status-warn' role = 'img' title = 'External Request Blocked' aria-label = 'External Request Blocked'><RequestBlockedIcon /></span>

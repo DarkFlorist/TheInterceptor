@@ -5,7 +5,7 @@ import { useContext, useEffect } from 'preact/hooks'
 type ViewConfig = {
 	title: string
 	value: string
-	isActive?: boolean | undefined
+	isActive?: boolean
 }
 
 type ViewSelectorContext = {

@@ -8,7 +8,7 @@ type MultilineCardProps = {
 	icon: ActionableIconProps
 	label: ActionableTextProps
 	note: ActionableTextProps
-	style?: JSX.CSSProperties | undefined
+	style?: JSX.CSSProperties
 }
 
 export const MultilineCard = ({ icon, label, note, style }: MultilineCardProps) => {
@@ -24,13 +24,13 @@ export const MultilineCard = ({ icon, label, note, style }: MultilineCardProps) 
 export type ActionableIconProps = {
 	onClick: 'clipboard-copy'
 	icon: () => JSX.Element
-	copyValue?: string | undefined
+	copyValue?: string
 	copySuccessMessage: string
-	hintText?: string | undefined
+	hintText?: string
 } | {
 	onClick: JSX.MouseEventHandler<HTMLButtonElement>
 	icon: () => JSX.Element
-	hintText?: string | undefined
+	hintText?: string
 } | {
 	onClick: undefined
 	icon: () => JSX.Element
@@ -71,8 +71,8 @@ const TextNode = ({ displayText, value }: TextNodeProps) => <data class = 'trunc
 export type ActionableTextProps = {
 	onClick: 'clipboard-copy'
 	displayText: string
-	copyValue?: string | undefined
-	copySuccessMessage?: string | undefined
+	copyValue?: string
+	copySuccessMessage?: string
 } | {
 	onClick: JSX.MouseEventHandler<HTMLButtonElement>
 	displayText: string
@@ -120,7 +120,7 @@ type TextActionProps = {
 	textNode: () => JSX.Element
 	buttonLabel: string
 	buttonIcon: () => JSX.Element
-	copyValue?: string | undefined
+	copyValue?: string
 }
 
 const TextAction = (props: TextActionProps) => {

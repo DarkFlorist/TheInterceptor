@@ -3,12 +3,12 @@ import { batch, Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { OptionalSignal } from '../../utils/OptionalSignal.js'
 
 interface BaseInputModel extends Omit<JSX.HTMLAttributes<HTMLInputElement>, 'value' | 'onInput'> {
-	readonly rawValue?: Signal<string> | undefined
+	readonly rawValue?: Signal<string>
 }
 
 interface UnparsedInputModel extends BaseInputModel {
 	readonly value: Signal<string>
-	readonly sanitize?: ((input: string) => string) | undefined
+	readonly sanitize?: (input: string) => string
 	readonly tryParse?: never
 	readonly serialize?: never
 }
@@ -71,8 +71,8 @@ function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
 }
 
 interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>, Pick<UnparsedInputModel, 'key' | 'type' | 'pattern' | 'placeholder' | 'required' | 'onChange' | 'autocomplete'> {
-	readonly dataList?: string[] | undefined
-	readonly rawValue?: Signal<string> | undefined
+	readonly dataList?: string[]
+	readonly rawValue?: Signal<string>
 }
 interface UnparsedAutosizingInputModel extends BaseAutosizingInputModel, Pick<UnparsedInputModel, 'value' | 'sanitize'> {
 	readonly tryParse?: never

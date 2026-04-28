@@ -277,8 +277,8 @@ export async function changeActiveAddressAndChain(
 	websiteTabConnections: WebsiteTabConnections,
 	change: {
 		simulationMode: boolean,
-		activeAddress?: bigint | undefined,
-		rpcNetwork?: RpcNetwork | undefined,
+		activeAddress?: bigint,
+		rpcNetwork?: RpcNetwork,
 	},
 ) {
 
