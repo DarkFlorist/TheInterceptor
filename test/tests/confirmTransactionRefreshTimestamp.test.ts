@@ -315,8 +315,7 @@ await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
-	// @ts-expect-error test shim uses a minimal simulator object
-	await modules.refreshPopupConfirmTransactionSimulation(simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
 	const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
 	if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
 	if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')

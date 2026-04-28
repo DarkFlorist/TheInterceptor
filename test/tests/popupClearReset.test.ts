@@ -275,7 +275,7 @@ const {
 	browserStorageLocalSet,
 	defaultActiveAddresses,
 	defaultRpcs,
-	resetSimulatorStateFromConfig,
+	resetSimulationStateFromConfig,
 	DEFAULT_BLOCK_MANIPULATION,
 } = await modulesPromise
 
@@ -284,9 +284,8 @@ const rpcNetwork = defaultRpcs[0]
 if (activeAddress === undefined || rpcNetwork === undefined) throw new Error('test defaults are missing')
 
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
-const fakeSimulator = { ethereum: createFakeEthereum(rpcNetwork), tokenPriceService: {} }
-const typedPopupSimulator = fakeSimulator as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
-const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
+const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
+const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
 
 describe('popup clear reset', () => {
 	test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
@@ -314,7 +313,7 @@ describe('popup clear reset', () => {
 			modules.getPopupVisualisationFingerprint(storedSimulationState.simulationStateInput, storedSimulationState.rpcNetwork, storedSimulationState.blockNumber),
 		)
 
-		const popupVisualisation = await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false, true)
+		const popupVisualisation = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, true)
 		assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
 		assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
 		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
@@ -355,7 +354,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(typedPopupSimulator, false, undefined)
+		await refreshHomeData(fakeEthereum, fakeTokenPriceService, false, undefined)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -375,7 +374,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack: { operations: [] },
 		})
 
-		await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false)
+		await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -398,7 +397,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
 		})
 
-		await resetSimulatorStateFromConfig(typedResetSimulator)
+		await resetSimulationStateFromConfig(fakeEthereum, fakeTokenPriceService)
 
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation

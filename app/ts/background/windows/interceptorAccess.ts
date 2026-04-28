@@ -12,10 +12,12 @@ import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
-import { Simulator } from '../../simulation/simulator.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest } from '../../types/accessRequest.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../simulation/services/priceEstimator.js'
+import { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -27,7 +29,7 @@ let openedDialog: OpenedDialogWithListeners = undefined
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
-const onCloseWindowOrTab = async (simulator: Simulator, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
@@ -40,15 +42,15 @@ const onCloseWindowOrTab = async (simulator: Simulator, popupOrTabs: PopupOrTabI
 			accessRequestId: pendingRequest.accessRequestId,
 			userReply: 'noResponse' as const
 		}
-		await resolve(simulator, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
+			await resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
 	}
 }
 
-export async function resolveInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
+export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
 	const promises = await getPendingAccessRequests()
 	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 	if (pendingRequest === undefined) throw new Error('Access request missing!')
-	return await resolve(simulator, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
+	return await resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
 }
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
@@ -57,10 +59,10 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
 }
 
-async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
+async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings(), promptForAccessesIfNeeded)
+	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), promptForAccessesIfNeeded)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -96,7 +98,9 @@ export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabCon
 }
 
 export async function requestAccessFromUser(
-	simulator: Simulator,
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -109,7 +113,7 @@ export async function requestAccessFromUser(
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulator, popupOrTabId, websiteTabConnections)
+	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(ethereum, tokenPriceService, resetSimulationServices, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	await pendingInterceptorAccessSemaphore.execute(async () => {
@@ -126,12 +130,12 @@ export async function requestAccessFromUser(
 			return false
 		}
 
-		const justAddToPending = await verifyPendingRequests()
-		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
-		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
-			if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, simulator, socket, request, websiteTabConnections)
-			return
-		}
+			const justAddToPending = await verifyPendingRequests()
+			const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
+			if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
+				if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+				return
+			}
 		if (hasAccess !== 'askAccess') return
 		if (!justAddToPending) {
 			addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
@@ -212,18 +216,18 @@ export async function requestAccessFromUser(
 	})
 }
 
-async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website) {
+async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website) {
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		if (!userRequestedAddressChange) {
-			await changeAccess(simulator, websiteTabConnections, accessReply, website)
+			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website)
 		} else {
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
-			await changeAccess(simulator, websiteTabConnections, accessReply, website, false)
+			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
-			await changeActiveAddressAndChain(simulator, websiteTabConnections, {
+			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: accessReply.requestAccessToAddress,
 			})
@@ -246,7 +250,7 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	await Promise.all(affectedEntryWithPendingRequest.map((r) => handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, simulator, r.socket, r.request, websiteTabConnections)))
+	await Promise.all(affectedEntryWithPendingRequest.map((r) => handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, ethereum, tokenPriceService, resetSimulationServices, r.socket, r.request, websiteTabConnections)))
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {

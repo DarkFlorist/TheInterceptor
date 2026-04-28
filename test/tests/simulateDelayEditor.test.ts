@@ -102,12 +102,10 @@ const tx1 = makePreSimulationTransaction(1n)
 const tx2 = makePreSimulationTransaction(2n)
 const newDelay = { type: 'AddToTimestamp', deltaToAdd: 11n, deltaUnit: 'Seconds' } as const
 
-const simulator = {
-	ethereum: {
-		getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
-	},
-	tokenPriceService: {},
-} as never
+const ethereum = {
+	getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
+} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[0]
+const tokenPriceService = {} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[1]
 
 const resetStack = async () => {
 	await updateInterceptorTransactionStack(() => ({
@@ -131,7 +129,7 @@ describe('simulate delay editor', () => {
 	test('replacing an existing delay removes adjacent duplicate manipulators', async () => {
 		await resetStack()
 
-		await setTransactionOrMessageBlockTimeManipulator(simulator, {
+		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
 			data: {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
@@ -151,7 +149,7 @@ describe('simulate delay editor', () => {
 	test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
 		await resetStack()
 
-		await setTransactionOrMessageBlockTimeManipulator(simulator, {
+		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
 			data: {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
@@ -174,7 +172,7 @@ describe('simulate delay editor', () => {
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 13n, deltaUnit: 'Seconds' },
 		})
 
-		await setTransactionOrMessageBlockTimeManipulator(simulator, {
+		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
 			data: {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },

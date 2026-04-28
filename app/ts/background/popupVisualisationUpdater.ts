@@ -1,7 +1,6 @@
 
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { Simulator } from '../simulation/simulator.js'
 import type { CompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -35,7 +34,7 @@ function buildEmptyVisualizedState(
 	}
 }
 
-export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, invalidateOldState: boolean = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState: boolean = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
@@ -46,7 +45,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 		const isMainPopupWindowOpenReply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
 		if (!(isMainPopupWindowOpenReply?.data.isOpen === true)) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState !== undefined) {
-			const currentSimulationInput = await getCurrentSimulationStateInput(simulator)
+			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(popupVisualisation.simulationState.simulationStateInput, popupVisualisation.simulationState.rpcNetwork, popupVisualisation.simulationState.blockNumber)
 			if (currentFingerprint === cachedFingerprint) return popupVisualisation
@@ -56,13 +55,13 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 		const thisAbortController = abortController
 		if (invalidateOldState) {
 			const simulationId = popupVisualisation.simulationId + 1
-			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
-		}
-		await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, thisAbortController)
-	} catch(error: unknown) {
-		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return await getPopupVisualisationState()
-		await handleUnexpectedError(error)
+				const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
+				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
+			}
+			await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController)
+		} catch(error: unknown) {
+			if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return await getPopupVisualisationState()
+			await handleUnexpectedError(error)
 	}
 	return await getPopupVisualisationState()
 }
@@ -109,10 +108,10 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 	}).catch(() => {})
 }
 
-async function getCurrentSimulationStateInput(simulator: Simulator) {
+async function getCurrentSimulationStateInput(ethereum: EthereumClientService) {
 	return {
 		simulationStateInput: await getCurrentSimulationInput(),
-		rpcNetwork: simulator.ethereum.getRpcEntry(),
-		blockNumber: await simulator.ethereum.getBlockNumber(undefined),
+		rpcNetwork: ethereum.getRpcEntry(),
+		blockNumber: await ethereum.getBlockNumber(undefined),
 	}
 }

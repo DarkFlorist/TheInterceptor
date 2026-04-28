@@ -311,7 +311,7 @@ describe('ConfirmTransaction', () => {
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator)
+			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()
