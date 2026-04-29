@@ -104,6 +104,7 @@ class TestElement extends TestNode {
 
 	addEventListener() {}
 	removeEventListener() {}
+	focus() {}
 
 	getAttribute(name: string) {
 		return this.attributes[name] ?? null

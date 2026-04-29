@@ -32,13 +32,14 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
+import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -49,6 +50,11 @@ type TimestampedPopupVisualisation = {
 }
 
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
+
+const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : 'Unknown error'
+
+const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
+const importSimulationStackFailure = (message: string): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: false, message })
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -869,9 +875,12 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 	}
 }
 
-export async function importSimulationStack(simulator: Simulator, parsedRequest: ImportSimulationStack) {
-	if (parsedRequest.data.version !== '1.0.0') throw new Error('version was not 1.0.0')
-	if (parsedRequest.data.interceptorSimulateStack.operations.length === 0) return
+export async function importSimulationStack(simulator: Simulator, parsedRequest: ImportSimulationStack): Promise<ImportSimulationStackReply> {
+	if (parsedRequest.data.version !== '1.0.0') return importSimulationStackFailure('Only simulation stack export version 1.0.0 is supported.')
+	if (parsedRequest.data.interceptorSimulateStack.operations.length === 0) return importSimulationStackSuccess()
+
+	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
+	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
 
 	const websiteAccess = await getWebsiteAccess()
 	const updateWebsiteDetails = (website: Website) => {
@@ -879,19 +888,37 @@ export async function importSimulationStack(simulator: Simulator, parsedRequest:
 		return websiteData ?? website
 	}
 
-	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-		const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
-		// generate new ids for operations to prevent duplicated ids
-		return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
-			switch(operation.type) {
-				case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
-				case 'TimeManipulation': return operation
-				case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
-				default: assertNever(operation)
-			}
-		})) }
-	})
-	await updatePopupVisualisationIfNeeded(simulator, false, true)
+	let updatedStack: InterceptorTransactionStack
+	try {
+		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+			const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
+			// generate new ids for operations to prevent duplicated ids
+			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
+				switch(operation.type) {
+					case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
+					case 'TimeManipulation': return operation
+					case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
+					default: assertNever(operation)
+				}
+			})) }
+		})
+	} catch (error) {
+		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ getErrorMessage(error) }`)
+	}
+
+	const updatedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, updatedStack)
+	console.info(`[simulation-stack import] persisted transaction stack at ${ formatEstimatedBytes(updatedStackBytes) }.`)
+
+	try {
+		await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
+		const popupVisualisation = await getPopupVisualisationState()
+		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
+		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)
+	} catch (error) {
+		return importSimulationStackFailure(`Imported stack was stored (${ formatEstimatedBytes(updatedStackBytes) }), but updating the visualized simulation failed: ${ getErrorMessage(error) }`)
+	}
+
+	return importSimulationStackSuccess()
 }
 
 export async function requestCompleteVisualizedSimulation(simulator: Simulator) {
