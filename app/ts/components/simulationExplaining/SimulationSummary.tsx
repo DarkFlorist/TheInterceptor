@@ -1,4 +1,4 @@
-import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
+import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, summarizeLogs, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, MaybeSimulatedTransaction } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
@@ -497,9 +497,8 @@ type AccountChangesCardParams = {
 }
 
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds, activeAddress }: AccountChangesCardParams) {
-	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.value.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds.value)
+	const originalSummary = summarizeLogs([simTx], addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds.value)
 	const showSummary = useSignal<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, activeAddress.value)
 
@@ -675,9 +674,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return <></>
 	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
 	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
-	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.value.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
+	const originalSummary = summarizeLogs(simulatedAndVisualizedTransactions, addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
