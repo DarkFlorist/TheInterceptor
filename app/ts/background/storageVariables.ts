@@ -10,7 +10,8 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { isValidName, namehash } from '../utils/viem.js'
+import { namehash } from 'viem/ens'
+import { isValidEnsName } from '../utils/ens.js'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
@@ -289,7 +290,7 @@ export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNa
 
 const ensNodeHashesSemaphore = new Semaphore(1)
 export async function addEnsNodeHash(name: string) {
-	if (!isValidName(name)) return
+	if (!isValidEnsName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsNodeHashes() || []

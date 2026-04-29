@@ -1,4 +1,3 @@
-import { Interface, ethers } from '../utils/viem.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -25,6 +24,22 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getUpdatedSimulationState } from './background.js'
+import type { Abi } from 'viem'
+import * as funtypes from 'funtypes'
+import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
+
+const delegateCallExecuteAbi = [
+	{
+		type: 'function',
+		name: 'delegateCallExecute',
+		stateMutability: 'payable',
+		inputs: [
+			{ name: 'target', type: 'address' },
+			{ name: 'callData', type: 'bytes' },
+		],
+		outputs: [{ name: 'returnData', type: 'bytes' }],
+	},
+] as const satisfies Abi
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -136,14 +151,13 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 		) return returnError('Could not identify the transaction as a vote')
 
-		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
-		const voteFunction = governanceContractInterface.getFunction(fourByteString)
-		if (voteFunction === null) return returnError('Could not find the voting function')
 		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
-		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		if (params === undefined) return returnError('Could not find the voting function')
+		const proposalId = funtypes.BigInt.parse(params.namedArgs['proposalId'])
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
-		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
+		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
@@ -208,8 +222,6 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
-		const delegateCallExecuteInterface = new ethers.Interface(['function delegateCallExecute(address, bytes memory) payable external returns (bytes memory)'])
-
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
@@ -234,7 +246,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 
 		const transactionWithoutGas = { ...transactionBase, ...isDelegateCall ? {
 			to: gnosisSafeMessage.verifyingContract.address,
-			input: stringToUint8Array(delegateCallExecuteInterface.encodeFunctionData('delegateCallExecute', [addressString(gnosisSafeMessage.to.address), gnosisSafeMessage.parsedMessageData.input]))
+			input: stringToUint8Array(encodeFunctionCall(delegateCallExecuteAbi, 'delegateCallExecute', [addressString(gnosisSafeMessage.to.address), dataStringWith0xStart(gnosisSafeMessage.parsedMessageData.input)]))
 		} : {
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input

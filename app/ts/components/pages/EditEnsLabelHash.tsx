@@ -7,7 +7,8 @@ import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { isValidName, namehash } from '../../utils/viem.js'
+import { namehash } from 'viem/ens'
+import { isValidEnsName } from '../../utils/ens.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 
 type EditEnsNamedHashParams = {
@@ -48,7 +49,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 			}
 			errorString.value = 'Correct label found!'
 		} else {
-			if (!isValidName(nameInput)) {
+			if (!isValidEnsName(nameInput)) {
 				errorString.value = 'Not a valid ENS name.'
 				return
 			}

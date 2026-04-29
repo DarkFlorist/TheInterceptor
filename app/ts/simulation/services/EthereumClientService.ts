@@ -2,7 +2,7 @@ import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlock
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { AbiCoder, Signature, ethers } from '../../utils/viem.js'
+import { keccak256 } from 'viem/utils'
 import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { BlockCalls, BlockOverrides, EthSimulateV1Result, EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
@@ -13,6 +13,21 @@ import { RpcEntry } from '../../types/rpc.js'
 import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import { MessageHashAndSignature } from '../../utils/eip712.js'
 import { getCurrentTimestampString } from '../../components/ui-utils.js'
+import { encodeAbiValues } from '../../utils/abiRuntime.js'
+
+const parseSignatureHex = (signature: `0x${ string }`) => {
+	const stripped = signature.slice(2)
+	if (stripped.length !== 130) throw new Error('Unsupported signature length')
+	const r: `0x${ string }` = `0x${ stripped.slice(0, 64) }`
+	const s: `0x${ string }` = `0x${ stripped.slice(64, 128) }`
+	const rawV = Number.parseInt(stripped.slice(128, 130), 16)
+	return {
+		r,
+		s,
+		v: BigInt(rawV >= 27 ? rawV : rawV + 27),
+		yParity: rawV >= 27 ? rawV - 27 : rawV,
+	}
+}
 
 export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
 	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
@@ -199,7 +214,7 @@ export class EthereumClientService {
 			...(transaction.gasLimit !== undefined ? { gas: transaction.gasLimit } : {}),
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] }, requestAbortController)
-		return response as string
+		return EthereumData.parse(response)
 	}
 
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
@@ -289,16 +304,16 @@ export class EthereumClientService {
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
 
-			const coder = AbiCoder.defaultAbiCoder()
-
+			const isHexSignature = (value: string): value is `0x${ string }` => value.startsWith('0x')
 			const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
-				const sig = Signature.from(messageHashAndSignature.signature)
-				const packed = BigInt(ethers.keccak256(coder.encode(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v, sig.r, sig.s])))
+				if (!isHexSignature(messageHashAndSignature.signature)) throw new Error('Signature must be hex encoded')
+				const sig = parseSignatureHex(messageHashAndSignature.signature)
+				const packed = BigInt(keccak256(encodeAbiValues(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v ?? BigInt(sig.yParity), sig.r, sig.s])))
 				return packed
 			}
 
 			// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
-			const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
+			const getMappingsMemorySlot = (hash: EthereumBytes32) => keccak256(encodeAbiValues(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
 			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => {
 				const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
 				return { key: getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), value: sign.fakeSignedFor }

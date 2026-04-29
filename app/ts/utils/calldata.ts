@@ -1,14 +1,39 @@
-import { ethers } from './viem.js'
+import type { Abi } from 'viem'
 import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'
+import { decodeCallDataLoose } from './abiRuntime.js'
 
 const erc20andErc721FunctionSignatures = [
-	'function transfer(address to, uint256 value) public returns (bool success)',
-	'function transferFrom(address from, address to, uint256 value) public returns (bool success)',
-	'function approve(address spender, uint256 value) public returns (bool success)',
-	'function setApprovalForAll(address operator, bool approved)',
-]
+	{
+		type: 'function',
+		name: 'transfer',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }],
+		outputs: [{ name: 'success', type: 'bool' }],
+	},
+	{
+		type: 'function',
+		name: 'transferFrom',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }],
+		outputs: [{ name: 'success', type: 'bool' }],
+	},
+	{
+		type: 'function',
+		name: 'approve',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }],
+		outputs: [{ name: 'success', type: 'bool' }],
+	},
+	{
+		type: 'function',
+		name: 'setApprovalForAll',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'operator', type: 'address' }, { name: 'approved', type: 'bool' }],
+		outputs: [],
+	},
+] as const satisfies Abi
 
 type CallDataType = funtypes.Static<typeof CallDataType>
 const CallDataType = funtypes.Union(
@@ -45,15 +70,14 @@ const CallDataType = funtypes.Union(
 
 export function parseTransaction(transaction: { input?: Uint8Array, from: bigint }) {
 	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
-	const iface = new ethers.Interface(erc20andErc721FunctionSignatures)
-	const parsed = iface.parseTransaction({ data: dataStringWith0xStart(transaction.input) })
-	if (parsed === null) return undefined
+	const parsed = decodeCallDataLoose(erc20andErc721FunctionSignatures, dataStringWith0xStart(transaction.input))
+	if (parsed === undefined) return undefined
 
 	// https://github.com/ForbesLindesay/funtypes/issues/53
 	// a bit hacky as there's no bigint funtype, so we convert bigints to strings and then parse them into bigits
 	return CallDataType.parse(JSON.parse(stringifyJSONWithBigInts({
 		name: parsed.name,
-		arguments: parsed.args.toObject(),
+		arguments: parsed.namedArgs,
 	})))
 }
 

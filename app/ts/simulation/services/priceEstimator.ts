@@ -1,4 +1,3 @@
-import { Interface } from '../../utils/viem.js'
 import { MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'
@@ -7,6 +6,7 @@ import { addressString, stringToUint8Array } from '../../utils/bigint.js'
 import { Erc20TokenEntry } from '../../types/addressBookTypes.js'
 import { getWithDefault } from '../../utils/typescript.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { decodeFunctionOutput, encodeFunctionCall } from '../../utils/abiRuntime.js'
 
 interface TokenDecimals {
 	address: bigint,
@@ -17,7 +17,6 @@ interface CachedTokenPriceEstimate {
 	estimate: TokenPriceEstimate | undefined,
 	estimateCalculated: Date
 }
-const IMulticall3 = new Interface(Multicall3ABI)
 
 export class TokenPriceService {
 	private cachedPrices = new Map<string, Map<string, CachedTokenPriceEstimate> > // quoteTokenAddress -> tokenAddress -> TokenPriceEstimate
@@ -46,9 +45,9 @@ export class TokenPriceService {
 
 		const uniswapSpotCalls = constructUniswapLikeSpotCalls(token.address, quoteToken.address, poolAddresses)
 
-		const callData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [uniswapSpotCalls]))
+		const callData = stringToUint8Array(encodeFunctionCall(Multicall3ABI, 'aggregate3', [uniswapSpotCalls]))
 		const callTransaction = { type: '1559', to: MULTICALL3, value: 0n, input: callData, }
-		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereumClientService.call(callTransaction, 'latest', requestAbortController))[0]
+		const multicallReturnData = decodeFunctionOutput(Multicall3ABI, 'aggregate3', await this.ethereumClientService.call(callTransaction, 'latest', requestAbortController))
 		const prices = calculatePricesFromUniswapLikeReturnData(multicallReturnData, poolAddresses)
 		if (prices.length === 0) return undefined
 		return {

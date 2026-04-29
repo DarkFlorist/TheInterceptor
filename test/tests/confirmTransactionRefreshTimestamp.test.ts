@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { Interface } from '../../app/ts/utils/viem.js'
 import { describe, test } from 'bun:test'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -157,9 +157,8 @@ function makeFakeBlock() {
 }
 
 function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], callCount = 1) {
-	const multicallInterface = new Interface(multicallAbi)
-	const balanceResult = multicallInterface.encodeFunctionResult('getEthBalance', [multicallBalance])
-	const aggregate3Result = multicallInterface.encodeFunctionResult('aggregate3', [[{ success: true, returnData: balanceResult }]])
+	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
+	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
 	return {
 		number: 123n,
 		hash: 0x9876n,

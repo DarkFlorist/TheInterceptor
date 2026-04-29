@@ -24,7 +24,6 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
-import { Interface } from '../utils/viem.js'
 import { last } from '../utils/array.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
@@ -80,7 +79,9 @@ export async function refreshConfirmTransactionSimulation(
 			return await visualizeSimulatorState(updatedSimulationState, simulator.ethereum, simulator.tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
-		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
+		const availableAbis = visualizedSimulatorState.addressBookEntries
+			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
+			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return { statusCode: 'failed' as const, data: {
 				...info,
@@ -124,7 +125,7 @@ export async function refreshConfirmTransactionSimulation(
 			if (!('to' in params)) return []
 			if (params.to === undefined || params.to === null) return []
 			const identified = await identifyAddress(simulator.ethereum, undefined, params.to)
-			if ('abi' in identified && identified.abi !== undefined) return [new Interface(identified.abi)]
+			if ('abi' in identified && identified.abi !== undefined) return [identified.abi]
 			return []
 		}
 		const baseError = {

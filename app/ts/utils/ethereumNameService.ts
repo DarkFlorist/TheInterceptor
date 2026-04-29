@@ -1,8 +1,11 @@
-import { ethers, isValidName, namehash } from './viem.js'
+import type { Abi } from 'viem'
+import { namehash } from 'viem/ens'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { addressStringWithout0x, bytes32String, stringToUint8Array } from './bigint.js'
 import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_RESOLVER, CANNOT_SET_TTL, CANNOT_TRANSFER, CANNOT_UNWRAP, CAN_DO_EVERYTHING, CAN_EXTEND_EXPIRY, ENS_TOKEN_WRAPPER, IS_DOT_ETH, MOCK_ADDRESS, PARENT_CANNOT_CONTROL } from './constants.js'
 import { EthereumAddress } from '../types/wire-types.js'
+import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
+import { normalizeEnsNameOrUndefined } from './ens.js'
 
 // parses ens string, eg vitalik.eth from the wrapped ens names() return value
 function encodeEthereumNameServiceString(data: string): string | undefined {
@@ -26,7 +29,15 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 
 export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint) : Promise<string | undefined> => {
 	if (ethereumMainnet.getChainId() !== 1n) return undefined
-	const wrappedEthereumNameService1155TokenInterface = new ethers.Interface(['function names(bytes32) public view returns (bytes)'])
+	const wrappedEthereumNameService1155TokenAbi = [
+		{
+			type: 'function',
+			name: 'names',
+			stateMutability: 'view',
+			inputs: [{ name: 'node', type: 'bytes32' }],
+			outputs: [{ name: 'name', type: 'bytes' }],
+		},
+	] as const satisfies Abi
 	const tx = {
 		type: '1559' as const,
 		from: MOCK_ADDRESS,
@@ -38,13 +49,14 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 		gas: 42000n,
 		chainId: ethereumMainnet.getChainId(),
 		nonce: 0n,
-		input: stringToUint8Array(wrappedEthereumNameService1155TokenInterface.encodeFunctionData('names', [bytes32String(tokenId)])),
+		input: stringToUint8Array(encodeFunctionCall(wrappedEthereumNameService1155TokenAbi, 'names', [bytes32String(tokenId)])),
 	}
-	const nameString: string = wrappedEthereumNameService1155TokenInterface.decodeFunctionResult('names', stringToUint8Array(await ethereumMainnet.call(tx, 'latest', requestAbortController)))[0]
+	const nameString = decodeFunctionOutput(wrappedEthereumNameService1155TokenAbi, 'names', await ethereumMainnet.call(tx, 'latest', requestAbortController))
 	const name = encodeEthereumNameServiceString(nameString)
 	if (name === undefined) return undefined
-	if (!isValidName(name)) return name
-	if (tokenId !== BigInt(namehash(name))) {
+	const normalizedName = normalizeEnsNameOrUndefined(name)
+	if (normalizedName === undefined) return name
+	if (tokenId !== BigInt(namehash(normalizedName))) {
 		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
 		return undefined
 	}

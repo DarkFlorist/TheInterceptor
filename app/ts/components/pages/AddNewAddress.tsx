@@ -1,4 +1,4 @@
-import { ethers } from '../../utils/viem.js'
+import { isAddress } from 'viem/utils'
 import { useEffect } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
@@ -85,7 +85,7 @@ function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress((e.target as HTMLInputElement).value) }
-		style = { `width: 100%;${ addressInput === undefined || ethers.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` }
+		style = { `width: 100%;${ addressInput === undefined || isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` }
 	/>
 }
 

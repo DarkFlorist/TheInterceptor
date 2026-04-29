@@ -5,7 +5,6 @@ import { MaybeSimulatedTransaction, SimulatedAndVisualizedTransaction, Simulated
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { Interface } from '../../utils/viem.js'
 import { CompoundGovernanceAbi } from '../../utils/abi.js'
 import { addressString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
@@ -15,6 +14,7 @@ import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { deduplicateByFunction } from '../../utils/array.js'
+import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -103,18 +103,16 @@ function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 	) return undefined
 	const fourByteString = get4ByteString(simTx.transaction.input)
 	if (fourByteString === undefined) return undefined
-	const governanceContractInterface = new Interface(CompoundGovernanceAbi)
 	try {
-		const functionFragment = governanceContractInterface.getFunction(fourByteString)
-		if (functionFragment === null) return undefined
-		const functionData = governanceContractInterface.decodeFunctionData(functionFragment, dataStringWith0xStart(simTx.transaction.input))
+		const functionData = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(simTx.transaction.input))
+		if (functionData === undefined) return undefined
 		return {
 			type: 'GovernanceVote' as const,
 			title: 'Governance Vote',
 			signingAction: 'Cast Vote',
 			simulationAction: 'Simulate Vote Casting',
 			rejectAction: `Don't Vote`,
-			governanceVoteInputParameters: parseVoteInputParameters(functionData),
+			governanceVoteInputParameters: parseVoteInputParameters(functionData.namedArgs),
 		}
 	} catch(e) {
 		console.warn('malformed vote cast')

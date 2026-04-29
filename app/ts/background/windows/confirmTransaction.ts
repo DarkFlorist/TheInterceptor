@@ -13,7 +13,7 @@ import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterce
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { keccak256, parseSerializedTransaction, recoverTransactionAddress, toUtf8Bytes } from '../../utils/viem.js'
+import { keccak256, parseTransaction as parseSerializedTransaction, recoverAddress, serializeTransaction, stringToBytes } from 'viem/utils'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -200,11 +200,41 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
+const isSerializedEip1559Transaction = (transaction: `0x${ string }`): transaction is `0x02${ string }` => transaction.startsWith('0x02')
+const recoverSerializedEip1559TransactionAddress = async (serializedTransaction: `0x02${ string }`) => {
+	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
+	if (parsedTransaction.type !== 'eip1559') throw new Error('Expected EIP-1559 transaction')
+	if (parsedTransaction.chainId === undefined || parsedTransaction.gas === undefined || parsedTransaction.maxFeePerGas === undefined || parsedTransaction.maxPriorityFeePerGas === undefined || parsedTransaction.nonce === undefined || parsedTransaction.r === undefined || parsedTransaction.s === undefined) {
+		throw new Error('Serialized transaction is missing required signature fields')
+	}
+	const unsignedTransaction = serializeTransaction({
+		type: 'eip1559',
+		chainId: Number(parsedTransaction.chainId),
+		nonce: parsedTransaction.nonce,
+		maxFeePerGas: parsedTransaction.maxFeePerGas,
+		maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
+		gas: parsedTransaction.gas,
+		to: parsedTransaction.to,
+		value: parsedTransaction.value,
+		data: parsedTransaction.data,
+		accessList: parsedTransaction.accessList,
+	})
+	return await recoverAddress({
+		hash: keccak256(unsignedTransaction),
+		signature: {
+			r: parsedTransaction.r,
+			s: parsedTransaction.s,
+			yParity: parsedTransaction.yParity ?? 0,
+		},
+	})
+}
+
 export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
 	const serializedTransaction = dataStringWith0xStart(sendRawTransactionParams.params[0])
 	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
-	const from = await recoverTransactionAddress({ serializedTransaction })
 	if (parsedTransaction.type !== 'eip1559') throw new Error('No support for non-1559 transactions')
+	if (!isSerializedEip1559Transaction(serializedTransaction)) throw new Error('Expected serialized EIP-1559 transaction')
+	const from = await recoverSerializedEip1559TransactionAddress(serializedTransaction)
 	if (parsedTransaction.gas === undefined) throw new Error('Unable to parse gas from serialized transaction')
 	if (parsedTransaction.nonce === undefined) throw new Error('Unable to parse nonce from serialized transaction')
 	const transactionDetails = {
@@ -310,7 +340,7 @@ export async function openConfirmTransactionDialogForMessage(
 ) {
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const messageIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifierString)))
+	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
 	const signedMessageTransaction = {
 		website,
@@ -379,7 +409,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	websiteTabConnections: WebsiteTabConnections,
 ) {
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const transactionIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifierString)))
+	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
 	const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(simulator.ethereum, undefined, activeAddress, website, transactionParams, created, transactionIdentifier, simulationMode) : formSendRawTransaction(simulator.ethereum, transactionParams, website, created, transactionIdentifier)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)

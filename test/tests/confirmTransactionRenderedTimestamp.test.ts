@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { Interface } from '../../app/ts/utils/viem.js'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -273,9 +273,8 @@ describe('ConfirmTransaction', () => {
 					case 'eth_simulateV1':
 						{
 							const multicallAbi = (await import('../../app/ts/utils/constants.js')).Multicall3ABI
-							const multicallInterface = new Interface(multicallAbi)
-							const balanceResult = multicallInterface.encodeFunctionResult('getEthBalance', [0n])
-							const aggregate3Result = multicallInterface.encodeFunctionResult('aggregate3', [[{ success: true, returnData: balanceResult }]])
+							const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [0n])
+							const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
 							const blockStateCalls = Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]
 							return serialize((await import('../../app/ts/types/ethSimulate-types.js')).EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
 								number: 123n,
