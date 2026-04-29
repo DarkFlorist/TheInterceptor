@@ -331,15 +331,15 @@ function PopupVisualisation(param: SimulationStateParam) {
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		</div>
 	}
-	const definedSimulationResults = param.simulationAndVisualisationResults as ReadonlySignal<SimulationAndVisualisationResults>
 
 	return <div>
 		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 		{ currentResults.visualizedSimulationState.success === false ? <>
 			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+				{/* Pass a snapshot so mounted children never observe the optional popup signal turning undefined mid-render. */}
 				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { definedSimulationResults }
+					simulationAndVisualisationResults = { currentResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 					activeAddress = { param.activeSimulationAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -352,7 +352,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
 						<TransactionsAndSignedMessages
-							simulationAndVisualisationResults = { definedSimulationResults }
+							simulationAndVisualisationResults = { currentResults }
 							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
@@ -362,7 +362,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
-							simulationAndVisualisationResults = { definedSimulationResults }
+							simulationAndVisualisationResults = { currentResults }
 							currentBlockNumber = { param.currentBlockNumber }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }

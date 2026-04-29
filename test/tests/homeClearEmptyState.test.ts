@@ -1,10 +1,10 @@
 import * as assert from 'assert'
+import { describe, test } from 'bun:test'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
 import { Home } from '../../app/ts/components/pages/Home.js'
-import { installDomMock } from './someTimeAgo.js'
+import { installDomMock } from './domMock.js'
 import { ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -52,7 +52,7 @@ const makeSimulatedTransaction = (): SimulatedAndVisualizedTransaction => ({
 	tokenBalancesAfter: [],
 	tokenPriceEstimates: [],
 	tokenPriceQuoteToken: undefined,
-	gasSpent: 21_000n,
+	gasSpent: 0n,
 	realizedGasPrice: 1n,
 	quarantine: false,
 	quarantineReasons: [],
@@ -91,53 +91,50 @@ const createSimulationResults = (): SimulationAndVisualisationResults => ({
 	namedTokenIds: [],
 })
 
-async function main() {
-	describe('Home popup clear empty state', () => {
-		should('rerenders to the empty-state dino when simulation results are cleared', async () => {
-			const dom = installDomMock()
-			const simVisResults = new Signal<SimulationAndVisualisationResults | undefined>(createSimulationResults())
-			try {
-				await act(() => {
-					render(h(Home, {
-						changeActiveAddress: () => undefined,
-						makeCurrentAddressRich: new Signal(false),
-						activeAddresses: new Signal([activeAddressEntry]),
-						tabState: new Signal<TabState | undefined>(undefined),
-						activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-						activeSigningAddress: new Signal<bigint | undefined>(undefined),
-						useSignersAddressAsActiveAddress: new Signal(false),
-						simVisResults,
-						rpcNetwork: new Signal(rpcNetwork),
-						setActiveRpcAndInformAboutIt: () => undefined,
-						simulationMode: new Signal(true),
-						tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
-						currentBlockNumber: new Signal<bigint | undefined>(101n),
-						renameAddressCallBack: () => undefined,
-						editEnsNamedHashCallBack: () => undefined,
-						rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
-						rpcEntries: new Signal([rpcNetwork]),
-						simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
-						simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
-						interceptorDisabled: new Signal(false),
-						preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
-						fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
-						openImportSimulation: () => undefined,
-					}), dom.document.body)
-				})
+describe('Home popup clear empty state', () => {
+	test('rerenders to the empty-state dino when simulation results are cleared', async () => {
+		const dom = installDomMock()
+		const simVisResults = new Signal<SimulationAndVisualisationResults | undefined>(createSimulationResults())
+		try {
+			await act(() => {
+				render(h(Home, {
+					changeActiveAddress: () => undefined,
+					makeCurrentAddressRich: new Signal(false),
+					activeAddresses: new Signal([activeAddressEntry]),
+					tabState: new Signal<TabState | undefined>(undefined),
+					activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					useSignersAddressAsActiveAddress: new Signal(false),
+					simVisResults,
+					rpcNetwork: new Signal(rpcNetwork),
+					setActiveRpcAndInformAboutIt: () => undefined,
+					simulationMode: new Signal(true),
+					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
+					currentBlockNumber: new Signal<bigint | undefined>(101n),
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
+					rpcEntries: new Signal([rpcNetwork]),
+					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
+					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
+					interceptorDisabled: new Signal(false),
+					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
+					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
+					openImportSimulation: () => undefined,
+				}), dom.document.body)
+			})
 
-				await act(() => {
-					simVisResults.value = undefined
-				})
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 
-				assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
-			} finally {
-				dom.restore()
-			}
-		})
+			await act(() => {
+				simVisResults.value = undefined
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), false)
+		} finally {
+			dom.restore()
+		}
 	})
-}
-
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)
+})

@@ -25,7 +25,7 @@ import { EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponent
 import { insertBetweenElements } from '../subcomponents/misc.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
-import { ReadonlySignal, useComputed, useSignal } from '@preact/signals'
+import { ReadonlySignal, useSignal } from '@preact/signals'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { useEffect } from 'preact/hooks'
@@ -139,9 +139,10 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
 		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
 	}
-	const rpcNetwork = useComputed(() => param.simulationAndVisualisationResults.value.rpcNetwork)
-	const addressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.addressBookEntries)
-	const namedTokenIds = useComputed(() => param.simulationAndVisualisationResults.value.namedTokenIds)
+	const rpcNetwork = useSignal(param.simulationAndVisualisationResults.rpcNetwork)
+	useEffect(() => {
+		rpcNetwork.value = param.simulationAndVisualisationResults.rpcNetwork
+	}, [param.simulationAndVisualisationResults.rpcNetwork])
 	return (
 		<div class = 'card'>
 			<TransactionHeader simTx = { param.simTx } removeTransactionOrSignedMessage = { remove } />
@@ -156,13 +157,12 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						activeAddress = { param.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { addressBookEntries }
-						namedTokenIds = { namedTokenIds }
+						addressMetaData = { param.addressMetaData }
 					/>
 					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
 				</> }
-				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { addressBookEntries } />
+				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
@@ -181,7 +181,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 }
 
 type TransactionOrMessageWithBlockTimeManipulatorParams = {
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	simTx: MaybeSimulatedTransaction | VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
@@ -264,7 +264,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 }
 
 type TransactionsAndSignedMessagesParams = {
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -273,17 +273,14 @@ type TransactionsAndSignedMessagesParams = {
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactionsAndMessagesInBlock = useComputed(() => {
-		const visualizedBlocks = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks
-		return visualizedBlocks.map((block) => ({
-			operations: [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions],
-			blockTimeManipulation: block.blockTimeManipulation,
-		}))
-	})
+	const transactionsAndMessagesInBlock = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.map((block) => ({
+		operations: [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions],
+		blockTimeManipulation: block.blockTimeManipulation,
+	}))
 
 	return <ul> {
-		transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
-			const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
+		transactionsAndMessagesInBlock.flatMap((block, blockIndex) => {
+			const nextBlockManipulator = transactionsAndMessagesInBlock[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
 			return block.operations.map((simTx, transactionIndex) => <li key = { 'activeAddress' in simTx ? `message-${ simTx.messageIdentifier.toString() }` : `transaction-${ simTx.transactionIdentifier.toString() }` }>
 				<TransactionOrMessageWithBlockTimeManipulator
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }

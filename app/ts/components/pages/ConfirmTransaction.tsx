@@ -220,8 +220,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	const activeAddress = useComputed(() => popupVisualisation.data.activeAddress)
 	const addressMetaData = useComputed(() => popupVisualisation.data.addressBookEntries)
 	const rpcNetwork = useComputed(() => popupVisualisation.data.simulationState.rpcNetwork)
-	const namedTokenIds = useComputed(() => popupVisualisation.data.namedTokenIds)
-	const simulationAndVisualisationResults = useSignal({
+	const simulationAndVisualisationResults = {
 		blockNumber: popupVisualisation.data.simulationState.blockNumber,
 		blockTimestamp: popupVisualisation.data.simulationState.blockTimestamp,
 		simulationConductedTimestamp: popupVisualisation.data.simulationState.simulationConductedTimestamp,
@@ -230,19 +229,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		tokenPriceEstimates: popupVisualisation.data.tokenPriceEstimates,
 		visualizedSimulationState: popupVisualisation.data.visualizedSimulationState,
 		namedTokenIds: popupVisualisation.data.namedTokenIds,
-	})
-	useEffect(() => {
-		simulationAndVisualisationResults.value = {
-			blockNumber: popupVisualisation.data.simulationState.blockNumber,
-			blockTimestamp: popupVisualisation.data.simulationState.blockTimestamp,
-			simulationConductedTimestamp: popupVisualisation.data.simulationState.simulationConductedTimestamp,
-			addressBookEntries: popupVisualisation.data.addressBookEntries,
-			rpcNetwork: popupVisualisation.data.simulationState.rpcNetwork,
-			tokenPriceEstimates: popupVisualisation.data.tokenPriceEstimates,
-			visualizedSimulationState: popupVisualisation.data.visualizedSimulationState,
-			namedTokenIds: popupVisualisation.data.namedTokenIds,
-		}
-	}, [popupVisualisation])
+	}
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
@@ -269,7 +256,6 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 						activeAddress = { activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetaData = { addressMetaData }
-						namedTokenIds = { namedTokenIds }
 					/>
 
 					<TokenLogAnalysisCard simTx = { simTx } renameAddressCallBack = { param.renameAddressCallBack } />

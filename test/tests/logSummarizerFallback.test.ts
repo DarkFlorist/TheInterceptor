@@ -144,7 +144,7 @@ const getSummaryForTransaction = (simulatedTransaction: SimulatedAndVisualizedTr
 	return summarizer.getSummary(externalMetadata, [], [])
 }
 
-const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: Signal<SimulationAndVisualisationResults>) => {
+const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
 	render(h(SimulationSummary, {
 		simulationAndVisualisationResults,
 		currentBlockNumber: new Signal<bigint | undefined>(1n),
@@ -273,7 +273,7 @@ describe('LogSummarizer fallback metadata', () => {
 		const simulationAndVisualisationResults = new Signal(simulationAndVisualisationResultsData)
 
 		await act(() => {
-			renderSimulationSummary(dom, simulationAndVisualisationResults)
+			renderSimulationSummary(dom, simulationAndVisualisationResults.value)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(recipientEntry.name), true)

@@ -331,7 +331,7 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 
 type SummarizeAddressParams = {
 	balanceSummary: SummaryOutcome,
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	activeAddress: ReadonlySignal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -404,7 +404,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				namedTokenIds = { param.simulationAndVisualisationResults.value.namedTokenIds }
+				namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 			/>
 		</div>
 	</div>
@@ -489,17 +489,16 @@ function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAdd
 
 type AccountChangesCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
-	namedTokenIds: ReadonlySignal<readonly NamedTokenId[]>
 }
 
-export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds, activeAddress }: AccountChangesCardParams) {
+export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, activeAddress }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.value.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.value.tokenPriceEstimates, namedTokenIds.value)
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const showSummary = useSignal<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, activeAddress.value)
 
@@ -664,7 +663,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 }
 
 type SimulationSummaryParams = {
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	currentBlockNumber: Signal<bigint | undefined>,
 	activeAddress: ReadonlySignal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -672,24 +671,22 @@ type SimulationSummaryParams = {
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return <></>
-	if (param.simulationAndVisualisationResults === undefined || param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
-	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
+	if (param.simulationAndVisualisationResults.visualizedSimulationState.success === false) return <></>
+	if (param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
+	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
-	const addressMetaData = new Map(param.simulationAndVisualisationResults.value.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.value.tokenPriceEstimates, param.simulationAndVisualisationResults.value.namedTokenIds)
+	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPriceEstimates, param.simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
-	const icon = useComputed(() => {
-		if (param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false) return '../img/error-icon.svg'
-		const transactions = param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
-		if (transactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')) return '../img/error-icon.svg'
-		if (transactions.some((transaction) => transaction.quarantine)) return '../img/warning-sign.svg'
-		return '../img/success-icon.svg'
-	})
+	const icon = simulatedAndVisualizedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
+		? '../img/error-icon.svg'
+		: simulatedAndVisualizedTransactions.some((transaction) => transaction.quarantine)
+			? '../img/warning-sign.svg'
+			: '../img/success-icon.svg'
 
 	const exportEthSimulateInput = async () => {
 		const reply = await sendPopupMessageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
@@ -771,9 +768,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					<div class = 'log-cell' style = 'justify-content: center;'> </div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
-							simulationBlockNumber = { getSimulationDisplayBlockNumber(param.simulationAndVisualisationResults.value.blockNumber, param.simulationAndVisualisationResults.value.visualizedSimulationState.visualizedBlocks.length) }
+							simulationBlockNumber = { getSimulationDisplayBlockNumber(param.simulationAndVisualisationResults.blockNumber, param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }
 							currentBlockNumber = { param.currentBlockNumber }
-							simulationConductedTimestamp = { param.simulationAndVisualisationResults.value.simulationConductedTimestamp }
+							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>

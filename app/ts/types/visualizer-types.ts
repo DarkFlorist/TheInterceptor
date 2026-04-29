@@ -284,7 +284,7 @@ export type SimulationAndVisualisationResults = {
 
 export type TransactionVisualizationParameters = {
 	simTx: MaybeSimulatedTransaction
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
