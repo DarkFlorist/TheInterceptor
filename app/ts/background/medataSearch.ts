@@ -33,38 +33,50 @@ function search<ElementType>(searchArray: readonly ElementType[], searchFunction
 	return undefinedRemoved.sort((a, b) => (a.comparison.bestMatchLength - b.comparison.bestMatchLength) || (a.comparison.locationOfBestMatch - b.comparison.locationOfBestMatch)).map((x) => x.entry)
 }
 
-const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, TokenDefinition]) => ({
-	address: BigInt(address),
-	...def,
-	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'ERC20' as const,
-	entrySource: 'DarkFloristMetadata' as const,
-})
+const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, TokenDefinition]) => {
+	const { logoUri, ...rest } = def
+	return {
+		...rest,
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+		address: BigInt(address),
+		type: 'ERC20' as const,
+		entrySource: 'DarkFloristMetadata' as const,
+	}
+}
 
-const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, Erc721Definition]) => ({
-	address: BigInt(address),
-	...def,
-	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'ERC721' as const,
-	entrySource: 'DarkFloristMetadata' as const,
-})
+const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, Erc721Definition]) => {
+	const { logoUri, ...rest } = def
+	return {
+		...rest,
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+		address: BigInt(address),
+		type: 'ERC721' as const,
+		entrySource: 'DarkFloristMetadata' as const,
+	}
+}
 
-const convertErc1155DefinitionToAddressBookEntry = ([address, def]: [string, Erc1155Definition]) => ({
-	address: BigInt(address),
-	...def,
-	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'ERC1155' as const,
-	entrySource: 'DarkFloristMetadata' as const,
-	decimals: undefined,
-})
+const convertErc1155DefinitionToAddressBookEntry = ([address, def]: [string, Erc1155Definition]) => {
+	const { logoUri, ...rest } = def
+	return {
+		...rest,
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+		address: BigInt(address),
+		type: 'ERC1155' as const,
+		entrySource: 'DarkFloristMetadata' as const,
+		decimals: undefined,
+	}
+}
 
-const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, ContractDefinition]) => ({
-	address: BigInt(address),
-	...def,
-	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'contract' as const,
-	entrySource: 'DarkFloristMetadata' as const,
-})
+const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, ContractDefinition]) => {
+	const { logoUri, ...rest } = def
+	return {
+		...rest,
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
+		address: BigInt(address),
+		type: 'contract' as const,
+		entrySource: 'DarkFloristMetadata' as const,
+	}
+}
 
 function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint })[], addFrom: readonly (T & { address: bigint })[]) {
 	const existingValues = new Set(addTo.map(item => addressString(item.address)))

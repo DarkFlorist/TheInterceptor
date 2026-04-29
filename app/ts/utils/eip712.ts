@@ -356,7 +356,10 @@ export const getSafeTxHash = (safeTx: SafeTx) => {
 		refundReceiver: EthereumAddress.serialize(safeTx.message.refundReceiver),
 		nonce: safeTx.message.nonce
 	}
-	return ethers.TypedDataEncoder.hash({ verifyingContract: addressString(safeTx.domain.verifyingContract), chainId: safeTx.domain.chainId }, eip721SafeTxType, serializedMessage)
+	return ethers.TypedDataEncoder.hash({
+		verifyingContract: addressString(safeTx.domain.verifyingContract),
+		...(safeTx.domain.chainId !== undefined ? { chainId: safeTx.domain.chainId } : {}),
+	}, eip721SafeTxType, serializedMessage)
 }
 
 const extractPrimaryTypesUsedInMessage = (eip712Message: EIP712Message) => {

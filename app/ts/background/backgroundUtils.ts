@@ -59,7 +59,7 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
+export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request> | undefined> {
 	try {
 		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
 	} catch (error) {

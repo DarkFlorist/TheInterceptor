@@ -1,6 +1,6 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -306,16 +306,25 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = await ethereum.getBlock(undefined)
 	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : simulationInput.map((block) => (
 		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
 	))
-	const newSimulationState = await createSimulationState(ethereum, undefined, baseFeeFixedInputStateBlocks)
-	// rerun the simulation if nonce issues are found after fixing the nonce issues
-	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, newSimulationState)
-	if (nonceFixed.nonceFixed) return await createSimulationState(ethereum, undefined, nonceFixed.simulationStateInput)
-	return newSimulationState
+	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
+	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
+}
+
+export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
+}
+
+export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService): Promise<ExecutionSimulationState> => {
+	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput)
+}
+
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
@@ -369,10 +378,10 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		})
 
 		return {
-			addressBookEntries: [],
+			addressBookEntries: updatedMetadata.addressBookEntries,
 			tokenPriceEstimates: [],
 			tokenPriceQuoteToken: weth,
-			namedTokenIds: [],
+			namedTokenIds: updatedMetadata.namedTokenIds,
 			simulationState: refreshedSimulationState,
 			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
 		}
