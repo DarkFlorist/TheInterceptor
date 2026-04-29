@@ -7,6 +7,7 @@ function createFakeWindow() {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
+	const interceptorErrorPayloads: unknown[] = []
 	const signerAccounts = ['0x1111111111111111111111111111111111111111']
 
 	const fakeSigner = {
@@ -62,6 +63,9 @@ function createFakeWindow() {
 							},
 						})
 						return
+					case 'InterceptorError':
+						interceptorErrorPayloads.push(request.params?.[0])
+						return
 					case 'eth_accounts_reply':
 						backgroundEthAccountsReplies.push((request.params?.[0] as { accounts?: unknown } | undefined) ?? {})
 						return
@@ -81,7 +85,7 @@ function createFakeWindow() {
 		},
 	}
 
-	return { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts }
+	return { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts, interceptorErrorPayloads }
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 2000) {
@@ -96,7 +100,7 @@ describe('inpage signer bridge', () => {
 	test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
-		const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow()
+		const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts, interceptorErrorPayloads } = createFakeWindow()
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -141,6 +145,29 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts', 'eth_requestAccounts'])
 			await waitFor(() => backgroundEthAccountsReplies.length === 2)
 			assert.deepEqual((backgroundEthAccountsReplies[1] as { accounts?: unknown }).accounts, signerAccounts)
+
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					requestId: 999,
+					type: 'forwardToSigner',
+					method: 'eth_accounts',
+					params: [],
+				},
+			})
+			await waitFor(() => interceptorErrorPayloads.length === 1)
+			const diagnostics = interceptorErrorPayloads[0]
+			if (typeof diagnostics !== 'object' || diagnostics === null || !('stack' in diagnostics) || typeof diagnostics.stack !== 'string') throw new Error('missing forwarded stack')
+			assert.deepEqual(diagnostics, {
+				source: 'inpage',
+				phase: 'handle background reply',
+				message: 'Request did not exist anymore',
+				name: 'Error',
+				stack: diagnostics.stack,
+				requestId: 999,
+				requestMethod: 'eth_accounts',
+			})
 		} finally {
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {

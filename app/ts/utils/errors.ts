@@ -1,6 +1,7 @@
 import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
-import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import { ForwardedDiagnostics } from '../types/error.js'
+import { InterceptorError, JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 
 export class ErrorWithData extends Error {
@@ -41,8 +42,40 @@ export function isFailedToFetchError(error: Error) {
 
 export const isNewBlockAbort = (error: Error) => error.message?.includes(NEW_BLOCK_ABORT)
 
+function getForwardedDiagnostics(error: unknown): ForwardedDiagnostics | undefined {
+	const maybeInterceptorError = InterceptorError.safeParse(error)
+	if (!maybeInterceptorError.success) return undefined
+	return maybeInterceptorError.value.params[0]
+}
+
+function formatForwardedDiagnosticsMessage(forwardedDiagnostics: ForwardedDiagnostics) {
+	return [
+		`${ forwardedDiagnostics.source }: ${ forwardedDiagnostics.message }`,
+		`phase: ${ forwardedDiagnostics.phase }`,
+		...(forwardedDiagnostics.requestMethod !== undefined ? [`requestMethod: ${ forwardedDiagnostics.requestMethod }`] : []),
+		...(forwardedDiagnostics.requestId !== undefined ? [`requestId: ${ forwardedDiagnostics.requestId }`] : []),
+		...(forwardedDiagnostics.name !== undefined ? [`name: ${ forwardedDiagnostics.name }`] : []),
+		...(forwardedDiagnostics.code !== undefined ? [`code: ${ forwardedDiagnostics.code }`] : []),
+		...(forwardedDiagnostics.data !== undefined ? [`data: ${ forwardedDiagnostics.data }`] : []),
+		...(forwardedDiagnostics.cause !== undefined ? [`cause: ${ forwardedDiagnostics.cause }`] : []),
+		...(forwardedDiagnostics.stack !== undefined ? [`stack:\n${ forwardedDiagnostics.stack }`] : []),
+		...(forwardedDiagnostics.raw !== undefined ? [`raw:\n${ forwardedDiagnostics.raw }`] : []),
+	].join('\n\n')
+}
+
+function normalizeUnexpectedError(error: unknown) {
+	const forwardedDiagnostics = getForwardedDiagnostics(error)
+	if (forwardedDiagnostics !== undefined) return { message: formatForwardedDiagnosticsMessage(forwardedDiagnostics) }
+	if (typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string') {
+		return { message: error.message }
+	}
+	return { message: 'Please see The Interceptors console for more details on the error.' }
+}
+
 export function printError(error: unknown) {
 	console.error(error)
+	const forwardedDiagnostics = getForwardedDiagnostics(error)
+	if (forwardedDiagnostics !== undefined) console.error('forwarded diagnostics:', forwardedDiagnostics)
 	if (error instanceof Error) {
 		try {
 			if ('data' in error) console.error('data: ', JSON.stringify(error.data))
@@ -56,11 +89,12 @@ export function printError(error: unknown) {
 export async function handleUnexpectedError(error: unknown) {
 	printError(error)
 	console.trace()
+	const normalizedError = normalizeUnexpectedError(error)
 	const errorMessage = {
 		method: 'popup_UnexpectedErrorOccured' as const,
 		data: {
 			timestamp: new Date(),
-			message: typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string' ? error.message : 'Please see The Interceptors console for more details on the error.'
+			message: normalizedError.message,
 		}
 	}
 	await setLatestUnexpectedError(errorMessage)

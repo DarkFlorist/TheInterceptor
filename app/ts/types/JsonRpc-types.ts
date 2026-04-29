@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactio
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
-import { ErrorWithCodeAndOptionalData } from './error.js'
+import { ErrorWithCodeAndOptionalData, ForwardedDiagnostics } from './error.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -370,7 +370,7 @@ export const GetFilterLogs = funtypes.ReadonlyObject({
 export type InterceptorError = funtypes.Static<typeof InterceptorError>
 export const InterceptorError = funtypes.ReadonlyObject({
 	method: funtypes.Literal('InterceptorError'),
-	params: funtypes.Unknown,
+	params: funtypes.ReadonlyTuple(ForwardedDiagnostics),
 })
 
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>

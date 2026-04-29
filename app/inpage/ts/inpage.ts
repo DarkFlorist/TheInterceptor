@@ -160,9 +160,104 @@ interface EIP6963ProviderInfo {
 }
 
 type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
+type ForwardedErrorSource = 'inpage' | 'content-script' | 'document-start'
+type ForwardedDiagnostics = {
+	readonly source: ForwardedErrorSource
+	readonly phase: string
+	readonly message: string
+	readonly name?: string
+	readonly stack?: string
+	readonly code?: number
+	readonly data?: string
+	readonly cause?: string
+	readonly requestId?: number
+	readonly requestMethod?: string
+	readonly raw?: string
+}
+type ForwardedDiagnosticsRequestContext = {
+	readonly requestId?: number
+	readonly requestMethod?: string
+}
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
+
+const FORWARDED_DIAGNOSTICS_MAX_LENGTH = 4000
+
+function truncateForwardedDiagnosticsString(value: string) {
+	if (value.length <= FORWARDED_DIAGNOSTICS_MAX_LENGTH) return value
+	return `${ value.slice(0, FORWARDED_DIAGNOSTICS_MAX_LENGTH - 1) }…`
+}
+
+function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function getForwardedDiagnosticsStringProperty(value: Record<string, unknown>, key: string) {
+	const property = value[key]
+	return typeof property === 'string' ? property : undefined
+}
+
+function getForwardedDiagnosticsNumberProperty(value: Record<string, unknown>, key: string) {
+	const property = value[key]
+	return typeof property === 'number' ? property : undefined
+}
+
+function createForwardedDiagnosticsCircularReplacer() {
+	const seen = new WeakSet<object>()
+	return (_key: string, value: unknown) => {
+		if (typeof value === 'bigint') return value.toString()
+		if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack }
+		if (typeof value === 'object' && value !== null) {
+			if (seen.has(value)) return '[Circular]'
+			seen.add(value)
+		}
+		return value
+	}
+}
+
+function stringifyForwardedDiagnosticsValue(value: unknown) {
+	if (typeof value === 'string') return truncateForwardedDiagnosticsString(value)
+	try {
+		const stringified = JSON.stringify(value, createForwardedDiagnosticsCircularReplacer())
+		if (stringified !== undefined) return truncateForwardedDiagnosticsString(stringified)
+	} catch (_error) {}
+	return truncateForwardedDiagnosticsString(String(value))
+}
+
+function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnosticsRequestContext {
+	if (!isForwardedDiagnosticsRecord(value)) return {}
+	return {
+		...(typeof value['requestId'] === 'number' ? { requestId: value['requestId'] } : {}),
+		...(typeof value['method'] === 'string' ? { requestMethod: value['method'] } : {}),
+	}
+}
+
+function serializeForwardedDiagnostics(source: ForwardedErrorSource, phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): ForwardedDiagnostics {
+	const errorRecord = isForwardedDiagnosticsRecord(error) ? error : undefined
+	const fallbackMessage = error === undefined ? 'Unexpected thrown value: undefined' : error === null ? 'Unexpected thrown value: null' : typeof error === 'string' ? error : 'Unexpected thrown value.'
+	const messageProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'message')
+	const nameProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'name')
+	const stackProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'stack')
+	const codeProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsNumberProperty(errorRecord, 'code')
+	const message = error instanceof Error ? error.message : messageProperty ?? fallbackMessage
+	const name = error instanceof Error ? error.name : nameProperty
+	const stack = error instanceof Error ? error.stack : stackProperty
+	const diagnostics = {
+		source,
+		phase,
+		message: truncateForwardedDiagnosticsString(message),
+		...(name !== undefined ? { name: truncateForwardedDiagnosticsString(name) } : {}),
+		...(stack !== undefined ? { stack: truncateForwardedDiagnosticsString(stack) } : {}),
+		...(codeProperty !== undefined ? { code: codeProperty } : {}),
+		...(errorRecord !== undefined && 'data' in errorRecord ? { data: stringifyForwardedDiagnosticsValue(errorRecord['data']) } : {}),
+		...(errorRecord !== undefined && 'cause' in errorRecord ? { cause: stringifyForwardedDiagnosticsValue(errorRecord['cause']) } : {}),
+		...(error instanceof Error ? {} : { raw: stringifyForwardedDiagnosticsValue(error) }),
+		...(context.requestId !== undefined ? { requestId: context.requestId } : {}),
+		...(context.requestMethod !== undefined ? { requestMethod: context.requestMethod } : {}),
+	}
+	return diagnostics
+}
 
 class InterceptorMessageListener {
 	private connected = false
@@ -210,6 +305,21 @@ class InterceptorMessageListener {
 			throw error
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
+		}
+	}
+
+	private readonly reportInterceptorError = (diagnostics: ForwardedDiagnostics) => {
+		try {
+			window.postMessage({
+				interceptorRequest: true,
+				method: 'InterceptorError',
+				params: [diagnostics],
+				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
+				requestId: -1,
+			}, '*')
+		} catch(reportingError: unknown) {
+			console.error('Failed to report InterceptorError diagnostics')
+			console.error(reportingError)
 		}
 	}
 
@@ -593,11 +703,11 @@ class InterceptorMessageListener {
 		} catch(error: unknown) {
 			console.error(messageEvent)
 			console.error(error)
-			await this.sendMessageToBackgroundPage({ method: 'InterceptorError', params: [error] })
+			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			const requestId = 'requestId' in messageEvent.data && typeof messageEvent.data.requestId === 'number' ? messageEvent.data.requestId : undefined
 			if (requestId === undefined) return
 			const pendingRequest = this.outstandingRequests.get(requestId)
-			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+			if (pendingRequest === undefined) return
 			if (error instanceof Error) return pendingRequest.reject(error)
 			return pendingRequest.reject(this.parseRpcError(error))
 		}
