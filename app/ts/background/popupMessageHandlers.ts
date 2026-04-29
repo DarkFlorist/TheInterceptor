@@ -225,8 +225,15 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 		switch (params.data.type) {
 			case 'Transaction': {
 				const transactionIdentifier = params.data.transactionIdentifier
-				const transactionToBeRemoved = prevStack.operations.find((transaction) => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
+				const transactionToBeRemoved = prevStack.operations.find((transaction): transaction is Extract<InterceptorStackOperation, { type: 'Transaction' }> => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
 				if (transactionToBeRemoved === undefined) return prevStack
+				const removedTransaction = transactionToBeRemoved.preSimulationTransaction
+				const shouldShiftNonceAfterRemoval = (transaction: typeof removedTransaction) => {
+					return transactionWasFound
+						&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
+						&& transaction.signedTransaction.from === removedTransaction.signedTransaction.from
+						&& transaction.signedTransaction.nonce > removedTransaction.signedTransaction.nonce
+				}
 
 				const newOperations: InterceptorStackOperation[] = []
 				let transactionWasFound = false
@@ -237,8 +244,8 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, par
 					}
 					if (operation.type === 'Transaction') {
 						const transaction = operation.preSimulationTransaction
-						const shouldUpdateNonce = transactionWasFound && transactionToBeRemoved.type === 'Transaction' && transaction.signedTransaction.from === transactionToBeRemoved.preSimulationTransaction.signedTransaction.from
-						const newTransaction = modifyObject(transaction.signedTransaction, shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {})
+						const shouldUpdateNonce = shouldShiftNonceAfterRemoval(transaction)
+						const newTransaction = shouldUpdateNonce ? modifyObject(transaction.signedTransaction, { nonce: transaction.signedTransaction.nonce - 1n }) : transaction.signedTransaction
 						newOperations.push({
 							type: operation.type,
 							preSimulationTransaction: {
