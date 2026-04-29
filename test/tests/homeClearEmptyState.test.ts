@@ -10,7 +10,8 @@ import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-rep
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
-import type { BlockTimeManipulation, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
+import type { BlockTimeManipulation, ResolvedSimulationResults, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -91,10 +92,22 @@ const createSimulationResults = (): SimulationAndVisualisationResults => ({
 	namedTokenIds: [],
 })
 
+const createEmptySimulationResults = (): SimulationAndVisualisationResults => ({
+	...createSimulationResults(),
+	visualizedSimulationState: {
+		success: true,
+		visualizedBlocks: [{
+			simulatedAndVisualizedTransactions: [],
+			visualizedPersonalSignRequests: [],
+			blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+		}],
+	},
+})
+
 describe('Home popup clear empty state', () => {
 	test('rerenders to the empty-state dino when simulation results are cleared', async () => {
 		const dom = installDomMock()
-		const simVisResults = new Signal<SimulationAndVisualisationResults | undefined>(createSimulationResults())
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults()))
 		try {
 			await act(() => {
 				render(h(Home, {
@@ -128,9 +141,10 @@ describe('Home popup clear empty state', () => {
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 
 			await act(() => {
-				simVisResults.value = undefined
+				simVisResults.value = toResolvedSimulationResults(createEmptySimulationResults())
 			})
 
+			assert.equal(simVisResults.value.kind, 'simulated')
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
 			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), false)
 		} finally {

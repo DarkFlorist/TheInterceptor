@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
@@ -39,7 +39,7 @@ export type HomeParams = {
 	activeSimulationAddress: Signal<bigint | undefined>
 	activeSigningAddress: Signal<bigint | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
-	simVisResults: Signal<SimulationAndVisualisationResults | undefined>
+	simVisResults: Signal<ResolvedSimulationResults>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void
 	simulationMode: Signal<boolean>
@@ -85,7 +85,7 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
+	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>

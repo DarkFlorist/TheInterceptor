@@ -1,4 +1,4 @@
-import { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -264,7 +264,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ simTx, renameAddressCall
 }
 
 type TransactionsAndSignedMessagesParams = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -273,7 +273,10 @@ type TransactionsAndSignedMessagesParams = {
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactionsAndMessagesInBlock = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.map((block) => ({
+	const currentResults = param.simulationAndVisualisationResults.value
+	if (currentResults.kind === 'passthrough') return <></>
+	const simulationAndVisualisationResults = currentResults.value
+	const transactionsAndMessagesInBlock = simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.map((block) => ({
 		operations: [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions],
 		blockTimeManipulation: block.blockTimeManipulation,
 	}))
@@ -283,7 +286,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 			const nextBlockManipulator = transactionsAndMessagesInBlock[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
 			return block.operations.map((simTx, transactionIndex) => <li key = { 'activeAddress' in simTx ? `message-${ simTx.messageIdentifier.toString() }` : `transaction-${ simTx.transactionIdentifier.toString() }` }>
 				<TransactionOrMessageWithBlockTimeManipulator
-					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					simulationAndVisualisationResults = { simulationAndVisualisationResults }
 					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }

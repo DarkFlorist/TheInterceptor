@@ -457,7 +457,7 @@ type SimulationUpdateStartedOrEnded = funtypes.Static<typeof SimulationUpdateSta
 const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulation_state_changed'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined)
+		visualizedSimulatorState: CompleteVisualizedSimulation
 	})
 })
 
@@ -485,7 +485,7 @@ export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfir
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
@@ -555,7 +555,7 @@ export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
 		activeAddresses: AddressBookEntries,
 		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 		makeCurrentAddressRich: funtypes.Boolean,

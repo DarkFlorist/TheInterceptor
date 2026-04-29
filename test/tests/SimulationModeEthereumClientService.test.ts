@@ -8,6 +8,7 @@ import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTrans
 import { createExecutionSimulationState, createSimulationState, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
@@ -102,6 +103,12 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 	const requestHandler = new MockEthereumJSONRpcRequestHandler()
 	const ethereum = new EthereumClientService(requestHandler, async () => {}, async () => {}, rpcNetwork)
+	const getBlockNumberFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0]) => await getSimulatedBlockNumberFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput))
+	const getBlockFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockTag: Parameters<typeof getSimulatedBlockFromInput>[3], includeTransactions = false) => await getSimulatedBlockFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockTag, includeTransactions)
+	const getBlockByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockHash: bigint, includeTransactions = false) => await getSimulatedBlockByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockHash, includeTransactions)
+	const getTransactionByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], hash: bigint) => await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), hash)
+	const getReceiptFromState = async (simulationState: Parameters<typeof toResolvedExecutionSimulationState>[0], hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
+	const getLogsFromState = async (simulationState: Parameters<typeof toResolvedExecutionSimulationState>[0], filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
 
 	describe('SimulationModeEthereumClientService', () => {
 		const exampleTransaction = {
@@ -457,7 +464,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				simulateWithZeroBaseFee: false,
 			}] as const
 
-				assert.equal(await getSimulatedBlockNumberFromInput(ethereum, undefined, splitSimulationStateInput), blockNumber + 2n)
+				assert.equal(await getBlockNumberFromInput(splitSimulationStateInput), blockNumber + 2n)
 			})
 
 			test('input-based block number ignores the default empty simulation block', async () => {
@@ -469,7 +476,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				assert.equal(await getSimulatedBlockNumberFromInput(ethereum, undefined, emptySimulationStateInput), blockNumber)
+				assert.equal(await getBlockNumberFromInput(emptySimulationStateInput), blockNumber)
 			})
 
 			test('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
@@ -490,11 +497,11 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				simulateWithZeroBaseFee: false,
 			}] as const
 
-			const latestBlock = await getSimulatedBlockFromInput(ethereum, undefined, simulationStateInput, 'latest', true)
+			const latestBlock = await getBlockFromInput(simulationStateInput, 'latest', true)
 			if (latestBlock === null) throw new Error('latest simulated block missing')
-			const sameBlock = await getSimulatedBlockFromInput(ethereum, undefined, simulationStateInput, 'latest', true)
+			const sameBlock = await getBlockFromInput(simulationStateInput, 'latest', true)
 			if (sameBlock === null) throw new Error('latest simulated block missing on second read')
-			const roundTripped = await getSimulatedBlockByHashFromInput(ethereum, undefined, simulationStateInput, latestBlock.hash, true)
+			const roundTripped = await getBlockByHashFromInput(simulationStateInput, latestBlock.hash, true)
 			if (roundTripped === null) throw new Error('round-tripped block missing')
 
 			assert.equal(latestBlock.hash, sameBlock.hash)
@@ -531,8 +538,8 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 					}],
 				}] as const
 
-				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, baseSimulationStateInput, 'latest', true)
-				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, changedSimulationStateInput, 'latest', true)
+				const firstBlock = await getBlockFromInput(baseSimulationStateInput, 'latest', true)
+				const secondBlock = await getBlockFromInput(changedSimulationStateInput, 'latest', true)
 				if (firstBlock === null || secondBlock === null) throw new Error('simulated block missing')
 
 				assert.notEqual(firstBlock.hash, secondBlock.hash)
@@ -572,7 +579,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 			const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
 			if (secondHash === undefined) throw new Error('second transaction hash missing')
-			const found = await getSimulatedTransactionByHashFromInput(ethereum, undefined, splitSimulationStateInput, secondHash)
+			const found = await getTransactionByHashFromInput(splitSimulationStateInput, secondHash)
 			if (found === null) throw new Error('second transaction not found in input-only lookup')
 
 				assert.equal(found.blockNumber, blockNumber + 2n)
@@ -611,8 +618,8 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
-				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 2n, true)
+				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
+				const secondBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 2n, true)
 				if (firstBlock === null || secondBlock === null) throw new Error('split execution block missing')
 
 				assert.equal(secondBlock.parentHash, firstBlock.hash)
@@ -655,9 +662,9 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
 				if (secondHash === undefined) throw new Error('second transaction hash missing')
-				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 2n, true)
+				const secondBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 2n, true)
 				if (secondBlock === null) throw new Error('second simulated block missing')
-				const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, secondHash)
+				const receipt = await getReceiptFromState(simulationState, secondHash)
 				if (receipt === null) throw new Error('receipt missing')
 
 				assert.equal(receipt.blockNumber, blockNumber + 2n)
@@ -700,9 +707,9 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput)
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
-				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
+				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
 				if (firstBlock === null) throw new Error('first simulated block missing')
-				const logs = await getSimulatedLogs(ethereum, undefined, simulationState, { blockHash: firstBlock.hash })
+				const logs = await getLogsFromState(simulationState, { blockHash: firstBlock.hash })
 
 				assert.equal(logs.length, 1)
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)
@@ -774,9 +781,9 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
 				if (secondHash === undefined) throw new Error('second transaction hash missing')
-				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 2n, true)
+				const secondBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 2n, true)
 				if (secondBlock === null) throw new Error('second simulated block missing')
-				const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, secondHash)
+				const receipt = await getReceiptFromState(simulationState, secondHash)
 				if (receipt === null) throw new Error('receipt missing')
 
 				assert.equal(receipt.blockNumber, blockNumber + 2n)
@@ -819,9 +826,9 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
-				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
+				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
 				if (firstBlock === null) throw new Error('first simulated block missing')
-				const logs = await getSimulatedLogs(ethereum, undefined, simulationState, { blockHash: firstBlock.hash })
+				const logs = await getLogsFromState(simulationState, { blockHash: firstBlock.hash })
 
 				assert.equal(logs.length, 1)
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)

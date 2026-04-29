@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, ResolvedSimulationResults, ResolvedSimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
@@ -77,7 +77,7 @@ export function App() {
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
 	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
-	const simVisResults = useSignal<SimulationAndVisualisationResults | undefined>(undefined)
+	const simVisResults = useSignal<ResolvedSimulationResults>(PASSTHROUGH_STATE)
 	const websiteAccess = useSignal<WebsiteAccessArray | undefined>(undefined)
 	const websiteAccessAddressMetadata = useSignal<AddressBookEntries>([])
 	const rpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
@@ -147,29 +147,30 @@ export function App() {
 
 	useEffect(() => {
 		const setSimulationState = (
-			simState: SimulationState | undefined,
+			simState: ResolvedSimulationState,
 			addressBookEntries: AddressBookEntries,
 			tokenPriceEstimates: readonly TokenPriceEstimate[],
 			visualizedSimulationState: VisualizedSimulationState,
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
-		) => {
-			if (activeSimulationAddress === undefined) return (simVisResults.value = undefined)
-			if (simState === undefined) return (simVisResults.value = undefined)
-			simVisResults.value = {
-				blockNumber: simState.blockNumber,
-				blockTimestamp: simState.blockTimestamp,
-				simulationConductedTimestamp: simState.simulationConductedTimestamp,
+		): void => {
+			if (activeSimulationAddress === undefined || simState.kind === 'passthrough') {
+				simVisResults.value = PASSTHROUGH_STATE
+				return
+			}
+			simVisResults.value = toResolvedSimulationResults({
+				blockNumber: simState.value.blockNumber,
+				blockTimestamp: simState.value.blockTimestamp,
+				simulationConductedTimestamp: simState.value.simulationConductedTimestamp,
 				visualizedSimulationState,
-				rpcNetwork: simState.rpcNetwork,
+				rpcNetwork: simState.value.rpcNetwork,
 				tokenPriceEstimates,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
-			}
+			})
 		}
 
-		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
-			if (state === undefined) return
+		const updateVisualizedState = (state: CompleteVisualizedSimulation) => {
 			setSimulationState(
 				state.simulationState,
 				state.addressBookEntries,

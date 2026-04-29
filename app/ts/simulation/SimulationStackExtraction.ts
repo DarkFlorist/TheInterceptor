@@ -1,6 +1,6 @@
 import { StateOverrides } from '../types/ethSimulate-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../types/simulationStackTypes.js'
-import { SimulatedTransaction, SimulationState } from '../types/visualizer-types.js'
+import { ResolvedSimulationState, SimulatedTransaction } from '../types/visualizer-types.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { handleERC20TransferLog } from './logHandlers.js'
@@ -30,18 +30,18 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 	})
 }
 
-export const getSimulatedStackV2 = (simulationState: SimulationState | undefined): GetSimulationStackReplyV2 => {
-	if (simulationState === undefined) return { stateOverrides: {}, transactions: [] }
-	if (simulationState.success === false) return { stateOverrides: {}, transactions: [] }
+export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState): GetSimulationStackReplyV2 => {
+	if (simulationState.kind === 'passthrough') return { stateOverrides: {}, transactions: [] }
+	if (simulationState.value.success === false) return { stateOverrides: {}, transactions: [] }
 	return {
-		stateOverrides: mergeSimulationOverrides(simulationState.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)),
-		transactions: simulationState.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulationState.baseFeePerGas, simulatedTransaction), simulatedTransaction }))
+		stateOverrides: mergeSimulationOverrides(simulationState.value.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)),
+		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulationState.value.baseFeePerGas, simulatedTransaction), simulatedTransaction }))
 	}
 }
 
-export const getSimulatedStackV1 = (simulationState: SimulationState | undefined, addressToMakeRich: EthereumAddress | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
-	if (simulationState === undefined || simulationState.success === false) return []
-	const simulatedTransactions = simulationState.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
+export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, addressToMakeRich: EthereumAddress | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
+	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return []
+	const simulatedTransactions = simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const maxPriorityFeePerGas = transaction.preSimulationTransaction.signedTransaction.type === '1559' ? transaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas : 0n
@@ -51,15 +51,15 @@ export const getSimulatedStackV1 = (simulationState: SimulationState | undefined
 			... ( transaction.ethSimulateV1CallResult.status === 'failure' ? {
 				statusCode: transaction.ethSimulateV1CallResult.status,
 				error: transaction.ethSimulateV1CallResult.error.message } : {
-					statusCode: transaction.ethSimulateV1CallResult.status,
-					events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
+				statusCode: transaction.ethSimulateV1CallResult.status,
+				events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
 				}
 			),
 			returnValue: transaction.ethSimulateV1CallResult.returnData,
 			maxPriorityFeePerGas,
 			balanceChanges: ethBalanceAfter.map((balanceAfter) => {
 				// in the version 1.0.0 , gas price was wrongly calculated with 'maxPriorityFeePerGas', this code keeps this for 1.0.0 but fixes it for other versions
-				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from ? balanceAfter.balance : (balanceAfter.balance ?? 0n) - simulationState.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
+				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from ? balanceAfter.balance : (balanceAfter.balance ?? 0n) - simulationState.value.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
 				const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
 				return {
 					address: balanceAfter.owner,
@@ -82,7 +82,7 @@ export const getSimulatedStackV1 = (simulationState: SimulationState | undefined
 	return [
 		{
 			from: 0x0n,
-			chainId: simulationState.rpcNetwork.chainId,
+			chainId: simulationState.value.rpcNetwork.chainId,
 			nonce: 0n,
 			to: addressToMakeRich,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,

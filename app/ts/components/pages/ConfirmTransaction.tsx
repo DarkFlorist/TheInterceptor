@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
-import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, MaybeSimulatedTransaction, ModifyAddressWindowState, VisualizedSimulationState } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, MaybeSimulatedTransaction, ModifyAddressWindowState, VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
@@ -90,12 +90,12 @@ function UnderTransactions(param: UnderTransactionsParams) {
 
 type TransactionNamesParams = {
 	includeCurrentTransaction: boolean
-	completeVisualizedSimulation: Signal<CompleteVisualizedSimulation | undefined>
+	completeVisualizedSimulation: Signal<CompleteVisualizedSimulation>
 	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage| undefined>
 }
 
 export const TransactionNames = (param: TransactionNamesParams) => {
-	if (param.completeVisualizedSimulation.value === undefined || param.completeVisualizedSimulation.value.simulationResultState !== 'done') return <></>
+	if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough') return <></>
 
 	const titleOfCurrentPendingTransaction = () => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction.value
@@ -109,7 +109,7 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 	}
 
 	const namesWithCurrentTransaction = useComputed(() => {
-		if (param.completeVisualizedSimulation.value === undefined || param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.visualizedSimulationState.success === false) return []
+		if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough' || param.completeVisualizedSimulation.value.visualizedSimulationState.success === false) return []
 		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
 		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions])
 		const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
@@ -415,7 +415,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 export function ConfirmTransaction() {
 	const currentPendingTransactionOrSignableMessage = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const pendingTransactionsAndSignableMessages = useSignal<readonly PendingTransactionOrSignableMessage[]>([])
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation | undefined>(undefined)
+	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const forceSend = useSignal<boolean>(false)
 	const currentBlockNumber = useSignal<undefined | bigint>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })

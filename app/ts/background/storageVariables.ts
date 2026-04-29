@@ -2,7 +2,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
@@ -77,18 +77,7 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
-	const emptyResults: CompleteVisualizedSimulation = {
-		simulationUpdatingState: 'done' as const,
-		simulationResultState: 'corrupted' as const,
-		simulationId: 0,
-		simulationState: undefined,
-		addressBookEntries: [],
-		tokenPriceEstimates: [],
-		tokenPriceQuoteToken: undefined,
-		namedTokenIds: [],
-		visualizedSimulationState: { success: true, visualizedBlocks: [] },
-		numberOfAddressesMadeRich: 0,
-	}
+	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	try {
 		return (await browserStorageLocalGet('popupVisualisation'))?.popupVisualisation ?? emptyResults
 	} catch (error) {
@@ -101,11 +90,11 @@ export async function getPopupVisualisationState() {
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation | undefined) => Promise<CompleteVisualizedSimulation | undefined>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
-		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
+		if (newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
 		await browserStorageLocalSet({ popupVisualisation: newRequests })
 		return newRequests
 	})

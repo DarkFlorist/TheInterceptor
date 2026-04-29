@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, MaybeSimulatedTransaction } from '../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, MaybeSimulatedTransaction, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
@@ -477,7 +477,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	</>
 }
 
-function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint | undefined) {
+function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint | undefined): [Array<[number, SummaryOutcome]>, Array<[number, SummaryOutcome]>] {
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
 		balanceSummary.summaryFor.useAsActiveAddress || balanceSummary.summaryFor.address === activeAddress
 	)
@@ -663,20 +663,37 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 }
 
 type SimulationSummaryParams = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>,
 	currentBlockNumber: Signal<bigint | undefined>,
 	activeAddress: ReadonlySignal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 }
 
+function isSuccessfulVisualizedSimulationState(visualizedSimulationState: SimulationAndVisualisationResults['visualizedSimulationState']): visualizedSimulationState is Extract<SimulationAndVisualisationResults['visualizedSimulationState'], { success: true }> {
+	return visualizedSimulationState.success
+}
+
+function getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState: Extract<SimulationAndVisualisationResults['visualizedSimulationState'], { success: true }>) {
+	const transactions: SimulatedAndVisualizedTransaction[] = []
+	for (const block of visualizedSimulationState.visualizedBlocks) {
+		for (const transaction of block.simulatedAndVisualizedTransactions) {
+			transactions.push(transaction)
+		}
+	}
+	return transactions
+}
+
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults.visualizedSimulationState.success === false) return <></>
-	if (param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length === 0) return <></>
-	const simulatedAndVisualizedTransactions = param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions)
+	const currentResults = param.simulationAndVisualisationResults.value
+	if (currentResults.kind === 'passthrough') return <></>
+	const visualizedSimulationState = currentResults.value.visualizedSimulationState
+	if (!isSuccessfulVisualizedSimulationState(visualizedSimulationState) || isEmptySimulationAndVisualisationResults(currentResults.value)) return <></>
+	const simulationAndVisualisationResults = currentResults.value
+	const simulatedAndVisualizedTransactions = getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState)
 	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
-	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPriceEstimates, param.simulationAndVisualisationResults.namedTokenIds)
+	const addressMetaData = new Map(simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
@@ -713,7 +730,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
-									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+									simulationAndVisualisationResults = { simulationAndVisualisationResults }
 									activeAddress = { param.activeAddress }
 									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
@@ -738,7 +755,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 								{ notOwnAddresses.length === 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
 									<SummarizeAddress
 										balanceSummary = { balanceSummary }
-										simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+										simulationAndVisualisationResults = { simulationAndVisualisationResults }
 										activeAddress = { param.activeAddress }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
@@ -768,9 +785,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					<div class = 'log-cell' style = 'justify-content: center;'> </div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
-							simulationBlockNumber = { getSimulationDisplayBlockNumber(param.simulationAndVisualisationResults.blockNumber, param.simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }
+							simulationBlockNumber = { getSimulationDisplayBlockNumber(simulationAndVisualisationResults.blockNumber, simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }
 							currentBlockNumber = { param.currentBlockNumber }
-							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
+							simulationConductedTimestamp = { simulationAndVisualisationResults.simulationConductedTimestamp }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>

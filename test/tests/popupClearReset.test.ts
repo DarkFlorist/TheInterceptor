@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec } from '../../app/ts/types/visualizer-types.js'
+import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { describe, test } from 'bun:test'
 
@@ -204,7 +204,7 @@ function buildStalePopupVisualisationState(
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
 		namedTokenIds: [],
-		simulationState,
+		simulationState: toResolvedSimulationState(simulationState),
 		simulationUpdatingState: 'done' as const,
 		simulationResultState: 'done' as const,
 		simulationId: 7,
@@ -269,6 +269,31 @@ function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVi
 	} as const)
 }
 
+function assertDefinedEmptyPopupVisualisation(
+	popupVisualisation: CompleteVisualizedSimulation,
+	defaultBlockManipulation: TestModules['DEFAULT_BLOCK_MANIPULATION'],
+) {
+	assert.equal(popupVisualisation.simulationUpdatingState, 'done')
+	assert.equal(popupVisualisation.simulationResultState, 'done')
+	assert.equal(popupVisualisation.simulationState.kind, 'simulated')
+	assert.equal(popupVisualisation.simulationState.value.success, true)
+	assert.deepEqual(popupVisualisation.simulationState.value.simulationStateInput, [{
+		stateOverrides: {},
+		transactions: [],
+		signedMessages: [],
+		blockTimeManipulation: defaultBlockManipulation,
+		simulateWithZeroBaseFee: false,
+	}])
+	assert.deepEqual(popupVisualisation.visualizedSimulationState, {
+		success: true,
+		visualizedBlocks: [{
+			simulatedAndVisualizedTransactions: [],
+			visualizedPersonalSignRequests: [],
+			blockTimeManipulation: defaultBlockManipulation,
+		}],
+	})
+}
+
 const {
 	updatePopupVisualisationIfNeeded,
 	browserStorageLocalGet,
@@ -308,15 +333,17 @@ describe('popup clear reset', () => {
 		const storedPopupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(storedPopupVisualisation)
 		const storedSimulationState = storedPopupVisualisation.simulationState
-		assert.ok(storedSimulationState)
+		assert.equal(storedSimulationState.kind, 'simulated')
 		assert.equal(
 			modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
-			modules.getPopupVisualisationFingerprint(storedSimulationState.simulationStateInput, storedSimulationState.rpcNetwork, storedSimulationState.blockNumber),
+			modules.getPopupVisualisationFingerprint(storedSimulationState.value.simulationStateInput, storedSimulationState.value.rpcNetwork, storedSimulationState.value.blockNumber),
 		)
 
 		const popupVisualisation = await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false, true)
 		assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
-		assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
+		assert.equal(popupVisualisation.simulationState.kind, 'simulated')
+		assert.equal(matchingPopupVisualisation.simulationState.kind, 'simulated')
+		assert.equal(popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState.value.simulationConductedTimestamp.getTime())
 		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
 	})
 
@@ -360,7 +387,9 @@ describe('popup clear reset', () => {
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
 		assert.equal('activeAddress' in popupVisualisation, false)
-		assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
+		assert.equal(popupVisualisation.simulationState.kind, 'simulated')
+		assert.equal(matchingPopupVisualisation.simulationState.kind, 'simulated')
+		assert.equal(popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState.value.simulationConductedTimestamp.getTime())
 
 		const homePageMessage = browserMock.sentMessages.find((message) => message.method === 'popup_UpdateHomePage')
 		assert.ok(homePageMessage)
@@ -379,11 +408,8 @@ describe('popup clear reset', () => {
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
-		assert.equal(popupVisualisation.simulationUpdatingState, 'done')
-		assert.equal(popupVisualisation.simulationResultState, 'done')
 		assert.equal(popupVisualisation.simulationId, stalePopupVisualisation.simulationId + 1)
-		assert.equal(popupVisualisation.simulationState, undefined)
-		assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
+		assertDefinedEmptyPopupVisualisation(popupVisualisation, DEFAULT_BLOCK_MANIPULATION)
 
 		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 		assert.equal(changedMessages.length > 0, true)
@@ -404,10 +430,7 @@ describe('popup clear reset', () => {
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(interceptorTransactionStack, { operations: [] })
 		assert.ok(popupVisualisation)
-		assert.equal(popupVisualisation.simulationUpdatingState, 'done')
-		assert.equal(popupVisualisation.simulationResultState, 'done')
-		assert.equal(popupVisualisation.simulationState, undefined)
-		assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
+		assertDefinedEmptyPopupVisualisation(popupVisualisation, DEFAULT_BLOCK_MANIPULATION)
 
 		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 		assert.equal(changedMessages.length > 0, true)
