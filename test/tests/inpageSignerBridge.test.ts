@@ -158,16 +158,13 @@ describe('inpage signer bridge', () => {
 			})
 			await waitFor(() => interceptorErrorPayloads.length === 1)
 			const diagnostics = interceptorErrorPayloads[0]
-			if (typeof diagnostics !== 'object' || diagnostics === null || !('stack' in diagnostics) || typeof diagnostics.stack !== 'string') throw new Error('missing forwarded stack')
-			assert.deepEqual(diagnostics, {
-				source: 'inpage',
-				phase: 'handle background reply',
-				message: 'Request did not exist anymore',
-				name: 'Error',
-				stack: diagnostics.stack,
-				requestId: 999,
-				requestMethod: 'eth_accounts',
-			})
+			if (typeof diagnostics !== 'string') throw new Error('missing forwarded diagnostics string')
+			assert.equal(diagnostics.includes('inpage: Request did not exist anymore'), true)
+			assert.equal(diagnostics.includes('phase: handle background reply'), true)
+			assert.equal(diagnostics.includes('requestMethod: eth_accounts'), true)
+			assert.equal(diagnostics.includes('requestId: 999'), true)
+			assert.equal(diagnostics.includes('name: Error'), true)
+			assert.equal(diagnostics.includes('stack:\nError: Request did not exist anymore'), true)
 		} finally {
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {

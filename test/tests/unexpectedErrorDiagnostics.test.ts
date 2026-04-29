@@ -93,27 +93,15 @@ async function loadModules() {
 const modulesPromise = loadModules()
 
 describe('unexpected error diagnostics', () => {
-	test('stores forwarded InterceptorError diagnostics and summarizes the popup message', async () => {
+	test('stores forwarded InterceptorError diagnostics directly in the popup message', async () => {
 		browserMock.reset()
 		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
-		const details = {
-			source: 'inpage' as const,
-			phase: 'handle background reply',
-			message: 'Request did not exist anymore',
-			name: 'Error',
-			stack: 'Error: Request did not exist anymore',
-			requestId: 17,
-			requestMethod: 'eth_accounts',
-		}
+		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nname: Error\n\nstack:\nError: Request did not exist anymore'
 
-		await handleUnexpectedError({ method: 'InterceptorError', params: [details] })
+		await handleUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] })
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
-		assert.equal(latestUnexpectedError?.data.message.includes('inpage: Request did not exist anymore'), true)
-		assert.equal(latestUnexpectedError?.data.message.includes('phase: handle background reply'), true)
-		assert.equal(latestUnexpectedError?.data.message.includes('requestMethod: eth_accounts'), true)
-		assert.equal(latestUnexpectedError?.data.message.includes('requestId: 17'), true)
-		assert.equal(latestUnexpectedError?.data.message.includes('stack:\nError: Request did not exist anymore'), true)
+		assert.equal(latestUnexpectedError?.data.message, diagnosticsMessage)
 		assert.equal(browserMock.sentMessages.length, 1)
 	})
 

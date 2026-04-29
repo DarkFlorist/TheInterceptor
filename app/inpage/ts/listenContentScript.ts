@@ -3,20 +3,6 @@ function listenContentScript(connectionName: string | undefined) {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
 	}
-	type ForwardedErrorSource = 'inpage' | 'content-script' | 'document-start'
-	type ForwardedDiagnostics = {
-		readonly source: ForwardedErrorSource
-		readonly phase: string
-		readonly message: string
-		readonly name?: string
-		readonly stack?: string
-		readonly code?: number
-		readonly data?: string
-		readonly cause?: string
-		readonly requestId?: number
-		readonly requestMethod?: string
-		readonly raw?: string
-	}
 	type ForwardedDiagnosticsRequestContext = {
 		readonly requestId?: number
 		readonly requestMethod?: string
@@ -81,7 +67,7 @@ function listenContentScript(connectionName: string | undefined) {
 			...(typeof value['method'] === 'string' ? { requestMethod: value['method'] } : {}),
 		}
 	}
-	const serializeForwardedDiagnostics = (source: ForwardedErrorSource, phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): ForwardedDiagnostics => {
+	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => {
 		const errorRecord = isForwardedDiagnosticsRecord(error) ? error : undefined
 		const fallbackMessage = error === undefined ? 'Unexpected thrown value: undefined' : error === null ? 'Unexpected thrown value: null' : typeof error === 'string' ? error : 'Unexpected thrown value.'
 		const messageProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'message')
@@ -91,29 +77,27 @@ function listenContentScript(connectionName: string | undefined) {
 		const message = error instanceof Error ? error.message : messageProperty ?? fallbackMessage
 		const name = error instanceof Error ? error.name : nameProperty
 		const stack = error instanceof Error ? error.stack : stackProperty
-		return {
-			source,
-			phase,
-			message: truncateForwardedDiagnosticsString(message),
-			...(name !== undefined ? { name: truncateForwardedDiagnosticsString(name) } : {}),
-			...(stack !== undefined ? { stack: truncateForwardedDiagnosticsString(stack) } : {}),
-			...(code !== undefined ? { code } : {}),
-			...(errorRecord !== undefined && 'data' in errorRecord ? { data: stringifyForwardedDiagnosticsValue(errorRecord['data']) } : {}),
-			...(errorRecord !== undefined && 'cause' in errorRecord ? { cause: stringifyForwardedDiagnosticsValue(errorRecord['cause']) } : {}),
-			...(error instanceof Error ? {} : { raw: stringifyForwardedDiagnosticsValue(error) }),
-			...(context.requestId !== undefined ? { requestId: context.requestId } : {}),
-			...(context.requestMethod !== undefined ? { requestMethod: context.requestMethod } : {}),
-		}
+		return [
+			`${ source }: ${ truncateForwardedDiagnosticsString(message) }`,
+			`phase: ${ phase }`,
+			...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []),
+			...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []),
+			...(name !== undefined ? [`name: ${ truncateForwardedDiagnosticsString(name) }`] : []),
+			...(code !== undefined ? [`code: ${ code }`] : []),
+			...(errorRecord !== undefined && 'data' in errorRecord ? [`data: ${ stringifyForwardedDiagnosticsValue(errorRecord['data']) }`] : []),
+			...(errorRecord !== undefined && 'cause' in errorRecord ? [`cause: ${ stringifyForwardedDiagnosticsValue(errorRecord['cause']) }`] : []),
+			...(stack !== undefined ? [`stack:\n${ truncateForwardedDiagnosticsString(stack) }`] : []),
+			...(error instanceof Error ? [] : [`raw:\n${ stringifyForwardedDiagnosticsValue(error) }`]),
+		].join('\n\n')
 	}
-	const createForwardedDiagnosticsFromRaw = (source: ForwardedErrorSource, phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): ForwardedDiagnostics => ({
-		source,
-		phase,
-		message,
-		raw: stringifyForwardedDiagnosticsValue(raw),
-		...(context.requestId !== undefined ? { requestId: context.requestId } : {}),
-		...(context.requestMethod !== undefined ? { requestMethod: context.requestMethod } : {}),
-	})
-	const reportInterceptorError = (diagnostics: ForwardedDiagnostics) => {
+	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script' | 'document-start', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => [
+		`${ source }: ${ message }`,
+		`phase: ${ phase }`,
+		...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []),
+		...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []),
+		`raw:\n${ stringifyForwardedDiagnosticsValue(raw) }`,
+	].join('\n\n')
+	const reportInterceptorError = (diagnostics: string) => {
 		if (extensionPort === undefined) return
 		try {
 			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })

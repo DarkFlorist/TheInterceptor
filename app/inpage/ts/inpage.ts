@@ -160,20 +160,6 @@ interface EIP6963ProviderInfo {
 }
 
 type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
-type ForwardedErrorSource = 'inpage' | 'content-script' | 'document-start'
-type ForwardedDiagnostics = {
-	readonly source: ForwardedErrorSource
-	readonly phase: string
-	readonly message: string
-	readonly name?: string
-	readonly stack?: string
-	readonly code?: number
-	readonly data?: string
-	readonly cause?: string
-	readonly requestId?: number
-	readonly requestMethod?: string
-	readonly raw?: string
-}
 type ForwardedDiagnosticsRequestContext = {
 	readonly requestId?: number
 	readonly requestMethod?: string
@@ -233,7 +219,7 @@ function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnos
 	}
 }
 
-function serializeForwardedDiagnostics(source: ForwardedErrorSource, phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): ForwardedDiagnostics {
+function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
 	const errorRecord = isForwardedDiagnosticsRecord(error) ? error : undefined
 	const fallbackMessage = error === undefined ? 'Unexpected thrown value: undefined' : error === null ? 'Unexpected thrown value: null' : typeof error === 'string' ? error : 'Unexpected thrown value.'
 	const messageProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'message')
@@ -243,20 +229,18 @@ function serializeForwardedDiagnostics(source: ForwardedErrorSource, phase: stri
 	const message = error instanceof Error ? error.message : messageProperty ?? fallbackMessage
 	const name = error instanceof Error ? error.name : nameProperty
 	const stack = error instanceof Error ? error.stack : stackProperty
-	const diagnostics = {
-		source,
-		phase,
-		message: truncateForwardedDiagnosticsString(message),
-		...(name !== undefined ? { name: truncateForwardedDiagnosticsString(name) } : {}),
-		...(stack !== undefined ? { stack: truncateForwardedDiagnosticsString(stack) } : {}),
-		...(codeProperty !== undefined ? { code: codeProperty } : {}),
-		...(errorRecord !== undefined && 'data' in errorRecord ? { data: stringifyForwardedDiagnosticsValue(errorRecord['data']) } : {}),
-		...(errorRecord !== undefined && 'cause' in errorRecord ? { cause: stringifyForwardedDiagnosticsValue(errorRecord['cause']) } : {}),
-		...(error instanceof Error ? {} : { raw: stringifyForwardedDiagnosticsValue(error) }),
-		...(context.requestId !== undefined ? { requestId: context.requestId } : {}),
-		...(context.requestMethod !== undefined ? { requestMethod: context.requestMethod } : {}),
-	}
-	return diagnostics
+	return [
+		`${ source }: ${ truncateForwardedDiagnosticsString(message) }`,
+		`phase: ${ phase }`,
+		...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []),
+		...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []),
+		...(name !== undefined ? [`name: ${ truncateForwardedDiagnosticsString(name) }`] : []),
+		...(codeProperty !== undefined ? [`code: ${ codeProperty }`] : []),
+		...(errorRecord !== undefined && 'data' in errorRecord ? [`data: ${ stringifyForwardedDiagnosticsValue(errorRecord['data']) }`] : []),
+		...(errorRecord !== undefined && 'cause' in errorRecord ? [`cause: ${ stringifyForwardedDiagnosticsValue(errorRecord['cause']) }`] : []),
+		...(stack !== undefined ? [`stack:\n${ truncateForwardedDiagnosticsString(stack) }`] : []),
+		...(error instanceof Error ? [] : [`raw:\n${ stringifyForwardedDiagnosticsValue(error) }`]),
+	].join('\n\n')
 }
 
 class InterceptorMessageListener {
@@ -308,7 +292,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly reportInterceptorError = (diagnostics: ForwardedDiagnostics) => {
+	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
 			window.postMessage({
 				interceptorRequest: true,
