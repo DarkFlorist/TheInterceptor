@@ -172,25 +172,11 @@ function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, u
 	return typeof value === 'object' && value !== null
 }
 
-function createForwardedDiagnosticsCircularReplacer() {
-	const seen = new WeakSet<object>()
-	return (_key: string, value: unknown) => {
-		if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack }
-		if (typeof value === 'bigint') return value.toString()
-		if (typeof value === 'object' && value !== null) {
-			if (seen.has(value)) return '[Circular]'
-			seen.add(value)
-		}
-		return value
-	}
-}
-
 function stringifyForwardedThrownValue(value: unknown) {
 	if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
-	if (typeof value === 'string') return value
 	if (typeof value === 'bigint') return value.toString()
 	try {
-		const stringified = JSON.stringify(value, createForwardedDiagnosticsCircularReplacer())
+		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
 		if (stringified !== undefined) return stringified
 	} catch (_error) {}
 	return String(value)
@@ -202,7 +188,7 @@ function getForwardedDiagnosticsSummary(error: unknown) {
 	if (error === undefined) return 'Unexpected thrown value: undefined'
 	if (error === null) return 'Unexpected thrown value: null'
 	if (isForwardedDiagnosticsRecord(error) && typeof error['message'] === 'string') return error['message']
-	return 'Unexpected thrown value'
+	return String(error)
 }
 
 function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnosticsRequestContext {
