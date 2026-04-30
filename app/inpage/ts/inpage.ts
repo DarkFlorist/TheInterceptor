@@ -168,32 +168,15 @@ type ForwardedDiagnosticsRequestContext = {
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
 
-const FORWARDED_DIAGNOSTICS_MAX_LENGTH = 4000
-
-function truncateForwardedDiagnosticsString(value: string) {
-	if (value.length <= FORWARDED_DIAGNOSTICS_MAX_LENGTH) return value
-	return `${ value.slice(0, FORWARDED_DIAGNOSTICS_MAX_LENGTH - 1) }…`
-}
-
 function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
-}
-
-function getForwardedDiagnosticsStringProperty(value: Record<string, unknown>, key: string) {
-	const property = value[key]
-	return typeof property === 'string' ? property : undefined
-}
-
-function getForwardedDiagnosticsNumberProperty(value: Record<string, unknown>, key: string) {
-	const property = value[key]
-	return typeof property === 'number' ? property : undefined
 }
 
 function createForwardedDiagnosticsCircularReplacer() {
 	const seen = new WeakSet<object>()
 	return (_key: string, value: unknown) => {
-		if (typeof value === 'bigint') return value.toString()
 		if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack }
+		if (typeof value === 'bigint') return value.toString()
 		if (typeof value === 'object' && value !== null) {
 			if (seen.has(value)) return '[Circular]'
 			seen.add(value)
@@ -202,13 +185,24 @@ function createForwardedDiagnosticsCircularReplacer() {
 	}
 }
 
-function stringifyForwardedDiagnosticsValue(value: unknown) {
-	if (typeof value === 'string') return truncateForwardedDiagnosticsString(value)
+function stringifyForwardedThrownValue(value: unknown) {
+	if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
+	if (typeof value === 'string') return value
+	if (typeof value === 'bigint') return value.toString()
 	try {
 		const stringified = JSON.stringify(value, createForwardedDiagnosticsCircularReplacer())
-		if (stringified !== undefined) return truncateForwardedDiagnosticsString(stringified)
+		if (stringified !== undefined) return stringified
 	} catch (_error) {}
-	return truncateForwardedDiagnosticsString(String(value))
+	return String(value)
+}
+
+function getForwardedDiagnosticsSummary(error: unknown) {
+	if (error instanceof Error) return error.message
+	if (typeof error === 'string') return error
+	if (error === undefined) return 'Unexpected thrown value: undefined'
+	if (error === null) return 'Unexpected thrown value: null'
+	if (isForwardedDiagnosticsRecord(error) && typeof error['message'] === 'string') return error['message']
+	return 'Unexpected thrown value'
 }
 
 function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnosticsRequestContext {
@@ -219,28 +213,18 @@ function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnos
 	}
 }
 
-function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
-	const errorRecord = isForwardedDiagnosticsRecord(error) ? error : undefined
-	const fallbackMessage = error === undefined ? 'Unexpected thrown value: undefined' : error === null ? 'Unexpected thrown value: null' : typeof error === 'string' ? error : 'Unexpected thrown value.'
-	const messageProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'message')
-	const nameProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'name')
-	const stackProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsStringProperty(errorRecord, 'stack')
-	const codeProperty = errorRecord === undefined ? undefined : getForwardedDiagnosticsNumberProperty(errorRecord, 'code')
-	const message = error instanceof Error ? error.message : messageProperty ?? fallbackMessage
-	const name = error instanceof Error ? error.name : nameProperty
-	const stack = error instanceof Error ? error.stack : stackProperty
+function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
 	return [
-		`${ source }: ${ truncateForwardedDiagnosticsString(message) }`,
+		`${ source }: ${ summary }`,
 		`phase: ${ phase }`,
 		...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []),
 		...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []),
-		...(name !== undefined ? [`name: ${ truncateForwardedDiagnosticsString(name) }`] : []),
-		...(codeProperty !== undefined ? [`code: ${ codeProperty }`] : []),
-		...(errorRecord !== undefined && 'data' in errorRecord ? [`data: ${ stringifyForwardedDiagnosticsValue(errorRecord['data']) }`] : []),
-		...(errorRecord !== undefined && 'cause' in errorRecord ? [`cause: ${ stringifyForwardedDiagnosticsValue(errorRecord['cause']) }`] : []),
-		...(stack !== undefined ? [`stack:\n${ truncateForwardedDiagnosticsString(stack) }`] : []),
-		...(error instanceof Error ? [] : [`raw:\n${ stringifyForwardedDiagnosticsValue(error) }`]),
+		`thrown:\n${ stringifyForwardedThrownValue(thrown) }`,
 	].join('\n\n')
+}
+
+function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
+	return formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 }
 
 class InterceptorMessageListener {

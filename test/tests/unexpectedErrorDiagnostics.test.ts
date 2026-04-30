@@ -96,7 +96,7 @@ describe('unexpected error diagnostics', () => {
 	test('stores forwarded InterceptorError diagnostics directly in the popup message', async () => {
 		browserMock.reset()
 		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
-		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nname: Error\n\nstack:\nError: Request did not exist anymore'
+		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
 
 		await handleUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] })
 

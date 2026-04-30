@@ -163,8 +163,7 @@ describe('inpage signer bridge', () => {
 			assert.equal(diagnostics.includes('phase: handle background reply'), true)
 			assert.equal(diagnostics.includes('requestMethod: eth_accounts'), true)
 			assert.equal(diagnostics.includes('requestId: 999'), true)
-			assert.equal(diagnostics.includes('name: Error'), true)
-			assert.equal(diagnostics.includes('stack:\nError: Request did not exist anymore'), true)
+			assert.equal(diagnostics.includes('thrown:\nError: Request did not exist anymore'), true)
 		} finally {
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {
