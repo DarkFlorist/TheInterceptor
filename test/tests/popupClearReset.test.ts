@@ -14,6 +14,7 @@ type RuntimeMessage = {
 type BrowserMock = {
 	reset: () => void
 	sentMessages: RuntimeMessage[]
+	setPopupOpen: (isOpen: boolean) => void
 }
 
 type BrowserMockGlobals = {
@@ -54,6 +55,12 @@ type BrowserMockGlobals = {
 		setBadgeText: () => Promise<undefined>
 		setBadgeBackgroundColor: () => Promise<undefined>
 	}
+	declarativeNetRequest: {
+		getDynamicRules: () => Promise<readonly { id: number }[]>
+		getSessionRules: () => Promise<readonly { id: number }[]>
+		updateDynamicRules: (update: { removeRuleIds: readonly number[]; addRules?: readonly unknown[] }) => Promise<void>
+		updateSessionRules: (update: { removeRuleIds: readonly number[]; addRules?: readonly unknown[] }) => Promise<void>
+	}
 }
 
 const PopupSimulationChangedMessage = funtypes.ReadonlyObject({
@@ -67,6 +74,7 @@ const PopupSimulationChangedMessage = funtypes.ReadonlyObject({
 function createBrowserMock(): BrowserMock {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	let popupIsOpen = true
 	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
@@ -85,7 +93,7 @@ function createBrowserMock(): BrowserMock {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: popupIsOpen } }
 				}
 				return undefined
 			},
@@ -125,6 +133,12 @@ function createBrowserMock(): BrowserMock {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
+		},
 	} satisfies BrowserMockGlobals
 
 	const installBrowserGlobals = () => {
@@ -136,11 +150,15 @@ function createBrowserMock(): BrowserMock {
 
 	return {
 		sentMessages,
+		setPopupOpen(isOpen: boolean) {
+			popupIsOpen = isOpen
+		},
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
 			installBrowserGlobals()
 			browserMock.runtime.lastError = null
+			popupIsOpen = true
 		},
 	}
 }
@@ -273,6 +291,7 @@ const {
 	updatePopupVisualisationIfNeeded,
 	browserStorageLocalGet,
 	browserStorageLocalSet,
+	changeActiveRpc,
 	defaultActiveAddresses,
 	defaultRpcs,
 	resetSimulatorStateFromConfig,
@@ -281,12 +300,30 @@ const {
 
 const activeAddress = defaultActiveAddresses[0]?.address
 const rpcNetwork = defaultRpcs[0]
-if (activeAddress === undefined || rpcNetwork === undefined) throw new Error('test defaults are missing')
+const sameChainRpcNetwork = defaultRpcs[3]
+const otherChainRpcNetwork = defaultRpcs[1]
+if (activeAddress === undefined || rpcNetwork === undefined || sameChainRpcNetwork === undefined || otherChainRpcNetwork === undefined) throw new Error('test defaults are missing')
 
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 const fakeSimulator = { ethereum: createFakeEthereum(rpcNetwork), tokenPriceService: {} }
 const typedPopupSimulator = fakeSimulator as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const typedResetSimulator = fakeSimulator as never as Parameters<typeof resetSimulatorStateFromConfig>[0]
+
+function createFakeSimulator(rpcEntry: TestModules['defaultRpcs'][number]) {
+	let ethereum = createFakeEthereum(rpcEntry)
+	const resets: TestModules['defaultRpcs'][number][] = []
+	const simulator = {
+		get ethereum() {
+			return ethereum
+		},
+		tokenPriceService: {},
+		reset(nextRpcEntry: TestModules['defaultRpcs'][number]) {
+			resets.push(nextRpcEntry)
+			ethereum = createFakeEthereum(nextRpcEntry)
+		},
+	}
+	return { simulator, resets }
+}
 
 describe('popup clear reset', () => {
 	test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
@@ -408,6 +445,65 @@ describe('popup clear reset', () => {
 		assert.equal(popupVisualisation.simulationResultState, 'done')
 		assert.equal(popupVisualisation.simulationState, undefined)
 		assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
+
+		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
+		assert.equal(changedMessages.length > 0, true)
+		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
+	})
+
+	test('preserves the interceptor stack when changing rpc within the same chain', async () => {
+		browserMock.reset()
+		browserMock.setPopupOpen(false)
+		const { simulator, resets } = createFakeSimulator(rpcNetwork)
+		const typedChangeRpcSimulator = simulator as never as Parameters<typeof changeActiveRpc>[0]
+		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
+		await browserStorageLocalSet({
+			activeSimulationAddress: activeAddress,
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: true,
+			popupVisualisation: stalePopupVisualisation,
+			interceptorTransactionStack,
+		})
+
+		await changeActiveRpc(typedChangeRpcSimulator, new Map(), sameChainRpcNetwork, true)
+
+		const modules = await modulesPromise
+		const updatedSettings = await modules.getSettings()
+		const storedInterceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
+		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.deepEqual(updatedSettings.activeRpcNetwork, sameChainRpcNetwork)
+		assert.deepEqual(storedInterceptorTransactionStack, interceptorTransactionStack)
+		assert.deepEqual(popupVisualisation, stalePopupVisualisation)
+		assert.deepEqual(resets, [sameChainRpcNetwork])
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+	})
+
+	test('clears the interceptor stack when changing rpc to another chain', async () => {
+		browserMock.reset()
+		const { simulator, resets } = createFakeSimulator(rpcNetwork)
+		const typedChangeRpcSimulator = simulator as never as Parameters<typeof changeActiveRpc>[0]
+		await browserStorageLocalSet({
+			activeSimulationAddress: activeAddress,
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: true,
+			popupVisualisation: stalePopupVisualisation,
+			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
+		})
+
+		await changeActiveRpc(typedChangeRpcSimulator, new Map(), otherChainRpcNetwork, true)
+
+		const modules = await modulesPromise
+		const updatedSettings = await modules.getSettings()
+		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
+		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.deepEqual(updatedSettings.activeRpcNetwork, otherChainRpcNetwork)
+		assert.deepEqual(interceptorTransactionStack, { operations: [] })
+		assert.ok(popupVisualisation)
+		assert.equal(popupVisualisation.simulationUpdatingState, 'done')
+		assert.equal(popupVisualisation.simulationResultState, 'done')
+		assert.equal(popupVisualisation.simulationState, undefined)
+		assert.deepEqual(popupVisualisation.visualizedSimulationState, { success: true, visualizedBlocks: [] })
+		assert.deepEqual(resets, [otherChainRpcNetwork])
 
 		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 		assert.equal(changedMessages.length > 0, true)
