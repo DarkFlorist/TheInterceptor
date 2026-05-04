@@ -186,12 +186,19 @@ async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteT
 	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
+function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
+	const key = `${ tabId }-${ websiteOrigin }`
+	if (iconRefreshTargets.has(key)) return
+	iconRefreshTargets.set(key, { tabId, websiteOrigin })
+}
+
 async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
 		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
-		updateExtensionIcon(websiteTabConnections, connection.socket.tabId, connection.websiteOrigin)
+		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
@@ -204,6 +211,9 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
 			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
+	}
+	for (const { tabId, websiteOrigin } of iconRefreshTargets.values()) {
+		await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
 	}
 }
 

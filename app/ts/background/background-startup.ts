@@ -11,7 +11,7 @@ import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { ICON_NOT_ACTIVE } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
@@ -24,6 +24,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
+import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -109,12 +110,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 
 	port.onDisconnect.addListener(() => {
 		catchAllErrorsAndCall(async () => {
-			const tabConnection = websiteTabConnections.get(socket.tabId)
-			if (tabConnection === undefined) return
-			delete tabConnection.connections[websiteSocketToString(socket)]
-			if (Object.keys(tabConnection).length === 0) {
-				websiteTabConnections.delete(socket.tabId)
-			}
+			removeWebsiteTabConnection(websiteTabConnections, socket)
 		})
 		try {
 			checkAndThrowRuntimeLastError()
@@ -236,7 +232,7 @@ async function startup() {
 			if (tab.url === undefined) return
 			const websiteOrigin = getHostWithPort(tab.url)
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
-			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
+			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
 		})
