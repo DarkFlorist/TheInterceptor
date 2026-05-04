@@ -1,6 +1,6 @@
 import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -242,9 +242,11 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		if (simulationState?.success === false) throw new JsonRpcResponseError(simulationState?.jsonRpcError)
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
-		} : {
-			gas: simulationGasLeft(simulationState?.simulatedBlocks.at(-1), await ethereumClientService.getBlock(undefined))
-		}
+		} : await (async () => {
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, simulationInput, transactionWithoutGas)
+			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
+			return { gas: estimateGas.gas }
+		})()
 		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
 		const metaTransaction: PreSimulationTransaction = {
 			signedTransaction: mockSignTransaction(transaction),
