@@ -5,7 +5,8 @@ import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { PopupMessageReplyRequests, PopupReplyOption, PopupRequests, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, PopupRequestsReplies, PopupRequests, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress } from '../types/interceptor-reply-messages.js'
+import type { PopupReplyOption, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 
 function isIgnorableClosedMessageChannelError(error: Error) {
 	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
@@ -59,9 +60,34 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestMakeMeRichData' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestMakeMeRichData' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestActiveAddresses' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestActiveAddresses' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestSimulationMode' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestSimulationMode' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestLatestUnexpectedError' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestLatestUnexpectedError' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestInterceptorSimulationInput' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestInterceptorSimulationInput' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestCompleteVisualizedSimulation' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestCompleteVisualizedSimulation' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_requestSimulationMetadata' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_requestSimulationMetadata' }> | undefined>
+export async function sendPopupMessageWithReply(message: RequestAbiAndNameFromBlockExplorer): Promise<PopupRequestsReplyReturn<RequestAbiAndNameFromBlockExplorer> | undefined>
+export async function sendPopupMessageWithReply(message: RequestIdentifyAddress): Promise<PopupRequestsReplyReturn<RequestIdentifyAddress> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_isMainPopupWindowOpen' }): Promise<PopupRequestsReplyReturn<{ method: 'popup_isMainPopupWindowOpen' }> | undefined>
+export async function sendPopupMessageWithReply(message: { method: 'popup_readyAndListening', data: { page: PopupReadyAndListeningPage } }): Promise<PopupRequestsReplyReturn<{ method: 'popup_readyAndListening', data: { page: PopupReadyAndListeningPage } }> | undefined>
+export async function sendPopupMessageWithReply(message: PopupRequests): Promise<PopupReplyOption | undefined> {
 	try {
-		return PopupReplyOption.parse(await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))) as PopupRequestsReplyReturn<Request>
+		const rawReply = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
+		if (rawReply === null) return undefined
+		switch (message.method) {
+			case 'popup_requestMakeMeRichData': return PopupRequestsReplies.popup_requestMakeMeRichData.parse(rawReply)
+			case 'popup_requestActiveAddresses': return PopupRequestsReplies.popup_requestActiveAddresses.parse(rawReply)
+			case 'popup_requestSimulationMode': return PopupRequestsReplies.popup_requestSimulationMode.parse(rawReply)
+			case 'popup_requestLatestUnexpectedError': return PopupRequestsReplies.popup_requestLatestUnexpectedError.parse(rawReply)
+			case 'popup_requestInterceptorSimulationInput': return PopupRequestsReplies.popup_requestInterceptorSimulationInput.parse(rawReply)
+			case 'popup_requestCompleteVisualizedSimulation': return PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.parse(rawReply)
+			case 'popup_requestSimulationMetadata': return PopupRequestsReplies.popup_requestSimulationMetadata.parse(rawReply)
+			case 'popup_requestAbiAndNameFromBlockExplorer': return PopupRequestsReplies.popup_requestAbiAndNameFromBlockExplorer.parse(rawReply)
+			case 'popup_requestIdentifyAddress': return PopupRequestsReplies.popup_requestIdentifyAddress.parse(rawReply)
+			case 'popup_isMainPopupWindowOpen': return PopupRequestsReplies.popup_isMainPopupWindowOpen.parse(rawReply)
+			case 'popup_readyAndListening': return PopupRequestsReplies.popup_readyAndListening.parse(rawReply)
+		}
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isIgnorableClosedMessageChannelError(error)) return undefined

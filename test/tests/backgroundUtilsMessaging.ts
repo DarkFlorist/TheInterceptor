@@ -87,6 +87,18 @@ export async function main() {
 			assert.equal(storageState.latestUnexpectedError, undefined)
 			assert.equal(await getLatestUnexpectedError(), undefined)
 		})
+
+		should('treat null popup replies as no reply without recording an unexpected error', async () => {
+			const storageState = installBrowserMock('')
+			globalThis.browser.runtime.sendMessage = async () => null
+			const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
+
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
+
+			assert.equal(reply, undefined)
+			assert.equal(storageState.latestUnexpectedError, undefined)
+			assert.equal(await getLatestUnexpectedError(), undefined)
+		})
 	})
 
 	await runIfRoot(run, import.meta)

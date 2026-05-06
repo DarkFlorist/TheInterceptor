@@ -414,6 +414,34 @@ export async function main() {
 			assert.equal(changedMessages.length > 0, true)
 			assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 		})
+
+		should('return the complete visualized simulation reply through the background popup handler', async () => {
+			browserMock.reset()
+			await browserStorageLocalSet({
+				activeSimulationAddress: activeAddress,
+				popupVisualisation: stalePopupVisualisation,
+				interceptorTransactionStack: { operations: [] },
+			})
+
+			const modules = await modulesPromise
+			const reply = await modules.popupMessageHandler(
+				new Map(),
+				typedPopupSimulator,
+				{ method: 'popup_requestCompleteVisualizedSimulation' },
+				await modules.getSettings(),
+			)
+
+			assert.ok(reply !== undefined && reply !== null && typeof reply === 'object' && 'type' in reply && reply.type === 'RequestCompleteVisualizedSimulationReply')
+			assert.ok('visualizedSimulatorState' in reply)
+			const visualizedSimulatorState = reply.visualizedSimulatorState
+			assert.ok(visualizedSimulatorState !== undefined && visualizedSimulatorState !== null && typeof visualizedSimulatorState === 'object')
+			assert.ok('simulationId' in visualizedSimulatorState && 'simulationResultState' in visualizedSimulatorState && 'simulationState' in visualizedSimulatorState)
+			assert.equal(visualizedSimulatorState.simulationId, stalePopupVisualisation.simulationId)
+			assert.equal(visualizedSimulatorState.simulationResultState, stalePopupVisualisation.simulationResultState)
+			const simulationState = visualizedSimulatorState.simulationState
+			assert.ok(simulationState !== undefined && simulationState !== null && typeof simulationState === 'object' && 'blockNumber' in simulationState)
+			assert.equal(simulationState.blockNumber, '0x7b')
+		})
 	})
 }
 
