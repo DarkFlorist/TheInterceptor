@@ -9,7 +9,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getUpdatedSimulationState } from './background.js'
-import { sendPopupMessageWithReply, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { requestIsMainPopupWindowOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
@@ -43,7 +43,7 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
-		const isMainPopupWindowOpenReply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
+		const isMainPopupWindowOpenReply = await requestIsMainPopupWindowOpen()
 		if (!(isMainPopupWindowOpenReply?.data.isOpen === true)) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(simulator)
