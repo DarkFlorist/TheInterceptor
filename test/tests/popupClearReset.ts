@@ -85,7 +85,7 @@ function createBrowserMock(): BrowserMock {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
 				return undefined
 			},
@@ -431,7 +431,7 @@ export async function main() {
 				await modules.getSettings(),
 			)
 
-			assert.ok(reply !== undefined && reply !== null && typeof reply === 'object' && 'type' in reply && reply.type === 'RequestCompleteVisualizedSimulationReply')
+			assert.ok(reply !== undefined && reply !== null && typeof reply === 'object' && 'method' in reply && reply.method === 'popup_requestCompleteVisualizedSimulation')
 			assert.ok('visualizedSimulatorState' in reply)
 			const visualizedSimulatorState = reply.visualizedSimulatorState
 			assert.ok(visualizedSimulatorState !== undefined && visualizedSimulatorState !== null && typeof visualizedSimulatorState === 'object')
