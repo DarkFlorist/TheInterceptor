@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>The Interceptor tx stack benchmark</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				--bg: #0f1115;
+				--panel: #171a21;
+				--text: #ecf1ff;
+				--muted: #9aa6bf;
+				--accent: #66d9ef;
+			}
+
+			html,
+			body {
+				margin: 0;
+				min-height: 100%;
+				background: radial-gradient(circle at top, #182133 0%, var(--bg) 58%);
+				color: var(--text);
+				font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			}
+
+			body {
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+			}
+
+			main {
+				width: min(42rem, calc(100vw - 2rem));
+				padding: 1.5rem 1.75rem;
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				border-radius: 1rem;
+				background: color-mix(in srgb, var(--panel) 90%, transparent);
+				box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.35);
+			}
+
+			h1 {
+				margin: 0 0 0.5rem;
+				font-size: 1.25rem;
+			}
+
+			p {
+				margin: 0.25rem 0 0;
+				line-height: 1.5;
+			}
+
+			#status {
+				margin-top: 1rem;
+				padding: 0.75rem 0.9rem;
+				border-radius: 0.75rem;
+				background: rgba(255, 255, 255, 0.05);
+				color: var(--accent);
+				font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+				word-break: break-word;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Transaction stack benchmark page</h1>
+			<p>This page requests account access, sends one real transaction through the extension, fetches the user's balance afterwards, approves the popup flow, and leaves the transaction in the simulation stack.</p>
+			<p id="status">Waiting for provider injection...</p>
+		</main>
+		<script>
+			(() => {
+				const state = globalThis.__interceptorBenchmarkTxPageState = {
+					phase: 'loading',
+					txHash: undefined,
+					balance: undefined,
+					error: undefined,
+				}
+				const statusElement = document.getElementById('status')
+				const senderAddress = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
+				const recipientAddress = '0x000000000000000000000000000000000000dEaD'
+				const transaction = {
+					from: senderAddress,
+					to: recipientAddress,
+					value: '0x0',
+					gas: '0x5208',
+				}
+
+				const mark = (phase) => {
+					performance.mark(`interceptor:benchmark:tx:${ phase }`)
+				}
+
+				const updateState = (phase, extra = {}) => {
+					state.phase = phase
+					state.error = extra.error
+					state.txHash = extra.txHash
+					state.balance = extra.balance
+					if (statusElement !== null) {
+						statusElement.textContent = phase === 'error'
+							? `error: ${ extra.error ?? 'unknown error' }`
+							: phase === 'submitted'
+								? `submitted: ${ extra.txHash ?? 'unknown hash' }`
+								: phase === 'balance-fetched'
+									? `balance: ${ extra.balance ?? 'unknown balance' }`
+								: phase
+					}
+					mark(phase)
+				}
+
+				const waitForEthereum = async () => {
+					while (true) {
+						if (globalThis.ethereum !== undefined && typeof globalThis.ethereum.request === 'function') return globalThis.ethereum
+						await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+					}
+				}
+
+				(async () => {
+					try {
+						const ethereum = await waitForEthereum()
+						updateState('provider-ready')
+						updateState('requesting-access')
+						await ethereum.request({
+							method: 'eth_requestAccounts',
+						})
+						updateState('access-granted')
+						updateState('requesting-transaction')
+						const txHash = await ethereum.request({
+							method: 'eth_sendTransaction',
+							params: [transaction],
+						})
+						updateState('submitted', { txHash })
+						updateState('requesting-balance')
+						const balance = await ethereum.request({
+							method: 'eth_getBalance',
+							params: [senderAddress, 'latest'],
+						})
+						updateState('balance-fetched', { balance })
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error)
+						updateState('error', { error: message })
+					}
+				})()
+			})()
+		</script>
+	</body>
+</html>

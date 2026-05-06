@@ -30,6 +30,7 @@ import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -473,6 +474,10 @@ export function ConfirmTransaction() {
 				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 				return false
 			}
+			if (parsed.method === 'popup_confirm_transaction_simulation_started') {
+				markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
+				return false
+			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialog } = parsed
 				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(popupUpdateConfirmTransactionDialog))
@@ -485,6 +490,12 @@ export function ConfirmTransaction() {
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
 				currentPendingTransactionOrSignableMessage.value = firstMessage
+				if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
+					markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
+				}
+				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate')) {
+					markPerformance(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationReady)
+				}
 				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.popupVisualisation !== undefined && firstMessage.popupVisualisation.statusCode === 'success' && (currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)) {
 					currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
 				}
