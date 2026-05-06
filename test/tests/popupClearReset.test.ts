@@ -85,7 +85,7 @@ function createBrowserMock(): BrowserMock {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
 				return undefined
 			},
@@ -313,7 +313,6 @@ describe('popup clear reset', () => {
 			modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
 			modules.getPopupVisualisationFingerprint(storedSimulationState.simulationStateInput, storedSimulationState.rpcNetwork, storedSimulationState.blockNumber),
 		)
-
 		const popupVisualisation = await updatePopupVisualisationIfNeeded(typedPopupSimulator, false, false, true)
 		assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
 		assert.equal(popupVisualisation.simulationState?.simulationConductedTimestamp.getTime(), matchingPopupVisualisation.simulationState?.simulationConductedTimestamp.getTime())
@@ -412,5 +411,33 @@ describe('popup clear reset', () => {
 		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 		assert.equal(changedMessages.length > 0, true)
 		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
+	})
+
+	test('return the complete visualized simulation reply through the background popup handler', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({
+			activeSimulationAddress: activeAddress,
+			popupVisualisation: stalePopupVisualisation,
+			interceptorTransactionStack: { operations: [] },
+		})
+
+		const modules = await modulesPromise
+		const reply = await modules.popupMessageHandler(
+			new Map(),
+			typedPopupSimulator,
+			{ method: 'popup_requestCompleteVisualizedSimulation' },
+			await modules.getSettings(),
+		)
+
+		assert.ok(reply !== undefined && reply !== null && typeof reply === 'object' && 'method' in reply && reply.method === 'popup_requestCompleteVisualizedSimulation')
+		assert.ok('visualizedSimulatorState' in reply)
+		const visualizedSimulatorState = reply.visualizedSimulatorState
+		assert.ok(visualizedSimulatorState !== undefined && visualizedSimulatorState !== null && typeof visualizedSimulatorState === 'object')
+		assert.ok('simulationId' in visualizedSimulatorState && 'simulationResultState' in visualizedSimulatorState && 'simulationState' in visualizedSimulatorState)
+		assert.equal(visualizedSimulatorState.simulationId, stalePopupVisualisation.simulationId)
+		assert.equal(visualizedSimulatorState.simulationResultState, stalePopupVisualisation.simulationResultState)
+		const simulationState = visualizedSimulatorState.simulationState
+		assert.ok(simulationState !== undefined && simulationState !== null && typeof simulationState === 'object' && 'blockNumber' in simulationState)
+		assert.equal(simulationState.blockNumber, '0x7b')
 	})
 })

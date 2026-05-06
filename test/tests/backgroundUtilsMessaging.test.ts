@@ -72,7 +72,6 @@ describe('backgroundUtils messaging', () => {
 		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-
 		assert.equal(storageState['latestUnexpectedError'], undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
@@ -83,6 +82,18 @@ describe('backgroundUtils messaging', () => {
 
 		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 
+		assert.equal(storageState['latestUnexpectedError'], undefined)
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
+	test('treat null popup replies as no reply without recording an unexpected error', async () => {
+		const storageState = installBrowserMock('')
+		globalThis.browser.runtime.sendMessage = async () => null
+		const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
+
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
+
+		assert.equal(reply, undefined)
 		assert.equal(storageState['latestUnexpectedError'], undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})

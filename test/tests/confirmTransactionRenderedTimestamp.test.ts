@@ -27,7 +27,10 @@ function createBrowserMock() {
 			async sendMessage(message: any) {
 				for (const listener of [...listeners]) listener(message)
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
+				}
+				if (message?.method === 'popup_readyAndListening') {
+					return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
 				}
 				return undefined
 			},

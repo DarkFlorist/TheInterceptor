@@ -34,7 +34,7 @@ function createBrowserMock() {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 				}
 				return undefined
 			},
