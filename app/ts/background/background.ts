@@ -544,10 +544,7 @@ export async function popupMessageHandler(
 				case 'popup_UnexpectedErrorOccured': return await handleUnexpectedErrorInWindow(parsedRequest)
 				case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(simulator.ethereum)
 				case 'popup_importSimulationStack': return await importSimulationStack(simulator, parsedRequest)
-				case 'popup_requestCompleteVisualizedSimulation': {
-					await requestCompleteVisualizedSimulation(simulator)
-					return
-				}
+				case 'popup_requestCompleteVisualizedSimulation': return await requestCompleteVisualizedSimulation(simulator)
 				case 'popup_requestSimulationMetadata': return await requestSimulationMetadata(simulator.ethereum)
 				case 'popup_requestIdentifyAddress': return await requestIdentifyAddress(simulator.ethereum, parsedRequest)
 				case 'popup_isMainPopupWindowOpen': return

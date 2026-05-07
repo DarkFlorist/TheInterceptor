@@ -223,7 +223,7 @@ export function App() {
 		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
 			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
 			if (maybeRequest.success && maybeRequest.value.method === 'popup_isMainPopupWindowOpen') {
-				sendResponse({ type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } })
+				sendResponse({ method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } })
 				return true
 			}
 

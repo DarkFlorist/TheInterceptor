@@ -19,7 +19,7 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -690,7 +690,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	})
 
 	const exportEthSimulateInput = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
+		const reply = await requestPopupInterceptorSimulationInput()
 		if (reply === undefined) return
 		return reply.ethSimulateV1InputString
 	}
