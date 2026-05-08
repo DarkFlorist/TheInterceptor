@@ -1,13 +1,13 @@
 import * as assert from 'assert'
-import { ethers } from 'ethers'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { createSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
@@ -19,7 +19,6 @@ function parseRequest<T>(data: string): T {
 const ethSimulateSingleBlockResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result)
 const ethSimulateSplitBlocksResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result_2calls)
 const ethSimulateAggregate3Result = parseRequest<EthSimulateV1Result>(eth_simulateV1_get_eth_balance_multicall)
-const multicallInterface = new ethers.Interface(Multicall3ABI)
 
 function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 	const aggregate3BalanceBlock = ethSimulateAggregate3Result[ethSimulateAggregate3Result.length - 1]
@@ -30,9 +29,9 @@ function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 		...aggregate3BalanceBlock,
 		calls: [{
 			...aggregate3Call,
-			returnData: multicallInterface.encodeFunctionResult('aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
+			returnData: encodeFunctionReturn(Multicall3ABI, 'aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
 				success: true,
-				returnData: ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [BigInt(index + 1)]),
+				returnData: encodeAbiValues(['uint256'], [BigInt(index + 1)]),
 			}))]),
 		}],
 	}
@@ -84,7 +83,6 @@ async function loadModules() {
 	}
 }
 
-export async function main() {
 	const blockNumber = 8443561n
 	const rpcNetwork = {
 		name: 'Goerli',
@@ -116,7 +114,11 @@ export async function main() {
 				case 'eth_simulateV1': {
 					const lastCallInput = rpcRequest.params[0]?.blockStateCalls.at(-1)?.calls[0]?.input
 					const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
-						? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
+						? (() => {
+							const decoded = decodeFunctionDataStrict(Multicall3ABI, dataStringWith0xStart(lastCallInput))
+							if (decoded.functionName !== 'aggregate3') throw new Error('expected aggregate3 call')
+							return decoded.args[0].length
+						})()
 						: undefined
 					return createMockEthSimulateV1Result(
 						rpcRequest.params[0]?.blockStateCalls.length ?? 0,
@@ -161,13 +163,13 @@ export async function main() {
 	}] as const
 
 	describe('EthereumSubscriptionService', () => {
-		should('eth_getFilterChanges only returns newly simulated logs once', async () => {
+		test('eth_getFilterChanges only returns newly simulated logs once', async () => {
 			installBrowserMock()
 			const { createNewFilter, getEthFilterChanges, getEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
 			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, undefined)
-			const simulationState = await createSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
 			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, simulationState)
@@ -182,7 +184,7 @@ export async function main() {
 			assert.equal(storedFilter.calledInlastBlock, blockNumber + 1n)
 		})
 
-		should('newHeads emits each simulated execution block after a gas split', async () => {
+		test('newHeads emits each simulated execution block after a gas split', async () => {
 			installBrowserMock()
 			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock } = await loadModules()
 			const ethereum = createEthereum()
@@ -237,7 +239,7 @@ export async function main() {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const simulationState = await createSimulationState(ethereum, undefined, splitSimulationInput)
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => simulationState)
@@ -252,9 +254,3 @@ export async function main() {
 			assert.deepEqual(emittedBlockNumbers, [blockNumber, blockNumber + 1n, blockNumber + 2n])
 		})
 	})
-}
-
-await runIfRoot(async () => {
-	await main()
-	await run()
-}, import.meta)

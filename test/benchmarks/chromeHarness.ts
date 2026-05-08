@@ -220,11 +220,11 @@ async function waitForDevToolsActivePort(profileDir: string, timeoutMs: number) 
 
 export async function findChromeBinary() {
 	const envCandidates = [
-		process.env.CHROME_BIN,
-		process.env.GOOGLE_CHROME_BIN,
-		process.env.CHROME_PATH,
-		process.env.CHROMIUM_PATH,
-		process.env.CHROMIUM_BIN,
+		process.env['CHROME_BIN'],
+		process.env['GOOGLE_CHROME_BIN'],
+		process.env['CHROME_PATH'],
+		process.env['CHROMIUM_PATH'],
+		process.env['CHROMIUM_BIN'],
 	].filter((candidate): candidate is string => candidate !== undefined && candidate.length > 0)
 	const pathCandidates = [
 		'/usr/bin/google-chrome',
@@ -278,7 +278,7 @@ function buildChromeArgs(profileDir: string, extensionDir: string) {
 
 function spawnChrome(binary: string, profileDir: string, extensionDir: string) {
 	const args = buildChromeArgs(profileDir, extensionDir)
-	const useXvfb = process.env.DISPLAY === undefined || process.env.DISPLAY.length === 0
+	const useXvfb = process.env['DISPLAY'] === undefined || process.env['DISPLAY'].length === 0
 	const command = useXvfb ? 'xvfb-run' : binary
 	const commandArgs = useXvfb
 		? ['-a', '-s', '-screen 0 1280x900x24', binary, ...args]
@@ -289,7 +289,7 @@ function spawnChrome(binary: string, profileDir: string, extensionDir: string) {
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: {
 			...process.env,
-			CHROME_LOG_FILE: process.env.CHROME_LOG_FILE ?? '',
+			CHROME_LOG_FILE: process.env['CHROME_LOG_FILE'] ?? '',
 		},
 	})
 	return child
@@ -448,7 +448,7 @@ export async function ensureExtensionDirReady(extensionDir = EXTENSION_DIR) {
 	try {
 		await access(path.join(extensionDir, 'manifest.json'), fsConstants.constants.R_OK)
 	} catch {
-		throw new Error(`Missing ${ path.join(extensionDir, 'manifest.json') }. Run \`npm run setup-chrome\` before the Chrome benchmark.`)
+		throw new Error(`Missing ${ path.join(extensionDir, 'manifest.json') }. Run \`bun run setup-chrome\` before the Chrome benchmark.`)
 	}
 }
 

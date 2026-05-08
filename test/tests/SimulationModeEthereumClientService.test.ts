@@ -1,14 +1,16 @@
-import { ethers, keccak256 } from 'ethers'
-import { describe, runIfRoot, should, run } from '../micro-should.js'
+import { describe, test } from 'bun:test'
 import * as assert from 'assert'
+import { recoverAddress } from 'viem'
+import { keccak256 } from 'viem/utils'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { createSimulationState, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
@@ -20,7 +22,6 @@ function parseRequest<T>(data: string): T {
 const ethSimulateSingleBlockResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result)
 const ethSimulateSplitBlocksResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result_2calls)
 const ethSimulateAggregate3Result = parseRequest<EthSimulateV1Result>(eth_simulateV1_get_eth_balance_multicall)
-const multicallInterface = new ethers.Interface(Multicall3ABI)
 
 function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 	const aggregate3BalanceBlock = ethSimulateAggregate3Result[ethSimulateAggregate3Result.length - 1]
@@ -31,9 +32,9 @@ function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 		...aggregate3BalanceBlock,
 		calls: [{
 			...aggregate3Call,
-			returnData: multicallInterface.encodeFunctionResult('aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
+			returnData: encodeFunctionReturn(Multicall3ABI, 'aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
 				success: true,
-				returnData: ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [BigInt(index + 1)]),
+				returnData: encodeAbiValues(['uint256'], [BigInt(index + 1)]),
 			}))]),
 		}],
 	}
@@ -58,7 +59,6 @@ function testBytes32(suffix: string) {
 
 const zeroBytes256 = `0x${'0'.repeat(512)}`
 
-export async function main() {
 	const blockNumber = 8443561n
 	const rpcNetwork = {
 		name: 'Goerli',
@@ -73,6 +73,7 @@ export async function main() {
 
 	class MockEthereumJSONRpcRequestHandler {
 		public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
+		public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined }[] = []
 
 		public clearCache = () => {}
 
@@ -89,19 +90,23 @@ export async function main() {
 				case 'eth_simulateV1': {
 					const lastCallInput = rpcRequest.params[0]?.blockStateCalls.at(-1)?.calls[0]?.input
 					const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
-						? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
+						? (() => {
+							const decoded = decodeFunctionDataStrict(Multicall3ABI, dataStringWith0xStart(lastCallInput))
+							if (decoded.functionName !== 'aggregate3') throw new Error('expected aggregate3 call')
+							return decoded.args[0].length
+						})()
 						: undefined
-					return createMockEthSimulateV1Result(
-						rpcRequest.params[0]?.blockStateCalls.length ?? 0,
-						aggregate3BalanceQueryCount,
-					)
+					const blockStateCallCount = rpcRequest.params[0]?.blockStateCalls.length ?? 0
+					this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount })
+					return createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
 				}
 				default: throw new Error(`unsupported method ${ rpcRequest.method }`)
 			}
 		}
 	}
 
-	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+	const requestHandler = new MockEthereumJSONRpcRequestHandler()
+	const ethereum = new EthereumClientService(requestHandler, async () => {}, async () => {}, rpcNetwork)
 
 	describe('SimulationModeEthereumClientService', () => {
 		const exampleTransaction = {
@@ -117,7 +122,7 @@ export async function main() {
 			chainId: 1n,
 		} as const
 
-		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
+		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
@@ -126,22 +131,23 @@ export async function main() {
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 
-		should('ethers.recoverAddress should fail for mocked transaction', async () => {
+		test('recoverAddress should fail for mocked transaction', async () => {
 			const signed = EthereumSignedTransactionToSignedTransaction(mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)
 			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
-			assert.throws(() => ethers.recoverAddress(digest, {
+			await assert.rejects(async () => await recoverAddress({
+				hash: digest,
+				signature: {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
 					yParity: signed.yParity === 'even' ? 0 : 1,
-				}),
-				'Error: invalid point'
-			)
+				},
+			}))
 		})
 
-		should('ethers.recoverAddress works for positive case', async() => {
+		test('recoverAddress works for positive case', async() => {
 			const validTransaction = {
 				hash: '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
 				nonce: '0x15174',
@@ -172,15 +178,18 @@ export async function main() {
 
 			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
 
-			const addr = ethers.recoverAddress(digest, {
+			const addr = await recoverAddress({
+				hash: digest,
+				signature: {
 				r: bytes32String(signed.r),
 				s: bytes32String(signed.s),
 				yParity: signed.yParity === 'even' ? 0 : 1,
+				},
 			})
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
 		})
 
-		should('typed transaction v values 0x0 and 0x1 normalize to parity', async () => {
+		test('typed transaction v values 0x0 and 0x1 normalize to parity', async () => {
 			const base7702Transaction = {
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -229,7 +238,7 @@ export async function main() {
 			assert.equal(oddTransaction.authorizationList[0]?.yParity, 'odd')
 		})
 
-		should('typed transaction with block data parses yParity without v', async () => {
+		test('typed transaction with block data parses yParity without v', async () => {
 			const parsedTransaction = EthereumSignedTransactionWithBlockData.parse({
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -266,7 +275,7 @@ export async function main() {
 			assert.equal('v' in parsedTransaction, false)
 		})
 
-		should('typed transaction parsers reject legacy-style v values', async () => {
+		test('typed transaction parsers reject legacy-style v values', async () => {
 			const base7702Transaction = {
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -311,7 +320,7 @@ export async function main() {
 			}))
 		})
 
-		should('transaction receipt parses 7702 without authorization list fields', async () => {
+		test('transaction receipt parses 7702 without authorization list fields', async () => {
 			const receipt = EthTransactionReceiptResponse.parse({
 				type: '0x4',
 				blockHash: testBytes32('41'),
@@ -333,7 +342,7 @@ export async function main() {
 			assert.equal('authorizationList' in receipt, false)
 		})
 
-		should('typed transaction serializers use the correct prefix bytes', async () => {
+		test('typed transaction serializers use the correct prefix bytes', async () => {
 			const unsigned7702 = EthereumUnsignedTransaction.parse({
 				type: '0x4',
 				from: '0x0000000000000000000000000000000000000001',
@@ -377,12 +386,12 @@ export async function main() {
 			assert.equal(serializedSigned4844[0], 3)
 		})
 
-		should('EthereumSignatureParity rejects unsupported values', async () => {
+		test('EthereumSignatureParity rejects unsupported values', async () => {
 			assert.throws(() => EthereumSignatureParity.parse('0x1c'))
 			assert.throws(() => EthereumSignatureParity.parse('0x2'))
 		})
 
-		should('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
+		test('groupEthSimulateV1ResultByInputBlocks collapses split rpc blocks back into one logical block', async () => {
 			const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -425,7 +434,7 @@ export async function main() {
 			assert.equal(groupedBlock.calls[1]?.gasUsed, 0x6dd4n)
 		})
 
-			should('input-based block number counts split execution blocks', async () => {
+			test('input-based block number counts split execution blocks', async () => {
 				const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -460,7 +469,7 @@ export async function main() {
 				assert.equal(await getSimulatedBlockNumberFromInput(ethereum, undefined, splitSimulationStateInput), blockNumber + 2n)
 			})
 
-			should('input-based block number ignores the default empty simulation block', async () => {
+			test('input-based block number ignores the default empty simulation block', async () => {
 				const emptySimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [],
@@ -472,7 +481,7 @@ export async function main() {
 				assert.equal(await getSimulatedBlockNumberFromInput(ethereum, undefined, emptySimulationStateInput), blockNumber)
 			})
 
-			should('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
+			test('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
 			const simulationStateInput = [{
 				stateOverrides: {},
 				transactions: [{
@@ -502,7 +511,7 @@ export async function main() {
 				assert.equal(roundTripped.number, latestBlock.number)
 			})
 
-			should('input-based simulated block hash changes when transaction contents change', async () => {
+			test('input-based simulated block hash changes when transaction contents change', async () => {
 				const baseSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [{
@@ -538,7 +547,7 @@ export async function main() {
 				assert.notEqual(firstBlock.hash, secondBlock.hash)
 			})
 
-			should('input-based transaction lookup uses execution block positions after gas splitting', async () => {
+			test('input-based transaction lookup uses execution block positions after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -579,7 +588,7 @@ export async function main() {
 				assert.equal(found.transactionIndex, 0n)
 			})
 
-			should('input-based execution blocks link together after gas splitting', async () => {
+			test('input-based execution blocks link together after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [
@@ -619,7 +628,7 @@ export async function main() {
 				assert.equal(secondBlock.number, firstBlock.number + 1n)
 			})
 
-			should('state-based receipt uses execution block placement after gas splitting', async () => {
+			test('state-based receipt uses execution block placement after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [
@@ -666,7 +675,7 @@ export async function main() {
 				assert.equal(receipt.cumulativeGasUsed, receipt.gasUsed)
 			})
 
-			should('state-based logs honor the first simulated execution block hash after gas splitting', async () => {
+			test('state-based logs honor the first simulated execution block hash after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
 					transactions: [
@@ -708,10 +717,123 @@ export async function main() {
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)
 				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
 			})
-		})
-	}
+			test('execution-only simulation skips token balance follow-up simulation', async () => {
+				const simulationStateInput = [{
+					stateOverrides: {},
+					transactions: [{
+						signedTransaction: mockSignTransaction({
+							...exampleTransaction,
+							nonce: 0n,
+						}),
+						website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+						created: new Date(),
+						originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+						transactionIdentifier: 10n,
+					}],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
 
-await runIfRoot(async  () => {
-	await main()
-	await run()
-}, import.meta)
+				requestHandler.ethSimulateV1Calls.length = 0
+				const fullSimulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (fullSimulationState.success === false) throw new Error('simulation unexpectedly failed')
+				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), true)
+
+				requestHandler.ethSimulateV1Calls.length = 0
+				const executionSimulationState = await createExecutionSimulationState(ethereum, undefined, simulationStateInput)
+				if (executionSimulationState.success === false) throw new Error('simulation unexpectedly failed')
+				assert.equal(requestHandler.ethSimulateV1Calls.length, 1)
+				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), false)
+			})
+
+			test('execution-only receipt uses execution block placement after gas splitting', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 10n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 11n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
+				if (secondHash === undefined) throw new Error('second transaction hash missing')
+				const secondBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 2n, true)
+				if (secondBlock === null) throw new Error('second simulated block missing')
+				const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, secondHash)
+				if (receipt === null) throw new Error('receipt missing')
+
+				assert.equal(receipt.blockNumber, blockNumber + 2n)
+				assert.equal(receipt.blockHash, secondBlock.hash)
+				assert.equal(receipt.transactionIndex, 0n)
+				assert.equal(receipt.cumulativeGasUsed, receipt.gasUsed)
+			})
+
+			test('execution-only logs honor the first simulated execution block hash after gas splitting', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 12n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 13n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const firstBlock = await getSimulatedBlockFromInput(ethereum, undefined, splitSimulationStateInput, blockNumber + 1n, true)
+				if (firstBlock === null) throw new Error('first simulated block missing')
+				const logs = await getSimulatedLogs(ethereum, undefined, simulationState, { blockHash: firstBlock.hash })
+
+				assert.equal(logs.length, 1)
+				assert.equal(logs[0]?.blockHash, firstBlock.hash)
+				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
+			})
+		})

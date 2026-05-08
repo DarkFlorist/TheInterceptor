@@ -35,7 +35,7 @@ type SignatureCardParams = {
 
 type SignatureHeaderParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
-	removeTransactionOrSignedMessage?: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
+	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 }
 
 export function identifySignature(data: VisualizedPersonalSignRequest) {
@@ -53,7 +53,8 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign Gnosis Safe message',
 		}
 		case 'EIP712': {
-			const name = data.message.domain.name?.type === 'string' ? `${ data.message.domain.name.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'
+			const domainName = data.message.domain['name']
+			const name = domainName?.type === 'string' ? `${ domainName.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'
 			return {
 				title: `${ name } signing request`,
 				rejectAction: `Reject ${ name }`,

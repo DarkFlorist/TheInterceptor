@@ -458,9 +458,9 @@ async function runScenarioManyTimes(scenario: ScenarioName, iterations: number, 
 }
 
 async function main() {
-	const scenarioFilter = (process.env.BENCH_SCENARIO ?? 'all').toLowerCase()
-	const iterations = Number(process.env.BENCH_ITERATIONS ?? '1')
-	if (!Number.isFinite(iterations) || iterations <= 0) throw new Error(`Invalid BENCH_ITERATIONS value: ${ process.env.BENCH_ITERATIONS ?? '1' }`)
+	const scenarioFilter = (process.env['BENCH_SCENARIO'] ?? 'all').toLowerCase()
+	const iterations = Number(process.env['BENCH_ITERATIONS'] ?? '1')
+	if (!Number.isFinite(iterations) || iterations <= 0) throw new Error(`Invalid BENCH_ITERATIONS value: ${ process.env['BENCH_ITERATIONS'] ?? '1' }`)
 	const transactionPageServer = scenarioFilter === 'all' || scenarioFilter === 'stacked'
 		? await startTransactionStackPageServer()
 		: undefined

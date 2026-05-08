@@ -1,7 +1,7 @@
 import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
-import { keccak256, toUtf8Bytes } from 'ethers'
+import { keccak256, stringToBytes } from 'viem/utils'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
 import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
@@ -41,7 +41,7 @@ export class EthereumJSONRpcRequestHandler {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			}
 		}
-		const hash = keccak256(toUtf8Bytes(JSON.stringify(serialized)))
+		const hash = keccak256(stringToBytes(JSON.stringify(serialized)))
 		if (bypassCache === false) {
 			const cacheValue = this.cache.get(hash)
 			if (cacheValue !== undefined) return cacheValue
