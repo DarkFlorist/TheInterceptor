@@ -5,7 +5,7 @@ import { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { PopupMessageReplyRequests, PopupReplyOption, PopupRequests } from '../types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, PopupRequests, PopupRequestsReplies, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 
 function isIgnorableClosedMessageChannelError(error: Error) {
 	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
@@ -59,13 +59,17 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-type PopupRequestByMethod<Method extends PopupRequests['method']> = Extract<PopupRequests, { method: Method }>
+function parsePopupReply<Request extends PopupRequests>(message: Request, reply: unknown): PopupRequestsReplyReturn<Request> {
+	const replyParser = PopupRequestsReplies[message.method]
+	if (replyParser === undefined) return undefined as PopupRequestsReplyReturn<Request>
+	return replyParser.parse(reply) as PopupRequestsReplyReturn<Request>
+}
 
-export async function sendPopupMessageWithReply(message: PopupRequests): Promise<PopupReplyOption | undefined> {
+export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request> | undefined> {
 	try {
-		const rawReply = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
-		if (rawReply === null) return undefined
-		return PopupReplyOption.parse(rawReply)
+		const reply = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
+		if (reply === null || reply === undefined) return undefined
+		return parsePopupReply(message, reply)
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isIgnorableClosedMessageChannelError(error)) return undefined
@@ -75,6 +79,8 @@ export async function sendPopupMessageWithReply(message: PopupRequests): Promise
 		return undefined
 	}
 }
+
+type PopupRequestByMethod<Method extends PopupRequests['method']> = Extract<PopupRequests, { method: Method }>
 
 export async function requestPopupMakeMeRichData() {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
