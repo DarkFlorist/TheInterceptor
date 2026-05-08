@@ -65,10 +65,10 @@ function parsePopupReply<Request extends PopupRequests>(message: Request, reply:
 	return replyParser.parse(reply) as PopupRequestsReplyReturn<Request>
 }
 
-export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request>> {
+export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request> | undefined> {
 	try {
 		const reply = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
-		if (reply === null || reply === undefined) return undefined as PopupRequestsReplyReturn<Request>
+		if (reply === null || reply === undefined) return undefined
 		return parsePopupReply(message, reply)
 	} catch (error) {
 		if (error instanceof Error) {
@@ -80,9 +80,61 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 	}
 }
 
+type PopupRequestByMethod<Method extends PopupRequests['method']> = Extract<PopupRequests, { method: Method }>
+
+export async function requestPopupMakeMeRichData() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
+	return reply?.method === 'popup_requestMakeMeRichData' ? reply : undefined
+}
+
+export async function requestPopupActiveAddresses() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestActiveAddresses' })
+	return reply?.method === 'popup_requestActiveAddresses' ? reply : undefined
+}
+
+export async function requestPopupSimulationMode() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
+	return reply?.method === 'popup_requestSimulationMode' ? reply : undefined
+}
+
+export async function requestPopupLatestUnexpectedError() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
+	return reply?.method === 'popup_requestLatestUnexpectedError' ? reply : undefined
+}
+
+export async function requestPopupInterceptorSimulationInput() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
+	return reply?.method === 'popup_requestInterceptorSimulationInput' ? reply : undefined
+}
+
+export async function requestPopupCompleteVisualizedSimulation() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
+	return reply?.method === 'popup_requestCompleteVisualizedSimulation' ? reply : undefined
+}
+
+export async function requestPopupSimulationMetadata() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
+	return reply?.method === 'popup_requestSimulationMetadata' ? reply : undefined
+}
+
+export async function requestPopupAbiAndNameFromBlockExplorer(data: PopupRequestByMethod<'popup_requestAbiAndNameFromBlockExplorer'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data })
+	return reply?.method === 'popup_requestAbiAndNameFromBlockExplorer' ? reply : undefined
+}
+
+export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'popup_requestIdentifyAddress'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestIdentifyAddress', data })
+	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
+}
+
+export async function requestIsMainPopupWindowOpen() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
+	return reply?.method === 'popup_isMainPopupWindowOpen' ? reply : undefined
+}
+
 export async function sendPopupReadyAndListening(page: PopupReadyAndListeningPage): Promise<PopupOrTabId | undefined> {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page } })
-	return reply?.data.popupOrTabId
+	return reply?.method === 'popup_readyAndListening' ? reply.data.popupOrTabId : undefined
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'

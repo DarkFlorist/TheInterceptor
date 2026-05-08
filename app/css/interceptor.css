@@ -260,6 +260,52 @@ html, body {
 	box-shadow: none;
  }
 
+.simulation-stack-import-field {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: 100%;
+}
+
+.simulation-stack-import-input {
+	width: 100%;
+	height: 12rem;
+	max-height: 18rem;
+	padding: 0.75rem;
+	overflow-y: auto;
+	overflow-x: hidden;
+	resize: vertical;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	font-family: monospace;
+	font-size: 13px;
+	line-height: 1.4;
+	color: var(--text-color);
+	background-color: var(--surface-dark-color);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 4px;
+	box-sizing: border-box;
+	box-shadow: inset 0 1px 2px var(--black-alpha-90);
+}
+
+.simulation-stack-import-input:hover {
+	border-color: var(--highlighted-primary-color);
+}
+
+.simulation-stack-import-input:focus {
+	outline: none;
+	border-color: var(--primary-color);
+	box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.simulation-stack-import-input-invalid,
+.simulation-stack-import-input-invalid:hover,
+.simulation-stack-import-input-invalid:focus {
+	color: var(--negative-color);
+	border-color: var(--negative-color);
+	box-shadow: 0 0 0 1px var(--negative-color);
+}
+
 .input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {
 	border-bottom: unset
 }

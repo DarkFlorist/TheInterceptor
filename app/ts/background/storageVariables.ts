@@ -10,7 +10,8 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { isValidName, namehash } from 'ethers'
+import { namehash } from 'viem/ens'
+import { isValidEnsName } from '../utils/ens.js'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
@@ -240,7 +241,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 	}
 }
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
-	const rawEntries = (await browser.storage.local.get('userAddressBookEntriesV3')).userAddressBookEntriesV3
+	const rawEntries = (await browser.storage.local.get('userAddressBookEntriesV3'))['userAddressBookEntriesV3']
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
 	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
 	if (rawEntries === undefined) return defaultActiveAddresses
@@ -293,7 +294,7 @@ export async function setLatestUnexpectedError(latestUnexpectedError: Unexpected
 }
 
 export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured | undefined> {
-	const rawError = (await browser.storage.local.get('latestUnexpectedError')).latestUnexpectedError
+	const rawError = (await browser.storage.local.get('latestUnexpectedError'))['latestUnexpectedError']
 	const parsedError = await browserStorageLocalSafeParseGet('latestUnexpectedError')
 	if (parsedError?.latestUnexpectedError !== undefined) return parsedError.latestUnexpectedError
 	if (rawError === undefined) return undefined
@@ -307,7 +308,7 @@ export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNa
 
 const ensNodeHashesSemaphore = new Semaphore(1)
 export async function addEnsNodeHash(name: string) {
-	if (!isValidName(name)) return
+	if (!isValidEnsName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsNodeHashes() || []

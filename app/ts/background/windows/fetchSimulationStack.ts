@@ -4,7 +4,7 @@ import { Future } from '../../utils/future.js'
 import { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { getSimulationInputHash } from '../popupSimulationFingerprint.js'
+import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
@@ -139,7 +139,7 @@ export async function openFetchSimulationStackDialogOrGetCachedResult(simulation
 	const identifier = websiteSocketToString(socket)
 	const newHash = getSimulationStackHash(input)
 	const previousDecision = simulationStackDecisions.find((x) => x.identifier === identifier)
-	if (previousDecision?.hash === newHash) {
+	if (previousDecision !== undefined && previousDecision.hash === newHash) {
 		if (previousDecision.accept) return { result: await getSimulationStack(simulationState, params.params[0]) }
 		return { type: 'result' as const, method: params.method, error: userDeniedChange.error }
 	}

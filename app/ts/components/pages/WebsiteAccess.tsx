@@ -239,7 +239,9 @@ const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) =>
 		case 'disabled':
 			return <span class = 'status-danger' role = 'img' title = 'Protection Disabled' aria-label = 'Protection Disabled'><InterceptorDisabledIcon /></span>
 		case undefined:
-			return <></>
+			return null
+		default:
+			return null
 	}
 }
 
