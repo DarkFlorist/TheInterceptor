@@ -126,6 +126,8 @@ class TestElement extends TestNode {
 
 	addEventListener() {}
 	removeEventListener() {}
+	focus() {}
+	blur() {}
 	showPopover() {}
 	hidePopover() {}
 	togglePopover() {}
