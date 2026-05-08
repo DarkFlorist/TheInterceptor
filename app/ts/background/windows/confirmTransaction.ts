@@ -351,11 +351,11 @@ export async function openConfirmTransactionDialogForMessage(
 		request,
 		messageIdentifier,
 	}
-		try {
-			const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
-			await pendingConfirmationSemaphore.execute(async () => {
-				const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
-				if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
+	try {
+		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
+		await pendingConfirmationSemaphore.execute(async () => {
+			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
+			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
 
 			const pendingMessage = {
 				type: 'SignableMessage' as const,
@@ -369,27 +369,27 @@ export async function openConfirmTransactionDialogForMessage(
 				website,
 				approvalStatus: { status: 'WaitingForUser' as const },
 				signedMessageTransaction,
-				}
-				await appendPendingTransactionOrMessage(pendingMessage)
-				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+			}
+			await appendPendingTransactionOrMessage(pendingMessage)
+			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
-				await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
-					if (message.type !== 'SignableMessage') return message
-					return modifyObject(message, { transactionOrMessageCreationStatus: 'Simulating' as const } )
-				})
-				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-
-				await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
-					if (message.type !== 'SignableMessage') return message
-					return { ...message, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
-				})
-				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-
-				await tryFocusingTabOrWindow(openedDialog)
-				if (visualizedPersonalSignRequest.type === 'SafeTx') {
-					await simulateGnosisSafeTransactionOnPass(ethereumClientService, tokenPriceService, visualizedPersonalSignRequest)
-				}
+			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
+				if (message.type !== 'SignableMessage') return message
+				return modifyObject(message, { transactionOrMessageCreationStatus: 'Simulating' as const } )
 			})
+			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+
+			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
+				if (message.type !== 'SignableMessage') return message
+				return { ...message, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
+			})
+			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+
+			await tryFocusingTabOrWindow(openedDialog)
+			if (visualizedPersonalSignRequest.type === 'SafeTx') {
+				await simulateGnosisSafeTransactionOnPass(ethereumClientService, tokenPriceService, visualizedPersonalSignRequest)
+			}
+		})
 	} catch(e) {
 		await handleUnexpectedError(e)
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'Failed to process message signing request. See Interceptor for error message')

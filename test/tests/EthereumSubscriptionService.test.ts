@@ -83,7 +83,7 @@ async function loadModules() {
 	}
 }
 
-	const blockNumber = 8443561n
+const blockNumber = 8443561n
 	const rpcNetwork = {
 		name: 'Goerli',
 		chainId: 5n,

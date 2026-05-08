@@ -120,15 +120,15 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4':
-			case 'eth_sendRawTransaction':
-			case 'eth_sendTransaction': {
-				const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket: request.uniqueRequestIdentifier.requestSocket }
-				if (params.success) {
-					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
-							method: 'popup_confirmDialog',
-							data: {
-								uniqueRequestIdentifier,
+		case 'eth_sendRawTransaction':
+		case 'eth_sendTransaction': {
+			const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket: request.uniqueRequestIdentifier.requestSocket }
+			if (params.success) {
+				try {
+					await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
+						method: 'popup_confirmDialog',
+						data: {
+							uniqueRequestIdentifier,
 							action: 'signerIncluded',
 							signerReply: params.reply,
 						}
