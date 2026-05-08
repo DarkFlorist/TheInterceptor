@@ -111,19 +111,25 @@ export const openChangeChainDialog = async (
 				simulationMode: simulationMode,
 				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
 			})
-				await updateChainChangeViewWithPendingRequest()
-			} else {
-				await resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
-			}
-			pendForSignerReply = undefined
+			await updateChainChangeViewWithPendingRequest()
+		} else {
+			await resolveChainChange(
+				ethereum,
+				tokenPriceService,
+				resetSimulationServices,
+				websiteTabConnections,
+				rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier),
+			)
+		}
+		pendForSignerReply = undefined
 
-			const reply = await pendForUserReply
+		const reply = await pendForUserReply
 
-			// forward message to content script
-			return resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, simulationMode)
-		} finally {
-			removeWindowTabListeners(onCloseWindow, onCloseTab)
-			pendForUserReply = undefined
+		// forward message to content script
+		return resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, simulationMode)
+	} finally {
+		removeWindowTabListeners(onCloseWindow, onCloseTab)
+		pendForUserReply = undefined
 		if (openedDialog) await closePopupOrTabById(openedDialog)
 		openedDialog = undefined
 	}

@@ -451,11 +451,11 @@ export async function openConfirmTransactionDialogForTransaction(
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
 					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
 				}
-					if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
-					return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
-				})
-				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-				await tryFocusingTabOrWindow(openedDialog)
+				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
+				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+			})
+			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }
 		} catch(e: unknown) {
 			printError(e)

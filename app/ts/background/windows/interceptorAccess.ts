@@ -42,7 +42,15 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			accessRequestId: pendingRequest.accessRequestId,
 			userReply: 'noResponse' as const
 		}
-			await resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
+		await resolve(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			reply,
+			pendingRequest.request,
+			pendingRequest.website,
+		)
 	}
 }
 
@@ -50,7 +58,15 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 	const promises = await getPendingAccessRequests()
 	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 	if (pendingRequest === undefined) throw new Error('Access request missing!')
-	return await resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
+	return await resolve(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		reply,
+		pendingRequest.request,
+		pendingRequest.website,
+	)
 }
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
@@ -130,12 +146,12 @@ export async function requestAccessFromUser(
 			return false
 		}
 
-			const justAddToPending = await verifyPendingRequests()
-			const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
-			if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
-				if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
-				return
-			}
+		const justAddToPending = await verifyPendingRequests()
+		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
+		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
+			if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+			return
+		}
 		if (hasAccess !== 'askAccess') return
 		if (!justAddToPending) {
 			addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)

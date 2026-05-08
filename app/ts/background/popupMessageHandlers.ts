@@ -84,11 +84,11 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 				},
 			}
 		}
-			case 'confirmTransaction': {
-				const pendingTransactions = await getPendingTransactionsAndMessages()
-				const firstPendingTransaction = pendingTransactions[0]
-				if (firstPendingTransaction === undefined) return undefined
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+		case 'confirmTransaction': {
+			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const firstPendingTransaction = pendingTransactions[0]
+			if (firstPendingTransaction === undefined) return undefined
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
@@ -306,10 +306,10 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			])
 			return
 		}
-			case 'Transaction': {
-				if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
-				try {
-					const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
+		case 'Transaction': {
+			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
+			try {
+				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
