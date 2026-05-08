@@ -19,7 +19,7 @@ import { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
-import { ethers } from 'ethers'
+import { isAddress } from 'viem/utils'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { Website } from '../types/websiteAccessTypes.js'
@@ -557,7 +557,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 	// check that address is valid
 	if (incompleteAddressBookEntry.address !== undefined) {
 		const trimmed = incompleteAddressBookEntry.address.trim()
-		if (ethers.isAddress(trimmed)) {
+		if (isAddress(trimmed)) {
 			const address = EthereumAddress.parse(trimmed)
 			if (incompleteAddressBookEntry.addingAddress) {
 				const identifiedAddress = await identifyAddress(ethereum, undefined, address)
