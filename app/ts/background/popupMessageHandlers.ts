@@ -18,8 +18,8 @@ import { isJSON } from '../utils/json.js'
 import { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
-import { ethers } from 'ethers'
+import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
+import { isAddress } from 'viem/utils'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { Website } from '../types/websiteAccessTypes.js'
@@ -78,7 +78,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 			if (promise === undefined) return undefined
 			await updateChainChangeViewWithPendingRequest()
 			return {
-				method: 'popup_readyAndListening_reply' as const,
+				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
 				},
@@ -90,7 +90,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 				if (firstPendingTransaction === undefined) return undefined
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return {
-				method: 'popup_readyAndListening_reply' as const,
+				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
 				},
@@ -102,7 +102,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 			if (firstPendingAccessRequest === undefined) return undefined
 			await updateInterceptorAccessViewWithPendingRequests()
 			return {
-				method: 'popup_readyAndListening_reply' as const,
+				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: firstPendingAccessRequest.popupOrTabId,
 				},
@@ -113,7 +113,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 			if (promise === undefined) return undefined
 			await updateFetchSimulationStackRequestWithPendingRequest()
 			return {
-				method: 'popup_readyAndListening_reply' as const,
+				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
 				},
@@ -558,7 +558,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 	// check that address is valid
 	if (incompleteAddressBookEntry.address !== undefined) {
 		const trimmed = incompleteAddressBookEntry.address.trim()
-		if (ethers.isAddress(trimmed)) {
+		if (isAddress(trimmed)) {
 			const address = EthereumAddress.parse(trimmed)
 			if (incompleteAddressBookEntry.addingAddress) {
 				const identifiedAddress = await identifyAddress(ethereum, undefined, address)
@@ -601,7 +601,7 @@ export async function requestAbiAndNameFromBlockExplorer(parsedRequest: RequestA
 	const etherscanReply = await fetchAbiFromBlockExplorer(parsedRequest.data.address, parsedRequest.data.chainId)
 	if (etherscanReply.success) {
 		return {
-			type: 'RequestAbiAndNameFromBlockExplorer' as const,
+			method: 'popup_requestAbiAndNameFromBlockExplorer' as const,
 			data: {
 				success: true,
 				abi: etherscanReply.abi,
@@ -610,7 +610,7 @@ export async function requestAbiAndNameFromBlockExplorer(parsedRequest: RequestA
 		} as const
 	}
 	return {
-		type: 'RequestAbiAndNameFromBlockExplorer' as const,
+		method: 'popup_requestAbiAndNameFromBlockExplorer' as const,
 		data: {
 			success: false,
 			error: etherscanReply.error
@@ -799,21 +799,36 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
 	const makeMeRichPromise = silenceChromeUnCaughtPromise(getMakeCurrentAddressRich())
 	const fixedAddressRichList = await getFixedAddressRichList()
-	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => (
-		{ ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
-	))
+	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
+		try {
+			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
+		} catch (error) {
+			const address = checksummedAddress(element.address)
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+			await handleUnexpectedError(new Error(`Failed to identify rich list address ${ address }: ${ errorMessage }`))
+			return {
+				...element,
+				addressBookEntry: {
+					type: 'contact' as const,
+					name: address,
+					address: element.address,
+					entrySource: 'FilledIn' as const,
+				}
+			}
+		}
+	})
 	return {
-		type: 'RequestMakeMeRichDataReply' as const,
+		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedRichListPromises),
 		makeCurrentAddressRich: await makeMeRichPromise,
 	}
 }
 
-export const requestActiveAddresses = async () => ({ type: 'RequestActiveAddressesReply' as const, activeAddresses: await getActiveAddresses() })
+export const requestActiveAddresses = async () => ({ method: 'popup_requestActiveAddresses' as const, activeAddresses: await getActiveAddresses() })
 
-export const requestSimulationMode = async () => ({ type: 'RequestSimulationModeReply' as const, simulationMode: (await getSettings()).simulationMode })
+export const requestSimulationMode = async () => ({ method: 'popup_requestSimulationMode' as const, simulationMode: (await getSettings()).simulationMode })
 
-export const requestLatestUnexpectedError = async () => ({ type: 'RequestLatestUnexpectedErrorReply' as const, latestUnexpectedError: await getLatestUnexpectedError() })
+export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
 async function getCachedRichData() {
 	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
@@ -903,7 +918,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 			default: assertNever(operation)
 		}
 	}) })
-	return { type: 'RequestInterceptorSimulationInputReply' as const, ethSimulateV1InputString:
+	return { method: 'popup_requestInterceptorSimulationInput' as const, ethSimulateV1InputString:
 		JSON.stringify(
 			InterceptorSimulationExport.serialize({
 				name: 'Interceptor Simulation Export',
@@ -942,14 +957,14 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 
 export async function requestCompleteVisualizedSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	const visualizedSimulatorState = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
-	return { type: 'RequestCompleteVisualizedSimulationReply' as const, visualizedSimulatorState }
+	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
 	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService) : undefined
 	if (simulationState === undefined || simulationState.success === false) return {
-		type: 'RequestSimulationMetadata' as const,
+		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {
 			namedTokenIds: [], addressBookEntries: [], ens: { ensNameHashes: [], ensLabelHashes: [] }
 		}
@@ -973,9 +988,9 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 	const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
 	const metadata = await getMetadataForSimulation(simulationState, ethereumClientService, undefined, events, inputData)
-	return { type: 'RequestSimulationMetadata' as const, metadata }
+	return { method: 'popup_requestSimulationMetadata' as const, metadata }
 }
 
 export async function requestIdentifyAddress(ethereumClientService: EthereumClientService, parsedRequest: RequestIdentifyAddress) {
-	return { type: 'RequestIdentifyAddress' as const, data: { addressBookEntry: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address) } }
+	return { method: 'popup_requestIdentifyAddress' as const, data: { addressBookEntry: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address) } }
 }

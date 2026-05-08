@@ -7,7 +7,7 @@ import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-int
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
-import { ethers } from 'ethers'
+import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
@@ -223,7 +223,7 @@ export function App() {
 		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
 			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
 			if (maybeRequest.success && maybeRequest.value.method === 'popup_isMainPopupWindowOpen') {
-				sendResponse({ type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } })
+				sendResponse({ method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } })
 				return true
 			}
 
@@ -307,7 +307,7 @@ export function App() {
 		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if (!ethers.isAddress(trimmed)) return
+		if (!isAddress(trimmed)) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
@@ -316,7 +316,7 @@ export function App() {
 		}
 
 		// address not found, let's promt user to create it
-		const addressString = ethers.getAddress(trimmed)
+		const addressString = getAddress(trimmed)
 		const newPage = { page: 'AddNewAddress', state: {
 			windowStateId: 'appAddressPaste',
 			errorState: undefined,

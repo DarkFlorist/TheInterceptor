@@ -1,7 +1,9 @@
-import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from "ethers"
-import { EthereumAddress } from "../types/wire-types.js"
-import { addressString } from "./bigint.js"
-import { networkPriceSources } from "../background/settings.js"
+import type { Abi } from 'viem'
+import { encodePacked, getCreate2Address, keccak256 } from 'viem/utils'
+import { EthereumAddress } from '../types/wire-types.js'
+import { addressString } from './bigint.js'
+import { networkPriceSources } from '../background/settings.js'
+import { decodeFunctionOutput, encodeAbiValues, encodeFunctionCall } from './abiRuntime.js'
 
 interface UniswapPools {
 	token0IsQuote: boolean
@@ -10,23 +12,68 @@ interface UniswapPools {
 }
 
 interface Multicall3Call {
-	target: string
+	target: `0x${ string }`
 	allowFailure: boolean
-	callData: string
+	callData: `0x${ string }`
 }
 
 const isSuccessfulCall = ({ returnData, success }: { returnData: string, success: boolean }) => success && returnData !== '0x'
 
+const UniswapV2PairABI = [
+	{
+		type: 'function',
+		name: 'getReserves',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [
+			{ name: 'reserve0', type: 'uint112' },
+			{ name: 'reserve1', type: 'uint112' },
+			{ name: 'blockTimestampLast', type: 'uint32' },
+		],
+	},
+] as const satisfies Abi
+
+const UniswapV3PairABI = [
+	{
+		type: 'function',
+		name: 'slot0',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [
+			{ name: 'sqrtPriceX96', type: 'uint160' },
+			{ name: 'tick', type: 'int24' },
+			{ name: 'observationIndex', type: 'uint16' },
+			{ name: 'observationCardinality', type: 'uint16' },
+			{ name: 'observationCardinalityNext', type: 'uint16' },
+			{ name: 'feeProtocol', type: 'uint8' },
+			{ name: 'unlocked', type: 'bool' },
+		],
+	},
+] as const satisfies Abi
+
+const Erc20BalanceAbi = [
+	{
+		type: 'function',
+		name: 'balanceOf',
+		stateMutability: 'view',
+		inputs: [{ name: 'account', type: 'address' }],
+		outputs: [{ name: 'balance', type: 'uint256' }],
+	},
+] as const satisfies Abi
+
 export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: EthereumAddress): UniswapPools | undefined {
 	const [token0, token1] = token < quoteToken ? [addressString(token), addressString(quoteToken)] : [addressString(quoteToken), addressString(token)]
-	const abi = new AbiCoder()
-	const v2Pools = networkPriceSources.uniswapV2Like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address(addressString(factory), keccak256(solidityPacked(['address', 'address'], [token0, token1])), initCodeHash)))
+	const v2Pools = networkPriceSources.uniswapV2Like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address({
+		from: addressString(factory),
+		salt: keccak256(encodePacked(['address', 'address'], [token0, token1])),
+		bytecodeHash: initCodeHash,
+	})))
 	const v3Pools = networkPriceSources.uniswapV3Like.flatMap(({ factory, initCodeHash }) => [
-		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 100])), initCodeHash),
-		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 500])), initCodeHash),
-		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 3000])), initCodeHash),
-		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 10000])), initCodeHash)
-	]).map(addr => EthereumAddress.parse(addr))
+		getCreate2Address({ from: addressString(factory), salt: keccak256(encodeAbiValues(['address', 'address', 'uint24'], [token0, token1, 100])), bytecodeHash: initCodeHash }),
+		getCreate2Address({ from: addressString(factory), salt: keccak256(encodeAbiValues(['address', 'address', 'uint24'], [token0, token1, 500])), bytecodeHash: initCodeHash }),
+		getCreate2Address({ from: addressString(factory), salt: keccak256(encodeAbiValues(['address', 'address', 'uint24'], [token0, token1, 3000])), bytecodeHash: initCodeHash }),
+		getCreate2Address({ from: addressString(factory), salt: keccak256(encodeAbiValues(['address', 'address', 'uint24'], [token0, token1, 10000])), bytecodeHash: initCodeHash }),
+	]).map((addr) => EthereumAddress.parse(addr))
 
 	if (v2Pools.length === 0 && v3Pools.length === 0) return undefined
 
@@ -37,38 +84,31 @@ export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: Et
 	}
 }
 
-const UniswapV2PairABI = ['function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)']
-const UniswapV3PairABI = ['function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)']
-
 export function constructUniswapLikeSpotCalls(tokenA: EthereumAddress, tokenB: EthereumAddress, poolAddresses: UniswapPools): Multicall3Call[] {
-	const IUniswapV2Pool = new Interface(UniswapV2PairABI)
-	const IUniswapV3Pool = new Interface(UniswapV3PairABI)
-	const IErc20Bal = new Interface(['function balanceOf(address) external view returns (uint256)'])
-
 	return [
 		// Pool calls
-		...poolAddresses.v2Pools.map(poolAddress => ({
+		...poolAddresses.v2Pools.map((poolAddress) => ({
 			target: addressString(poolAddress),
 			allowFailure: true,
-			callData: IUniswapV2Pool.encodeFunctionData('getReserves')
+			callData: encodeFunctionCall(UniswapV2PairABI, 'getReserves', [])
 		})),
-		...poolAddresses.v3Pools.map(poolAddress => ({
+		...poolAddresses.v3Pools.map((poolAddress) => ({
 			target: addressString(poolAddress),
 			allowFailure: true,
-			callData: IUniswapV3Pool.encodeFunctionData('slot0')
+			callData: encodeFunctionCall(UniswapV3PairABI, 'slot0', [])
 		})),
 
 		// Balance calls for v3 pool TVL
-		...poolAddresses.v3Pools.flatMap(poolAddress => [
+		...poolAddresses.v3Pools.flatMap((poolAddress) => [
 			{
 				target: addressString(tokenA),
 				allowFailure: true,
-				callData: IErc20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
+				callData: encodeFunctionCall(Erc20BalanceAbi, 'balanceOf', [addressString(poolAddress)])
 			},
 			{
 				target: addressString(tokenB),
 				allowFailure: true,
-				callData: IErc20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
+				callData: encodeFunctionCall(Erc20BalanceAbi, 'balanceOf', [addressString(poolAddress)])
 			}
 		]),
 	]
@@ -79,21 +119,19 @@ interface PriceWithLiquidity {
 	liquidity: bigint
 }
 
-export function calculatePricesFromUniswapLikeReturnData(multicallData: { success: boolean, returnData: string }[], poolAddresses: UniswapPools): PriceWithLiquidity[] {
-	const IUniswapV2Pool = new Interface(UniswapV2PairABI)
-	const IUniswapV3Pool = new Interface(UniswapV3PairABI)
+export function calculatePricesFromUniswapLikeReturnData(multicallData: readonly { success: boolean, returnData: `0x${ string }` }[], poolAddresses: UniswapPools): PriceWithLiquidity[] {
 	const multicallReturnData = [...multicallData] // Make mutable to be able to splice
 
 	const v2Prices = multicallReturnData.splice(0, poolAddresses.v2Pools.length).map(({ success, returnData }) => {
 		if (!isSuccessfulCall({ returnData, success })) return undefined
-		const { reserve0, reserve1 } = IUniswapV2Pool.decodeFunctionResult('getReserves', returnData)
+		const [reserve0, reserve1] = decodeFunctionOutput(UniswapV2PairABI, 'getReserves', returnData)
 		if (reserve0 === 0n || reserve1 === 0n) return undefined
 
 		const price = poolAddresses.token0IsQuote
 			? (reserve0 * (10n ** 18n)) / reserve1
 			: (reserve1 * (10n ** 18n)) / reserve0
 
-		return { price, liquidity: BigInt(reserve0 * reserve1) }
+		return { price, liquidity: reserve0 * reserve1 }
 	})
 
 	const v3Prices = multicallReturnData.map(({ success, returnData }, index) => {
@@ -103,13 +141,11 @@ export function calculatePricesFromUniswapLikeReturnData(multicallData: { succes
 		if (multicallReturn1 === undefined || multicallReturn2 === undefined) return undefined
 		if (!isSuccessfulCall({ success, returnData }) || !isSuccessfulCall(multicallReturn1) || !isSuccessfulCall(multicallReturn2)) return undefined
 
-		// Current
-		const { sqrtPriceX96 } = IUniswapV3Pool.decodeFunctionResult('slot0', returnData)
+		const [sqrtPriceX96] = decodeFunctionOutput(UniswapV3PairABI, 'slot0', returnData)
 		const reserve0 = BigInt(multicallReturn1.returnData)
 		const reserve1 = BigInt(multicallReturn2.returnData)
 
 		if (reserve0 === 0n || reserve1 === 0n || sqrtPriceX96 === 0n) return undefined
-		// necessary to avoid divide by 0 error in equation below, pool cannot have epsilon liquidity
 		if (sqrtPriceX96 <= 2n ** 96n / 10n ** 9n) return undefined
 
 		const price = poolAddresses.token0IsQuote

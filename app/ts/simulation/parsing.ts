@@ -5,7 +5,6 @@ import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_C
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsContentHashChanged, handleEnsExpiryExtended, handleEnsFusesSet, handleEnsNameChanged, handleEnsNameUnWrapped, handleEnsNewOwner, handleEnsNewResolver, handleEnsNewTtl, handleEnsControllerNameRenewed, handleEnsReverseClaimed, handleEnsTextChanged, handleEnsTextChangedKeyValue, handleEnsTransfer, handleErc721ApprovalForAllLog, handleControllerNameRegistered, handleBaseRegistrarNameRenewed, handleWithdrawalLog, handleBaseRegistrarNameRegistered, handleNameWrapped } from './logHandlers.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
-import { Interface } from 'ethers'
 import { getAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
 import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
@@ -91,15 +90,17 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 	const addressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, transaction.to)
 	const abi = getAbi(addressBookEntry)
 	if (!abi) return nonParsed
-	const parsed = parseTransactionInputIfPossible(new Interface(abi), transaction.input, transaction.value)
-	if (parsed === null) return nonParsed
+	const parsed = parseTransactionInputIfPossible(abi, transaction.input, transaction.value)
+	if (parsed === undefined) return nonParsed
+	if (parsed.fragment.type !== 'function') return nonParsed
+	const functionFragment = parsed.fragment
 	const argTypes = extractFunctionArgumentTypes(parsed.signature)
 	if (argTypes === undefined) return nonParsed
 	if (parsed.args.length !== argTypes.length) return nonParsed
 	try {
 		const valuesWithTypes = parsed.args.map((value, index) => {
 			const solidityType = argTypes[index]
-			const paramName = parsed.fragment.inputs[index]?.name
+			const paramName = functionFragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
 			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
 			const isArray = solidityType.includes('[')
@@ -129,14 +130,16 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 		const abi = getAbi(loggersAddressBookEntry)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (!abi) return nonParsed
-		const parsed = parseEventIfPossible(new Interface(abi), event)
-		if (parsed === null) return nonParsed
+		const parsed = parseEventIfPossible(abi, event)
+		if (parsed === undefined) return nonParsed
+		if (parsed.fragment.type !== 'event') return nonParsed
+		const eventFragment = parsed.fragment
 		const argTypes = extractFunctionArgumentTypes(parsed.signature)
 		if (argTypes === undefined) return nonParsed
 		if (parsed.args.length !== argTypes.length) return nonParsed
 		const valuesWithTypes = parsed.args.map((value, index) => {
 			const solidityType = argTypes[index]
-			const paramName = parsed.fragment.inputs[index]?.name
+			const paramName = eventFragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
 			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
 			const isArray = solidityType.includes('[')

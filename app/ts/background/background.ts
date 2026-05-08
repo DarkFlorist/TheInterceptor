@@ -23,7 +23,7 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
-import { Interface } from 'ethers'
+import { last } from '../utils/array.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
@@ -81,7 +81,9 @@ export async function refreshConfirmTransactionSimulation(
 				return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
-		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
+		const availableAbis = visualizedSimulatorState.addressBookEntries
+			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
+			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return { statusCode: 'failed' as const, data: {
 				...info,
@@ -94,7 +96,7 @@ export async function refreshConfirmTransactionSimulation(
 			} }
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
-		const lastTransaction = blocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
+		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
 		return {
 			statusCode: 'success' as const,
 			data: {
@@ -120,14 +122,14 @@ export async function refreshConfirmTransactionSimulation(
 		if (error instanceof Error && isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
 
-			const extractToAbi = async () => {
-				const params = transactionToSimulate.originalRequestParameters.params[0]
-				if (!('to' in params)) return []
-				if (params.to === undefined || params.to === null) return []
-				const identified = await identifyAddress(ethereum, undefined, params.to)
-				if ('abi' in identified && identified.abi !== undefined) return [new Interface(identified.abi)]
-				return []
-			}
+		const extractToAbi = async () => {
+			const params = transactionToSimulate.originalRequestParameters.params[0]
+			if (!('to' in params)) return []
+			if (params.to === undefined || params.to === null) return []
+			const identified = await identifyAddress(ethereum, undefined, params.to)
+			if ('abi' in identified && identified.abi !== undefined) return [identified.abi]
+			return []
+		}
 		const baseError = {
 			code: error.code,
 			message: error.message,
@@ -550,10 +552,7 @@ export async function popupMessageHandler(
 				case 'popup_UnexpectedErrorOccured': return await handleUnexpectedErrorInWindow(parsedRequest)
 				case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(ethereum)
 				case 'popup_importSimulationStack': return await importSimulationStack(ethereum, tokenPriceService, parsedRequest)
-				case 'popup_requestCompleteVisualizedSimulation': {
-					await requestCompleteVisualizedSimulation(ethereum, tokenPriceService)
-					return
-				}
+				case 'popup_requestCompleteVisualizedSimulation': return await requestCompleteVisualizedSimulation(ethereum, tokenPriceService)
 				case 'popup_requestSimulationMetadata': return await requestSimulationMetadata(ethereum)
 				case 'popup_requestIdentifyAddress': return await requestIdentifyAddress(ethereum, parsedRequest)
 				case 'popup_isMainPopupWindowOpen': return

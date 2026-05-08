@@ -31,7 +31,7 @@ const makeMockBrowser = () => {
 			getManifest: () => ({ manifest_version: 3 }),
 			sendMessage: async (message: { method?: string }) => {
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 				}
 				return undefined
 			},

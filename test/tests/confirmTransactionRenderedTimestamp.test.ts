@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { Interface } from 'ethers'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -27,7 +27,10 @@ function createBrowserMock() {
 			async sendMessage(message: any) {
 				for (const listener of [...listeners]) listener(message)
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
+				}
+				if (message?.method === 'popup_readyAndListening') {
+					return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
 				}
 				return undefined
 			},
@@ -273,9 +276,8 @@ describe('ConfirmTransaction', () => {
 					case 'eth_simulateV1':
 						{
 							const multicallAbi = (await import('../../app/ts/utils/constants.js')).Multicall3ABI
-							const multicallInterface = new Interface(multicallAbi)
-							const balanceResult = multicallInterface.encodeFunctionResult('getEthBalance', [0n])
-							const aggregate3Result = multicallInterface.encodeFunctionResult('aggregate3', [[{ success: true, returnData: balanceResult }]])
+							const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [0n])
+							const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
 							const blockStateCalls = Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]
 							return serialize((await import('../../app/ts/types/ethSimulate-types.js')).EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
 								number: 123n,

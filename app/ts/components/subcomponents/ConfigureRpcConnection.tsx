@@ -1,7 +1,6 @@
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
-import { Network, JsonRpcProvider } from 'ethers'
 import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import { RpcEntry } from '../../types/rpc.js'
@@ -12,12 +11,16 @@ import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { XMarkIcon } from './icons.js'
-import { FetchRequest } from 'ethers'
 import { JsonRpcResponseError } from '../../utils/errors.js'
+import { EthereumQuantity } from '../../types/wire-types.js'
+
+type RpcProbeResult = {
+	chainId: bigint
+}
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url: string) => void
-	rpcQuery: ReturnType<typeof useAsyncState<Network>>['value']
+	rpcQuery: ReturnType<typeof useAsyncState<RpcProbeResult>>['value']
 	resetRpcQuery: () => void
 }
 
@@ -30,14 +33,13 @@ const throwImprovedError = (error: Error, url: string) => {
 }
 
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
-	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
+	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<RpcProbeResult>()
 
 	const checkServerAvailability = async (url: string) => {
 		try {
-			const fetchRequest = new FetchRequest(url)
-			fetchRequest.timeout = 10000
-			const provider = new JsonRpcProvider(fetchRequest)
-			return await provider.getNetwork()
+			const requestHandler = new EthereumJSONRpcRequestHandler(url)
+			const chainId = await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }, undefined, false, 10000)
+			return { chainId: EthereumQuantity.parse(chainId) }
 		} catch(error: unknown) {
 			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC chain id error', error)
