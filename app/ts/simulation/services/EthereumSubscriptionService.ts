@@ -2,9 +2,9 @@ import { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
-import { EthereumSubscriptionsAndFilters, SimulationStateInput } from '../../types/visualizer-types.js'
+import { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs, type ExecutionSimulationState } from './SimulationModeEthereumClientService.js'
+import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 import { WebsiteSocket } from '../../utils/requests.js'
 
@@ -46,7 +46,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 	ethereumClientService: EthereumClientService,
 	isSimulation: boolean,
 	websiteTabConnections: WebsiteTabConnections,
-	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ExecutionSimulationState | undefined>,
+	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
@@ -67,10 +67,10 @@ export async function sendSubscriptionMessagesForNewBlock(
 
 				if (isSimulation) {
 					const simulationState = await getSimulationState(ethereumClientService)
-					if (simulationState?.success !== true) break
-					const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationState.simulationStateInput)
+					if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) break
+					const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, { kind: 'simulated', value: simulationState.value.simulationStateInput })
 					for (let simulatedBlockNumber = blockNumber + 1n; simulatedBlockNumber <= simulatedHead; simulatedBlockNumber++) {
-						const simulatedBlock = await getSimulatedBlockFromInput(ethereumClientService, undefined, simulationState.simulationStateInput, simulatedBlockNumber, false)
+						const simulatedBlock = await getSimulatedBlockFromInput(ethereumClientService, undefined, { kind: 'simulated', value: simulationState.value.simulationStateInput }, simulatedBlockNumber, false)
 						if (simulatedBlock === null) continue
 						// post our simulated blocks on top (reorg them)
 						sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
@@ -104,7 +104,7 @@ export async function createEthereumSubscription(params: EthSubscribeParams, sub
 	}
 }
 
-export async function createNewFilter(params: EthNewFilter, subscriptionCreatorSocket: WebsiteSocket, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationInput: SimulationStateInput | undefined) {
+export async function createNewFilter(params: EthNewFilter, subscriptionCreatorSocket: WebsiteSocket, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationInput: ResolvedSimulationInput) {
 	const calledInlastBlock = await getSimulatedBlockNumberFromInput(ethereumClientService, requestAbortController, simulationInput)
 	const subscriptionOrFilterId = generateId(40)
 	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
@@ -113,7 +113,7 @@ export async function createNewFilter(params: EthNewFilter, subscriptionCreatorS
 	return subscriptionOrFilterId
 }
 
-export async function getEthFilterChanges(filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ExecutionSimulationState | undefined) {
+export async function getEthFilterChanges(filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) {
 	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
 	const filter = filtersAndSubscriptions.find((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId)
 	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
@@ -128,7 +128,7 @@ export async function getEthFilterChanges(filterId: string, ethereumClientServic
 	return logs
 }
 
-export async function getEthFilterLogs(filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ExecutionSimulationState | undefined) {
+export async function getEthFilterLogs(filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) {
 	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
 	const filter = filtersAndSubscriptions.find((filter) => filter.subscriptionOrFilterId === filterId)
 	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined

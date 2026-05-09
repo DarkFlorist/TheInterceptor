@@ -52,7 +52,7 @@ const RequestInterceptorSimulationInputReply = funtypes.ReadonlyObject({
 type RequestCompleteVisualizedSimulationReply = funtypes.Static<typeof RequestCompleteVisualizedSimulationReply>
 const RequestCompleteVisualizedSimulationReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestCompleteVisualizedSimulation'),
-	visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined)
+	visualizedSimulatorState: CompleteVisualizedSimulation
 })
 
 export type SimulationMetadata = funtypes.Static<typeof SimulationMetadata>

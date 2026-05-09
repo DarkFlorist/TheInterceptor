@@ -152,6 +152,9 @@ class TestDocument {
 		this.body = new TestElement(this, 'body')
 	}
 
+	addEventListener() {}
+	removeEventListener() {}
+
 	createElement(tagName: string) {
 		return new TestElement(this, tagName)
 	}

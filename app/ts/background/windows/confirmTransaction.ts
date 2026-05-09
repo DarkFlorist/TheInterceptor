@@ -5,7 +5,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { InterceptorTransactionStack, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
+import { InterceptorTransactionStack, PASSTHROUGH_STATE, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -61,7 +61,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber: await currentBlockNumberPromise,
-			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
+			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : createPassthroughCompleteVisualizedSimulation(),
 		} }
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
@@ -273,7 +273,7 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 }
 
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
-	const simulationState = simulationMode ? await getUpdatedSimulationState(ethereumClientService) : undefined
+	const simulationState = simulationMode ? await getUpdatedSimulationState(ethereumClientService) : PASSTHROUGH_STATE
 	const parentBlockPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // we are getting the real block here, as we are not interested in the current block where this is going to be included, but the parent
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')

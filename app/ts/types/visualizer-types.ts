@@ -230,6 +230,46 @@ export const SimulationState = funtypes.Union(
 	})
 )
 
+export type PassthroughState = funtypes.Static<typeof PassthroughState>
+export const PassthroughState = funtypes.ReadonlyObject({
+	kind: funtypes.Literal('passthrough'),
+})
+
+export const PASSTHROUGH_STATE: PassthroughState = { kind: 'passthrough' }
+
+export type ResolvedSimulationState = funtypes.Static<typeof ResolvedSimulationState>
+export const ResolvedSimulationState = funtypes.Union(
+	PassthroughState,
+	funtypes.ReadonlyObject({
+		kind: funtypes.Literal('simulated'),
+		value: SimulationState,
+	})
+)
+
+export type ResolvedSimulationInput = funtypes.Static<typeof ResolvedSimulationInput>
+export const ResolvedSimulationInput = funtypes.Union(
+	PassthroughState,
+	funtypes.ReadonlyObject({
+		kind: funtypes.Literal('simulated'),
+		value: SimulationStateInput,
+	})
+)
+
+export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
+export const toResolvedSimulationInput = (value: SimulationStateInput): ResolvedSimulationInput => ({ kind: 'simulated', value })
+
+type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
+export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>
+export type ExecutionSimulationStateBlock = Omit<SimulationStateBlock, 'simulatedTransactions'> & {
+	simulatedTransactions: readonly ExecutionSimulatedTransaction[]
+}
+type SuccessfulExecutionSimulationState = Omit<SuccessfulSimulationState, 'simulatedBlocks'> & {
+	simulatedBlocks: readonly ExecutionSimulationStateBlock[]
+}
+export type ExecutionSimulationState = Extract<SimulationState, { success: false }> | SuccessfulExecutionSimulationState
+export type ResolvedExecutionSimulationState = PassthroughState | { kind: 'simulated', value: ExecutionSimulationState }
+export const toResolvedExecutionSimulationState = (value: ExecutionSimulationState): ResolvedExecutionSimulationState => ({ kind: 'simulated', value })
+
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
 export const TransactionWithAddressBookEntries = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -282,9 +322,12 @@ export type SimulationAndVisualisationResults = {
 	namedTokenIds: readonly NamedTokenId[],
 }
 
+export type ResolvedSimulationResults = PassthroughState | { kind: 'simulated', value: SimulationAndVisualisationResults }
+export const toResolvedSimulationResults = (value: SimulationAndVisualisationResults): ResolvedSimulationResults => ({ kind: 'simulated', value })
+
 export type TransactionVisualizationParameters = {
 	simTx: MaybeSimulatedTransaction
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults>
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -345,18 +388,49 @@ export const VisualizedSimulationState = funtypes.Union(
 	})
 )
 
+export const hasVisualizedSimulationOperations = (visualizedSimulationState: VisualizedSimulationState) => (
+	visualizedSimulationState.visualizedBlocks.some((block) =>
+		block.simulatedAndVisualizedTransactions.length > 0 || block.visualizedPersonalSignRequests.length > 0
+	)
+)
+
+export const isEmptyVisualizedSimulationState = (visualizedSimulationState: VisualizedSimulationState) => (
+	visualizedSimulationState.success === true && !hasVisualizedSimulationOperations(visualizedSimulationState)
+)
+
+export const isEmptySimulationAndVisualisationResults = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => (
+	isEmptyVisualizedSimulationState(simulationAndVisualisationResults.visualizedSimulationState)
+)
+
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 	tokenPriceQuoteToken: funtypes.Union(funtypes.Undefined, Erc20TokenEntry),
 	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
+	simulationState: ResolvedSimulationState,
 	simulationUpdatingState: SimulationUpdatingState,
 	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
 	visualizedSimulationState: VisualizedSimulationState,
 	numberOfAddressesMadeRich: funtypes.Number,
+})
+
+export const createPassthroughCompleteVisualizedSimulation = (
+	simulationId = 0,
+	simulationResultState: SimulationResultState = 'corrupted',
+	numberOfAddressesMadeRich = 0,
+): CompleteVisualizedSimulation => ({
+	simulationUpdatingState: 'done',
+	simulationResultState,
+	simulationId,
+	simulationState: PASSTHROUGH_STATE,
+	addressBookEntries: [],
+	tokenPriceEstimates: [],
+	tokenPriceQuoteToken: undefined,
+	namedTokenIds: [],
+	visualizedSimulationState: { success: true, visualizedBlocks: [] },
+	numberOfAddressesMadeRich,
 })
 
 type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>

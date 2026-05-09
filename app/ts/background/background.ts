@@ -4,7 +4,7 @@ import { getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInter
 import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMakeMeRichList } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack } from './simulationModeHanders.js'
 import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, popupReadyAndListening } from './popupMessageHandlers.js'
-import { SimulationState, SimulationStateInput, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
@@ -13,7 +13,7 @@ import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionsToInput, mockSignTransaction, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionsToInput, mockSignTransaction } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -37,12 +37,12 @@ let simulationAbortController = new AbortController()
 
 export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
 	try {
-		return await createSimulationStateWithNonceAndBaseFeeFixing(await getCurrentSimulationInput(), ethereum)
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(await getCurrentSimulationInput(), ethereum))
 	} catch(error: unknown) {
-		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return
+		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return PASSTHROUGH_STATE
 		printError(error)
 	}
-	return undefined
+	return PASSTHROUGH_STATE
 }
 
 let confirmTransactionAbortController = new AbortController()
@@ -151,9 +151,9 @@ async function handleRPCRequest(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	resetSimulationServices: ResetSimulationServices,
-	getSimulationInput: () => Promise<SimulationStateInput | undefined>,
-	getExecutionSimulationState: () => Promise<ExecutionSimulationState | undefined>,
-	getSimulationState: () => Promise<SimulationState | undefined>,
+	getSimulationInput: () => Promise<ResolvedSimulationInput>,
+	getExecutionSimulationState: () => Promise<ResolvedExecutionSimulationState>,
+	getSimulationState: () => Promise<ResolvedSimulationState>,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -189,9 +189,9 @@ async function handleRPCRequest(
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
 	const parsedRequest = maybeParsedRequest.value
-	const withSimulationInput = async (handler: (simulationInput: SimulationStateInput | undefined) => Promise<RPCReply>) => await handler(await getSimulationInput())
-	const withExecutionSimulationState = async (handler: (simulationState: ExecutionSimulationState | undefined) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
-	const withSimulationState = async (handler: (simulationState: SimulationState | undefined) => Promise<RPCReply>) => await handler(await getSimulationState())
+	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
+	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
+	const withSimulationState = async (handler: (simulationState: ResolvedSimulationState) => Promise<RPCReply>) => await handler(await getSimulationState())
 	makeSureInterceptorIsNotSleeping(ethereum)
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByHash': return await withSimulationInput((simulationInput) => getBlockByHash(ethereum, simulationInput, parsedRequest))
@@ -406,32 +406,32 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
-		let simulationInputPromise: Promise<SimulationStateInput | undefined> | undefined = undefined
-		let executionSimulationStatePromise: Promise<ExecutionSimulationState | undefined> | undefined = undefined
-		let simulationStatePromise: Promise<SimulationState | undefined> | undefined = undefined
-		const getSimulationInput = async () => {
-			if (!settings.simulationMode) return undefined
-			if (simulationInputPromise === undefined) simulationInputPromise = (async () => await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum))()
-			return await simulationInputPromise
-		}
-		const getExecutionSimulationState = async () => {
-			if (!settings.simulationMode) return undefined
-			if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
-				const simulationInput = await getSimulationInput()
-				if (simulationInput === undefined) return undefined
-				return await buildExecutionSimulationStateFromPreparedInput(simulationInput, ethereum)
-			})()
-			return await executionSimulationStatePromise
-		}
-		const getSimulationState = async () => {
-			if (!settings.simulationMode) return undefined
-			if (simulationStatePromise === undefined) simulationStatePromise = (async () => {
-				const simulationInput = await getSimulationInput()
-				if (simulationInput === undefined) return undefined
-				return await buildSimulationStateFromPreparedInput(simulationInput, ethereum)
-			})()
-			return await simulationStatePromise
-		}
+			let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined = undefined
+			let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined = undefined
+			let simulationStatePromise: Promise<ResolvedSimulationState> | undefined = undefined
+			const getSimulationInput = async () => {
+				if (!settings.simulationMode) return PASSTHROUGH_STATE
+				if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
+				return await simulationInputPromise
+			}
+			const getExecutionSimulationState = async () => {
+				if (!settings.simulationMode) return PASSTHROUGH_STATE
+				if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
+					const simulationInput = await getSimulationInput()
+					if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
+					return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput(simulationInput.value, ethereum))
+				})()
+				return await executionSimulationStatePromise
+			}
+			const getSimulationState = async () => {
+				if (!settings.simulationMode) return PASSTHROUGH_STATE
+				if (simulationStatePromise === undefined) simulationStatePromise = (async () => {
+					const simulationInput = await getSimulationInput()
+					if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
+					return toResolvedSimulationState(await buildSimulationStateFromPreparedInput(simulationInput.value, ethereum))
+				})()
+				return await simulationStatePromise
+			}
 		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {

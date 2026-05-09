@@ -962,22 +962,22 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService) : undefined
-	if (simulationState === undefined || simulationState.success === false) return {
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService) : { kind: 'passthrough' as const }
+	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {
 			namedTokenIds: [], addressBookEntries: [], ens: { ensNameHashes: [], ensLabelHashes: [] }
 		}
 	}
 	const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(Promise.all(
-		simulationState.simulatedBlocks.map((block) =>
+		simulationState.value.simulatedBlocks.map((block) =>
 			Promise.all(block.simulatedTransactions.map(
 				async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereumClientService, undefined)
 			))
 		)
 	))
 	const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(Promise.all(
-		simulationState.simulatedBlocks.map((block) => {
+		simulationState.value.simulatedBlocks.map((block) => {
 			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
 			return Promise.all(transactions.map((transaction) =>
 				parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereumClientService, undefined)
@@ -987,7 +987,7 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 	const events = (await eventsForEachBlockAndTransactionPromise).flat()
 	const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-	const metadata = await getMetadataForSimulation(simulationState, ethereumClientService, undefined, events, inputData)
+	const metadata = await getMetadataForSimulation(simulationState.value, ethereumClientService, undefined, events, inputData)
 	return { method: 'popup_requestSimulationMetadata' as const, metadata }
 }
 

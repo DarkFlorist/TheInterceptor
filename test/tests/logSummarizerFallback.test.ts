@@ -7,6 +7,7 @@ import { summarizeLogs } from '../../app/ts/simulation/services/LogSummarizer.js
 import { SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { installDomMock } from './domMock.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { AddressBookEntry, ContactEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent, TokenVisualizerNFTAllApprovalEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -143,9 +144,9 @@ const getSummaryForTransaction = (simulatedTransaction: SimulatedAndVisualizedTr
 	return summarizeLogs([simulatedTransaction], externalMetadata, [], [])
 }
 
-const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: Signal<SimulationAndVisualisationResults>) => {
+const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
 	render(h(SimulationSummary, {
-		simulationAndVisualisationResults,
+		simulationAndVisualisationResults: new Signal(toResolvedSimulationResults(simulationAndVisualisationResults)),
 		currentBlockNumber: new Signal<bigint | undefined>(1n),
 		activeAddress: new Signal<bigint | undefined>(RECIPIENT_ADDRESS),
 		renameAddressCallBack: () => undefined,
@@ -271,7 +272,7 @@ describe('LogSummarizer fallback metadata', () => {
 		const simulationAndVisualisationResults = new Signal(simulationAndVisualisationResultsData)
 
 		await act(() => {
-			renderSimulationSummary(dom, simulationAndVisualisationResults)
+			renderSimulationSummary(dom, simulationAndVisualisationResults.value)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(recipientEntry.name), true)

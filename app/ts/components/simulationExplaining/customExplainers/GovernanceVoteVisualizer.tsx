@@ -156,7 +156,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
 			simTx = { govSimTx.value }
-			simulationAndVisualisationResults = { results }
+			simulationAndVisualisationResults = { results.value }
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }

@@ -1,7 +1,8 @@
 
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { CompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
+import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -15,39 +16,62 @@ import { getPopupVisualisationState, setPopupVisualisationState } from './storag
 
 let abortController = new AbortController()
 
-function buildEmptyVisualizedState(
+function buildPassthroughVisualizedState(
 	simulationId: number,
 	numberOfAddressesMadeRich: number,
 	simulationResultState: 'done' | 'corrupted' = 'done',
 ): CompleteVisualizedSimulation {
+	return createPassthroughCompleteVisualizedSimulation(simulationId, simulationResultState, numberOfAddressesMadeRich)
+}
+
+function buildDefinedEmptyVisualizedState(
+	simulationState: Extract<SimulationState, { success: true }>,
+	simulationId: number,
+	numberOfAddressesMadeRich: number,
+): CompleteVisualizedSimulation {
 	return {
 		simulationUpdatingState: 'done',
-		simulationResultState,
+		simulationResultState: 'done',
 		simulationId,
-		simulationState: undefined,
+		simulationState: toResolvedSimulationState(simulationState),
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		tokenPriceQuoteToken: undefined,
 		namedTokenIds: [],
-		visualizedSimulationState: { success: true, visualizedBlocks: [] },
+		visualizedSimulationState: {
+			success: true,
+			visualizedBlocks: simulationState.simulationStateInput.map((block) => ({
+				simulatedAndVisualizedTransactions: [],
+				visualizedPersonalSignRequests: [],
+				blockTimeManipulation: block.blockTimeManipulation,
+			})),
+		},
 		numberOfAddressesMadeRich,
 	}
 }
+
+const hasSimulationInputOperations = (simulationState: SimulationState) => (
+	simulationState.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
+)
 
 export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState: boolean = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
-		if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState !== undefined) {
-			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.simulationConductedTimestamp.getTime()) / 1000
+		if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState.kind === 'simulated') {
+			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
 		const isMainPopupWindowOpenReply = await requestIsMainPopupWindowOpen()
 		if (!(isMainPopupWindowOpenReply?.data.isOpen === true)) return popupVisualisation
-		if (skipIfUnchanged && popupVisualisation.simulationState !== undefined) {
+		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated') {
 			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
-			const cachedFingerprint = getPopupVisualisationFingerprint(popupVisualisation.simulationState.simulationStateInput, popupVisualisation.simulationState.rpcNetwork, popupVisualisation.simulationState.blockNumber)
+			const cachedFingerprint = getPopupVisualisationFingerprint(
+				popupVisualisation.simulationState.value.simulationStateInput,
+				popupVisualisation.simulationState.value.rpcNetwork,
+				popupVisualisation.simulationState.value.blockNumber,
+			)
 			if (currentFingerprint === cachedFingerprint) return popupVisualisation
 		}
 		abortController.abort(NEW_BLOCK_ABORT)
@@ -74,8 +98,17 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		const simulationId = popupVisualisation.simulationId + 1
 		const simulationState = await getUpdatedSimulationState(ethereum)
 		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
-		if (simulationState?.simulationStateInput === undefined || simulationState.simulationStateInput.filter((x) => x.transactions.length > 0).length === 0) {
-			const newState = buildEmptyVisualizedState(simulationId, (await getAddressesbeingMadeRich()).length)
+		const numberOfAddressesMadeRich = (await getAddressesbeingMadeRich()).length
+		if (simulationState.kind === 'passthrough') {
+			const newState = buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich)
+			await setPopupVisualisationState(newState)
+			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
+			return
+		}
+		if (!hasSimulationInputOperations(simulationState.value)) {
+			const newState = simulationState.value.success
+				? buildDefinedEmptyVisualizedState(simulationState.value, simulationId, numberOfAddressesMadeRich)
+				: buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich)
 			await setPopupVisualisationState(newState)
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
 			return
@@ -83,13 +116,12 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 		const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 		const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 		try {
-			const numberOfAddressesMadeRich =  (await getAddressesbeingMadeRich()).length
 			const getUpdatedState = async () => {
-				if (simulationState !== undefined && ethereum.getChainId() === simulationState.rpcNetwork.chainId) {
-					const refreshed = await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, abortController)
-					return await setPopupVisualisationState({ ...refreshed, ...doneState, numberOfAddressesMadeRich })
+				if (ethereum.getChainId() === simulationState.value.rpcNetwork.chainId) {
+					const refreshed = await visualizeSimulatorState(simulationState.value, ethereum, tokenPriceService, abortController)
+					return await setPopupVisualisationState({ ...refreshed, ...doneState, simulationState: toResolvedSimulationState(refreshed.simulationState), numberOfAddressesMadeRich })
 				}
-				return await setPopupVisualisationState(buildEmptyVisualizedState(simulationId, numberOfAddressesMadeRich, 'corrupted'))
+				return await setPopupVisualisationState(buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich, 'corrupted'))
 			}
 			const newVisualizedState = await getUpdatedState()
 			await changedMessagePromise

@@ -5,6 +5,7 @@ import { createExecutionSimulationState, mockSignTransaction } from '../../app/t
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -168,12 +169,12 @@ const blockNumber = 8443561n
 			const { createNewFilter, getEthFilterChanges, getEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
-			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, undefined)
+			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, simulationState)
-			const secondChanges = await getEthFilterChanges(filterId, ethereum, undefined, simulationState)
+			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			const secondChanges = await getEthFilterChanges(filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
 			const storedFilters = await getEthereumSubscriptionsAndFilters()
 			const storedFilter = storedFilters.find((filter) => filter.type === 'eth_newFilter' && filter.subscriptionOrFilterId === filterId)
 			if (storedFilter === undefined || storedFilter.type !== 'eth_newFilter') throw new Error('stored filter missing')
@@ -242,7 +243,7 @@ const blockNumber = 8443561n
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => simulationState)
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState))
 
 			const emittedBlockNumbers = postedMessages.flatMap((message) => {
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
