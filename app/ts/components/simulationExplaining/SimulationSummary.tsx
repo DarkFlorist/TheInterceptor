@@ -1,4 +1,4 @@
-import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
+import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, summarizeLogs, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, MaybeSimulatedTransaction, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
@@ -19,7 +19,7 @@ import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -496,9 +496,8 @@ type AccountChangesCardParams = {
 }
 
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, activeAddress }: AccountChangesCardParams) {
-	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.value.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
+	const originalSummary = summarizeLogs([simTx], addressMetaDataMap, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const showSummary = useSignal<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, activeAddress.value)
 
@@ -691,9 +690,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (!isSuccessfulVisualizedSimulationState(visualizedSimulationState) || isEmptySimulationAndVisualisationResults(currentResults.value)) return <></>
 	const simulationAndVisualisationResults = currentResults.value
 	const simulatedAndVisualizedTransactions = getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState)
-	const logSummarizer = new LogSummarizer(simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
+	const originalSummary = summarizeLogs(simulatedAndVisualizedTransactions, addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
@@ -706,7 +704,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			: '../img/success-icon.svg'
 
 	const exportEthSimulateInput = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
+		const reply = await requestPopupInterceptorSimulationInput()
 		if (reply === undefined) return
 		return reply.ethSimulateV1InputString
 	}

@@ -1,6 +1,7 @@
-import { ethers, keccak256 } from 'ethers'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
+import { recoverAddress } from 'viem'
+import { keccak256 } from 'viem/utils'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
@@ -10,6 +11,7 @@ import { EthTransactionReceiptResponse, JsonRpcResponse, EthereumJsonRpcRequest 
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
@@ -21,7 +23,6 @@ function parseRequest<T>(data: string): T {
 const ethSimulateSingleBlockResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result)
 const ethSimulateSplitBlocksResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result_2calls)
 const ethSimulateAggregate3Result = parseRequest<EthSimulateV1Result>(eth_simulateV1_get_eth_balance_multicall)
-const multicallInterface = new ethers.Interface(Multicall3ABI)
 
 function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 	const aggregate3BalanceBlock = ethSimulateAggregate3Result[ethSimulateAggregate3Result.length - 1]
@@ -32,9 +33,9 @@ function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 		...aggregate3BalanceBlock,
 		calls: [{
 			...aggregate3Call,
-			returnData: multicallInterface.encodeFunctionResult('aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
+			returnData: encodeFunctionReturn(Multicall3ABI, 'aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
 				success: true,
-				returnData: ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [BigInt(index + 1)]),
+				returnData: encodeAbiValues(['uint256'], [BigInt(index + 1)]),
 			}))]),
 		}],
 	}
@@ -90,7 +91,11 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				case 'eth_simulateV1': {
 					const lastCallInput = rpcRequest.params[0]?.blockStateCalls.at(-1)?.calls[0]?.input
 					const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
-						? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
+						? (() => {
+							const decoded = decodeFunctionDataStrict(Multicall3ABI, dataStringWith0xStart(lastCallInput))
+							if (decoded.functionName !== 'aggregate3') throw new Error('expected aggregate3 call')
+							return decoded.args[0].length
+						})()
 						: undefined
 					const blockStateCallCount = rpcRequest.params[0]?.blockStateCalls.length ?? 0
 					this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount })
@@ -133,22 +138,23 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 
-		test('ethers.recoverAddress should fail for mocked transaction', async () => {
+		test('recoverAddress should fail for mocked transaction', async () => {
 			const signed = EthereumSignedTransactionToSignedTransaction(mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)
 			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
-			assert.throws(() => ethers.recoverAddress(digest, {
+			await assert.rejects(async () => await recoverAddress({
+				hash: digest,
+				signature: {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
 					yParity: signed.yParity === 'even' ? 0 : 1,
-				}),
-				'Error: invalid point'
-			)
+				},
+			}))
 		})
 
-		test('ethers.recoverAddress works for positive case', async() => {
+		test('recoverAddress works for positive case', async() => {
 			const validTransaction = {
 				hash: '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
 				nonce: '0x15174',
@@ -179,10 +185,13 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
 
-			const addr = ethers.recoverAddress(digest, {
+			const addr = await recoverAddress({
+				hash: digest,
+				signature: {
 				r: bytes32String(signed.r),
 				s: bytes32String(signed.s),
 				yParity: signed.yParity === 'even' ? 0 : 1,
+				},
 			})
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
 		})
@@ -480,7 +489,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			})
 
 			test('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
-			const simulationStateInput = [{
+				const simulationStateInput = [{
 				stateOverrides: {},
 				transactions: [{
 					signedTransaction: mockSignTransaction({

@@ -7,7 +7,6 @@ import { ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimu
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SendRawTransactionParams, SendTransactionParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
-import { Simulator } from '../simulation/simulator.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
@@ -15,6 +14,8 @@ import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogFor
 import { handleUnexpectedError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
+import { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHashFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
@@ -35,7 +36,8 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 }
 
 export async function sendTransaction(
-	simulator: Simulator,
+	ethereumClientService: EthereumClientService,
+	tokenPriceService: TokenPriceService,
 	activeAddress: bigint | undefined,
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	request: InterceptedRequest,
@@ -44,7 +46,7 @@ export async function sendTransaction(
 	simulationMode = true,
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
-	const action = await openConfirmTransactionDialogForTransaction(simulator, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
@@ -113,26 +115,26 @@ export async function gasPrice(ethereumClientService: EthereumClientService) {
 }
 
 export async function personalSign(
-	simulator: Simulator,
-	activeAddress: bigint | undefined,
 	ethereumClientService: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	activeAddress: bigint | undefined,
 	transactionParams: SignMessageParams,
 	request: InterceptedRequest,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
 
-export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+export async function switchEthereumChain(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}
-	const change = await openChangeChainDialog(simulator, websiteTabConnections, request, simulationMode, website, params)
+	const change = await openChangeChainDialog(ethereumClientService, tokenPriceService, resetSimulationServices, websiteTabConnections, request, simulationMode, website, params)
 	return { type: 'result' as const, method: params.method, ...change }
 }
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
@@ -57,12 +57,12 @@ export function FetchSimulationStack() {
 	}, [])
 
 	const updateSimulation = async () => {
-		const simulationStack = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
+		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	const updateMetaData = async () => {
-		const data = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
+		const data = await requestPopupSimulationMetadata()
 		if (data === undefined) return
 		simulationMetadata.value = data.metadata
 	}

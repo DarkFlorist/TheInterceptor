@@ -3,7 +3,6 @@ import { defaultRpcs, getSettings } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
-import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -24,8 +23,15 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
+import { createSimulationServices, resetSimulationServices, ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
+let simulationServices: SimulationServices | undefined = undefined
+
+function getSimulationServices() {
+	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
+	return simulationServices
+}
 
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	try {
@@ -93,7 +99,7 @@ migrateAddressBook()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
-async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+async function onContentScriptConnected(getCurrentSimulationServices: () => SimulationServices, resetActiveRpcNetwork: ResetSimulationServices, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
@@ -138,19 +144,20 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 				&& payload.data !== null
 				&& 'interceptorRequest' in payload.data
 			)) return
-			await pendingRequestLimiter.execute(async () => {
-				const rawMessage = RawInterceptedRequest.parse(payload.data)
-				const request = {
-					method: rawMessage.method,
+				await pendingRequestLimiter.execute(async () => {
+					const rawMessage = RawInterceptedRequest.parse(payload.data)
+					const { ethereum, tokenPriceService } = getCurrentSimulationServices()
+					const request = {
+						method: rawMessage.method,
 					...'params' in rawMessage ? { params: rawMessage.params } : {},
-					interceptorRequest: rawMessage.interceptorRequest,
-					usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-					uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-				}
-				return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
+						interceptorRequest: rawMessage.interceptorRequest,
+						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
+						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+					}
+					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
+				})
 			})
 		})
-	})
 
 	if (tabConnection === undefined) {
 		websiteTabConnections.set(socket.tabId, {
@@ -177,8 +184,8 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 	}
 }
 
-async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) {
-	if (ethereumClientService.getChainId() !== simulator.ethereum.getChainId()) throw new Error(`Chain Id Mismatch, node is on ${ ethereumClientService.getChainId() } while simulator is on ${ simulator.ethereum.getChainId() }`)
+async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) {
+	if (ethereumClientService !== getSimulationServices().ethereum) return
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
 		const rpcConnectionStatus = {
@@ -193,7 +200,8 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		if (isNewBlock) {
 			const settings = await getSettings()
 			if (settings.simulationMode) {
-				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(simulator, false, false)
+				const { ethereum, tokenPriceService } = getSimulationServices()
+				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
 				await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
@@ -209,6 +217,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 }
 
 async function onErrorBlockCallback(ethereumClientService: EthereumClientService, _error: unknown) {
+	if (ethereumClientService !== getSimulationServices().ethereum) return
 	try {
 		const rpcConnectionStatus = {
 			isConnected: false,
@@ -229,7 +238,10 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
-	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	const resetActiveRpcNetwork: ResetSimulationServices = (rpcNetwork) => {
+		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	}
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 		await catchAllErrorsAndCall(async () => {
 			if (changeInfo.status !== 'complete') return
@@ -239,22 +251,31 @@ async function startup() {
 			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
+			})
 		})
-	})
-	browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
-	browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings()))))
+		browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(getSimulationServices, resetActiveRpcNetwork, port, websiteTabConnections)))
+		browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+			const { ethereum, tokenPriceService } = getSimulationServices()
+			return await popupMessageHandler(websiteTabConnections, ethereum, tokenPriceService, resetActiveRpcNetwork, message, await getSettings())
+		})))
 
-	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))
-		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
-	}
+		const recursiveCheckIfInterceptorShouldSleep = async () => {
+			await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
+			setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
+		}
 
 	recursiveCheckIfInterceptorShouldSleep()
 
 	await updateExtensionBadge()
 
-	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections))
-	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections))
+	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
+		const { ethereum, tokenPriceService } = getSimulationServices()
+		return await onCloseWindowOrTab({ type: 'popup' as const, id }, ethereum, tokenPriceService, websiteTabConnections)
+	})
+	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
+		const { ethereum, tokenPriceService } = getSimulationServices()
+		return await onCloseWindowOrTab({ type: 'tab' as const, id }, ethereum, tokenPriceService, websiteTabConnections)
+	})
 	addWindowTabListeners(onCloseWindow, onCloseTab)
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)

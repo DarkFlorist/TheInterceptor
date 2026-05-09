@@ -1,7 +1,6 @@
 
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { Simulator } from '../simulation/simulator.js'
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
@@ -10,7 +9,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getUpdatedSimulationState } from './background.js'
-import { sendPopupMessageWithReply, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { requestIsMainPopupWindowOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
@@ -55,7 +54,7 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 	simulationState.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 )
 
-export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, invalidateOldState: boolean = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState: boolean = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
@@ -63,10 +62,10 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
-		const isMainPopupWindowOpenReply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
+		const isMainPopupWindowOpenReply = await requestIsMainPopupWindowOpen()
 		if (!(isMainPopupWindowOpenReply?.data.isOpen === true)) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated') {
-			const currentSimulationInput = await getCurrentSimulationStateInput(simulator)
+			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
 				popupVisualisation.simulationState.value.simulationStateInput,
@@ -80,13 +79,13 @@ export const updatePopupVisualisationIfNeeded = async (simulator: Simulator, inv
 		const thisAbortController = abortController
 		if (invalidateOldState) {
 			const simulationId = popupVisualisation.simulationId + 1
-			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
-			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
-		}
-		await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, thisAbortController)
-	} catch(error: unknown) {
-		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return await getPopupVisualisationState()
-		await handleUnexpectedError(error)
+				const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
+				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
+			}
+			await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController)
+		} catch(error: unknown) {
+			if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return await getPopupVisualisationState()
+			await handleUnexpectedError(error)
 	}
 	return await getPopupVisualisationState()
 }
@@ -141,10 +140,10 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 	}).catch(() => {})
 }
 
-async function getCurrentSimulationStateInput(simulator: Simulator) {
+async function getCurrentSimulationStateInput(ethereum: EthereumClientService) {
 	return {
 		simulationStateInput: await getCurrentSimulationInput(),
-		rpcNetwork: simulator.ethereum.getRpcEntry(),
-		blockNumber: await simulator.ethereum.getBlockNumber(undefined),
+		rpcNetwork: ethereum.getRpcEntry(),
+		blockNumber: await ethereum.getBlockNumber(undefined),
 	}
 }
