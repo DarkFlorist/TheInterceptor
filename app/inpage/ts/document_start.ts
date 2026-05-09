@@ -44,7 +44,7 @@ function injectScript(_content: string) {
 			) return
 			try {
 				// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
-				if (!('data' in messageEvent) || !(typeof messageEvent['data'] === 'object' && messageEvent['data'] !== null) || !('interceptorRequest' in messageEvent['data'])) return
+				if (!('data' in messageEvent) || !(typeof messageEvent.data === 'object' && messageEvent.data !== null) || !('interceptorRequest' in messageEvent.data)) return
 				extensionPort.postMessage({ data: messageEvent.data })
 				checkAndThrowRuntimeLastError()
 			} catch (error) {

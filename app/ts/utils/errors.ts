@@ -22,7 +22,15 @@ export class JsonRpcResponseError extends Error {
 		Object.setPrototypeOf(this, JsonRpcResponseError.prototype)
 	}
 	public serialize() {
-		return { jsonrpc: '2.0' as const, id: this.id, error: { message: this.message, code: this.code, data: this.data } }
+		return {
+			jsonrpc: '2.0' as const,
+			id: this.id,
+			error: {
+				message: this.message,
+				code: this.code,
+				...(this.data !== undefined ? { data: this.data } : {}),
+			},
+		}
 	}
 }
 

@@ -37,8 +37,8 @@ class InterceptorFuture<T> implements PromiseLike<T> {
 	}
 
 	public readonly then = <TResult1 = T, TResult2 = never>(
-		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null,
-		onrejected?: ((reason: Error) => TResult2 | PromiseLike<TResult2>) | undefined | null
+		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | null,
+		onrejected?: ((reason: Error) => TResult2 | PromiseLike<TResult2>) | null
 	): PromiseLike<TResult1 | TResult2> => {
 		return this.promise.then(onfulfilled, onrejected)
 	}
@@ -217,7 +217,10 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
-			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
+			return await this.sendMessageToBackgroundPage({
+				method: methodAndParams.method,
+				...(methodAndParams.params !== undefined ? { params: methodAndParams.params } : {}),
+			})
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
 			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error: error, request: methodAndParams })
