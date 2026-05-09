@@ -74,7 +74,7 @@ type ErrorBoundaryState = { error: Error, timestamp: Date } | { error: undefined
 export class ErrorBoundary extends Component<{ children?: ComponentChildren, onError?: (error: Error) => void }, ErrorBoundaryState> {
 	override state: ErrorBoundaryState = { error: undefined, timestamp: undefined }
 
-	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+	static override getDerivedStateFromError(error: Error): ErrorBoundaryState {
 		return { error, timestamp: new Date() }
 	}
 
