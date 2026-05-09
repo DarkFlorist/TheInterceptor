@@ -2,12 +2,15 @@
 	"name": "interceptor-extension",
 	"private": true,
 	"type": "module",
+	"packageManager": "bun@1.3.12",
 	"scripts": {
-		"test": "bun --bun tsc --project tsconfig-test.json && bun ./test/js/test/run-all.js",
+		"test": "bun test",
+		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
 		"build-firefox": "bun run firefox",
 		"build-chrome": "bun --bun tsc --project tsconfig.json && bun run bundle && bun run chrome",
+		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",
@@ -24,9 +27,9 @@
 		"@noble/curves": "0.8.0",
 		"@noble/hashes": "1.4.0",
 		"@preact/signals": "1.1.3",
-		"ethers": "6.14.0",
 		"funtypes": "5.1.0",
 		"preact": "10.24.2",
+		"viem": "2.48.4",
 		"webextension-polyfill": "0.10.0"
 	},
 	"devDependencies": {

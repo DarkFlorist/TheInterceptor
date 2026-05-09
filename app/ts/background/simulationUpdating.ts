@@ -1,8 +1,8 @@
-import { Interface, ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState, type ExecutionSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
+import { parseEvents, parseInputData } from '../simulation/parsing.js'
+import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import { PendingTransaction } from '../types/accessRequest.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
@@ -11,6 +11,7 @@ import { BlockTimeManipulation, NonSimulatedAndVisualizedTransaction, PreSimulat
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
+import { last } from '../utils/array.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, bigintSecondsToDate, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
@@ -24,6 +25,22 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getUpdatedSimulationState } from './background.js'
+import type { Abi } from 'viem'
+import * as funtypes from 'funtypes'
+import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
+
+const delegateCallExecuteAbi = [
+	{
+		type: 'function',
+		name: 'delegateCallExecute',
+		stateMutability: 'payable',
+		inputs: [
+			{ name: 'target', type: 'address' },
+			{ name: 'callData', type: 'bytes' },
+		],
+		outputs: [{ name: 'returnData', type: 'bytes' }],
+	},
+] as const satisfies Abi
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -135,14 +152,13 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 		) return returnError('Could not identify the transaction as a vote')
 
-		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
-		const voteFunction = governanceContractInterface.getFunction(fourByteString)
-		if (voteFunction === null) return returnError('Could not find the voting function')
 		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
-		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		if (params === undefined) return returnError('Could not find the voting function')
+		const proposalId = funtypes.BigInt.parse(params.namedArgs['proposalId'])
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
-		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
+		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
@@ -207,8 +223,6 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
-		const delegateCallExecuteInterface = new ethers.Interface(['function delegateCallExecute(address, bytes memory) payable external returns (bytes memory)'])
-
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
@@ -233,7 +247,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 
 		const transactionWithoutGas = { ...transactionBase, ...isDelegateCall ? {
 			to: gnosisSafeMessage.verifyingContract.address,
-			input: stringToUint8Array(delegateCallExecuteInterface.encodeFunctionData('delegateCallExecute', [addressString(gnosisSafeMessage.to.address), gnosisSafeMessage.parsedMessageData.input]))
+			input: stringToUint8Array(encodeFunctionCall(delegateCallExecuteAbi, 'delegateCallExecute', [addressString(gnosisSafeMessage.to.address), dataStringWith0xStart(gnosisSafeMessage.parsedMessageData.input)]))
 		} : {
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
@@ -243,7 +257,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : {
-			gas: simulationGasLeft(simulationState?.simulatedBlocks.at(-1), await ethereumClientService.getBlock(undefined))
+			gas: simulationGasLeft(last(simulationState?.simulatedBlocks ?? []), await ethereumClientService.getBlock(undefined))
 		}
 		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
 		const metaTransaction: PreSimulationTransaction = {
@@ -306,16 +320,25 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = await ethereum.getBlock(undefined)
 	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : simulationInput.map((block) => (
 		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
 	))
-	const newSimulationState = await createSimulationState(ethereum, undefined, baseFeeFixedInputStateBlocks)
-	// rerun the simulation if nonce issues are found after fixing the nonce issues
-	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, newSimulationState)
-	if (nonceFixed.nonceFixed) return await createSimulationState(ethereum, undefined, nonceFixed.simulationStateInput)
-	return newSimulationState
+	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
+	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
+}
+
+export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
+}
+
+export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService): Promise<ExecutionSimulationState> => {
+	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput)
+}
+
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
@@ -369,10 +392,10 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		})
 
 		return {
-			addressBookEntries: [],
+			addressBookEntries: updatedMetadata.addressBookEntries,
 			tokenPriceEstimates: [],
 			tokenPriceQuoteToken: weth,
-			namedTokenIds: [],
+			namedTokenIds: updatedMetadata.namedTokenIds,
 			simulationState: refreshedSimulationState,
 			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
 		}
