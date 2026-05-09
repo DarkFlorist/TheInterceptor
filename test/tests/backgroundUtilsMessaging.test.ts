@@ -180,7 +180,9 @@ describe('backgroundUtils messaging', () => {
 
 		const reply = await popupMessageHandler(
 			new Map() as unknown as import('../../app/ts/types/user-interface-types.js').WebsiteTabConnections,
-			{} as unknown as import('../../app/ts/simulation/simulator.js').Simulator,
+			{} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService,
+			{} as unknown as import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService,
+			(() => undefined) as unknown as import('../../app/ts/simulation/serviceLifecycle.js').ResetSimulationServices,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
 			{
 				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,

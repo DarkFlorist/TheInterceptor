@@ -648,7 +648,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				type: signedTransaction.type,
 				authorizationList: signedTransaction.authorizationList
 			}
-				default: assertNever(signedTransaction)
+			default: assertNever(signedTransaction)
 			}
 		}
 

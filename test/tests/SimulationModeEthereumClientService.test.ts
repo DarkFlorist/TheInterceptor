@@ -482,7 +482,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			})
 
 			test('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
-			const simulationStateInput = [{
+				const simulationStateInput = [{
 				stateOverrides: {},
 				transactions: [{
 					signedTransaction: mockSignTransaction({
