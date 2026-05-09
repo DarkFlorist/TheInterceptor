@@ -450,3 +450,64 @@ export const eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d
 }
 
 `
+
+const zeroBytes32 = (suffix: string) => `0x${suffix.padStart(64, '0')}`
+const zeroBytes256 = `0x${'0'.repeat(512)}`
+
+export const eth_getBlockByNumber_7702_invalid_auth_yParity_true = JSON.stringify({
+	jsonrpc: '2.0',
+	result: {
+		author: '0x0000000000000000000000000000000000000001',
+		difficulty: '0x0',
+		extraData: '0x',
+		gasLimit: '0x1c9c380',
+		gasUsed: '0x5208',
+		hash: zeroBytes32('11'),
+		logsBloom: zeroBytes256,
+		miner: '0x0000000000000000000000000000000000000001',
+		mixHash: zeroBytes32('12'),
+		nonce: '0x0000000000000000',
+		number: '0x80d6aa',
+		parentHash: zeroBytes32('13'),
+		receiptsRoot: zeroBytes32('14'),
+		sha3Uncles: '0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347',
+		size: '0x1',
+		stateRoot: zeroBytes32('15'),
+		timestamp: '0x63e0bf39',
+		baseFeePerGas: '0x1',
+		transactions: [{
+			hash: zeroBytes32('21'),
+			nonce: '0x0',
+			blockHash: zeroBytes32('11'),
+			blockNumber: '0x80d6aa',
+			transactionIndex: '0x0',
+			from: '0x000000000000000000000000000000000000000a',
+			to: '0x000000000000000000000000000000000000000b',
+			value: '0x0',
+			gasPrice: '0x1',
+			maxPriorityFeePerGas: '0x1',
+			maxFeePerGas: '0x2',
+			gas: '0x5208',
+			data: '0x',
+			input: '0x',
+			chainId: '0x1',
+			type: '0x4',
+			v: '0x1',
+			s: '0x2',
+			r: '0x1',
+			authorizationList: [{
+				chainId: '0x1',
+				address: '0x000000009b1d0af20d8c6d0a44e162d11f9b8f00',
+				nonce: '0x0',
+				yParity: '0x1c',
+				r: '0x3',
+				s: '0x4'
+			}]
+		}],
+		transactionsRoot: zeroBytes32('16'),
+		uncles: [],
+		withdrawalsRoot: zeroBytes32('17'),
+		withdrawals: [],
+	},
+	id: 2,
+}, null, 4)
