@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -164,6 +164,92 @@ const blockNumber = 8443561n
 	}] as const
 
 	describe('EthereumSubscriptionService', () => {
+		test('removeEthereumSubscription only removes the matching socket subscription', async () => {
+			installBrowserMock()
+			const { getEthereumSubscriptionsAndFilters, removeEthereumSubscription, updateEthereumSubscriptionsAndFilters } = await loadModules()
+
+			const socket = { tabId: 1, connectionName: 1n } as const
+			const otherSocket = { tabId: 2, connectionName: 2n } as const
+			await updateEthereumSubscriptionsAndFilters(() => ([
+				{ type: 'newHeads', subscriptionOrFilterId: 'remove-me', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: socket },
+				{ type: 'newHeads', subscriptionOrFilterId: 'keep-same-socket', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: socket },
+				{ type: 'newHeads', subscriptionOrFilterId: 'keep-other-socket', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: otherSocket },
+			]))
+
+			assert.equal(await removeEthereumSubscription(socket, 'remove-me'), true)
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((entry) => entry.subscriptionOrFilterId), ['keep-same-socket', 'keep-other-socket'])
+		})
+
+		test('getEthFilterChanges applies the real filter payload and preserves the stored subscription list', async () => {
+			installBrowserMock()
+			const { getEthereumSubscriptionsAndFilters, getEthFilterChanges, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+
+			const filterSocket = { tabId: 1, connectionName: 1n } as const
+			const otherSocket = { tabId: 2, connectionName: 2n } as const
+
+			const simulationInput = [{
+				stateOverrides: {},
+				transactions: [{
+					signedTransaction: mockSignTransaction({
+						type: '1559',
+						from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+						nonce: 0n,
+						maxFeePerGas: 1n,
+						maxPriorityFeePerGas: 1n,
+						gas: 21000n,
+						to: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn,
+						value: 10n,
+						input: new Uint8Array(0),
+						chainId: 5n,
+					}),
+					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+					created: new Date(),
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+					transactionIdentifier: 1n,
+				}],
+				signedMessages: [],
+				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+				simulateWithZeroBaseFee: false,
+			}] as const
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, simulationInput)
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const matchingLog = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.ethSimulateV1CallResult.status === 'success'
+				? simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.ethSimulateV1CallResult.logs[0]
+				: undefined
+			if (matchingLog === undefined) throw new Error('matching simulated log missing')
+
+			await updateEthereumSubscriptionsAndFilters(() => ([
+				{
+					type: 'eth_newFilter',
+					subscriptionOrFilterId: 'filter-1',
+					params: { method: 'eth_newFilter', params: [{ address: matchingLog.address, topics: [matchingLog.topics[0]] }] },
+					subscriptionCreatorSocket: filterSocket,
+					calledInlastBlock: 100n,
+				},
+				{
+					type: 'newHeads',
+					subscriptionOrFilterId: 'keep-me',
+					params: { method: 'eth_subscribe', params: ['newHeads'] },
+					subscriptionCreatorSocket: otherSocket,
+				},
+			]))
+
+			const firstChanges = await getEthFilterChanges('filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			assert.equal(firstChanges?.length, 1)
+			assert.equal(firstChanges?.[0]?.address, matchingLog.address)
+
+			const secondChanges = await getEthFilterChanges('filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			assert.deepEqual(secondChanges, [])
+
+			const updated = await getEthereumSubscriptionsAndFilters()
+			assert.equal(updated.length, 2)
+			assert.equal(updated[0]?.type, 'eth_newFilter')
+			if (updated[0]?.type !== 'eth_newFilter') throw new Error('Filter was not preserved')
+			assert.equal(updated[0].calledInlastBlock, blockNumber + 1n)
+			assert.equal(updated[1]?.subscriptionOrFilterId, 'keep-me')
+		})
+
 		test('eth_getFilterChanges only returns newly simulated logs once', async () => {
 			installBrowserMock()
 			const { createNewFilter, getEthFilterChanges, getEthereumSubscriptionsAndFilters } = await loadModules()

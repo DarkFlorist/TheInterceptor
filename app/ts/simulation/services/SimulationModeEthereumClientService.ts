@@ -237,7 +237,9 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 		let index = 0
 		for (const block of currentState.simulatedBlocks) {
 			const currBlockNum = currentState.blockNumber + BigInt(index) + 1n
-			if (blockNumToUseForSim > currBlockNum) break
+			if (blockNumToUseForSim < currBlockNum) {
+				break
+			}
 			for (const signed of block.simulatedTransactions) {
 				if (signed.preSimulationTransaction.signedTransaction.from === address) addedTransactions += 1n
 			}
@@ -647,8 +649,8 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				authorizationList: signedTransaction.authorizationList
 			}
 			default: assertNever(signedTransaction)
-			}
 		}
+	}
 
 	const executionBlocks = await createPreparedSimulatedExecutionBlocks(ethereumClientService, requestAbortController, currentState)
 	for (const executionBlock of executionBlocks) {
