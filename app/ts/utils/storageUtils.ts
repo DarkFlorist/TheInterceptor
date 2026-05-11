@@ -109,10 +109,13 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 )
 
-type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2>
-const LocalStorageItems2 = funtypes.ReadonlyPartial({
+const LocalStorageItems2Runtype: funtypes.Codec<{
+	readonly pendingTransactionsAndMessages?: readonly PendingTransactionOrSignableMessage[]
+}> = funtypes.ReadonlyPartial({
 	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
 })
+type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2Runtype>
+const LocalStorageItems2 = LocalStorageItems2Runtype
 
 type LocalStorageKey2 = funtypes.Static<typeof LocalStorageKey2>
 const LocalStorageKey2 = funtypes.Union(

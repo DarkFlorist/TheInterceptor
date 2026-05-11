@@ -12,7 +12,7 @@ import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, P
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
+import { EthSimulateV1BlockHeader, EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
@@ -45,6 +45,7 @@ type GroupedEthSimulateV1BlockResult = {
 	inputBlock: SimulationStateInputMinimalDataBlock
 	baseFeePerGas: bigint
 	timestamp: bigint
+	blockHeader?: EthSimulateV1BlockHeader
 	calls: readonly EthSimulateV1CallResult[]
 }
 
@@ -106,6 +107,10 @@ const transactionQueueTotalGasLimit = (simulatedTransactions: readonly Simulated
 	return simulatedTransactions.reduce((a, b) => a + b.preSimulationTransaction.signedTransaction.gas, 0n)
 }
 
+const transactionQueueTotalGasUsed = (simulatedTransactions: readonly SimulatedTransaction[]) => {
+	return simulatedTransactions.reduce((totalGasUsed, simulatedTransaction) => totalGasUsed + simulatedTransaction.ethSimulateV1CallResult.gasUsed, 0n)
+}
+
 const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinimalDataBlock | undefined) => {
 	if (block === undefined) return 0n
 	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
@@ -115,6 +120,8 @@ const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | Sim
 	simulationStateInput.length === 0
 	|| (simulationStateInput.length === 1 && simulationStateInput[0]?.transactions.length === 0 && simulationStateInput[0]?.signedMessages.length === 0)
 )
+
+const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 
 const getHashOfSimulatedBlockFromInput = (simulationStateInput: SimulationStateInput, blockDelta: number) => {
 	return BigInt(keccak256(stringToBytes(`${ getSimulationInputHash(simulationStateInput) }:${ blockDelta }`)))
@@ -345,10 +352,15 @@ export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimul
 		rpcBlockIndex += preparedInputBlock.rpcBlockCount
 		const firstResultBlock = resultBlocks[0]
 		if (firstResultBlock === undefined) throw new Error('grouped result block was undefined')
+		const blockHeader = preparedInputBlock.rpcBlockCount === 1 ? (() => {
+			const { calls: _calls, ...header } = firstResultBlock
+			return header
+		})() : undefined
 		return {
 			inputBlock: preparedInputBlock.inputBlock,
 			baseFeePerGas: firstResultBlock.baseFeePerGas,
 			timestamp: firstResultBlock.timestamp,
+			blockHeader,
 			calls: resultBlocks.flatMap((block) => block.calls),
 		}
 	})
@@ -410,6 +422,7 @@ const getExecutionSimulationStateBlockBase = (callResult: GroupedEthSimulateV1Bl
 	blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 	blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 	blockBaseFeePerGas: callResult.baseFeePerGas,
+	blockHeader: callResult.blockHeader,
 })
 
 const createExecutionSimulationBlocks = (
@@ -1074,31 +1087,37 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	const simulatedBlock = simulationState.simulatedBlocks[blockDelta]
+	const blockHeaderTemplate = getSimulatedBlockHeaderTemplate(simulationState, blockDelta)
+	const parentHash = blockDelta === 0 ? blockHeaderTemplate?.parentHash ?? parentBlock.hash : getHashOfSimulatedBlock(simulationState, blockDelta - 1)
 	return {
-		author: parentBlock.miner,
-		difficulty: parentBlock.difficulty,
-		extraData: parentBlock.extraData,
-		gasLimit: parentBlock.gasLimit,
-		gasUsed: transactionQueueTotalGasLimit(simulationState.simulatedBlocks[blockDelta]?.simulatedTransactions || []),
+		author: blockHeaderTemplate?.miner ?? parentBlock.miner,
+		difficulty: blockHeaderTemplate?.difficulty ?? parentBlock.difficulty,
+		extraData: blockHeaderTemplate?.extraData ?? parentBlock.extraData,
+		gasLimit: blockHeaderTemplate?.gasLimit ?? parentBlock.gasLimit,
+		gasUsed: blockHeaderTemplate?.gasUsed ?? transactionQueueTotalGasUsed(simulatedBlock?.simulatedTransactions || []),
 		hash: getHashOfSimulatedBlock(simulationState, blockDelta),
-		logsBloom: parentBlock.logsBloom, // TODO: this is wrong
-		miner: parentBlock.miner,
-		mixHash: parentBlock.mixHash, // TODO: this is wrong
-		nonce: parentBlock.nonce,
-		number: simulationState.blockNumber + BigInt(blockDelta) + 1n,
-		parentHash: parentBlock.hash,
-		receiptsRoot: parentBlock.receiptsRoot, // TODO: this is wrong
-		sha3Uncles: parentBlock.sha3Uncles, // TODO: this is wrong
-		stateRoot: parentBlock.stateRoot, // TODO: this is wrong
-		timestamp: simulationState.simulatedBlocks[blockDelta]?.blockTimestamp || bigintSecondsToDate((dateToBigintSeconds(simulationState.blockTimestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit))),
-		size: parentBlock.size, // TODO: this is wrong
-		totalDifficulty: (parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty, // The difficulty increases about the same amount as previously
-		uncles: [],
-		baseFeePerGas: getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
-		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
-		transactions: simulationState.simulatedBlocks[blockDelta]?.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction.signedTransaction) || [],
-		withdrawals: [],
-		withdrawalsRoot: 0n, // TODO: this is wrong
+		logsBloom: blockHeaderTemplate?.logsBloom ?? parentBlock.logsBloom,
+		miner: blockHeaderTemplate?.miner ?? parentBlock.miner,
+		mixHash: blockHeaderTemplate?.mixHash ?? parentBlock.mixHash,
+		nonce: blockHeaderTemplate?.nonce ?? parentBlock.nonce,
+		number: getSimulationBlockNumber(simulationState, blockDelta),
+		parentHash,
+		receiptsRoot: blockHeaderTemplate?.receiptsRoot ?? parentBlock.receiptsRoot,
+		sha3Uncles: blockHeaderTemplate?.sha3Uncles ?? parentBlock.sha3Uncles,
+		stateRoot: blockHeaderTemplate?.stateRoot ?? parentBlock.stateRoot,
+		timestamp: simulatedBlock?.blockTimestamp || bigintSecondsToDate((dateToBigintSeconds(simulationState.blockTimestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit))),
+		size: blockHeaderTemplate?.size ?? parentBlock.size,
+		totalDifficulty: blockHeaderTemplate?.totalDifficulty ?? ((parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty),
+		uncles: blockHeaderTemplate?.uncles ?? [],
+		baseFeePerGas: simulatedBlock?.blockBaseFeePerGas ?? getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+		transactionsRoot: blockHeaderTemplate?.transactionsRoot ?? parentBlock.transactionsRoot,
+		transactions: simulatedBlock?.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction.signedTransaction) || [],
+		withdrawals: blockHeaderTemplate?.withdrawals ?? [],
+		...(blockHeaderTemplate?.blobGasUsed !== undefined ? { blobGasUsed: blockHeaderTemplate.blobGasUsed } : {}),
+		...(blockHeaderTemplate?.excessBlobGas !== undefined ? { excessBlobGas: blockHeaderTemplate.excessBlobGas } : {}),
+		...(blockHeaderTemplate?.parentBeaconBlockRoot !== undefined ? { parentBeaconBlockRoot: blockHeaderTemplate.parentBeaconBlockRoot } : {}),
+		...(blockHeaderTemplate?.withdrawalsRoot !== undefined ? { withdrawalsRoot: blockHeaderTemplate.withdrawalsRoot } : {}),
 	} as const
 }
 
@@ -1313,8 +1332,13 @@ const simulateTransactionsOnTopOfSimulationInput = async (ethereumClientService:
 	return last(groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult))?.calls || []
 }
 
-// use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
-const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => getHashOfSimulatedBlockFromInput(simulationState.simulationStateInput, blockDelta)
+// prefer the node-provided simulated block hash when available, and fall back to a deterministic synthetic hash for grouped logical blocks
+const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => getSimulatedBlockHeaderTemplate(simulationState, blockDelta)?.hash ?? getHashOfSimulatedBlockFromInput(simulationState.simulationStateInput, blockDelta)
+
+const getSimulatedBlockHeaderTemplate = (simulationState: SimulationState, blockDelta: number) => {
+	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
+	return simulationState.simulatedBlocks[blockDelta]?.blockHeader
+}
 
 export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: stringToUint8Array(params.params[0]) })
 
