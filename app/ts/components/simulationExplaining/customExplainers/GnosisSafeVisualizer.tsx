@@ -23,7 +23,13 @@ const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeT
 const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
-	const simTx = useComputed(() => simulateExecutionReply.value?.data.success === true ? simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1) : undefined)
+	const simTx = useComputed(() => {
+		if (simulateExecutionReply.value?.data.success !== true) return undefined
+		const visualizedBlocks = simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks
+		const lastBlock = visualizedBlocks[visualizedBlocks.length - 1]
+		if (lastBlock === undefined) return undefined
+		return lastBlock.simulatedAndVisualizedTransactions[lastBlock.simulatedAndVisualizedTransactions.length - 1]
+	})
 	const addressMetaData = useComputed(() => {
 		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
 		return simulateExecutionReply.value.data.result.addressBookEntries
@@ -70,7 +76,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	return <div style = 'display: grid; grid-template-rows: max-content' >
 		<Transaction
 			simTx = { simTx.value }
-			simulationAndVisualisationResults = { results }
+			simulationAndVisualisationResults = { results.value }
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }

@@ -9,7 +9,7 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
-import { parseInputData } from '../../simulation/simulator.js'
+import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
@@ -94,7 +94,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
-		const chainid = message.domain.chainId?.type === 'unsignedInteger' ? message.domain.chainId.value : undefined
+		const chainid = message.domain['chainId']?.type === 'unsignedInteger' ? message.domain['chainId'].value : undefined
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
