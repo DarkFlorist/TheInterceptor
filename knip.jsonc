@@ -18,7 +18,7 @@
 				"app/inpage/ts/document_start.ts",
 				"app/inpage/ts/inpage.ts",
 				"app/inpage/ts/listenContentScript.ts",
-				"test/run-all.ts",
+				"test/tests/*.test.ts",
 				"test/tests/*.ts"
 			],
 			"project": [

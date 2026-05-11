@@ -1,11 +1,11 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -24,7 +24,7 @@ export function FetchSimulationStack() {
 	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation | undefined>(undefined)
+	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
 
@@ -55,18 +55,18 @@ export function FetchSimulationStack() {
 	}, [])
 
 	const updateSimulation = async () => {
-		const simulationStack = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
+		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	const updateMetaData = async () => {
-		const data = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
+		const data = await requestPopupSimulationMetadata()
 		if (data === undefined) return
 		simulationMetadata.value = data.metadata
 	}
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestReadyAndListening' })
+		void sendPopupReadyAndListening('fetchSimulationStack')
 		updateSimulation()
 		updateMetaData()
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
@@ -86,15 +86,15 @@ export function FetchSimulationStack() {
 
 	const simulationStackResults = useComputed<SimulationAndVisualisationResults | undefined>(() => {
 		const complete = completeVisualizedSimulation.value
-		if (complete === undefined || complete.simulationState === undefined) return undefined
+		if (complete.simulationState.kind === 'passthrough') return undefined
 		return {
-			blockNumber: complete.simulationState.blockNumber,
-			blockTimestamp: complete.simulationState.blockTimestamp,
-			simulationConductedTimestamp: complete.simulationState.simulationConductedTimestamp,
-			simulationStateInput: complete.simulationState.simulationStateInput,
+			blockNumber: complete.simulationState.value.blockNumber,
+			blockTimestamp: complete.simulationState.value.blockTimestamp,
+			simulationConductedTimestamp: complete.simulationState.value.simulationConductedTimestamp,
+			simulationStateInput: complete.simulationState.value.simulationStateInput,
 			addressBookEntries: complete.addressBookEntries,
 			visualizedSimulationState: complete.visualizedSimulationState,
-			rpcNetwork: complete.simulationState.rpcNetwork,
+			rpcNetwork: complete.simulationState.value.rpcNetwork,
 			tokenPriceEstimates: complete.tokenPriceEstimates,
 			namedTokenIds: complete.namedTokenIds,
 		}
@@ -113,7 +113,7 @@ export function FetchSimulationStack() {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
 	const addressMetaData = useComputed(() => simulationMetadata.value?.addressBookEntries ?? [])
 
-	if (changeRequest.value === undefined || simulationMetadata.value === undefined || completeVisualizedSimulation.value === undefined || simulationStackResults.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
+	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	return (
 		<main>
 			<Hint>

@@ -1,4 +1,6 @@
-import { ethers, namehash } from 'ethers'
+import type { Abi } from 'viem'
+import { namehash } from 'viem/ens'
+import { keccak256, stringToBytes } from 'viem/utils'
 import { CHAIN_NAMES } from './chainNames.js'
 
 // common contract addresses
@@ -11,9 +13,38 @@ export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeee
 // export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 
 export const Multicall3ABI = [
-	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
-	'function getEthBalance(address) returns (uint256)',
-]
+	{
+		type: 'function',
+		name: 'aggregate3',
+		stateMutability: 'payable',
+		inputs: [{
+			name: 'calls',
+			type: 'tuple[]',
+			components: [
+				{ name: 'target', type: 'address' },
+				{ name: 'allowFailure', type: 'bool' },
+				{ name: 'callData', type: 'bytes' },
+			],
+		}],
+		outputs: [{
+			name: 'returnData',
+			type: 'tuple[]',
+			components: [
+				{ name: 'success', type: 'bool' },
+				{ name: 'returnData', type: 'bytes' },
+			],
+		}],
+	},
+	{
+		type: 'function',
+		name: 'getEthBalance',
+		stateMutability: 'view',
+		inputs: [{ name: 'addr', type: 'address' }],
+		outputs: [{ type: 'uint256' }],
+	},
+] as const satisfies Abi
+
+const signatureHash = (signature: string) => keccak256(stringToBytes(signature))
 
 // common 4-byte function sigs
 // export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
@@ -22,34 +53,34 @@ export const Multicall3ABI = [
 // export const ERC721_APPROVAL_FOR_ALL_4BYTES = 0xa22cb465
 
 // common event log signatures
-export const TRANSFER_LOG = ethers.keccak256(ethers.toUtf8Bytes('Transfer(address,address,uint256)'))
-export const APPROVAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Approval(address,address,uint256)'))
-export const ERC721_APPROVAL_FOR_ALL_LOG = ethers.keccak256(ethers.toUtf8Bytes('ApprovalForAll(address,address,bool)'))
-export const DEPOSIT_LOG = ethers.keccak256(ethers.toUtf8Bytes('Deposit(address,uint256)'))
-export const WITHDRAWAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Withdrawal(address,uint256)'))
-export const ERC1155_TRANSFERBATCH_LOG = ethers.keccak256(ethers.toUtf8Bytes('TransferBatch(address,address,address,uint256[],uint256[])'))
-export const ERC1155_TRANSFERSINGLE_LOG = ethers.keccak256(ethers.toUtf8Bytes('TransferSingle(address,address,address,uint256,uint256)'))
+export const TRANSFER_LOG = signatureHash('Transfer(address,address,uint256)')
+export const APPROVAL_LOG = signatureHash('Approval(address,address,uint256)')
+export const ERC721_APPROVAL_FOR_ALL_LOG = signatureHash('ApprovalForAll(address,address,bool)')
+export const DEPOSIT_LOG = signatureHash('Deposit(address,uint256)')
+export const WITHDRAWAL_LOG = signatureHash('Withdrawal(address,uint256)')
+export const ERC1155_TRANSFERBATCH_LOG = signatureHash('TransferBatch(address,address,address,uint256[],uint256[])')
+export const ERC1155_TRANSFERSINGLE_LOG = signatureHash('TransferSingle(address,address,address,uint256,uint256)')
 
 // ENS event signatures
-export const ENS_ADDR_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddrChanged(bytes32,address)'))
-export const ENS_ADDRESS_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddressChanged(bytes32,uint256,bytes)'))
-export const ENS_CONTROLLER_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(string,bytes32,uint256,uint256)'))
-export const ENS_BASE_REGISTRAR_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(uint256,uint256)'))
-export const ENS_BASE_REGISTRAR_NAME_REGISTERED = ethers.keccak256(ethers.toUtf8Bytes('NameRegistered(uint256,address,uint256)'))
-export const ENS_TRANSFER = ethers.keccak256(ethers.toUtf8Bytes('Transfer(bytes32,address)'))
-export const ENS_NEW_OWNER = ethers.keccak256(ethers.toUtf8Bytes('NewOwner(bytes32,bytes32,address)'))
-export const ENS_NEW_RESOLVER = ethers.keccak256(ethers.toUtf8Bytes('NewResolver(bytes32,address)'))
-export const ENS_TEXT_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('TextChanged(bytes32,string,string)'))
-export const ENS_TEXT_CHANGED_KEY_VALUE = ethers.keccak256(ethers.toUtf8Bytes('TextChanged(bytes32,string,string,string)'))
-export const ENS_CONTENT_HASH_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('ContenthashChanged(bytes32,bytes)'))
-export const ENS_FUSES_SET = ethers.keccak256(ethers.toUtf8Bytes('FusesSet(bytes32,uint32)'))
-export const ENS_NAME_UNWRAPPED = ethers.keccak256(ethers.toUtf8Bytes('NameUnwrapped(bytes32,address)'))
-export const ENS_NAME_WRAPPED = ethers.keccak256(ethers.toUtf8Bytes('NameWrapped(bytes32,bytes,address,uint32,uint64)'))
-export const ENS_NAME_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('NameChanged(bytes32,string)'))
-export const ENS_REVERSE_CLAIMED = ethers.keccak256(ethers.toUtf8Bytes('ReverseClaimed(address,bytes32)'))
-export const ENS_CONTROLLER_NAME_REGISTERED = ethers.keccak256(ethers.toUtf8Bytes('NameRegistered(string,bytes32,address,uint256,uint256)'))
-export const ENS_NEW_TTL = ethers.keccak256(ethers.toUtf8Bytes('NewTTL(bytes32,uint64)'))
-export const ENS_EXPIRY_EXTENDED = ethers.keccak256(ethers.toUtf8Bytes('ExpiryExtended(bytes32,uint64)'))
+export const ENS_ADDR_CHANGED = signatureHash('AddrChanged(bytes32,address)')
+export const ENS_ADDRESS_CHANGED = signatureHash('AddressChanged(bytes32,uint256,bytes)')
+export const ENS_CONTROLLER_NAME_RENEWED = signatureHash('NameRenewed(string,bytes32,uint256,uint256)')
+export const ENS_BASE_REGISTRAR_NAME_RENEWED = signatureHash('NameRenewed(uint256,uint256)')
+export const ENS_BASE_REGISTRAR_NAME_REGISTERED = signatureHash('NameRegistered(uint256,address,uint256)')
+export const ENS_TRANSFER = signatureHash('Transfer(bytes32,address)')
+export const ENS_NEW_OWNER = signatureHash('NewOwner(bytes32,bytes32,address)')
+export const ENS_NEW_RESOLVER = signatureHash('NewResolver(bytes32,address)')
+export const ENS_TEXT_CHANGED = signatureHash('TextChanged(bytes32,string,string)')
+export const ENS_TEXT_CHANGED_KEY_VALUE = signatureHash('TextChanged(bytes32,string,string,string)')
+export const ENS_CONTENT_HASH_CHANGED = signatureHash('ContenthashChanged(bytes32,bytes)')
+export const ENS_FUSES_SET = signatureHash('FusesSet(bytes32,uint32)')
+export const ENS_NAME_UNWRAPPED = signatureHash('NameUnwrapped(bytes32,address)')
+export const ENS_NAME_WRAPPED = signatureHash('NameWrapped(bytes32,bytes,address,uint32,uint64)')
+export const ENS_NAME_CHANGED = signatureHash('NameChanged(bytes32,string)')
+export const ENS_REVERSE_CLAIMED = signatureHash('ReverseClaimed(address,bytes32)')
+export const ENS_CONTROLLER_NAME_REGISTERED = signatureHash('NameRegistered(string,bytes32,address,uint256,uint256)')
+export const ENS_NEW_TTL = signatureHash('NewTTL(bytes32,uint64)')
+export const ENS_EXPIRY_EXTENDED = signatureHash('ExpiryExtended(bytes32,uint64)')
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
@@ -102,7 +133,7 @@ export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = -40002
 // const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unknown website origin' } }
 
 function get4Byte(functionAbi: string) {
-	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))
+	return Number(signatureHash(functionAbi).slice(0, 10))
 }
 
 export const FourByteExplanations = {

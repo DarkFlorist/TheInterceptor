@@ -1,9 +1,9 @@
-import { Interface } from 'ethers'
 import { Erc20ABI, Erc721ABI } from './abi.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
+import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
 
 type EOA = {
 	type: 'EOA'
@@ -36,32 +36,31 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 	const contractCode = await ethereumClientService.getCode(address, 'latest', requestAbortController)
 	if (contractCode.length === 0) return { type: 'EOA', address }
 
-	const nftInterface = new Interface(Erc721ABI)
-	const erc20Interface = new Interface(Erc20ABI)
 	const targetAddress = address
 	const calls = [
-		{ targetAddress, callData: stringToUint8Array(nftInterface.encodeFunctionData('supportsInterface', ['0x80ac58cd'])) }, // Is Erc721Definition
-		{ targetAddress, callData: stringToUint8Array(nftInterface.encodeFunctionData('supportsInterface', ['0x5b5e139f'])) }, // Is Erc721Metadata
-		{ targetAddress, callData: stringToUint8Array(nftInterface.encodeFunctionData('supportsInterface', ['0xd9b67a26'])) }, // Is Erc1155Definition
-		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('name', [])) },
-		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('symbol', [])) },
-		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('decimals', [])) },
-		{ targetAddress, callData: stringToUint8Array(erc20Interface.encodeFunctionData('totalSupply', [])) }
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc721ABI, 'supportsInterface', ['0x80ac58cd'])) }, // Is Erc721Definition
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc721ABI, 'supportsInterface', ['0x5b5e139f'])) }, // Is Erc721Metadata
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc721ABI, 'supportsInterface', ['0xd9b67a26'])) }, // Is Erc1155Definition
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'name', [])) },
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'symbol', [])) },
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'decimals', [])) },
+		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'totalSupply', [])) }
 	]
 
 	try {
 		const [isErc721, hasMetadata, isErc1155, name, symbol, decimals, totalSupply] = await tryAggregateMulticall(ethereumClientService, requestAbortController, calls)
 		if (isErc721 === undefined || hasMetadata === undefined || isErc1155 === undefined || name === undefined || symbol === undefined || decimals === undefined || totalSupply === undefined) throw new Error('Multicall result is too short')
-		if (isErc721.success && nftInterface.decodeFunctionResult('supportsInterface', isErc721.returnData)[0] === true) {
+		if (isErc721.success && decodeFunctionOutput(Erc721ABI, 'supportsInterface', isErc721.returnData) === true) {
+			const supportsMetadata = hasMetadata.success && decodeFunctionOutput(Erc721ABI, 'supportsInterface', hasMetadata.returnData)
 			return {
 				type: 'ERC721',
 				address,
-				name: hasMetadata.success && nftInterface.decodeFunctionResult('supportsInterface', hasMetadata.returnData)[0] ? nftInterface.decodeFunctionResult('name', name.returnData)[0] : checksummedAddress(address),
-				symbol: hasMetadata.success && nftInterface.decodeFunctionResult('supportsInterface', hasMetadata.returnData)[0] ? nftInterface.decodeFunctionResult('symbol', symbol.returnData)[0] : '???',
+				name: supportsMetadata ? decodeFunctionOutput(Erc721ABI, 'name', name.returnData) : checksummedAddress(address),
+				symbol: supportsMetadata ? decodeFunctionOutput(Erc721ABI, 'symbol', symbol.returnData) : '???',
 				entrySource: 'OnChain'
 			}
 		}
-		if (isErc1155.success && nftInterface.decodeFunctionResult('supportsInterface', isErc1155.returnData)[0] === true) {
+		if (isErc1155.success && decodeFunctionOutput(Erc721ABI, 'supportsInterface', isErc1155.returnData) === true) {
 			return {
 				type: 'ERC1155',
 				address,
@@ -75,9 +74,9 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 			return {
 				type: 'ERC20',
 				address,
-				name: erc20Interface.decodeFunctionResult('name', name.returnData)[0],
-				symbol: erc20Interface.decodeFunctionResult('symbol', symbol.returnData)[0],
-				decimals: BigInt(erc20Interface.decodeFunctionResult('decimals', decimals.returnData)[0]),
+				name: decodeFunctionOutput(Erc20ABI, 'name', name.returnData),
+				symbol: decodeFunctionOutput(Erc20ABI, 'symbol', symbol.returnData),
+				decimals: BigInt(decodeFunctionOutput(Erc20ABI, 'decimals', decimals.returnData)),
 				entrySource: 'OnChain'
 			}
 		}

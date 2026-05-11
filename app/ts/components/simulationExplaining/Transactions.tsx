@@ -1,5 +1,7 @@
-import { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, NonSimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
-import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
+import { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { SmallAddress } from '../subcomponents/address.js'
+import { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction } from '../../types/visualizer-types.js'
+import { WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -35,7 +37,6 @@ import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
@@ -146,9 +147,10 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
 		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
 	}
-	const rpcNetwork = useComputed(() => param.simulationAndVisualisationResults.value.rpcNetwork)
-	const addressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.addressBookEntries)
-	const namedTokenIds = useComputed(() => param.simulationAndVisualisationResults.value.namedTokenIds)
+	const rpcNetwork = useSignal(param.simulationAndVisualisationResults.rpcNetwork)
+	useEffect(() => {
+		rpcNetwork.value = param.simulationAndVisualisationResults.rpcNetwork
+	}, [param.simulationAndVisualisationResults.rpcNetwork])
 	return (
 		<div class = 'card'>
 			<TransactionHeader simTx = { param.simTx } removeTransactionOrSignedMessage = { remove } />
@@ -163,13 +165,12 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						activeAddress = { param.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { addressBookEntries }
-						namedTokenIds = { namedTokenIds }
+						addressMetaData = { param.addressMetaData }
 					/>
 					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
 				</> }
-				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { addressBookEntries } />
+				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
@@ -336,6 +337,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+	const currentSimulationAndVisualisationResults = simulationAndVisualisationResults.value
 
 	useEffect(() => {
 		switch(blockTimeManipulation.type) {
@@ -389,15 +391,15 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				visualizedPersonalSignRequest = { stackRow.visualizedPersonalSignRequest }
 				errorMessage = { undefined }
 			/> }
-		</> : <>
-			{ stackRow.status === 'simulated' && stackRow.simulatedTransaction !== undefined ?
-				<Transaction
-					simTx = { stackRow.simulatedTransaction }
-					simulationAndVisualisationResults = { simulationAndVisualisationResults as ReadonlySignal<SimulationAndVisualisationResults> }
-					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-					activeAddress = { activeAddress }
-					renameAddressCallBack = { renameAddressCallBack }
-					addressMetaData = { addressMetaData }
+			</> : <>
+				{ stackRow.status === 'simulated' && stackRow.simulatedTransaction !== undefined && currentSimulationAndVisualisationResults !== undefined ?
+					<Transaction
+						simTx = { stackRow.simulatedTransaction }
+						simulationAndVisualisationResults = { currentSimulationAndVisualisationResults }
+						removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+						activeAddress = { activeAddress }
+						renameAddressCallBack = { renameAddressCallBack }
+						addressMetaData = { addressMetaData }
 					editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 				/>
 			: <TransactionPreviewDetails
@@ -427,7 +429,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 }
 
 type TransactionsAndSignedMessagesParams = {
-	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
+	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -437,13 +439,21 @@ type TransactionsAndSignedMessagesParams = {
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	return <SimulationStackRows { ...param } showTimePicker = { true } />
+	const simulationAndVisualisationResults = useComputed(() => {
+		const currentResults = param.simulationAndVisualisationResults.value
+		return currentResults.kind === 'passthrough' ? undefined : currentResults.value
+	})
+	return <SimulationStackRows { ...param } simulationAndVisualisationResults = { simulationAndVisualisationResults } showTimePicker = { true } />
 }
 
-export function SimulationStackRows(param: TransactionsAndSignedMessagesParams) {
+type SimulationStackRowsParams = Omit<TransactionsAndSignedMessagesParams, 'simulationAndVisualisationResults'> & {
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
+}
+
+export function SimulationStackRows(param: SimulationStackRowsParams) {
 	const transactionsAndMessagesInBlock = useComputed(() => {
 		const results = param.simulationAndVisualisationResults.value
-		if (results === undefined) return []
+		if (results === undefined || results.simulationStateInput === undefined) return []
 		return normalizeSimulationStackRows(
 			results.simulationStateInput,
 			results.visualizedSimulationState,

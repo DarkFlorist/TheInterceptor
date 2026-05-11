@@ -174,13 +174,13 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				oldEntry: editable.websiteAccess,
 				newEntry: {
 					website: editable.websiteAccess.website,
-					access: editable.access,
 					addressAccess: editable.addressAccessModified.filter((x) => !x.removed).map((addr) => ({
 						address: BigInt(addr.address),
 						access: addr.access,
 					})),
-					interceptorDisabled: editable.interceptorDisabled,
-					declarativeNetRequestBlockMode: editable.declarativeNetRequestBlockMode,
+					...(editable.access !== undefined ? { access: editable.access } : {}),
+					...(editable.interceptorDisabled !== undefined ? { interceptorDisabled: editable.interceptorDisabled } : {}),
+					...(editable.declarativeNetRequestBlockMode !== undefined ? { declarativeNetRequestBlockMode: editable.declarativeNetRequestBlockMode } : {}),
 				},
 				removed: editable.removed,
 			}
