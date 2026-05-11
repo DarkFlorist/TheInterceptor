@@ -1,10 +1,10 @@
 // @ts-nocheck
 import * as assert from 'assert'
+import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
-import { describe, run, runIfRoot, should } from '../micro-should.js'
-import { installDomMock } from './someTimeAgo.js'
+import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport } from '../../app/ts/types/visualizer-types.js'
 
 const storageState: Record<string, unknown> = {}
@@ -117,76 +117,79 @@ function collectElements(node: any, tagName: string, results: any[] = []) {
 	return results
 }
 
-export async function main() {
-	const modules = await modulesPromise
+async function clickElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element })
+}
 
-	describe('import simulation stack', () => {
-		should('returns a typed failure reply when stack persistence fails', async () => {
-			resetEnvironment()
-			localSetBehavior = async (items: Record<string, unknown>) => {
-				if ('interceptorTransactionStack' in items) throw new Error('Resource::kQuotaBytes quota exceeded')
-				Object.assign(storageState, items)
-			}
+describe('import simulation stack', () => {
+	test('returns a typed failure reply when stack persistence fails', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		localSetBehavior = async (items: Record<string, unknown>) => {
+			if ('interceptorTransactionStack' in items) throw new Error('Resource::kQuotaBytes quota exceeded')
+			Object.assign(storageState, items)
+		}
 
-			const reply = await modules.importSimulationStack({} as never, { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: exportPayload })
 
-			assert.equal(reply.type, 'ImportSimulationStackReply')
-			assert.equal(reply.ok, false)
-			assert.match(reply.message, /quota/i)
-			assert.match(reply.message, /simulation stack/i)
-		})
-
-		should('keeps the modal open and shows the returned import error', async () => {
-			resetEnvironment()
-			const dom = installDomMock()
-			let closeCount = 0
-			runtimeSendMessage = async () => ({ type: 'ImportSimulationStackReply', ok: false, message: 'Quota exceeded while saving the imported stack.' })
-
-			await act(() => {
-				render(h(modules.ImportSimulationStack, {
-					close: () => { closeCount += 1 },
-					simulationInput: signal(exportString),
-				}), dom.document.body)
-			})
-
-			const buttons = collectElements(dom.document.body, 'button')
-			const importButton = buttons.find((button) => button.textContent?.includes('Import'))
-			assert.ok(importButton)
-
-			await act(async () => {
-				await importButton.onclick({ currentTarget: importButton })
-			})
-
-			assert.equal(closeCount, 0)
-			assert.match(dom.document.body.textContent, /Quota exceeded while saving the imported stack\./)
-			dom.restore()
-		})
-
-		should('closes the modal after a successful import reply', async () => {
-			resetEnvironment()
-			const dom = installDomMock()
-			let closeCount = 0
-			runtimeSendMessage = async () => ({ type: 'ImportSimulationStackReply', ok: true })
-
-			await act(() => {
-				render(h(modules.ImportSimulationStack, {
-					close: () => { closeCount += 1 },
-					simulationInput: signal(exportString),
-				}), dom.document.body)
-			})
-
-			const buttons = collectElements(dom.document.body, 'button')
-			const importButton = buttons.find((button) => button.textContent?.includes('Import'))
-			assert.ok(importButton)
-
-			await act(async () => {
-				await importButton.onclick({ currentTarget: importButton })
-			})
-
-			assert.equal(closeCount, 1)
-			dom.restore()
-		})
+		assert.equal(reply.type, 'ImportSimulationStackReply')
+		assert.equal(reply.ok, false)
+		assert.match(reply.message, /quota/i)
+		assert.match(reply.message, /simulation stack/i)
 	})
 
-	await runIfRoot(run, import.meta)
-}
+	test('keeps the modal open and shows the returned import error', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const dom = installDomMock()
+		let closeCount = 0
+		runtimeSendMessage = async () => ({ type: 'ImportSimulationStackReply', ok: false, message: 'Quota exceeded while saving the imported stack.' })
+
+		await act(() => {
+			render(h(modules.ImportSimulationStack, {
+				close: () => { closeCount += 1 },
+				simulationInput: signal(exportString),
+			}), dom.document.body)
+		})
+
+		const buttons = collectElements(dom.document.body, 'button')
+		const importButton = buttons.find((button) => button.textContent?.includes('Import'))
+		assert.ok(importButton)
+
+		await act(async () => {
+			await clickElement(importButton)
+		})
+
+		assert.equal(closeCount, 0)
+		assert.match(dom.document.body.textContent, /Quota exceeded while saving the imported stack\./)
+		dom.restore()
+	})
+
+	test('closes the modal after a successful import reply', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const dom = installDomMock()
+		let closeCount = 0
+		runtimeSendMessage = async () => ({ type: 'ImportSimulationStackReply', ok: true })
+
+		await act(() => {
+			render(h(modules.ImportSimulationStack, {
+				close: () => { closeCount += 1 },
+				simulationInput: signal(exportString),
+			}), dom.document.body)
+		})
+
+		const buttons = collectElements(dom.document.body, 'button')
+		const importButton = buttons.find((button) => button.textContent?.includes('Import'))
+		assert.ok(importButton)
+
+		await act(async () => {
+			await clickElement(importButton)
+		})
+
+		assert.equal(closeCount, 1)
+		dom.restore()
+	})
+})
