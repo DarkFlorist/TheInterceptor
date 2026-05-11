@@ -40,8 +40,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
 })
 
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
-const LocalStorageItems = funtypes.ReadonlyPartial({
+const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
 	openedPageV2: Page,
@@ -74,6 +73,8 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 })
+type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+const LocalStorageItems: funtypes.Codec<LocalStorageItems> = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
@@ -113,7 +114,7 @@ const LocalStorageItems2Runtype = funtypes.ReadonlyPartial({
 	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
 })
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2Runtype>
-const LocalStorageItems2 = LocalStorageItems2Runtype
+const LocalStorageItems2: funtypes.Codec<LocalStorageItems2> = LocalStorageItems2Runtype
 
 type LocalStorageKey2 = funtypes.Static<typeof LocalStorageKey2>
 const LocalStorageKey2 = funtypes.Union(

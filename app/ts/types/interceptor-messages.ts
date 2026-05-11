@@ -502,15 +502,21 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 	data: funtypes.Unknown
 }).asReadonly()
 
-const UpdateConfirmTransactionDialogPendingTransactionsRuntype = funtypes.ReadonlyObject({
+const UpdateConfirmTransactionDialogPendingTransactionsRuntype: funtypes.Codec<UpdateConfirmTransactionDialogPendingTransactions> = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
-export type UpdateConfirmTransactionDialogPendingTransactions = funtypes.Static<typeof UpdateConfirmTransactionDialogPendingTransactionsRuntype>
-export const UpdateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactionsRuntype
+export type UpdateConfirmTransactionDialogPendingTransactions = {
+	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
+	readonly data: {
+		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
+	}
+}
+export const UpdateConfirmTransactionDialogPendingTransactions: funtypes.Codec<UpdateConfirmTransactionDialogPendingTransactions> = UpdateConfirmTransactionDialogPendingTransactionsRuntype
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
