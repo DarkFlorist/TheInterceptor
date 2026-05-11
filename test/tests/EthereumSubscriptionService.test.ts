@@ -1,13 +1,14 @@
 import * as assert from 'assert'
-import { ethers } from 'ethers'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
@@ -19,7 +20,6 @@ function parseRequest<T>(data: string): T {
 const ethSimulateSingleBlockResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result)
 const ethSimulateSplitBlocksResult = parseRequest<EthSimulateV1Result>(eth_simulateV1_dummy_call_result_2calls)
 const ethSimulateAggregate3Result = parseRequest<EthSimulateV1Result>(eth_simulateV1_get_eth_balance_multicall)
-const multicallInterface = new ethers.Interface(Multicall3ABI)
 
 function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 	const aggregate3BalanceBlock = ethSimulateAggregate3Result[ethSimulateAggregate3Result.length - 1]
@@ -30,9 +30,9 @@ function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 		...aggregate3BalanceBlock,
 		calls: [{
 			...aggregate3Call,
-			returnData: multicallInterface.encodeFunctionResult('aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
+			returnData: encodeFunctionReturn(Multicall3ABI, 'aggregate3', [Array.from({ length: balanceQueryCount }, (_, index) => ({
 				success: true,
-				returnData: ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [BigInt(index + 1)]),
+				returnData: encodeAbiValues(['uint256'], [BigInt(index + 1)]),
 			}))]),
 		}],
 	}
@@ -84,7 +84,7 @@ async function loadModules() {
 	}
 }
 
-	const blockNumber = 8443561n
+const blockNumber = 8443561n
 	const rpcNetwork = {
 		name: 'Goerli',
 		chainId: 5n,
@@ -115,7 +115,11 @@ async function loadModules() {
 				case 'eth_simulateV1': {
 					const lastCallInput = rpcRequest.params[0]?.blockStateCalls.at(-1)?.calls[0]?.input
 					const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
-						? multicallInterface.decodeFunctionData('aggregate3', dataStringWith0xStart(lastCallInput))[0].length
+						? (() => {
+							const decoded = decodeFunctionDataStrict(Multicall3ABI, dataStringWith0xStart(lastCallInput))
+							if (decoded.functionName !== 'aggregate3') throw new Error('expected aggregate3 call')
+							return decoded.args[0].length
+						})()
 						: undefined
 					return createMockEthSimulateV1Result(
 						rpcRequest.params[0]?.blockStateCalls.length ?? 0,
@@ -160,17 +164,103 @@ async function loadModules() {
 	}] as const
 
 	describe('EthereumSubscriptionService', () => {
+		test('removeEthereumSubscription only removes the matching socket subscription', async () => {
+			installBrowserMock()
+			const { getEthereumSubscriptionsAndFilters, removeEthereumSubscription, updateEthereumSubscriptionsAndFilters } = await loadModules()
+
+			const socket = { tabId: 1, connectionName: 1n } as const
+			const otherSocket = { tabId: 2, connectionName: 2n } as const
+			await updateEthereumSubscriptionsAndFilters(() => ([
+				{ type: 'newHeads', subscriptionOrFilterId: 'remove-me', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: socket },
+				{ type: 'newHeads', subscriptionOrFilterId: 'keep-same-socket', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: socket },
+				{ type: 'newHeads', subscriptionOrFilterId: 'keep-other-socket', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: otherSocket },
+			]))
+
+			assert.equal(await removeEthereumSubscription(socket, 'remove-me'), true)
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((entry) => entry.subscriptionOrFilterId), ['keep-same-socket', 'keep-other-socket'])
+		})
+
+		test('getEthFilterChanges applies the real filter payload and preserves the stored subscription list', async () => {
+			installBrowserMock()
+			const { getEthereumSubscriptionsAndFilters, getEthFilterChanges, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+
+			const filterSocket = { tabId: 1, connectionName: 1n } as const
+			const otherSocket = { tabId: 2, connectionName: 2n } as const
+
+			const simulationInput = [{
+				stateOverrides: {},
+				transactions: [{
+					signedTransaction: mockSignTransaction({
+						type: '1559',
+						from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+						nonce: 0n,
+						maxFeePerGas: 1n,
+						maxPriorityFeePerGas: 1n,
+						gas: 21000n,
+						to: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn,
+						value: 10n,
+						input: new Uint8Array(0),
+						chainId: 5n,
+					}),
+					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+					created: new Date(),
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+					transactionIdentifier: 1n,
+				}],
+				signedMessages: [],
+				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+				simulateWithZeroBaseFee: false,
+			}] as const
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, simulationInput)
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const matchingLog = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.ethSimulateV1CallResult.status === 'success'
+				? simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.ethSimulateV1CallResult.logs[0]
+				: undefined
+			if (matchingLog === undefined) throw new Error('matching simulated log missing')
+
+			await updateEthereumSubscriptionsAndFilters(() => ([
+				{
+					type: 'eth_newFilter',
+					subscriptionOrFilterId: 'filter-1',
+					params: { method: 'eth_newFilter', params: [{ address: matchingLog.address, topics: [matchingLog.topics[0]] }] },
+					subscriptionCreatorSocket: filterSocket,
+					calledInlastBlock: 100n,
+				},
+				{
+					type: 'newHeads',
+					subscriptionOrFilterId: 'keep-me',
+					params: { method: 'eth_subscribe', params: ['newHeads'] },
+					subscriptionCreatorSocket: otherSocket,
+				},
+			]))
+
+			const firstChanges = await getEthFilterChanges('filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			assert.equal(firstChanges?.length, 1)
+			assert.equal(firstChanges?.[0]?.address, matchingLog.address)
+
+			const secondChanges = await getEthFilterChanges('filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			assert.deepEqual(secondChanges, [])
+
+			const updated = await getEthereumSubscriptionsAndFilters()
+			assert.equal(updated.length, 2)
+			assert.equal(updated[0]?.type, 'eth_newFilter')
+			if (updated[0]?.type !== 'eth_newFilter') throw new Error('Filter was not preserved')
+			assert.equal(updated[0].calledInlastBlock, blockNumber + 1n)
+			assert.equal(updated[1]?.subscriptionOrFilterId, 'keep-me')
+		})
+
 		test('eth_getFilterChanges only returns newly simulated logs once', async () => {
 			installBrowserMock()
 			const { createNewFilter, getEthFilterChanges, getEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
-			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, undefined)
+			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, simulationState)
-			const secondChanges = await getEthFilterChanges(filterId, ethereum, undefined, simulationState)
+			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			const secondChanges = await getEthFilterChanges(filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
 			const storedFilters = await getEthereumSubscriptionsAndFilters()
 			const storedFilter = storedFilters.find((filter) => filter.type === 'eth_newFilter' && filter.subscriptionOrFilterId === filterId)
 			if (storedFilter === undefined || storedFilter.type !== 'eth_newFilter') throw new Error('stored filter missing')
@@ -239,7 +329,7 @@ async function loadModules() {
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => simulationState)
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState))
 
 			const emittedBlockNumbers = postedMessages.flatMap((message) => {
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []

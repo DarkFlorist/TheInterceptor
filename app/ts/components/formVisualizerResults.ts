@@ -1,7 +1,6 @@
 import { addressString } from '../utils/bigint.js'
 import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
-import { Interface } from 'ethers'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'
@@ -129,7 +128,9 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
-		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ?  new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
+		const availableAbis = addressBookEntries
+			.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ? entry.abi : undefined)
+			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		const toFrom = getFromAndToMetadata(simulatedTx.preSimulationTransaction.signedTransaction, addressBookEntries)
 		return {
 			transaction: { ...toFrom, rpcNetwork, ...otherFields },

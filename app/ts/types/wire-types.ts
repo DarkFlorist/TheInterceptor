@@ -204,8 +204,8 @@ export type EthereumBytes32 = funtypes.Static<typeof EthereumBytes32>
 export const EthereumBytes256 = funtypes.String.withParser(Bytes256Parser)
 export type EthereumBytes256 = funtypes.Static<typeof EthereumBytes256>
 
-const EthereumBytes16 = funtypes.String.withParser(Bytes16Parser)
-type EthereumBytes16 = funtypes.Static<typeof EthereumBytes16>
+export const EthereumBytes16 = funtypes.String.withParser(Bytes16Parser)
+export type EthereumBytes16 = funtypes.Static<typeof EthereumBytes16>
 
 export const EthereumTimestamp = funtypes.String.withParser(TimestampParser)
 export type EthereumTimestamp = funtypes.Static<typeof EthereumTimestamp>

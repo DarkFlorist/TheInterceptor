@@ -3,10 +3,11 @@ import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { LogSummarizer } from '../../app/ts/simulation/services/LogSummarizer.js'
+import { summarizeLogs } from '../../app/ts/simulation/services/LogSummarizer.js'
 import { SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { installDomMock } from './domMock.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { AddressBookEntry, ContactEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent, TokenVisualizerNFTAllApprovalEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -139,14 +140,13 @@ const createTransactionWithEvent = (event: SimulatedAndVisualizedTransaction['ev
 })
 
 const getSummaryForTransaction = (simulatedTransaction: SimulatedAndVisualizedTransaction, externalEntries: readonly AddressBookEntry[]) => {
-	const summarizer = new LogSummarizer([simulatedTransaction])
 	const externalMetadata = new Map<string, AddressBookEntry>(externalEntries.map((entry) => [addressString(entry.address), entry]))
-	return summarizer.getSummary(externalMetadata, [], [])
+	return summarizeLogs([simulatedTransaction], externalMetadata, [], [])
 }
 
-const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: Signal<SimulationAndVisualisationResults>) => {
+const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
 	render(h(SimulationSummary, {
-		simulationAndVisualisationResults,
+		simulationAndVisualisationResults: new Signal(toResolvedSimulationResults(simulationAndVisualisationResults)),
 		currentBlockNumber: new Signal<bigint | undefined>(1n),
 		activeAddress: new Signal<bigint | undefined>(RECIPIENT_ADDRESS),
 		renameAddressCallBack: () => undefined,
@@ -158,13 +158,12 @@ const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulat
 describe('LogSummarizer fallback metadata', () => {
 	test('uses enriched event metadata when the external map is incomplete', () => {
 		const simulatedTransaction = makeSimulatedTransaction()
-		const summarizer = new LogSummarizer([simulatedTransaction])
 		const externalMetadata = new Map<string, AddressBookEntry>([
 			[addressString(tokenEntry.address), tokenEntry],
 			[addressString(senderEntry.address), senderEntry],
 		])
 
-		const summary = summarizer.getSummary(externalMetadata, [], [])
+		const summary = summarizeLogs([simulatedTransaction], externalMetadata, [], [])
 		const recipientSummary = summary.find((entry) => entry.summaryFor.address === RECIPIENT_ADDRESS)
 
 		assert.notEqual(recipientSummary, undefined)
@@ -273,7 +272,7 @@ describe('LogSummarizer fallback metadata', () => {
 		const simulationAndVisualisationResults = new Signal(simulationAndVisualisationResultsData)
 
 		await act(() => {
-			renderSimulationSummary(dom, simulationAndVisualisationResults)
+			renderSimulationSummary(dom, simulationAndVisualisationResults.value)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(recipientEntry.name), true)
