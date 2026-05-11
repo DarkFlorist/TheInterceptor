@@ -502,13 +502,7 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 	data: funtypes.Unknown
 }).asReadonly()
 
-const UpdateConfirmTransactionDialogPendingTransactionsRuntype: funtypes.Codec<{
-	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
-	readonly data: {
-		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
-		readonly currentBlockNumber: bigint
-	}
-}> = funtypes.ReadonlyObject({
+const UpdateConfirmTransactionDialogPendingTransactionsRuntype = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
