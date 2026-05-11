@@ -1,5 +1,5 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulationGasLeft, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
@@ -7,11 +7,10 @@ import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/Enri
 import { PendingTransaction } from '../types/accessRequest.js'
 import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { BlockTimeManipulation, ExecutionSimulationState, NonSimulatedAndVisualizedTransaction, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import { BlockTimeManipulation, ExecutionSimulationState, NonSimulatedAndVisualizedTransaction, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { last } from '../utils/array.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, bigintSecondsToDate, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
@@ -258,9 +257,11 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const resolvedSimulationState = simulationState.value
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
-		} : {
-			gas: simulationGasLeft(last(resolvedSimulationState.simulatedBlocks), await ethereumClientService.getBlock(undefined))
-		}
+		} : await (async () => {
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput), transactionWithoutGas)
+			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
+			return { gas: estimateGas.gas }
+		})()
 		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
 		const metaTransaction: PreSimulationTransaction = {
 			signedTransaction: mockSignTransaction(transaction),
