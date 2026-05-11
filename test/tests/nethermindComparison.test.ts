@@ -8,7 +8,7 @@ import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
-import { SimulationState } from '../../app/ts/types/visualizer-types.js'
+import { SimulationState, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -86,6 +86,8 @@ const simulationState: SimulationState = {
 	simulationStateInput: [],
 }
 
+const resolvedSimulationState = toResolvedSimulationState(simulationState)
+
 const exampleTransaction = {
 	type: '1559',
 	from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
@@ -102,7 +104,7 @@ const exampleTransaction = {
 describe('Nethermind testing', () => {
 
 	test('getBlock with true aligns with Nethermind', async () => {
-		const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
+		const block = await getSimulatedBlock(ethereum, undefined, resolvedSimulationState, blockNumber, true)
 		if (block === null) throw new Error('Block was null')
 		const serialized = GetBlockReturn.serialize(block)
 		const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
@@ -111,7 +113,7 @@ describe('Nethermind testing', () => {
 	})
 
 	test('getBlock with false aligns with Nethermind', async () => {
-		const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, false)
+		const block = await getSimulatedBlock(ethereum, undefined, resolvedSimulationState, blockNumber, false)
 		if (block === null) throw new Error('Block was null')
 		const serialized = GetBlockReturn.serialize(block)
 		const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_false)
@@ -124,8 +126,6 @@ describe('Nethermind testing', () => {
 	})
 
 	test('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
-		const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, true)
-		if (block === null) throw new Error('Block was null')
 		const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState.simulationStateInput, [{
 			signedTransaction: mockSignTransaction(exampleTransaction),
 			website: { websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -133,18 +133,30 @@ describe('Nethermind testing', () => {
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
 			transactionIdentifier: 1n,
 		}])
-		const nextBlock = await getSimulatedBlock(ethereum, undefined, newState, blockNumber + 2n, true)
+		const nextBlock = await getSimulatedBlock(ethereum, undefined, toResolvedSimulationState(newState), blockNumber + 1n, true)
 		if (nextBlock === null) throw new Error('Block was null')
-		assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
-
-		const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
-		assertIsObject(expected)
-		const requiredFields = Object.keys(expected).sort()
-		assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(requiredFields))
+		const serializedNextBlock = GetBlockReturn.serialize(nextBlock)
+		const expectedSimulationResult = parseRequest(eth_simulateV1_dummy_call_result)
+		if (!Array.isArray(expectedSimulationResult)) throw new Error('Expected simulated result to be an array')
+		const expectedSimulatedBlock = expectedSimulationResult[0]
+		assertIsObject(expectedSimulatedBlock)
+		const requiredFields = [...Object.keys(expectedSimulatedBlock).filter((key) => key !== 'calls'), 'author'].sort()
+		assert.equal(JSON.stringify(Object.keys(serializedNextBlock).sort()), JSON.stringify(requiredFields))
+		assert.equal(serializedNextBlock.hash, expectedSimulatedBlock.hash)
+		assert.equal(serializedNextBlock.parentHash, expectedSimulatedBlock.parentHash)
+		assert.equal(serializedNextBlock.logsBloom, expectedSimulatedBlock.logsBloom)
+		assert.equal(serializedNextBlock.mixHash, expectedSimulatedBlock.mixHash)
+		assert.equal(serializedNextBlock.receiptsRoot, expectedSimulatedBlock.receiptsRoot)
+		assert.equal(serializedNextBlock.stateRoot, expectedSimulatedBlock.stateRoot)
+		assert.equal(serializedNextBlock.size, expectedSimulatedBlock.size)
+		assert.equal(serializedNextBlock.transactionsRoot, expectedSimulatedBlock.transactionsRoot)
+		assert.equal(serializedNextBlock.withdrawalsRoot, expectedSimulatedBlock.withdrawalsRoot)
+		assert.equal(serializedNextBlock.gasUsed, expectedSimulatedBlock.gasUsed)
+		assert.equal(serializedNextBlock.baseFeePerGas, expectedSimulatedBlock.baseFeePerGas)
 	})
 
 	test('get transaction by hash aligns with Nethermind', async () => {
-		const transaction = await getSimulatedTransactionByHash(ethereum, undefined, simulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
+		const transaction = await getSimulatedTransactionByHash(ethereum, undefined, resolvedSimulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
 		if (transaction === null) throw new Error('Transaction is not found')
 
 		const serialized = serialize(EthereumSignedTransactionWithBlockData, transaction)

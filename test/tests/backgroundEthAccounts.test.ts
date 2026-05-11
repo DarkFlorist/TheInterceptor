@@ -83,15 +83,13 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 	return { port, messages }
 }
 
-function createSimulatorWithGetBlockCounter(getBlockCalls: { count: number }) {
+function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }) {
 	return {
-		ethereum: {
-			isBlockPolling: () => true,
-			setBlockPolling: (_value: boolean) => undefined,
-			async getBlock() {
-				getBlockCalls.count += 1
-				return null
-			},
+		isBlockPolling: () => true,
+		setBlockPolling: (_value: boolean) => undefined,
+		async getBlock() {
+			getBlockCalls.count += 1
+			return null
 		},
 	} as const
 }
@@ -114,6 +112,9 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const getBlockCalls = { count: 0 }
+		const ethereum = createEthereumWithGetBlockCounter(getBlockCalls) as unknown as Parameters<typeof handleInterceptedRequest>[3]
+		const tokenPriceService = {} as Parameters<typeof handleInterceptedRequest>[4]
+		const resetSimulationServices = (() => undefined) as Parameters<typeof handleInterceptedRequest>[5]
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -121,7 +122,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, createSimulatorWithGetBlockCounter(getBlockCalls) as unknown as Parameters<typeof handleInterceptedRequest>[3], socket, request, websiteTabConnections)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
 
 		assert.equal(getBlockCalls.count, 0)
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
@@ -159,6 +160,9 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
+		const ethereum = createEthereumWithGetBlockCounter({ count: 0 }) as unknown as Parameters<typeof handleInterceptedRequest>[3]
+		const tokenPriceService = {} as Parameters<typeof handleInterceptedRequest>[4]
+		const resetSimulationServices = (() => undefined) as Parameters<typeof handleInterceptedRequest>[5]
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -166,7 +170,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, createSimulatorWithGetBlockCounter({ count: 0 }) as unknown as Parameters<typeof handleInterceptedRequest>[3], socket, request, websiteTabConnections)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)

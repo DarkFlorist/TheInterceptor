@@ -2,7 +2,7 @@ import { addressString, addressStringWithout0x, bytesToUnsigned } from '../utils
 import { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
-import { ethers } from 'ethers'
+import { getAddress } from 'viem/utils'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
@@ -149,7 +149,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 				chainId
 			}
 			case 'ERC1155': return {
-				name: ethers.getAddress(addrString),
+				name: getAddress(addrString),
 				address,
 				symbol: '???',
 				type: 'ERC1155',
@@ -167,14 +167,14 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 			}
 			case 'contract': return {
 				address,
-				name: ethers.getAddress(addrString),
+				name: getAddress(addrString),
 				type: 'contract',
 				entrySource: 'OnChain',
 				chainId
 			}
 			case 'EOA': return {
 				address,
-				name: ethers.getAddress(addrString),
+				name: getAddress(addrString),
 				type: 'contact',
 				entrySource: 'OnChain',
 				chainId

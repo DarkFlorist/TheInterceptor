@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { Interface } from 'ethers'
 import { describe, test } from 'bun:test'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -34,7 +34,7 @@ function createBrowserMock() {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 				}
 				return undefined
 			},
@@ -157,9 +157,8 @@ function makeFakeBlock() {
 }
 
 function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], callCount = 1) {
-	const multicallInterface = new Interface(multicallAbi)
-	const balanceResult = multicallInterface.encodeFunctionResult('getEthBalance', [multicallBalance])
-	const aggregate3Result = multicallInterface.encodeFunctionResult('aggregate3', [[{ success: true, returnData: balanceResult }]])
+	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
+	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
 	return {
 		number: 123n,
 		hash: 0x9876n,
@@ -315,8 +314,7 @@ await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
-	// @ts-expect-error test shim uses a minimal simulator object
-	await modules.refreshPopupConfirmTransactionSimulation(simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
 	const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
 	if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
 	if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')

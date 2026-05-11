@@ -1,11 +1,11 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import { CompleteVisualizedSimulation, ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation, isEmptyVisualizedSimulationState } from '../../types/visualizer-types.js'
 import { TransactionNames } from './ConfirmTransaction.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -25,7 +25,7 @@ export function FetchSimulationStack() {
 	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation | undefined>(undefined)
+	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const currentPendingTransaction = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
@@ -57,12 +57,12 @@ export function FetchSimulationStack() {
 	}, [])
 
 	const updateSimulation = async () => {
-		const simulationStack = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
+		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	const updateMetaData = async () => {
-		const data = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
+		const data = await requestPopupSimulationMetadata()
 		if (data === undefined) return
 		simulationMetadata.value = data.metadata
 	}
@@ -87,9 +87,9 @@ export function FetchSimulationStack() {
 	}
 
 	const isThereSimulationStack = useComputed(() => {
-		if (completeVisualizedSimulation.value === undefined) return false
+		if (completeVisualizedSimulation.value.simulationState.kind === 'passthrough') return false
 		if (completeVisualizedSimulation.value.visualizedSimulationState.success === false) return false
-		return completeVisualizedSimulation.value.numberOfAddressesMadeRich || completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks.length > 0
+		return completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 || !isEmptyVisualizedSimulationState(completeVisualizedSimulation.value.visualizedSimulationState)
 	})
 
 	const addressReferences = useComputed(() => {
@@ -97,7 +97,7 @@ export function FetchSimulationStack() {
 		return simulationMetadata.value.addressBookEntries.filter((address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS)
 	})
 
-	if (changeRequest.value === undefined || simulationMetadata.value === undefined || completeVisualizedSimulation.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
+	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	return (
 		<main>
 			<Hint>
