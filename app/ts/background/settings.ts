@@ -98,91 +98,68 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: `https://
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
-let cachedSettings: Settings | undefined
-let cachedSettingsPromise: Promise<Settings> | undefined
-
-export function resetSettingsCache() {
-	cachedSettings = undefined
-	cachedSettingsPromise = undefined
+type StartupStorageDefaults = {
+	activeSimulationAddress: Settings['activeSimulationAddress']
+	openedPageV2: Page
+	useSignersAddressAsActiveAddress: boolean
+	websiteAccess: WebsiteAccessArray
+	simulationMode: boolean
+	activeRpcNetwork: RpcNetwork
+	makeCurrentAddressRich: boolean
+	fixedAddressRichList: readonly RichListElement[]
 }
 
-function cacheSettings(settings: Settings) {
-	cachedSettings = settings
-}
-
-async function readSettingsFromStorage(): Promise<Settings> {
-	const resultsPromise = silenceChromeUnCaughtPromise(browserStorageLocalGet([
-		'activeSimulationAddress',
-		'openedPageV2',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'simulationMode',
-	]))
-	const activeRpcNetwork = (await browserStorageLocalSafeParseGet('activeRpcNetwork'))?.activeRpcNetwork
-	const results = await resultsPromise
-	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
-	return {
-		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultActiveAddresses[0].address,
-		openedPage: results.openedPageV2 ?? { page: 'Home' },
-		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
-		websiteAccess: results.websiteAccess ?? [],
-		activeRpcNetwork: activeRpcNetwork || defaultRpcs[0],
-		simulationMode: results.simulationMode ?? true,
-	}
+async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+	const rawValue = (await browser.storage.local.get(key))[key]
+	const parsedValue = await browserStorageLocalSafeParseGet(key)
+	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
+	if (rawValue === undefined) return defaultValue
+	console.warn(`${ key } was corrupt:`)
+	console.warn(rawValue)
+	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	return defaultValue
 }
 
 export async function getSettings() : Promise<Settings> {
-	if (cachedSettings !== undefined) return cachedSettings
-	if (cachedSettingsPromise !== undefined) return await cachedSettingsPromise
-	cachedSettingsPromise = readSettingsFromStorage().then((settings) => {
-		cacheSettings(settings)
-		return settings
-	}).finally(() => {
-		cachedSettingsPromise = undefined
-	})
-	return await cachedSettingsPromise
+	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
+	const defaultPage: Page = { page: 'Home' }
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
+	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('websiteAccess', []))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', true))
+	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
+	return {
+		activeSimulationAddress: await activeSimulationAddressPromise,
+		openedPage: await openedPagePromise,
+		useSignersAddressAsActiveAddress: await useSignersAddressAsActiveAddressPromise,
+		websiteAccess: await websiteAccessPromise,
+		activeRpcNetwork: await activeRpcNetworkPromise,
+		simulationMode: await simulationModePromise,
+	}
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
 	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
 }
 
-export const setPage = async (openedPageV2: Page) => {
-	const currentSettings = await getSettings()
-	cacheSettings({
-		...currentSettings,
-		openedPage: openedPageV2,
-	})
-	return await browserStorageLocalSet({ openedPageV2 })
-}
+export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
-export const getMakeCurrentAddressRich = async() => (await browserStorageLocalGet('makeCurrentAddressRich'))?.makeCurrentAddressRich ?? false
+export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
 
 export const setFixedMakeMeRichList = async (fixedAdressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList: fixedAdressRichList })
-export const getFixedAddressRichList = async() => (await browserStorageLocalGet('fixedAddressRichList'))?.fixedAddressRichList ?? []
+export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	const currentSettings = await getSettings()
-	cacheSettings({
-		...currentSettings,
-		useSignersAddressAsActiveAddress,
-	})
 	return await browserStorageLocalSet({
 		useSignersAddressAsActiveAddress,
 		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
-	const currentSettings = await getSettings()
-	cacheSettings({
-		...currentSettings,
-		simulationMode: changes.simulationMode,
-		activeRpcNetwork: changes.rpcNetwork ?? currentSettings.activeRpcNetwork,
-		activeSimulationAddress: 'activeSimulationAddress' in changes ? changes.activeSimulationAddress : currentSettings.activeSimulationAddress,
-	})
+export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress }) {
 	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
@@ -195,13 +172,7 @@ export const getWebsiteAccess = async() => (await browserStorageLocalGet('websit
 const websiteAccessSemaphore = new Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
-		const websiteAccess = updateFunc(await getWebsiteAccess())
-		const currentSettings = await getSettings()
-		cacheSettings({
-			...currentSettings,
-			websiteAccess,
-		})
-		return await browserStorageLocalSet({ websiteAccess })
+		return await browserStorageLocalSet({ websiteAccess: updateFunc(await getWebsiteAccess()) })
 	})
 }
 

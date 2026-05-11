@@ -1,9 +1,9 @@
-import { ethers } from 'ethers'
+import { isAddress } from 'viem/utils'
 import { useEffect } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
@@ -18,6 +18,13 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
+
+export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage = sendPopupMessageToBackgroundPage,
+) {
+	if (entryToAdd.type === 'error') return
+	await sendMessage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd })
+	close()
+}
 
 const readableAddressType = {
 	contact: 'Contact',
@@ -78,7 +85,7 @@ function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress((e.target as HTMLInputElement).value) }
-		style = { `width: 100%;${ addressInput === undefined || ethers.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` }
+		style = { `width: 100%;${ addressInput === undefined || isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` }
 	/>
 }
 
@@ -249,7 +256,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			if (address === undefined) return
 			if (lastCheckedAddress.value === address) return
 			lastCheckedAddress.value = address
-			const identifiedAddress = await sendPopupMessageWithReply({ method: 'popup_requestIdentifyAddress', data: { address } })
+			const identifiedAddress = await requestPopupIdentifyAddress({ address })
 			if (identifiedAddress === undefined) return
 			if (identifiedAddress.data.addressBookEntry.type === 'ERC20') {
 				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: {
@@ -282,15 +289,16 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (inputedAddressBigInt === undefined) return { type: 'error', error: 'Address is not valid' }
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
 		if (incompleteAddressBookEntry.abi !== undefined && !isValidAbi(incompleteAddressBookEntry.abi)) return { type: 'error', error: 'Abi is not valid' }
-		const abi = incompleteAddressBookEntry.abi || undefined
 		const base = {
 			name,
 			address: inputedAddressBigInt,
-			declarativeNetRequestBlockMode: incompleteAddressBookEntry.declarativeNetRequestBlockMode,
-			useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
 			askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 			chainId: incompleteAddressBookEntry.chainId,
 			entrySource: 'User' as const,
+			...(incompleteAddressBookEntry.declarativeNetRequestBlockMode !== undefined ? { declarativeNetRequestBlockMode: incompleteAddressBookEntry.declarativeNetRequestBlockMode } : {}),
+			...(incompleteAddressBookEntry.useAsActiveAddress !== undefined ? { useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress } : {}),
+			...(incompleteAddressBookEntry.logoUri !== undefined ? { logoUri: incompleteAddressBookEntry.logoUri } : {}),
+			...(incompleteAddressBookEntry.abi !== undefined ? { abi: incompleteAddressBookEntry.abi } : {}),
 		}
 
 		switch(incompleteAddressBookEntry.type) {
@@ -300,8 +308,6 @@ export function AddNewAddress(param: AddAddressParam) {
 					...base,
 					type: 'ERC721' as const,
 					symbol: incompleteAddressBookEntry.symbol,
-					logoUri: incompleteAddressBookEntry.logoUri,
-					abi,
 				}
 			}
 			case 'ERC1155': {
@@ -310,9 +316,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					...base,
 					type: 'ERC1155' as const,
 					symbol: incompleteAddressBookEntry.symbol,
-					logoUri: incompleteAddressBookEntry.logoUri,
 					decimals: undefined,
-					abi,
 				}
 			}
 			case 'ERC20': {
@@ -323,16 +327,15 @@ export function AddNewAddress(param: AddAddressParam) {
 					type: 'ERC20' as const,
 					symbol: incompleteAddressBookEntry.symbol,
 					decimals: incompleteAddressBookEntry.decimals,
-					logoUri: incompleteAddressBookEntry.logoUri,
-					abi,
 				}
 			}
-			case 'contact':
+			case 'contact': return {
+				...base,
+				type: 'contact' as const,
+			}
 			case 'contract': return {
 				...base,
-				type: incompleteAddressBookEntry.type,
-				logoUri: incompleteAddressBookEntry.logoUri,
-				abi,
+				type: 'contract' as const,
 			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)
 		}
@@ -340,9 +343,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	async function modifyOrAddEntry() {
 		const entryToAdd = getCompleteAddressBookEntry()
-		if (entryToAdd.type === 'error') return
-		param.close()
-		await sendPopupMessageToBackgroundPage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd } )
+		await saveAddressBookEntry(entryToAdd, param.close)
 	}
 
 	async function createAndSwitch() {
@@ -364,10 +365,10 @@ export function AddNewAddress(param: AddAddressParam) {
 		const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
 		if (address === undefined) return
 		canFetchFromEtherScan.value = false
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data: {
+		const reply = await requestPopupAbiAndNameFromBlockExplorer({
 			address,
 			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
-		} })
+		})
 		if (reply === undefined) return
 		canFetchFromEtherScan.value = true
 		if (!reply.data.success) {

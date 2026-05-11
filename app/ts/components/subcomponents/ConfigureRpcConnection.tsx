@@ -1,7 +1,6 @@
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
-import { Network, JsonRpcProvider } from 'ethers'
 import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import { RpcEntry } from '../../types/rpc.js'
@@ -12,12 +11,16 @@ import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { XMarkIcon } from './icons.js'
-import { FetchRequest } from 'ethers'
 import { JsonRpcResponseError } from '../../utils/errors.js'
+import { EthereumQuantity } from '../../types/wire-types.js'
+
+type RpcProbeResult = {
+	chainId: bigint
+}
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url: string) => void
-	rpcQuery: ReturnType<typeof useAsyncState<Network>>['value']
+	rpcQuery: ReturnType<typeof useAsyncState<RpcProbeResult>>['value']
 	resetRpcQuery: () => void
 }
 
@@ -30,14 +33,13 @@ const throwImprovedError = (error: Error, url: string) => {
 }
 
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
-	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
+	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<RpcProbeResult>()
 
 	const checkServerAvailability = async (url: string) => {
 		try {
-			const fetchRequest = new FetchRequest(url)
-			fetchRequest.timeout = 10000
-			const provider = new JsonRpcProvider(fetchRequest)
-			return await provider.getNetwork()
+			const requestHandler = new EthereumJSONRpcRequestHandler(url)
+			const chainId = await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }, undefined, false, 10000)
+			return { chainId: EthereumQuantity.parse(chainId) }
 		} catch(error: unknown) {
 			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC chain id error', error)
@@ -107,7 +109,7 @@ function useQueryRpc() {
 	return context
 }
 
-export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undefined }) => {
+export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const rpcEntries = useRpcConnectionsList()
 	const modalRef = useRef<HTMLDialogElement>(null)
 
@@ -159,7 +161,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 
 type ConfigureRpcFormProps = {
 	defaultValues?: RpcEntry,
-	onCancel: () => void
+	onCancel: () => void | undefined
 	onSave: (rpcEntry: RpcEntry) => void
 	onRemove?: (rpcUrl: string) => void
 }
@@ -252,7 +254,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 			<main class = 'grid' style = '--gap-y: 0.5rem'>
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
-					<RpcUrlField defaultValue = { defaultValues?.httpsRpc } />
+					<RpcUrlField { ...(defaultValues?.httpsRpc !== undefined ? { defaultValue: defaultValues.httpsRpc } : {}) } />
 					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />

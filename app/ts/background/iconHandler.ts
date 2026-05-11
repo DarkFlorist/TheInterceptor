@@ -14,11 +14,18 @@ import { modifyObject } from '../utils/typescript.js'
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
 	if (!(await doesTabExist(tabId))) return
-	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { tabIconDetails }))
+	const { previousState, newState } = await updateTabState(tabId, (previousState: TabState) => {
+		const previousTabIconDetails = previousState.tabIconDetails
+		if (previousTabIconDetails.icon === tabIconDetails.icon && previousTabIconDetails.iconReason === tabIconDetails.iconReason) return previousState
+		return modifyObject(previousState, { tabIconDetails })
+	})
+	if (previousState === newState) return
+	const iconChanged = previousState.tabIconDetails.icon !== icon
+	const titleChanged = previousState.tabIconDetails.iconReason !== iconReason
 	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
 	try {
-		await setExtensionIcon({ path: { 128: icon }, tabId })
-		await setExtensionTitle({ title: iconReason, tabId })
+		if (iconChanged) await setExtensionIcon({ path: { 128: icon }, tabId })
+		if (titleChanged) await setExtensionTitle({ title: iconReason, tabId })
 	} catch (error) {
 		console.warn('failed to set interceptor icon and reason')
 		console.warn(error)

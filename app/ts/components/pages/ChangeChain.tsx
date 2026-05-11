@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -24,7 +24,7 @@ export function ChangeChain() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_changeChainReadyAndListening' }) }, [])
+	useEffect(() => { void sendPopupReadyAndListening('changeChain') }, [])
 
 	async function approve() {
 		if (chainChangeData.value === undefined) return

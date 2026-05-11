@@ -6,13 +6,15 @@ import { TabConnection, WebsiteTabConnections } from '../types/user-interface-ty
 import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -178,20 +180,27 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
+async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }
-	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
+	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
-async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
+	const key = `${ tabId }-${ websiteOrigin }`
+	if (iconRefreshTargets.has(key)) return
+	iconRefreshTargets.set(key, { tabId, websiteOrigin })
+}
+
+async function updateTabConnections(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
 		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
-		updateExtensionIcon(websiteTabConnections, connection.socket.tabId, connection.websiteOrigin)
+		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
@@ -202,8 +211,11 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
+	}
+	for (const { tabId, websiteOrigin } of iconRefreshTargets.values()) {
+		await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
 	}
 }
 
@@ -298,10 +310,28 @@ export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections
 	return false
 }
 
-export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
+export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): void
+export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): void
+export function updateWebsiteApprovalAccesses(
+	ethereum: EthereumClientService,
+	tokenPriceServiceOrWebsiteTabConnections: TokenPriceService | WebsiteTabConnections,
+	resetSimulationServicesOrSettings: ResetSimulationServices | Settings,
+	websiteTabConnectionsOrPrompt?: WebsiteTabConnections | boolean,
+	settingsOrPrompt?: Settings | boolean,
+	promptForAccessesIfNeeded = true
+) {
+	const usingLegacySignature = tokenPriceServiceOrWebsiteTabConnections instanceof Map
+	const tokenPriceService = usingLegacySignature ? undefined as never : tokenPriceServiceOrWebsiteTabConnections
+	const resetSimulationServices = usingLegacySignature ? undefined as never : resetSimulationServicesOrSettings as ResetSimulationServices
+	const websiteTabConnections = usingLegacySignature ? tokenPriceServiceOrWebsiteTabConnections : websiteTabConnectionsOrPrompt as WebsiteTabConnections
+	const settings = usingLegacySignature ? resetSimulationServicesOrSettings as Settings : settingsOrPrompt as Settings
+	const promptForAccesses = typeof (usingLegacySignature ? websiteTabConnectionsOrPrompt : promptForAccessesIfNeeded) === 'boolean'
+		? usingLegacySignature ? websiteTabConnectionsOrPrompt as boolean : promptForAccessesIfNeeded
+		: promptForAccessesIfNeeded
+
 	updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
-		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
+		updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings)
 	}
 }

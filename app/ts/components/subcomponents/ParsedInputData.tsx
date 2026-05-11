@@ -7,7 +7,7 @@ import { ViewSelector } from './ViewSelector.js'
 import { SmallAddress } from './address.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
-export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
+function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
 	if (to?.abi === undefined) {
 		if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;

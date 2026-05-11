@@ -1,17 +1,16 @@
 import { useEffect } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, ResolvedSimulationResults, ResolvedSimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
-import { ethers } from 'ethers'
+import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../background/backgroundUtils.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
@@ -26,6 +25,8 @@ import { Signal, useComputed, useSignal } from '@preact/signals'
 import type { EnrichedRichListElement, PopupBootstrapData, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../background/backgroundUtils.js'
 import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 
 type ProviderErrorsParam = {
@@ -85,35 +86,35 @@ function useLazyPage<T>(loader: () => Promise<Record<string, unknown>>, selector
 }
 
 function LazyChangeActiveAddress(props: ChangeActiveAddressParam) {
-	const component = useLazyPage(() => import('./pages/ChangeActiveAddress.js'), (module) => module.ChangeActiveAddress as (props: ChangeActiveAddressParam) => JSX.Element)
+	const component = useLazyPage(() => import('./pages/ChangeActiveAddress.js'), (module) => module['ChangeActiveAddress'] as (props: ChangeActiveAddressParam) => JSX.Element)
 	if (component.value === undefined) return <CenterToPageTextSpinner />
 	const Component = component.value
 	return <Component { ...props } />
 }
 
 function LazyAddNewAddress(props: AddAddressParam) {
-	const component = useLazyPage(() => import('./pages/AddNewAddress.js'), (module) => module.AddNewAddress as (props: AddAddressParam) => JSX.Element)
+	const component = useLazyPage(() => import('./pages/AddNewAddress.js'), (module) => module['AddNewAddress'] as (props: AddAddressParam) => JSX.Element)
 	if (component.value === undefined) return <CenterToPageTextSpinner />
 	const Component = component.value
 	return <Component { ...props } />
 }
 
 function LazyInterceptorAccessList(props: InterceptorAccessListParams) {
-	const component = useLazyPage(() => import('./pages/InterceptorAccessList.js'), (module) => module.InterceptorAccessList as (props: InterceptorAccessListParams) => JSX.Element)
+	const component = useLazyPage(() => import('./pages/InterceptorAccessList.js'), (module) => module['InterceptorAccessList'] as (props: InterceptorAccessListParams) => JSX.Element)
 	if (component.value === undefined) return <CenterToPageTextSpinner />
 	const Component = component.value
 	return <Component { ...props } />
 }
 
 function LazyEditEnsLabelHash(props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) {
-	const component = useLazyPage(() => import('./pages/EditEnsLabelHash.js'), (module) => module.EditEnsLabelHash as (props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) => JSX.Element)
+	const component = useLazyPage(() => import('./pages/EditEnsLabelHash.js'), (module) => module['EditEnsLabelHash'] as (props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) => JSX.Element)
 	if (component.value === undefined) return <CenterToPageTextSpinner />
 	const Component = component.value
 	return <Component { ...props } />
 }
 
 function LazyImportSimulationStack(props: { close: () => void, simulationInput: Signal<string> }) {
-	const component = useLazyPage(() => import('./pages/ImportSimulationStack.js'), (module) => module.ImportSimulationStack as (props: { close: () => void, simulationInput: Signal<string> }) => JSX.Element)
+	const component = useLazyPage(() => import('./pages/ImportSimulationStack.js'), (module) => module['ImportSimulationStack'] as (props: { close: () => void, simulationInput: Signal<string> }) => JSX.Element)
 	if (component.value === undefined) return <CenterToPageTextSpinner />
 	const Component = component.value
 	return <Component { ...props } />
@@ -125,7 +126,7 @@ export function App() {
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
 	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
-	const simVisResults = useSignal<SimulationAndVisualisationResults | undefined>(undefined)
+	const simVisResults = useSignal<ResolvedSimulationResults>(PASSTHROUGH_STATE)
 	const websiteAccess = useSignal<WebsiteAccessArray | undefined>(undefined)
 	const websiteAccessAddressMetadata = useSignal<AddressBookEntries>([])
 	const rpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
@@ -142,6 +143,7 @@ export function App() {
 	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
 	const boundaryResetKey = useSignal(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
+	const popupRefreshAppliedGeneration = useSignal(0)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
@@ -180,106 +182,111 @@ export function App() {
 			rpcNetwork.value = entry
 		}
 	}
-		const requestRichData = async () => {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
-			if (reply === undefined) return
-			fixedAddressRichList.value = reply.richList
-			makeCurrentAddressRich.value = reply.makeCurrentAddressRich
-		}
+	const requestCachedHomeData = async () => {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+	}
 
-		const applyBootstrapData = (reply: PopupBootstrapData) => {
-			const wasLoaded = isSettingsLoaded.value
-			isSettingsLoaded.value = true
-			activeAddresses.value = reply.activeAddresses
-			fixedAddressRichList.value = reply.fixedAddressRichList
-			makeCurrentAddressRich.value = reply.makeCurrentAddressRich
-			unexpectedError.value = reply.latestUnexpectedError
-			rpcEntries.value = reply.rpcEntries
-			currentTabId.value = reply.tabId
-			activeSigningAddress.value = reply.tabState.activeSigningAddress
-			interceptorDisabled.value = reply.interceptorDisabled
-			rpcNetwork.value = reply.settings.activeRpcNetwork
-			activeSimulationAddress.value = reply.settings.activeSimulationAddress
-			useSignersAddressAsActiveAddress.value = reply.settings.useSignersAddressAsActiveAddress
-			websiteAccess.value = reply.settings.websiteAccess
-			simulationMode.value = reply.settings.simulationMode
-			if (!wasLoaded) tabIconDetails.value = reply.tabState.tabIconDetails
-			tabState.value = reply.tabState
-			currentBlockNumber.value = reply.currentBlockNumber
-			rpcConnectionStatus.value = reply.rpcConnectionStatus
-			preSimulationBlockTimeManipulation.value = reply.preSimulationBlockTimeManipulation
-			websiteAccessAddressMetadata.value = reply.websiteAccessAddressMetadata
-			if (reply.visualizedSimulatorState !== undefined) {
-				const activeAddress = reply.settings.simulationMode ? reply.settings.activeSimulationAddress : reply.tabState.activeSigningAddress
-				if (activeAddress !== undefined && reply.visualizedSimulatorState.simulationState !== undefined) {
-					simVisResults.value = {
-						blockNumber: reply.visualizedSimulatorState.simulationState.blockNumber,
-						blockTimestamp: reply.visualizedSimulatorState.simulationState.blockTimestamp,
-						simulationConductedTimestamp: reply.visualizedSimulatorState.simulationState.simulationConductedTimestamp,
-						visualizedSimulationState: reply.visualizedSimulatorState.visualizedSimulationState,
-						rpcNetwork: reply.visualizedSimulatorState.simulationState.rpcNetwork,
-						tokenPriceEstimates: reply.visualizedSimulatorState.tokenPriceEstimates,
-						addressBookEntries: reply.visualizedSimulatorState.addressBookEntries,
-						namedTokenIds: reply.visualizedSimulatorState.namedTokenIds,
-					}
-					simulationUpdatingState.value = reply.visualizedSimulatorState.simulationUpdatingState
-					simulationResultState.value = reply.visualizedSimulatorState.simulationResultState
-				}
+	const applyBootstrapData = (reply: PopupBootstrapData) => {
+		const wasLoaded = isSettingsLoaded.value
+		isSettingsLoaded.value = true
+		activeAddresses.value = reply.activeAddresses
+		fixedAddressRichList.value = reply.fixedAddressRichList
+		makeCurrentAddressRich.value = reply.makeCurrentAddressRich
+		unexpectedError.value = reply.latestUnexpectedError
+		rpcEntries.value = reply.rpcEntries
+		currentTabId.value = reply.tabId
+		activeSigningAddress.value = reply.tabState.activeSigningAddress
+		interceptorDisabled.value = reply.interceptorDisabled
+		rpcNetwork.value = reply.settings.activeRpcNetwork
+		activeSimulationAddress.value = reply.settings.activeSimulationAddress
+		useSignersAddressAsActiveAddress.value = reply.settings.useSignersAddressAsActiveAddress
+		websiteAccess.value = reply.settings.websiteAccess
+		simulationMode.value = reply.settings.simulationMode
+		if (!wasLoaded) tabIconDetails.value = reply.tabState.tabIconDetails
+		tabState.value = reply.tabState
+		currentBlockNumber.value = reply.currentBlockNumber
+		rpcConnectionStatus.value = reply.rpcConnectionStatus
+		preSimulationBlockTimeManipulation.value = reply.preSimulationBlockTimeManipulation
+		websiteAccessAddressMetadata.value = reply.websiteAccessAddressMetadata
+		if (reply.visualizedSimulatorState !== undefined) {
+			const simulationState = reply.visualizedSimulatorState.simulationState
+			if (simulationState.kind === 'passthrough') {
+				simVisResults.value = PASSTHROUGH_STATE
+			} else {
+				simVisResults.value = toResolvedSimulationResults({
+					blockNumber: simulationState.value.blockNumber,
+					blockTimestamp: simulationState.value.blockTimestamp,
+					simulationConductedTimestamp: simulationState.value.simulationConductedTimestamp,
+					visualizedSimulationState: reply.visualizedSimulatorState.visualizedSimulationState,
+					rpcNetwork: simulationState.value.rpcNetwork,
+					tokenPriceEstimates: reply.visualizedSimulatorState.tokenPriceEstimates,
+					addressBookEntries: reply.visualizedSimulatorState.addressBookEntries,
+					namedTokenIds: reply.visualizedSimulatorState.namedTokenIds,
+				})
 			}
-			if (appPage.value.page === 'Unknown') {
-				if (reply.settings.openedPage.page === 'AddNewAddress' || reply.settings.openedPage.page === 'ModifyAddress') {
-					appPage.value = { ...reply.settings.openedPage, state: new Signal(reply.settings.openedPage.state) }
-				} else {
-					appPage.value = reply.settings.openedPage
-				}
+			simulationUpdatingState.value = reply.visualizedSimulatorState.simulationUpdatingState
+			simulationResultState.value = reply.visualizedSimulatorState.simulationResultState
+		}
+		if (appPage.value.page === 'Unknown') {
+			if (reply.settings.openedPage.page === 'AddNewAddress' || reply.settings.openedPage.page === 'ModifyAddress') {
+				appPage.value = { ...reply.settings.openedPage, state: new Signal(reply.settings.openedPage.state) }
+			} else {
+				appPage.value = reply.settings.openedPage
 			}
 		}
+	}
 
-		useEffect(() => {
-			let cancelled = false
-			void (async () => {
-				const reply = await sendPopupMessageWithReply({ method: 'popup_requestBootstrapData' })
-				if (reply === undefined || cancelled) return
+	useEffect(() => {
+		if (popupRefreshAppliedGeneration.value === 0) return
+		if (popupRefreshAppliedGeneration.value === 1) {
+			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
+		}
+		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.refreshRendered)
+	}, [popupRefreshAppliedGeneration.value])
+
+	useEffect(() => {
+		let cancelled = false
+		void (async () => {
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestBootstrapData' })
+			if (cancelled) return
+			if (reply !== undefined) {
 				applyBootstrapData(reply)
-				if (reply.settings.simulationMode) {
-					setTimeout(() => {
-						if (!cancelled) void requestRichData()
-					}, 0)
-				}
-				setTimeout(() => {
-					if (!cancelled) sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
-				}, 0)
-			})()
-			return () => {
-				cancelled = true
+			} else {
+				await requestCachedHomeData()
 			}
-		}, [])
+			if (!cancelled) void sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+		})()
+		return () => {
+			cancelled = true
+		}
+	}, [])
 
 	useEffect(() => {
 		const setSimulationState = (
-			simState: SimulationState | undefined,
+			simState: ResolvedSimulationState,
 			addressBookEntries: AddressBookEntries,
 			tokenPriceEstimates: readonly TokenPriceEstimate[],
 			visualizedSimulationState: VisualizedSimulationState,
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
-		) => {
-			if (activeSimulationAddress === undefined) return (simVisResults.value = undefined)
-			if (simState === undefined) return (simVisResults.value = undefined)
-			simVisResults.value = {
-				blockNumber: simState.blockNumber,
-				blockTimestamp: simState.blockTimestamp,
-				simulationConductedTimestamp: simState.simulationConductedTimestamp,
+		): void => {
+			if (activeSimulationAddress === undefined || simState.kind === 'passthrough') {
+				simVisResults.value = PASSTHROUGH_STATE
+				return
+			}
+			simVisResults.value = toResolvedSimulationResults({
+				blockNumber: simState.value.blockNumber,
+				blockTimestamp: simState.value.blockTimestamp,
+				simulationConductedTimestamp: simState.value.simulationConductedTimestamp,
 				visualizedSimulationState,
-				rpcNetwork: simState.rpcNetwork,
+				rpcNetwork: simState.value.rpcNetwork,
 				tokenPriceEstimates,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
-			}
+			})
 		}
 
-		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
-			if (state === undefined) return
+		const updateVisualizedState = (state: CompleteVisualizedSimulation) => {
 			setSimulationState(
 				state.simulationState,
 				state.addressBookEntries,
@@ -299,17 +306,21 @@ export function App() {
 			rpcEntries.value = data.rpcEntries
 			currentTabId.value = data.tabId
 			activeSigningAddress.value = data.activeSigningAddressInThisTab
+			activeAddresses.value = data.activeAddresses
 			interceptorDisabled.value = data.interceptorDisabled
+			makeCurrentAddressRich.value = data.makeCurrentAddressRich
+			fixedAddressRichList.value = data.richList
+			unexpectedError.value = data.latestUnexpectedError
 			updateHomePageSettings(data.settings, !wasLoaded)
-			if (!wasLoaded) tabIconDetails.value = data.tabState.tabIconDetails
+			tabIconDetails.value = data.tabState.tabIconDetails
 			updateVisualizedState(data.visualizedSimulatorState)
 			tabState.value = data.tabState
 			currentBlockNumber.value = data.currentBlockNumber
 			websiteAccessAddressMetadata.value = data.websiteAccessAddressMetadata
 			rpcConnectionStatus.value = data.rpcConnectionStatus
-			if (!wasLoaded) {
-				preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
-			}
+			preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
+			markPerformance(POPUP_PERFORMANCE_MARKS.refreshComplete)
+			popupRefreshAppliedGeneration.value += 1
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery && appPage.value.page === 'Unknown') {
@@ -323,12 +334,13 @@ export function App() {
 			activeSimulationAddress.value = settings.activeSimulationAddress
 			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
 			websiteAccess.value = settings.websiteAccess
+			simulationMode.value = settings.simulationMode
 		}
 
 		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
 			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
 			if (maybeRequest.success && maybeRequest.value.method === 'popup_isMainPopupWindowOpen') {
-				sendResponse({ type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } })
+				sendResponse({ method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } })
 				return true
 			}
 
@@ -336,48 +348,52 @@ export function App() {
 			if (!maybeParsed.success) return undefined // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
-			switch(parsed.method) {
+				switch(parsed.method) {
 					case 'popup_UnexpectedErrorOccured': {
 						unexpectedError.value = parsed
 						return undefined
 					}
-				case 'popup_settingsUpdated': {
-					requestRichData()
-					updateHomePageSettings(parsed.data, true)
-					return undefined
-				}
-				case 'popup_activeSigningAddressChanged': {
-					if (parsed.data.tabId !== currentTabId.value) return undefined
-					activeSigningAddress.value = parsed.data.activeSigningAddress
-					return undefined
-				}
-				case 'popup_websiteIconChanged': {
-					tabIconDetails.value = parsed.data
-					return undefined
-				}
+					case 'popup_settingsUpdated':
+					case 'popup_accounts_update':
+					case 'popup_chain_update':
+					case 'popup_signer_name_changed':
+					case 'popup_addressBookEntriesChanged':
+					case 'popup_interceptor_access_changed':
+					case 'popup_websiteAccess_changed':
+					case 'popup_setDisableInterceptorReply':
+					case 'popup_update_rpc_list':
+						requestCachedHomeData()
+						return undefined
+					case 'popup_activeSigningAddressChanged': {
+						if (parsed.data.tabId !== currentTabId.value) return undefined
+						activeSigningAddress.value = parsed.data.activeSigningAddress
+						return undefined
+					}
+					case 'popup_websiteIconChanged': {
+						tabIconDetails.value = parsed.data
+						return undefined
+					}
 				case 'popup_new_block_arrived': {
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
 					return undefined
 				}
-				case 'popup_failed_to_get_block': {
-					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+					case 'popup_failed_to_get_block': {
+						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+						return undefined
+					}
+					case 'popup_simulation_state_changed': {
+						updateVisualizedState(parsed.data.visualizedSimulatorState)
+						return undefined
+					}
+				}
+				if (parsed.method !== 'popup_UpdateHomePage') {
 					return undefined
 				}
-				case 'popup_update_rpc_list': return undefined
-				case 'popup_simulation_state_changed': {
-					updateVisualizedState(parsed.data.visualizedSimulatorState)
-					return undefined
-				}
+				const { role: _role, ...popupUpdateHomePage } = parsed
+				return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
 			}
-			if (parsed.method !== 'popup_UpdateHomePage') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-				return undefined
-			}
-			const { role: _role, ...popupUpdateHomePage } = parsed
-			return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
-		}
 
 		browser.runtime.onMessage.addListener(replyPopupMessageListener)
 		return () => {
@@ -401,7 +417,7 @@ export function App() {
 		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if (!ethers.isAddress(trimmed)) return
+		if (!isAddress(trimmed)) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
@@ -410,7 +426,7 @@ export function App() {
 		}
 
 		// address not found, let's promt user to create it
-		const addressString = ethers.getAddress(trimmed)
+		const addressString = getAddress(trimmed)
 		const newPage = { page: 'AddNewAddress', state: {
 			windowStateId: 'appAddressPaste',
 			errorState: undefined,
@@ -500,7 +516,7 @@ export function App() {
 						<div class = 'navbar-brand'>
 							<a class = 'navbar-item' style = 'cursor: unset'>
 								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
-								<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
+								<p style = 'color: var(--text-color); padding-left: 5px;'>THE INTERCEPTOR
 									<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 								</p>
 							</a>
