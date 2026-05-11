@@ -4,12 +4,26 @@ import { String } from 'funtypes'
 import { JSONEncodeableObject, typeJSONEncodeable } from './json.js'
 import { SafeTx } from '../types/personal-message-definitions.js'
 import { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-signing-types.js'
-import { ethers } from 'ethers'
+import { hashStruct, hashTypedData } from 'viem/utils'
 import { addressString } from './bigint.js'
 import { assertNever, modifyObject } from './typescript.js'
 
 type TypeDefinition = ({ name: string, type: string, primaryType: true } | { name: string, typeName: string, baseType: string, type: TypeDefinition[], primaryType: false })
 type SolidityTypeTree = Record<string, TypeDefinition[]>
+const eip712DomainFieldTypes = {
+	name: 'string',
+	version: 'string',
+	chainId: 'uint256',
+	verifyingContract: 'address',
+	salt: 'bytes32',
+} as const
+
+const hashDomain = (domain: Record<string, unknown>, types: EIP712Types) => {
+	const eip712Domain = types['EIP712Domain'] !== undefined
+		? { EIP712Domain: types['EIP712Domain'] }
+		: { EIP712Domain: Object.entries(eip712DomainFieldTypes).filter(([name]) => domain[name] !== undefined).map(([name, type]) => ({ name, type })) }
+	return hashStruct({ data: domain, primaryType: 'EIP712Domain', types: eip712Domain })
+}
 
 const isValidSolidityType = (type: string, validStructNames: readonly string[]): boolean => {
 	const identifierPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/
@@ -55,8 +69,8 @@ const isInvalidReservedType = (type: string): boolean => {
 	if (/^u?fixed[0-9]+x[0-9]+$/.test(type)) {
 		const nums = type.match(/[0-9]+/g)
 		if (!Array.isArray(nums)) return true
-		const mRaw = nums.at(0)
-		const nRaw = nums.at(1)
+		const mRaw = nums[0]
+		const nRaw = nums[1]
 		if (mRaw === undefined || nRaw === undefined) return true
 		const m = parseInt(mRaw)
 		const n = parseInt(nRaw)
@@ -356,10 +370,15 @@ export const getSafeTxHash = (safeTx: SafeTx) => {
 		refundReceiver: EthereumAddress.serialize(safeTx.message.refundReceiver),
 		nonce: safeTx.message.nonce
 	}
-	return ethers.TypedDataEncoder.hash({
-		verifyingContract: addressString(safeTx.domain.verifyingContract),
-		...(safeTx.domain.chainId !== undefined ? { chainId: safeTx.domain.chainId } : {}),
-	}, eip721SafeTxType, serializedMessage)
+	return hashTypedData({
+		primaryType: 'SafeTx',
+		types: eip721SafeTxType,
+		domain: {
+			verifyingContract: addressString(safeTx.domain.verifyingContract),
+			...(safeTx.domain.chainId !== undefined ? { chainId: safeTx.domain.chainId } : {}),
+		},
+		message: serializedMessage,
+	})
 }
 
 const extractPrimaryTypesUsedInMessage = (eip712Message: EIP712Message) => {
@@ -383,11 +402,14 @@ const extractPrimaryTypesUsedInMessage = (eip712Message: EIP712Message) => {
 export const getMessageAndDomainHash = (params: SignTypedDataParams) => {
 	const { types, primaryType, domain, message } = params.params[1]
 	if (!types[primaryType]) throw new Error('primary type missing from eip712 message')
-	const domainHash = ethers.TypedDataEncoder.hashDomain(domain)
+	const domainHash = hashDomain(domain, types)
 	const mutated = extractPrimaryTypesUsedInMessage(params.params[1])
 	if (mutated === undefined) throw new Error('failed to extract primary types from eip712 message')
-	const mutableTypes: Record<string, ethers.TypedDataField[]> = Object.fromEntries(Object.entries(mutated.types).map(([key, fields]) => [key, fields ? [...fields] : []]))
-	const messageHash = ethers.TypedDataEncoder.from(mutableTypes).hash(message)
+	const messageHash = hashStruct({
+		data: message,
+		primaryType,
+		types: mutated.types,
+	})
 	return { messageHash, domainHash }
 }
 
