@@ -1,5 +1,5 @@
 import { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
-import { SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
+import { SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
@@ -274,10 +274,7 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	if (simulationAndVisualisationResults.visualizedSimulationState.success === false) return false
-	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
-		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
-		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
+	return isEmptySimulationAndVisualisationResults(simulationAndVisualisationResults)
 }
 
 type SimulationResultsHeaderParams = {
@@ -312,11 +309,11 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 
 function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
-		if (param.simulationAndVisualisationResults.value === undefined) return true
-		return isEmptySimulation(param.simulationAndVisualisationResults.value)
+		if (param.simulationAndVisualisationResults.value.kind === 'passthrough') return true
+		return isEmptySimulation(param.simulationAndVisualisationResults.value.value)
 	})
 
-	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value?.addressBookEntries ?? [])
+	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
@@ -325,21 +322,22 @@ function PopupVisualisation(param: SimulationStateParam) {
 		</div>
 	}
 
-	if (currentResults === undefined) {
+	if (currentResults.kind === 'passthrough') {
 		return <div>
 			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } />
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		</div>
 	}
-	const definedSimulationResults = param.simulationAndVisualisationResults as ReadonlySignal<SimulationAndVisualisationResults>
+
+	const resolvedResults = currentResults.value
 
 	return <div>
 		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
-		{ currentResults.visualizedSimulationState.success === false ? <>
-			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+		{ resolvedResults.visualizedSimulationState.success === false ? <>
+			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
 				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { definedSimulationResults }
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 					activeAddress = { param.activeSimulationAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -352,7 +350,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
 						<TransactionsAndSignedMessages
-							simulationAndVisualisationResults = { definedSimulationResults }
+							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
@@ -362,7 +360,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
-							simulationAndVisualisationResults = { definedSimulationResults }
+							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							currentBlockNumber = { param.currentBlockNumber }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }

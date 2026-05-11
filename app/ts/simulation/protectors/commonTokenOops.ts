@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-t
 import { erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
 import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import { SimulationState } from '../../types/visualizer-types.js'
+import { SimulationState, toResolvedSimulationState } from '../../types/visualizer-types.js'
 import { EthereumClientService } from '../services/EthereumClientService.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
@@ -15,7 +15,7 @@ const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 ])
 
 export async function getCodeOrError(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, address: EthereumAddress) {
-	const code = await getSimulatedCode(ethereum, requestAbortController, simulationState, address)
+	const code = await getSimulatedCode(ethereum, requestAbortController, toResolvedSimulationState(simulationState), address)
 	if (code.statusCode !== 'failure') return code
 	const identifiedAddress = await identifyAddress(ethereum, requestAbortController, address)
 	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress.address }(${ identifiedAddress.name }) contains code or not.` }
