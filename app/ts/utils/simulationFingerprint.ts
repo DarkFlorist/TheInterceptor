@@ -1,9 +1,9 @@
 import { keccak256, stringToBytes } from 'viem/utils'
 import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from './ethereum.js'
-import { SimulationStateInput } from '../types/visualizer-types.js'
+import { SimulationStateInput, SimulationStateInputMinimalData } from '../types/visualizer-types.js'
 
-export function getSimulationInputHash(simulationStateInput: SimulationStateInput) {
+export function getSimulationInputHash(simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) {
 	const messages = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.signedMessages.map((signedMessage) => ({
 		fakeSignedFor: signedMessage.fakeSignedFor,
 		originalRequestParameters: signedMessage.originalRequestParameters,
