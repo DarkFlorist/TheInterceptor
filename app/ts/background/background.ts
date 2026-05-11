@@ -293,6 +293,7 @@ export async function changeActiveAddressAndChain(
 ) {
 
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressforRichList()
+	const previousSettings = change.rpcNetwork !== undefined ? await getSettings() : undefined
 
 	if (change.simulationMode) {
 		await changeSimulationMode({
@@ -314,12 +315,17 @@ export async function changeActiveAddressAndChain(
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
+			const rpcChainChanged = previousSettings !== undefined && previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
 			if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.rpcNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 
 			// reset simulation if chain id was changed
-			if (updatedSettings.simulationMode) await resetSimulationStateFromConfig(ethereum, tokenPriceService)
+			if (updatedSettings.simulationMode && rpcChainChanged) {
+				await resetSimulationStateFromConfig(ethereum, tokenPriceService)
+			} else if (updatedSettings.simulationMode) {
+				await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
+			}
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
 		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
