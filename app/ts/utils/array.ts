@@ -8,3 +8,7 @@ export function deduplicateByFunction<Element>(elements: Element[], uniqueIdenti
 	}
 	return Array.from(unique.values())
 }
+
+export function last<Element>(elements: readonly Element[]): Element | undefined {
+	return elements.length === 0 ? undefined : elements[elements.length - 1]
+}

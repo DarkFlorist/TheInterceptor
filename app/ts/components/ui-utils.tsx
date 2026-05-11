@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { getAddress } from 'viem/utils'
 import { useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
@@ -41,7 +41,7 @@ export function getIssueWithAddressString(address: string): string | undefined {
 	if (address.length < 42) return 'Address is too short.'
 
     if (address.match(/^(0x)?[0-9a-fA-F]{40}$/)) {
-        const checkSummedAddress = ethers.getAddress(address.toLowerCase());
+        const checkSummedAddress = getAddress(address.toLowerCase());
 
         // It is a checksummed address with a bad checksum
         if (checkSummedAddress !== address && address.toLowerCase() !== address) {

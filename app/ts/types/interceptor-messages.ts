@@ -457,7 +457,7 @@ type SimulationUpdateStartedOrEnded = funtypes.Static<typeof SimulationUpdateSta
 const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulation_state_changed'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined)
+		visualizedSimulatorState: CompleteVisualizedSimulation
 	})
 })
 
@@ -485,7 +485,7 @@ export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfir
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
@@ -502,14 +502,23 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 	data: funtypes.Unknown
 }).asReadonly()
 
-export type UpdateConfirmTransactionDialogPendingTransactions = funtypes.Static<typeof UpdateConfirmTransactionDialogPendingTransactions>
-export const UpdateConfirmTransactionDialogPendingTransactions = funtypes.ReadonlyObject({
+export type UpdateConfirmTransactionDialogPendingTransactions = {
+	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
+	readonly data: {
+		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
+	}
+}
+const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
+type UpdateConfirmTransactionDialogPendingTransactionsRuntype = ReturnType<typeof createUpdateConfirmTransactionDialogPendingTransactionsRuntype>
+const UpdateConfirmTransactionDialogPendingTransactionsRuntype: UpdateConfirmTransactionDialogPendingTransactionsRuntype = createUpdateConfirmTransactionDialogPendingTransactionsRuntype()
+export const UpdateConfirmTransactionDialogPendingTransactions: typeof UpdateConfirmTransactionDialogPendingTransactionsRuntype = UpdateConfirmTransactionDialogPendingTransactionsRuntype
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
@@ -555,7 +564,7 @@ export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
 		activeAddresses: AddressBookEntries,
 		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 		makeCurrentAddressRich: funtypes.Boolean,
