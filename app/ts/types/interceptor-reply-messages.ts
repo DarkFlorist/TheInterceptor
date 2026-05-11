@@ -153,7 +153,7 @@ export const PopupRequestsReplies = {
 	popup_readyAndListening: PopupReadyAndListeningReply,
 }
 
-export type PopupRequestsReplies = {
+type PopupRequestsReplies = {
 	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<typeof PopupRequestsReplies[Key]>
 }
 
