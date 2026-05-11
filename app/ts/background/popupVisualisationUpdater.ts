@@ -91,7 +91,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
-export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined) {
+export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false) {
 	return await updateSimulationVisualisationSemaphore.execute(async () => {
 		if (abortController?.signal.aborted) return
 		const popupVisualisation = await getPopupVisualisationState()
@@ -133,11 +133,14 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 				return
 			}
+			if (throwOnUnexpectedError) throw error
 			const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 			handleUnexpectedError(error)
 		}
-	}).catch(() => {})
+	}).catch((error) => {
+		if (throwOnUnexpectedError) throw error
+	})
 }
 
 async function getCurrentSimulationStateInput(ethereum: EthereumClientService) {

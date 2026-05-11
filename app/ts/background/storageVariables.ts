@@ -17,6 +17,7 @@ import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -81,23 +82,23 @@ const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	try {
-		return (await browserStorageLocalGet('popupVisualisation'))?.popupVisualisation ?? emptyResults
+		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
-		await browserStorageLocalSet({ popupVisualisation: emptyResults })
+		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
 		return emptyResults
 	}
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
-		if (newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await browserStorageLocalSet({ popupVisualisation: newRequests })
+		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
+		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
 		return newRequests
 	})
 }
@@ -320,14 +321,14 @@ export async function addEnsLabelHash(label: string) {
 }
 
 const interceptorTransactionStackSemaphore = new Semaphore(1)
-export const getInterceptorTransactionStack = async () => (await browserStorageLocalGet('interceptorTransactionStack'))?.interceptorTransactionStack ?? { operations: [] }
+export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
 	return await interceptorTransactionStackSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
 		const interceptorTransactionStack = updateFunc(prevStack)
 		const ids = interceptorTransactionStack.operations.map((x) => x.type === 'Transaction' ? x.preSimulationTransaction.transactionIdentifier : undefined).filter((x): x is bigint => x !== undefined)
 		if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
-		await browserStorageLocalSet({ interceptorTransactionStack })
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
 		return interceptorTransactionStack
 	})
 }
