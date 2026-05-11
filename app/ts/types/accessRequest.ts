@@ -155,5 +155,5 @@ const PendingSignableMessage = funtypes.Intersect(
 )
 
 export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction
-const PendingTransactionOrSignableMessageRuntype: funtypes.Codec<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
-export const PendingTransactionOrSignableMessage: funtypes.Codec<PendingTransactionOrSignableMessage> = PendingTransactionOrSignableMessageRuntype
+const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
+export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
