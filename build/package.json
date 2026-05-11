@@ -1,6 +1,7 @@
 {
 	"name": "interceptor-build",
 	"type": "module",
+	"packageManager": "bun@1.3.12",
 	"devDependencies": {
 		"@types/node": "20.11.17",
 		"@zoltu/file-copier": "3.0.0",

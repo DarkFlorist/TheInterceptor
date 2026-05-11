@@ -200,7 +200,7 @@ export function SettingsView() {
 
 const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
-	const latestEntry = useComputed(() => rpcEntries.value.at(0))
+	const latestEntry = useComputed(() => rpcEntries.value[0])
 
 	const loadDefaultRpcs = () => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs })
 

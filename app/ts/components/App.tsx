@@ -1,19 +1,19 @@
 import { useEffect } from 'preact/hooks'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, ResolvedSimulationResults, ResolvedSimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
-import { ethers } from 'ethers'
+import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
@@ -30,6 +30,7 @@ import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interc
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -76,7 +77,7 @@ export function App() {
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
 	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
-	const simVisResults = useSignal<SimulationAndVisualisationResults | undefined>(undefined)
+	const simVisResults = useSignal<ResolvedSimulationResults>(PASSTHROUGH_STATE)
 	const websiteAccess = useSignal<WebsiteAccessArray | undefined>(undefined)
 	const websiteAccessAddressMetadata = useSignal<AddressBookEntries>([])
 	const rpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
@@ -93,6 +94,7 @@ export function App() {
 	const unexpectedError = useSignal<UnexpectedErrorOccured | undefined>(undefined)
 	const boundaryResetKey = useSignal(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
+	const popupRefreshAppliedGeneration = useSignal(0)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
@@ -131,63 +133,44 @@ export function App() {
 			rpcNetwork.value = entry
 		}
 	}
-	const requestActiveAddresses = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestActiveAddresses' })
-		if (reply === undefined) return
-		activeAddresses.value = reply.activeAddresses
-	}
-
-	const requestSimulationMode = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
-		if (reply === undefined) return
-		simulationMode.value = reply.simulationMode
-	}
-
-	const requestRichData = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
-		if (reply === undefined) return
-		fixedAddressRichList.value = reply.richList
-		makeCurrentAddressRich.value = reply.makeCurrentAddressRich
-	}
-
-	const requestUnexpectedError = async () => {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
-		if (reply === undefined) return
-		unexpectedError.value = reply.latestUnexpectedError
+	const requestCachedHomeData = async () => {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 	}
 
 	useEffect(() => {
-		requestActiveAddresses()
-		requestRichData()
-		requestSimulationMode()
-		requestUnexpectedError()
-	}, [])
+		if (popupRefreshAppliedGeneration.value === 0) return
+		if (popupRefreshAppliedGeneration.value === 1) {
+			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
+		}
+		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.refreshRendered)
+	}, [popupRefreshAppliedGeneration.value])
 
 	useEffect(() => {
 		const setSimulationState = (
-			simState: SimulationState | undefined,
+			simState: ResolvedSimulationState,
 			addressBookEntries: AddressBookEntries,
 			tokenPriceEstimates: readonly TokenPriceEstimate[],
 			visualizedSimulationState: VisualizedSimulationState,
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
-		) => {
-			if (activeSimulationAddress === undefined) return (simVisResults.value = undefined)
-			if (simState === undefined) return (simVisResults.value = undefined)
-			simVisResults.value = {
-				blockNumber: simState.blockNumber,
-				blockTimestamp: simState.blockTimestamp,
-				simulationConductedTimestamp: simState.simulationConductedTimestamp,
+		): void => {
+			if (activeSimulationAddress === undefined || simState.kind === 'passthrough') {
+				simVisResults.value = PASSTHROUGH_STATE
+				return
+			}
+			simVisResults.value = toResolvedSimulationResults({
+				blockNumber: simState.value.blockNumber,
+				blockTimestamp: simState.value.blockTimestamp,
+				simulationConductedTimestamp: simState.value.simulationConductedTimestamp,
 				visualizedSimulationState,
-				rpcNetwork: simState.rpcNetwork,
+				rpcNetwork: simState.value.rpcNetwork,
 				tokenPriceEstimates,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
-			}
+			})
 		}
 
-		const updateVisualizedState = (state: CompleteVisualizedSimulation | undefined) => {
-			if (state === undefined) return
+		const updateVisualizedState = (state: CompleteVisualizedSimulation) => {
 			setSimulationState(
 				state.simulationState,
 				state.addressBookEntries,
@@ -207,17 +190,21 @@ export function App() {
 			rpcEntries.value = data.rpcEntries
 			currentTabId.value = data.tabId
 			activeSigningAddress.value = data.activeSigningAddressInThisTab
+			activeAddresses.value = data.activeAddresses
 			interceptorDisabled.value = data.interceptorDisabled
+			makeCurrentAddressRich.value = data.makeCurrentAddressRich
+			fixedAddressRichList.value = data.richList
+			unexpectedError.value = data.latestUnexpectedError
 			updateHomePageSettings(data.settings, !wasLoaded)
-			if (!wasLoaded) tabIconDetails.value = data.tabState.tabIconDetails
+			tabIconDetails.value = data.tabState.tabIconDetails
 			updateVisualizedState(data.visualizedSimulatorState)
 			tabState.value = data.tabState
 			currentBlockNumber.value = data.currentBlockNumber
 			websiteAccessAddressMetadata.value = data.websiteAccessAddressMetadata
 			rpcConnectionStatus.value = data.rpcConnectionStatus
-			if (!wasLoaded) {
-				preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
-			}
+			preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
+			markPerformance(POPUP_PERFORMANCE_MARKS.refreshComplete)
+			popupRefreshAppliedGeneration.value += 1
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery && appPage.value.page === 'Unknown') {
@@ -231,12 +218,13 @@ export function App() {
 			activeSimulationAddress.value = settings.activeSimulationAddress
 			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
 			websiteAccess.value = settings.websiteAccess
+			simulationMode.value = settings.simulationMode
 		}
 
 		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
 			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
 			if (maybeRequest.success && maybeRequest.value.method === 'popup_isMainPopupWindowOpen') {
-				sendResponse({ type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: true } })
+				sendResponse({ method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } })
 				return true
 			}
 
@@ -244,48 +232,52 @@ export function App() {
 			if (!maybeParsed.success) return undefined // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
-			switch(parsed.method) {
+				switch(parsed.method) {
 					case 'popup_UnexpectedErrorOccured': {
 						unexpectedError.value = parsed
 						return undefined
 					}
-				case 'popup_settingsUpdated': {
-					requestRichData()
-					updateHomePageSettings(parsed.data, true)
-					return undefined
-				}
-				case 'popup_activeSigningAddressChanged': {
-					if (parsed.data.tabId !== currentTabId.value) return undefined
-					activeSigningAddress.value = parsed.data.activeSigningAddress
-					return undefined
-				}
-				case 'popup_websiteIconChanged': {
-					tabIconDetails.value = parsed.data
-					return undefined
-				}
+					case 'popup_settingsUpdated':
+					case 'popup_accounts_update':
+					case 'popup_chain_update':
+					case 'popup_signer_name_changed':
+					case 'popup_addressBookEntriesChanged':
+					case 'popup_interceptor_access_changed':
+					case 'popup_websiteAccess_changed':
+					case 'popup_setDisableInterceptorReply':
+					case 'popup_update_rpc_list':
+						requestCachedHomeData()
+						return undefined
+					case 'popup_activeSigningAddressChanged': {
+						if (parsed.data.tabId !== currentTabId.value) return undefined
+						activeSigningAddress.value = parsed.data.activeSigningAddress
+						return undefined
+					}
+					case 'popup_websiteIconChanged': {
+						tabIconDetails.value = parsed.data
+						return undefined
+					}
 				case 'popup_new_block_arrived': {
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
 					return undefined
 				}
-				case 'popup_failed_to_get_block': {
-					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+					case 'popup_failed_to_get_block': {
+						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+						return undefined
+					}
+					case 'popup_simulation_state_changed': {
+						updateVisualizedState(parsed.data.visualizedSimulatorState)
+						return undefined
+					}
+				}
+				if (parsed.method !== 'popup_UpdateHomePage') {
 					return undefined
 				}
-				case 'popup_update_rpc_list': return undefined
-				case 'popup_simulation_state_changed': {
-					updateVisualizedState(parsed.data.visualizedSimulatorState)
-					return undefined
-				}
+				const { role: _role, ...popupUpdateHomePage } = parsed
+				return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
 			}
-			if (parsed.method !== 'popup_UpdateHomePage') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-				return undefined
-			}
-			const { role: _role, ...popupUpdateHomePage } = parsed
-			return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
-		}
 
 		browser.runtime.onMessage.addListener(replyPopupMessageListener)
 		return () => {
@@ -294,7 +286,10 @@ export function App() {
 	}, [])
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+		void (async () => {
+			await requestCachedHomeData()
+			void sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+		})()
 	}, [])
 
 	function goHome() {
@@ -313,7 +308,7 @@ export function App() {
 		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if (!ethers.isAddress(trimmed)) return
+		if (!isAddress(trimmed)) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
@@ -322,7 +317,7 @@ export function App() {
 		}
 
 		// address not found, let's promt user to create it
-		const addressString = ethers.getAddress(trimmed)
+		const addressString = getAddress(trimmed)
 		const newPage = { page: 'AddNewAddress', state: {
 			windowStateId: 'appAddressPaste',
 			errorState: undefined,

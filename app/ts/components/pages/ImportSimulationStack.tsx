@@ -7,12 +7,6 @@ import { isJSON } from '../../utils/json.js'
 import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { InterceptorSimulationExport } from '../../types/visualizer-types.js'
 
-const CellElement = (param: { element: ComponentChildren }) => {
-	return <div class = 'log-cell' style = 'justify-content: right;'>
-		{ param.element }
-	</div>
-}
-
 type SimulationInputParams = {
 	input: Signal<string>
 	isValid: Signal<boolean>
@@ -20,15 +14,16 @@ type SimulationInputParams = {
 }
 
 function SimulationInput({ input, disabled, isValid }: SimulationInputParams) {
-	const ref = createRef<HTMLInputElement>()
+	const ref = createRef<HTMLTextAreaElement>()
 	useEffect(() => { ref.current?.focus() }, [])
-	return <input
-		className = 'input is-spaced'
-		type = 'text'
+	return <textarea
+		class = { `simulation-stack-import-input${ isValid.value ? '' : ' simulation-stack-import-input-invalid' }` }
+		value = { input.value }
 		onInput = { (e) => { input.value = e.currentTarget.value } }
 		ref = { ref }
 		disabled = { disabled }
-		style = { `width: 100%; ${ input === undefined || isValid.value ? '' : 'color: var(--negative-color);' }` }
+		spellcheck = { false }
+		aria-invalid = { !isValid.value }
 	/>
 }
 
@@ -101,13 +96,10 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 						<div class = 'media'>
 							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
 								<div class = 'container' style = 'margin-bottom: 10px;'>
-									<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
-										<CellElement element = { <Text text = { 'Interceptor Simulation Stack: ' }/> }/>
-										<CellElement element = { <>
-											<SimulationInput input = { param.simulationInput } isValid = { isValid } disabled = { isImporting.value }/>
-											<div style = 'padding-left: 5px'/>
-										</> }/>
-									</span>
+									<div class = 'simulation-stack-import-field'>
+										<Text text = { 'Interceptor Simulation Stack: ' }/>
+										<SimulationInput input = { param.simulationInput } isValid = { isValid } disabled = { isImporting.value }/>
+									</div>
 								</div>
 							</div>
 						</div>

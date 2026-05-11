@@ -2,7 +2,8 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
@@ -10,7 +11,8 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { isValidName, namehash } from 'ethers'
+import { namehash } from 'viem/ens'
+import { isValidEnsName } from '../utils/ens.js'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
@@ -78,18 +80,7 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
-	const emptyResults: CompleteVisualizedSimulation = {
-		simulationUpdatingState: 'done' as const,
-		simulationResultState: 'corrupted' as const,
-		simulationId: 0,
-		simulationState: undefined,
-		addressBookEntries: [],
-		tokenPriceEstimates: [],
-		tokenPriceQuoteToken: undefined,
-		namedTokenIds: [],
-		visualizedSimulationState: { success: true, visualizedBlocks: [] },
-		numberOfAddressesMadeRich: 0,
-	}
+	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	try {
 		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 	} catch (error) {
@@ -102,7 +93,7 @@ export async function getPopupVisualisationState() {
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation | undefined) => Promise<CompleteVisualizedSimulation | undefined>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
@@ -240,7 +231,16 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		minimized: true,
 	}
 }
-export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV3'))?.userAddressBookEntriesV3 ?? defaultActiveAddresses
+export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
+	const rawEntries = (await browser.storage.local.get('userAddressBookEntriesV3'))['userAddressBookEntriesV3']
+	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
+	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
+	if (rawEntries === undefined) return defaultActiveAddresses
+	console.warn('userAddressBookEntriesV3 was corrupt:')
+	console.warn(rawEntries)
+	await browserStorageLocalSet({ userAddressBookEntriesV3: defaultActiveAddresses })
+	return defaultActiveAddresses
+}
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => {
 	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
@@ -284,13 +284,22 @@ export async function setLatestUnexpectedError(latestUnexpectedError: Unexpected
 	return await browserStorageLocalSet({ latestUnexpectedError })
 }
 
-export const getLatestUnexpectedError = async () => (await browserStorageLocalGet('latestUnexpectedError'))?.latestUnexpectedError
+export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured | undefined> {
+	const rawError = (await browser.storage.local.get('latestUnexpectedError'))['latestUnexpectedError']
+	const parsedError = await browserStorageLocalSafeParseGet('latestUnexpectedError')
+	if (parsedError?.latestUnexpectedError !== undefined) return parsedError.latestUnexpectedError
+	if (rawError === undefined) return undefined
+	console.warn('latestUnexpectedError was corrupt:')
+	console.warn(rawError)
+	await browserStorageLocalRemove('latestUnexpectedError')
+	return undefined
+}
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []
 
 const ensNodeHashesSemaphore = new Semaphore(1)
 export async function addEnsNodeHash(name: string) {
-	if (!isValidName(name)) return
+	if (!isValidEnsName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsNodeHashes() || []

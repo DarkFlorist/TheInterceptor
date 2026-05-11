@@ -1,5 +1,5 @@
 import { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
-import { SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
+import { SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
@@ -15,12 +15,28 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, ImportIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { useEffect } from 'preact/hooks'
 import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
+
+function scheduleAfterPaint(callback: () => void) {
+	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
+		let secondFrame: number | undefined
+		const firstFrame = globalThis.requestAnimationFrame(() => {
+			secondFrame = globalThis.requestAnimationFrame(() => callback())
+		})
+		return () => {
+			globalThis.cancelAnimationFrame(firstFrame)
+			if (secondFrame !== undefined) globalThis.cancelAnimationFrame(secondFrame)
+		}
+	}
+	const timeout = globalThis.setTimeout(callback, 32)
+	return () => globalThis.clearTimeout(timeout)
+}
 
 type SignerExplanationParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
@@ -258,24 +274,47 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	if (simulationAndVisualisationResults.visualizedSimulationState.success === false) return false
-	return !simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks
-		.map((block) => block.simulatedAndVisualizedTransactions.length + block.visualizedPersonalSignRequests.length > 0)
-		.some((isThereSomethingToSimulate) => isThereSomethingToSimulate)
+	return isEmptySimulationAndVisualisationResults(simulationAndVisualisationResults)
+}
+
+type SimulationResultsHeaderParams = {
+	openImportSimulation: () => void
+	disableReset?: ReadonlySignal<boolean>
+	resetSimulation?: () => void
+}
+
+function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
+	return <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+		<div class = 'log-cell' style = 'justify-content: left;'>
+			<p className = 'h1'> Simulation Results </p>
+		</div>
+		<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
+			<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
+				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+					<ImportIcon/>
+				</span>
+				<span>Import Simulation Stack</span>
+			</button>
+			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
+				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+						<BroomIcon />
+					</span>
+					<span>Clear</span>
+				</button>
+			}
+		</div>
+	</div>
 }
 
 function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
-		if (param.simulationAndVisualisationResults.value === undefined) return true
-		return isEmptySimulation(param.simulationAndVisualisationResults.value)
+		if (param.simulationAndVisualisationResults.value.kind === 'passthrough') return true
+		return isEmptySimulation(param.simulationAndVisualisationResults.value.value)
 	})
 
-	const definedSimulationResults = useComputed(() => {
-		const currentResults = param.simulationAndVisualisationResults.value
-		if (currentResults === undefined) throw new Error('Simulation results are required')
-		return currentResults
-	})
-	const computedAddressBookEntries = useComputed(() => definedSimulationResults.value.addressBookEntries)
+	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
+	const currentResults = param.simulationAndVisualisationResults.value
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
@@ -283,35 +322,22 @@ function PopupVisualisation(param: SimulationStateParam) {
 		</div>
 	}
 
-	if (param.simulationAndVisualisationResults.value === undefined) {
-		return <div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+	if (currentResults.kind === 'passthrough') {
+		return <div>
+			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } />
+			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+		</div>
 	}
 
-	return <div>
-		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
-			<div class = 'log-cell' style = 'justify-content: left;'>
-				<p className = 'h1'> Simulation Results </p>
-			</div>
-			<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
-				<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<ImportIcon/>
-					</span>
-					<span>Import Simulation Stack</span>
-				</button>
-				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<BroomIcon />
-					</span>
-					<span>Clear</span>
-				</button>
-			</div>
-		</div>
+	const resolvedResults = currentResults.value
 
-		{ param.simulationAndVisualisationResults.value !== undefined && param.simulationAndVisualisationResults.value.visualizedSimulationState.success === false ? <>
-			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ param.simulationAndVisualisationResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+	return <div>
+		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
+
+		{ resolvedResults.visualizedSimulationState.success === false ? <>
+			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
 				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { definedSimulationResults }
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 					activeAddress = { param.activeSimulationAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -319,12 +345,12 @@ function PopupVisualisation(param: SimulationStateParam) {
 					addressMetaData = { computedAddressBookEntries }
 				/>
 		</> : <>
-			{ isEmpty.value || param.simulationAndVisualisationResults.value === undefined ?
+			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
 						<TransactionsAndSignedMessages
-							simulationAndVisualisationResults = { definedSimulationResults }
+							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
@@ -334,7 +360,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
-							simulationAndVisualisationResults = { definedSimulationResults }
+							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							currentBlockNumber = { param.currentBlockNumber }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
@@ -351,6 +377,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 export function Home(param: HomeParams) {
 	const disableReset = useSignal<boolean>(false)
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
+	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 
 	const activeSimulationAddress = useComputed(() =>
@@ -360,6 +387,17 @@ export function Home(param: HomeParams) {
 		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
 	)
 	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+
+	useEffect(() => {
+		if (!param.simulationMode.value || activeSimulationAddress.value === undefined) {
+			showPopupVisualisation.value = false
+			return
+		}
+		if (showPopupVisualisation.value) return
+		return scheduleAfterPaint(() => {
+			showPopupVisualisation.value = true
+		})
+	}, [param.simulationMode.value, activeSimulationAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -407,21 +445,27 @@ export function Home(param: HomeParams) {
 			rpcEntries = { param.rpcEntries }
 		/>
 
-		{ param.simulationMode.value && activeSimulationAddress.value !== undefined ? <PopupVisualisation
-			simulationAndVisualisationResults = { param.simVisResults }
-			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-			disableReset = { disableReset }
-			resetSimulation = { resetSimulation }
-			currentBlockNumber = { param.currentBlockNumber }
-			activeSimulationAddress = { param.activeSimulationAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
-			rpcConnectionStatus = { param.rpcConnectionStatus }
-			simulationUpdatingState = { param.simulationUpdatingState }
-			simulationResultState = { param.simulationResultState }
-			openImportSimulation = { param.openImportSimulation }
-		/> : <> </> }
+		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
+			? showPopupVisualisation.value
+				? <PopupVisualisation
+					simulationAndVisualisationResults = { param.simVisResults }
+					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+					disableReset = { disableReset }
+					resetSimulation = { resetSimulation }
+					currentBlockNumber = { param.currentBlockNumber }
+					activeSimulationAddress = { param.activeSimulationAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
+					rpcConnectionStatus = { param.rpcConnectionStatus }
+					simulationUpdatingState = { param.simulationUpdatingState }
+					simulationResultState = { param.simulationResultState }
+					openImportSimulation = { param.openImportSimulation }
+				/>
+				: <section class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
+					<Spinner height = '3em'/>
+				</section>
+			: <></> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
 			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
