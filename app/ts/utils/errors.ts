@@ -3,6 +3,14 @@ import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { InterceptorError, JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 
+export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
+
+type UnexpectedErrorMetadata = {
+	source?: string
+	code?: string
+	debugId?: string
+}
+
 export class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
 		super(message)
@@ -48,12 +56,10 @@ function getForwardedDiagnostics(error: unknown): string | undefined {
 }
 
 function normalizeUnexpectedError(error: unknown) {
-	const forwardedDiagnostics = getForwardedDiagnostics(error)
-	if (forwardedDiagnostics !== undefined) return { message: forwardedDiagnostics }
 	if (typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string') {
 		return { message: error.message }
 	}
-	return { message: 'Please see The Interceptors console for more details on the error.' }
+	return { message: GENERIC_UNEXPECTED_ERROR_MESSAGE }
 }
 
 export function printError(error: unknown) {
@@ -70,7 +76,13 @@ export function printError(error: unknown) {
 	}
 }
 
-export async function handleUnexpectedError(error: unknown) {
+function generateDebugId() {
+	return globalThis.crypto.randomUUID().slice(0, 8)
+}
+
+export async function handleUnexpectedError(error: unknown, metadata: UnexpectedErrorMetadata = {}) {
+	const debugId = metadata.debugId ?? generateDebugId()
+	console.error('Unexpected Interceptor error', { debugId, source: metadata.source ?? 'internal', code: metadata.code ?? 'unexpected_error' })
 	printError(error)
 	console.trace()
 	const normalizedError = normalizeUnexpectedError(error)
@@ -79,6 +91,9 @@ export async function handleUnexpectedError(error: unknown) {
 		data: {
 			timestamp: new Date(),
 			message: normalizedError.message,
+			source: metadata.source ?? 'internal',
+			code: metadata.code ?? 'unexpected_error',
+			debugId,
 		}
 	}
 	await setLatestUnexpectedError(errorMessage)
