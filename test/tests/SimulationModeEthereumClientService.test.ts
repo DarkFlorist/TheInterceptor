@@ -682,6 +682,35 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				assert.equal(receipt.cumulativeGasUsed, receipt.gasUsed)
 			})
 
+			test('state-based receipt keeps receipt and log block numbers in sync', async () => {
+				const simulationStateInput = [{
+					stateOverrides: {},
+					transactions: [{
+						signedTransaction: mockSignTransaction({
+							...exampleTransaction,
+							nonce: 0n,
+						}),
+						website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+						created: new Date(),
+						originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+						transactionIdentifier: 14n,
+					}],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const transactionHash = simulationStateInput[0].transactions[0]?.signedTransaction.hash
+				if (transactionHash === undefined) throw new Error('transaction hash missing')
+				const receipt = await getReceiptFromState(simulationState, transactionHash)
+				if (receipt === null) throw new Error('receipt missing')
+
+				assert.equal(receipt.blockNumber, blockNumber + 1n)
+				assert.equal(receipt.logs[0]?.blockNumber, receipt.blockNumber)
+			})
+
 			test('state-based logs honor the first simulated execution block hash after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
