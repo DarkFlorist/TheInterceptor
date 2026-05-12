@@ -224,6 +224,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		blockNumber: popupVisualisation.data.simulationState.blockNumber,
 		blockTimestamp: popupVisualisation.data.simulationState.blockTimestamp,
 		simulationConductedTimestamp: popupVisualisation.data.simulationState.simulationConductedTimestamp,
+		simulationStateInput: popupVisualisation.data.simulationState.simulationStateInput,
 		addressBookEntries: popupVisualisation.data.addressBookEntries,
 		rpcNetwork: popupVisualisation.data.simulationState.rpcNetwork,
 		tokenPriceEstimates: popupVisualisation.data.tokenPriceEstimates,
