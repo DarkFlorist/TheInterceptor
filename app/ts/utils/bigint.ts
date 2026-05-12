@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { formatUnits, getAddress, isAddress } from 'viem/utils'
 
 export function bigintToDecimalString(value: bigint, power: bigint) {
 	const integerPart = abs(value / 10n ** power)
@@ -9,7 +9,7 @@ export function bigintToDecimalString(value: bigint, power: bigint) {
 }
 
 export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
-	const floatValue = Number(ethers.formatUnits(amount, decimals))
+	const floatValue = Number(formatUnits(amount, Number(decimals)))
 
 	let formatterOptions: Intl.NumberFormatOptions = { useGrouping: false, maximumFractionDigits: 3 }
 
@@ -46,18 +46,18 @@ export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bi
 }
 
 export const nanoString = (value: bigint) => bigintToDecimalString(value, 9n)
-export const addressString = (address: bigint) => `0x${ address.toString(16).padStart(40, '0') }`
+export const addressString = (address: bigint): `0x${ string }` => `0x${ address.toString(16).padStart(40, '0') }`
 export const addressStringWithout0x = (address: bigint) => address.toString(16).padStart(40, '0')
-export const checksummedAddress = (address: bigint) => ethers.getAddress(addressString(address))
+export const checksummedAddress = (address: bigint) => getAddress(addressString(address))
 
 export function stringToAddress(addressString: string | undefined) {
 	if (addressString === undefined) return undefined
 	const trimmedAddress = addressString.trim()
-	if (!ethers.isAddress(trimmedAddress)) return undefined
+	if (!isAddress(trimmedAddress)) return undefined
 	return BigInt(trimmedAddress)
 }
 
-export const bytes32String = (bytes32: bigint) => `0x${ bytes32.toString(16).padStart(64, '0') }`
+export const bytes32String = (bytes32: bigint): `0x${ string }` => `0x${ bytes32.toString(16).padStart(64, '0') }`
 
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
