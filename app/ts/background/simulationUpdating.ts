@@ -1,5 +1,5 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, appendTransactionsToInput, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getBlockTimeManipulationSeconds, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
@@ -134,6 +134,22 @@ export async function getMetadataForSimulation(
 	}
 }
 
+export const getGovernanceExecutionTokenBalancesAfter = async (
+	ethereum: EthereumClientService,
+	simulationInput: SimulationStateInput,
+	executionTransaction: PreSimulationTransaction,
+	callResult: Parameters<typeof getTokenBalancesAfterForTransaction>[3],
+) => {
+	const simulationInputAfterExecution = appendTransactionsToInput(simulationInput, [executionTransaction])
+	return await getTokenBalancesAfterForTransaction(
+		ethereum,
+		undefined,
+		simulationInputAfterExecution,
+		callResult,
+		executionTransaction.signedTransaction.from
+	)
+}
+
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
@@ -164,12 +180,18 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const simulationInput = await getCurrentSimulationInput()
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
-		const tokenBalancesAfter = await getTokenBalancesAfterForTransaction(
+		const executionTransaction: PreSimulationTransaction = {
+			signedTransaction: signedExecutionTransaction,
+			website: pendingTransaction.transactionToSimulate.website,
+			created: new Date(),
+			originalRequestParameters: pendingTransaction.originalRequestParameters,
+			transactionIdentifier: pendingTransaction.transactionIdentifier,
+		}
+		const tokenBalancesAfter = await getGovernanceExecutionTokenBalancesAfter(
 			ethereum,
-			undefined,
 			simulationInput,
+			executionTransaction,
 			contractExecutionResult.ethSimulateV1CallResult,
-			contractExecutionResult.executingTransaction.from
 		)
 
 		const governanceContractSimulationState: SimulationState = {
@@ -178,11 +200,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				signedMessages: [],
 				stateOverrides: {},
 				transactions: [{
-					signedTransaction: signedExecutionTransaction,
-					website: pendingTransaction.transactionToSimulate.website,
-					created: new Date(),
-					originalRequestParameters: pendingTransaction.originalRequestParameters,
-					transactionIdentifier: pendingTransaction.transactionIdentifier,
+					...executionTransaction,
 				}],
 				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 				simulateWithZeroBaseFee: false,
@@ -193,13 +211,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				blockTimestamp: bigintSecondsToDate((dateToBigintSeconds(parentBlock.timestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit))),
 				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 				simulatedTransactions: [{
-					preSimulationTransaction: {
-						signedTransaction: signedExecutionTransaction,
-						website: pendingTransaction.transactionToSimulate.website,
-						created: new Date(),
-						originalRequestParameters: pendingTransaction.originalRequestParameters,
-						transactionIdentifier: pendingTransaction.transactionIdentifier,
-					},
+					preSimulationTransaction: executionTransaction,
 					realizedGasPrice: calculateRealizedEffectiveGasPrice(signedExecutionTransaction, parentBlock.baseFeePerGas),
 					ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
 					tokenBalancesAfter,

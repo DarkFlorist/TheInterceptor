@@ -292,6 +292,135 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 }
 
 describe('Gnosis Safe stack simulation', () => {
+	test('governance execution token balances are queried on top of stack plus execution transaction', async () => {
+		await browserMock.reset()
+		const modules = await modulesPromise
+		const activeAddress = modules.defaultActiveAddresses[0]
+		const stackRecipient = modules.defaultActiveAddresses[1]
+		if (activeAddress === undefined || stackRecipient === undefined) throw new Error('missing default test addresses')
+
+		const fakeRpcNetwork: RpcEntry = {
+			name: 'Test Chain',
+			chainId: 1337n,
+			httpsRpc: 'https://example.invalid',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			currencyLogoUri: undefined,
+			primary: true,
+			minimized: true,
+		}
+
+		const fakeBlock = makeFakeBlock(123n)
+		let aggregate3BlockStateCallCount: number | undefined = undefined
+		const fakeRequestHandler = {
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() {},
+			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+				switch (rpcRequest.method) {
+					case 'eth_getBlockByNumber':
+						return serializeForRpc(EthereumBlockHeader, fakeBlock)
+					case 'eth_blockNumber':
+						return serializeForRpc(EthereumQuantity, fakeBlock.number)
+					case 'eth_simulateV1': {
+						const firstParam = rpcRequest.params?.[0]
+						if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !Array.isArray(firstParam.blockStateCalls)) {
+							throw new Error('Missing blockStateCalls in eth_simulateV1 request')
+						}
+						const callCount = firstParam.blockStateCalls.length
+						const lastBlock = firstParam.blockStateCalls[callCount - 1]
+						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) {
+							throw new Error('Missing calls in eth_simulateV1 block')
+						}
+						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
+						const isAggregate3BalanceCall = typeof lastCall === 'object'
+							&& lastCall !== null
+							&& 'to' in lastCall
+							&& lastCall.to === MULTICALL3
+						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
+						aggregate3BlockStateCallCount = callCount
+
+						const aggregate3ReturnData = encodeFunctionResult({
+							abi: Multicall3ABI,
+							functionName: 'aggregate3',
+							result: [{
+								success: true,
+								returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+							}],
+						})
+						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
+					}
+					default:
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+				}
+			},
+		}
+
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const currentStackTransaction = modules.mockSignTransaction({
+			type: '1559',
+			from: activeAddress.address,
+			chainId: fakeRpcNetwork.chainId,
+			nonce: 0n,
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+			gas: 21_000n,
+			to: stackRecipient.address,
+			value: 0n,
+			input: new Uint8Array(),
+			accessList: [],
+		})
+
+		await modules.browserStorageLocalSet({
+			simulationMode: true,
+			activeSimulationAddress: activeAddress.address,
+			activeRpcNetwork: fakeRpcNetwork,
+			interceptorTransactionStack: {
+				operations: [{
+					type: 'Transaction',
+					preSimulationTransaction: {
+						signedTransaction: currentStackTransaction,
+						website: { websiteOrigin: 'https://stack.example', icon: undefined, title: undefined },
+						created: new Date('2024-01-01T00:00:00.000Z'),
+						originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+						transactionIdentifier: 1n,
+					},
+				}],
+			},
+		})
+
+		const simulationInput = await modules.getCurrentSimulationInput()
+		const executionTransaction = {
+			signedTransaction: modules.mockSignTransaction({
+				type: '1559',
+				from: activeAddress.address,
+				chainId: fakeRpcNetwork.chainId,
+				nonce: 1n,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+				gas: 50_000n,
+				to: stackRecipient.address,
+				value: 0n,
+				input: new Uint8Array(),
+				accessList: [],
+			}),
+			website: { websiteOrigin: 'https://governance.example', icon: undefined, title: undefined },
+			created: new Date('2024-01-01T00:00:01.000Z'),
+			originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+			transactionIdentifier: 2n,
+		} as const
+
+		const tokenBalancesAfter = await modules.getGovernanceExecutionTokenBalancesAfter(
+			ethereum,
+			simulationInput,
+			executionTransaction,
+			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
+		)
+
+		assert.equal(aggregate3BlockStateCallCount, 3)
+		assert.equal(tokenBalancesAfter.length, 1)
+		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
+	})
+
 	test('simulates a Safe transaction on top of the existing stack', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
