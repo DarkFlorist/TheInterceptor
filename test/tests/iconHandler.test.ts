@@ -152,6 +152,18 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 		])
 	})
 
+	test('rejects file favicon urls', async () => {
+		tabsById.set(6, { id: 6, status: 'complete', title: 'File favicon', url: 'https://file.test', favIconUrl: 'file:///etc/passwd' })
+
+		const result = await retrieveWebsiteDetails(6)
+
+		assert.deepEqual(result, { title: 'File favicon', icon: undefined })
+		assert.equal(fetchCalls.length, 0)
+		assert.deepEqual(warnings, [
+			'Failed to load favicon for tab 6 (https://file.test): unsupported URL scheme file:'
+		])
+	})
+
 	test('returns the title and warns on fetch failures', async () => {
 		tabsById.set(4, { id: 4, status: 'complete', title: 'Fetch failed favicon', url: 'https://fail.test', favIconUrl: 'https://fail.test/favicon.png' })
 		fetchImplementation = async () => { throw new TypeError('Failed to fetch') }

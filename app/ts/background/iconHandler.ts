@@ -11,7 +11,7 @@ import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 
-const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'data:'])
+const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
