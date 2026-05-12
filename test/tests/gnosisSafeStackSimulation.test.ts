@@ -389,6 +389,10 @@ describe('Gnosis Safe stack simulation', () => {
 		})
 
 		const simulationInput = await modules.getCurrentSimulationInput()
+		const executionTimestamp = new Date('2024-01-02T00:00:00.000Z')
+		const executionStateOverrides = {
+			'0x0000000000000000000000000000000000000001': { code: new Uint8Array([1, 2, 3]) },
+		}
 		const executionTransaction = {
 			signedTransaction: modules.mockSignTransaction({
 				type: '1559',
@@ -409,13 +413,25 @@ describe('Gnosis Safe stack simulation', () => {
 			transactionIdentifier: 2n,
 		} as const
 
+		const governanceExecutionSimulationInput = modules.getGovernanceExecutionSimulationInput(
+			simulationInput,
+			executionTransaction,
+			executionTimestamp,
+			executionStateOverrides,
+		)
+
 		const tokenBalancesAfter = await modules.getGovernanceExecutionTokenBalancesAfter(
 			ethereum,
 			simulationInput,
 			executionTransaction,
+			executionTimestamp,
+			executionStateOverrides,
 			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
 		)
 
+		assert.equal(governanceExecutionSimulationInput.length, 2)
+		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.stateOverrides, executionStateOverrides)
+		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.blockTimeManipulation, { type: 'SetTimetamp', timeToSet: 1704153600n })
 		assert.equal(aggregate3BlockStateCallCount, 3)
 		assert.equal(tokenBalancesAfter.length, 1)
 		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
