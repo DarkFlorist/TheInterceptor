@@ -58,8 +58,12 @@ function ParsedInput<T>(model: ParsedInputModel<T>) {
 	return <input { ...inputModel } class = 'autosizing-input' value = { internalValue } onInput = { event => { internalValue.value = event.currentTarget.value } } onChange = { onChange }/>
 }
 
+function isParsedInputModel<T>(model: UnparsedInputModel | ParsedInputModel<T>): model is ParsedInputModel<T> {
+	return 'tryParse' in model && 'serialize' in model
+}
+
 function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
-	if ('tryParse' in model && model.tryParse) {
+	if (isParsedInputModel(model)) {
 		return <ParsedInput { ...model }/>
 	} else {
 		return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
@@ -70,31 +74,42 @@ interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanEleme
 	readonly dataList?: string[]
 	readonly rawValue?: Signal<string>
 }
-interface UnparsedAutosizingInputModel extends BaseAutosizingInputModel, Pick<UnparsedInputModel, 'value' | 'sanitize' | 'tryParse' | 'serialize'> {}
+interface UnparsedAutosizingInputModel extends BaseAutosizingInputModel, Pick<UnparsedInputModel, 'value' | 'sanitize'> {
+	readonly tryParse?: never
+	readonly serialize?: never
+}
 interface ParsedAutosizingInputModel<T> extends BaseAutosizingInputModel, Pick<ParsedInputModel<T>, 'value' | 'sanitize' | 'tryParse' | 'serialize'> {}
 
+function isParsedAutosizingInputModel<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>): model is ParsedAutosizingInputModel<T> {
+	return 'tryParse' in model && 'serialize' in model
+}
+
 function AutosizingInput<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>) {
-	const internalValue = model.rawValue || useSignal(model.serialize ? model.serialize(model.value.deepPeek()) : model.value.peek())
-	const inputModel = {
+	const internalValue = model.rawValue || useSignal(isParsedAutosizingInputModel(model) ? model.serialize(model.value.deepPeek()) : model.value.peek())
+	const baseInputModel = {
 		rawValue: internalValue,
-		type: model.type,
-		pattern: model.pattern,
-		required: model.required,
-		placeholder: model.placeholder,
-		autocomplete: model.autocomplete,
-		onChange: model.onChange,
+		...(model.type !== undefined ? { type: model.type } : {}),
+		...(model.pattern !== undefined ? { pattern: model.pattern } : {}),
+		...(model.required !== undefined ? { required: model.required } : {}),
+		...(model.placeholder !== undefined ? { placeholder: model.placeholder } : {}),
+		...(model.autocomplete !== undefined ? { autocomplete: model.autocomplete } : {}),
+		...(model.onChange !== undefined ? { onChange: model.onChange } : {}),
 		list: 'datalist',
 		size: 1,
-		...model.serialize ? {
+	}
+	const inputModel: UnparsedInputModel | ParsedInputModel<T> = isParsedAutosizingInputModel(model)
+		? {
+			...baseInputModel,
 			value: model.value,
 			sanitize: model.sanitize,
 			tryParse: model.tryParse,
 			serialize: model.serialize,
-		} : {
-			value: model.value,
-			sanitize: model.sanitize,
 		}
-	} satisfies UnparsedInputModel | ParsedInputModel<T>
+		: {
+			...baseInputModel,
+			value: model.value,
+			...(model.sanitize !== undefined ? { sanitize: model.sanitize } : {}),
+		}
 	return <span class = 'autosizing-span' style = { model.style } data-value = { model.placeholder }>
 		<label class = 'autosizing-label' data-value = { internalValue.value }>
 			<Input { ...inputModel }/>

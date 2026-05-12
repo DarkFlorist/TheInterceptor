@@ -13,7 +13,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './ac
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
@@ -457,7 +457,7 @@ type SimulationUpdateStartedOrEnded = funtypes.Static<typeof SimulationUpdateSta
 const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulation_state_changed'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined)
+		visualizedSimulatorState: CompleteVisualizedSimulation
 	})
 })
 
@@ -485,7 +485,7 @@ export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfir
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
@@ -502,14 +502,23 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 	data: funtypes.Unknown
 }).asReadonly()
 
-export type UpdateConfirmTransactionDialogPendingTransactions = funtypes.Static<typeof UpdateConfirmTransactionDialogPendingTransactions>
-export const UpdateConfirmTransactionDialogPendingTransactions = funtypes.ReadonlyObject({
+export type UpdateConfirmTransactionDialogPendingTransactions = {
+	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
+	readonly data: {
+		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
+	}
+}
+const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
+type UpdateConfirmTransactionDialogPendingTransactionsRuntype = ReturnType<typeof createUpdateConfirmTransactionDialogPendingTransactionsRuntype>
+const UpdateConfirmTransactionDialogPendingTransactionsRuntype: UpdateConfirmTransactionDialogPendingTransactionsRuntype = createUpdateConfirmTransactionDialogPendingTransactionsRuntype()
+export const UpdateConfirmTransactionDialogPendingTransactions: typeof UpdateConfirmTransactionDialogPendingTransactionsRuntype = UpdateConfirmTransactionDialogPendingTransactionsRuntype
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
@@ -555,7 +564,11 @@ export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
+		activeAddresses: AddressBookEntries,
+		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
+		makeCurrentAddressRich: funtypes.Boolean,
+		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 		websiteAccessAddressMetadata: AddressBookEntries,
 		tabState: TabState,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
@@ -645,6 +658,22 @@ type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: PendingChainChangeConfirmationPromise,
+})
+
+export type PopupReadyAndListeningPage = funtypes.Static<typeof PopupReadyAndListeningPage>
+const PopupReadyAndListeningPage = funtypes.Union(
+	funtypes.Literal('changeChain'),
+	funtypes.Literal('confirmTransaction'),
+	funtypes.Literal('interceptorAccess'),
+	funtypes.Literal('fetchSimulationStack'),
+)
+
+export type PopupReadyAndListening = funtypes.Static<typeof PopupReadyAndListening>
+export const PopupReadyAndListening = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_readyAndListening'),
+	data: funtypes.ReadonlyObject({
+		page: PopupReadyAndListeningPage,
+	}),
 })
 
 type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
@@ -903,10 +932,7 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_fetchSimulationStackRequestReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
+	PopupReadyAndListening,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),

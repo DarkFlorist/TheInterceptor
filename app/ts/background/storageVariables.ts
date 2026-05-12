@@ -2,7 +2,8 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
@@ -10,11 +11,13 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { isValidName, namehash } from 'ethers'
+import { namehash } from 'viem/ens'
+import { isValidEnsName } from '../utils/ens.js'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -77,36 +80,25 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
-	const emptyResults: CompleteVisualizedSimulation = {
-		simulationUpdatingState: 'done' as const,
-		simulationResultState: 'corrupted' as const,
-		simulationId: 0,
-		simulationState: undefined,
-		addressBookEntries: [],
-		tokenPriceEstimates: [],
-		tokenPriceQuoteToken: undefined,
-		namedTokenIds: [],
-		visualizedSimulationState: { success: true, visualizedBlocks: [] },
-		numberOfAddressesMadeRich: 0,
-	}
+	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	try {
-		return (await browserStorageLocalGet('popupVisualisation'))?.popupVisualisation ?? emptyResults
+		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
-		await browserStorageLocalSet({ popupVisualisation: emptyResults })
+		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
 		return emptyResults
 	}
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation | undefined) => Promise<CompleteVisualizedSimulation | undefined>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await browserStorageLocalSet({ popupVisualisation: newRequests })
+		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
 		return newRequests
 	})
 }
@@ -239,7 +231,16 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		minimized: true,
 	}
 }
-export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntriesV3'))?.userAddressBookEntriesV3 ?? defaultActiveAddresses
+export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
+	const rawEntries = (await browser.storage.local.get('userAddressBookEntriesV3'))['userAddressBookEntriesV3']
+	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
+	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
+	if (rawEntries === undefined) return defaultActiveAddresses
+	console.warn('userAddressBookEntriesV3 was corrupt:')
+	console.warn(rawEntries)
+	await browserStorageLocalSet({ userAddressBookEntriesV3: defaultActiveAddresses })
+	return defaultActiveAddresses
+}
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => {
 	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
@@ -283,13 +284,22 @@ export async function setLatestUnexpectedError(latestUnexpectedError: Unexpected
 	return await browserStorageLocalSet({ latestUnexpectedError })
 }
 
-export const getLatestUnexpectedError = async () => (await browserStorageLocalGet('latestUnexpectedError'))?.latestUnexpectedError
+export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured | undefined> {
+	const rawError = (await browser.storage.local.get('latestUnexpectedError'))['latestUnexpectedError']
+	const parsedError = await browserStorageLocalSafeParseGet('latestUnexpectedError')
+	if (parsedError?.latestUnexpectedError !== undefined) return parsedError.latestUnexpectedError
+	if (rawError === undefined) return undefined
+	console.warn('latestUnexpectedError was corrupt:')
+	console.warn(rawError)
+	await browserStorageLocalRemove('latestUnexpectedError')
+	return undefined
+}
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []
 
 const ensNodeHashesSemaphore = new Semaphore(1)
 export async function addEnsNodeHash(name: string) {
-	if (!isValidName(name)) return
+	if (!isValidEnsName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsNodeHashes() || []
@@ -311,14 +321,14 @@ export async function addEnsLabelHash(label: string) {
 }
 
 const interceptorTransactionStackSemaphore = new Semaphore(1)
-export const getInterceptorTransactionStack = async () => (await browserStorageLocalGet('interceptorTransactionStack'))?.interceptorTransactionStack ?? { operations: [] }
+export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
 	return await interceptorTransactionStackSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
 		const interceptorTransactionStack = updateFunc(prevStack)
 		const ids = interceptorTransactionStack.operations.map((x) => x.type === 'Transaction' ? x.preSimulationTransaction.transactionIdentifier : undefined).filter((x): x is bigint => x !== undefined)
 		if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
-		await browserStorageLocalSet({ interceptorTransactionStack })
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
 		return interceptorTransactionStack
 	})
 }

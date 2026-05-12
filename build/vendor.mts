@@ -5,33 +5,67 @@ import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 import { createHash } from 'node:crypto'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
+const nodeModulesDirectory = path.join(directoryOfThisFile, '..', 'node_modules')
+const browserResolvedImports = {
+	'@noble/hashes/crypto': path.join(nodeModulesDirectory, '@noble', 'hashes', 'esm', 'crypto.js'),
+} as const
 
-const dependencyPaths = [
-	{ packageName: 'ethers', subfolderToVendor: 'dist', entrypointFile: 'ethers.js' },
-	{ packageName: 'webextension-polyfill', subfolderToVendor: 'dist', entrypointFile: 'browser-polyfill.js' },
-	{ packageName: 'preact', subfolderToVendor: 'dist', entrypointFile: 'preact.module.js' },
-	{ packageName: 'preact/jsx-runtime', subfolderToVendor: 'dist', entrypointFile: 'jsxRuntime.module.js' },
-	{ packageName: 'preact/hooks', subfolderToVendor: 'dist', entrypointFile: 'hooks.module.js' },
-	{ packageName: 'preact/compat', subfolderToVendor: 'dist', entrypointFile: 'compat.module.js' },
-	{ packageName: '@preact/signals', subfolderToVendor: 'dist', entrypointFile: 'signals.module.js' },
-	{ packageName: '@preact/signals-core', subfolderToVendor: 'dist', entrypointFile: 'signals-core.module.js', },
-	{ packageName: 'funtypes', subfolderToVendor: 'lib', entrypointFile: 'index.mjs' },
-	{ packageName: '@noble/hashes/sha3', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha3.js' },
-	{ packageName: '@noble/hashes/sha256', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha256.js' },
-	{ packageName: '@noble/hashes/sha512', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha512.js' },
-	{ packageName: '@noble/hashes/blake2s', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'blake2s.js' },
-	{ packageName: '@noble/hashes/utils', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'utils.js' },
-	{ packageName: '@noble/hashes/hmac', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'hmac.js' },
-	{ packageName: '@noble/hashes/crypto', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'crypto.js' },
-	{ packageName: '@noble/curves/stark', packageToVendor: '@noble/curves', subfolderToVendor: '', entrypointFile: 'stark.js' },
-	{ packageName: '@darkflorist/address-metadata', subfolderToVendor: 'lib', entrypointFile: 'index.js' },
-]
+const importMapDependencies = [
+	'webextension-polyfill',
+	'preact',
+	'preact/jsx-runtime',
+	'preact/hooks',
+	'preact/compat',
+	'@preact/signals',
+	'@preact/signals-core',
+	'funtypes',
+	'@noble/hashes/sha3',
+	'@noble/hashes/sha256',
+	'@noble/hashes/sha512',
+	'@noble/hashes/blake2s',
+	'@noble/hashes/utils',
+	'@noble/hashes/hmac',
+	'@noble/hashes/crypto',
+	'@noble/curves/stark',
+	'@darkflorist/address-metadata',
+	'viem/utils',
+	'viem/ens',
+	'viem/accounts',
+] as const
+
+const extraPackageRoots = [
+	'ox',
+	'abitype',
+	'@scure/base',
+	'@scure/bip32',
+	'@scure/bip39',
+	'eventemitter3',
+	'@noble/ciphers',
+] as const
+
+const getPackageRoot = (packageName: string) => packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0]!
+const toFileSystemPath = (value: string) => value.startsWith('file://') ? url.fileURLToPath(value) : value
+
+const vendoredPackageRoots = [...new Set([
+	...importMapDependencies.map(getPackageRoot),
+	...extraPackageRoots,
+])]
+
+const getVendoredImportMapLocation = (packageName: string) => {
+	const resolvedPath = browserResolvedImports[packageName as keyof typeof browserResolvedImports] ?? toFileSystemPath(import.meta.resolveSync(packageName))
+	const relativePath = path.relative(nodeModulesDirectory, resolvedPath)
+	if (relativePath.startsWith('..')) throw new Error(`Unable to vendor ${ packageName }: ${ resolvedPath } is outside ${ nodeModulesDirectory }`)
+	return `../${ path.join('vendor', relativePath).replace(/\\/g, '/') }`
+}
 
 async function vendorDependencies(files: string[]) {
-	for (const { packageName, packageToVendor, subfolderToVendor } of dependencyPaths) {
-		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageToVendor || packageName, subfolderToVendor)
-		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageToVendor || packageName)
+	await fs.rm(path.join(directoryOfThisFile, '..', 'app', 'vendor'), { recursive: true, force: true })
+	for (const packageRoot of vendoredPackageRoots) {
+		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
+		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageRoot)
 		async function inclusionPredicate(path: string, fileType: FileType) {
+			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
+			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
 			if (path.endsWith('.js')) return true
 			if (path.endsWith('.ts')) return true
 			if (path.endsWith('.mjs')) return true
@@ -39,15 +73,14 @@ async function vendorDependencies(files: string[]) {
 			if (path.endsWith('.map')) return true
 			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
 			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
-			if (path.endsWith('node_modules') || path.endsWith('node_modules/') || path.endsWith('node_modules\\')) return false
 			if (fileType === 'directory') return true
 			return false
 		}
-		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageName))
+		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
 	}
 
-	const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile, packageToVendor }) => {
-		importmap.imports[packageName] = `../${path.join('.', 'vendor', packageToVendor || packageName, entrypointFile).replace(/\\/g, '/') }`
+	const importmap = importMapDependencies.reduce((importmap, packageName) => {
+		importmap.imports[packageName] = getVendoredImportMapLocation(packageName)
 		return importmap
 	}, { imports: {} as Record<string, string> })
 	const importmapJson = `\n${JSON.stringify(importmap, undefined, '\t')

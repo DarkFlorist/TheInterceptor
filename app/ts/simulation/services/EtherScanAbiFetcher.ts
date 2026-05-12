@@ -1,4 +1,3 @@
-import { ethers } from 'ethers'
 import { EtherscanGetABIResult, EtherscanSourceCodeResult, SourcifyMetadataResult } from '../../types/etherscan.js'
 import { EthereumAddress } from '../../types/wire-types.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
@@ -7,6 +6,7 @@ import { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
 import { BlockExplorer, RpcEntries } from '../../types/rpc.js'
 import { getRpcList } from '../../background/storageVariables.js'
 import { Result } from 'funtypes'
+import { isValidAbiString } from '../../utils/abiRuntime.js'
 
 async function fetchJson(url: string): Promise<{ success: true, result: unknown } | { success: false, error: string }> {
 	const response = await fetch(url)
@@ -15,12 +15,7 @@ async function fetchJson(url: string): Promise<{ success: true, result: unknown 
 }
 
 export function isValidAbi(abi: string) {
-	try {
-		new ethers.Interface(abi)
-		return true
-	} catch(e) {
-		return false
-	}
+	return isValidAbiString(abi)
 }
 
 function getBlockExplorer(chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) {

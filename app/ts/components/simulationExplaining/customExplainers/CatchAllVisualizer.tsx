@@ -162,7 +162,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 			<BigAddress
 				addressBookEntry = { eventsGrouped.currentAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				style = { { '--bg-color': '#6d6d6d' } }
+				style = { { '--bg-color': 'var(--importance-box-color)' } }
 			/>
 			<div style = 'display: grid; grid-template-rows: max-content max-content' >
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>

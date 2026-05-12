@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { toRlp as encodeRlp } from 'viem/utils'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { DistributiveOmit, assertNever } from './typescript.js'
@@ -157,13 +157,20 @@ function calculateV(transaction: DistributiveOmit<ITransactionSignatureLegacy, '
 	return (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
 }
 
+function parityFromV(v: bigint): 'even' | 'odd' {
+	if (v === 0n) return 'even'
+	if (v === 1n) return 'odd'
+	throw new Error(`Unsupported transaction v for typed transaction: ${v}`)
+}
+
 type RlpEncodeableData = Uint8Array | RlpEncodeableData[]
+type RlpValue = `0x${ string }` | readonly RlpValue[]
 export function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
-	function rlpEncodeArray(data: RlpEncodeableData): ethers.RlpStructuredData {
+	function rlpEncodeArray(data: RlpEncodeableData): RlpValue {
 		if (!Array.isArray(data)) return `0x${ dataString(data) }`
-		return data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)
+		return data.map((x) => rlpEncodeArray(x))
 	}
-	return stringToUint8Array(ethers.encodeRlp(data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)))
+	return stringToUint8Array(encodeRlp(data.map((x) => rlpEncodeArray(x)), 'hex'))
 }
 
 function rlpEncodeSignedLegacyTransactionPayload(transaction: DistributiveOmit<ISignedTransactionLegacy, 'hash'>): Uint8Array {
@@ -343,8 +350,8 @@ export function serializeSignedTransactionToBytes(transaction: DistributiveOmit<
 		case 'legacy': return rlpEncodeSignedLegacyTransactionPayload(transaction)
 		case '2930': return new Uint8Array([1, ...rlpEncodeSigned2930TransactionPayload(transaction)])
 		case '1559': return new Uint8Array([2, ...rlpEncodeSigned1559TransactionPayload(transaction)])
-		case '7702': return new Uint8Array([2, ...rlpEncodeSigned7702TransactionPayload(transaction)])
-		case '4844': return new Uint8Array([2, ...rlpEncodeSigned4844TransactionPayload(transaction)])
+		case '7702': return new Uint8Array([4, ...rlpEncodeSigned7702TransactionPayload(transaction)])
+		case '4844': return new Uint8Array([3, ...rlpEncodeSigned4844TransactionPayload(transaction)])
 		case 'optimismDeposit': throw new Error('Serializing optimismDeposit (0x7e) transaction is not supported')
 		default: assertNever(transaction)
 	}
@@ -355,8 +362,8 @@ export function serializeUnsignedTransactionToBytes(transaction: IUnsignedTransa
 		case 'legacy': return rlpEncodeUnsignedLegacyTransactionPayload(transaction)
 		case '2930': return new Uint8Array([1, ...rlpEncodeUnsigned2930TransactionPayload(transaction)])
 		case '1559': return new Uint8Array([2, ...rlpEncodeUnsigned1559TransactionPayload(transaction)])
-		case '7702': return new Uint8Array([2, ...rlpEncodeUnsigned7702TransactionPayload(transaction)])
-		case '4844': return new Uint8Array([1, ...rlpEncodeUnsigned4844TransactionPayload(transaction)])
+		case '7702': return new Uint8Array([4, ...rlpEncodeUnsigned7702TransactionPayload(transaction)])
+		case '4844': return new Uint8Array([3, ...rlpEncodeUnsigned4844TransactionPayload(transaction)])
 		default: assertNever(transaction)
 	}
 }
@@ -391,7 +398,7 @@ export function EthereumSignedTransactionToSignedTransaction(transaction: Ethere
 		case '7702':
 		case '1559': return {
 			...transaction,
-			yParity: 'yParity' in transaction ? transaction.yParity : (transaction.v === 0n ? 'even' : 'odd'),
+			yParity: 'yParity' in transaction ? transaction.yParity : parityFromV(transaction.v),
 			gasLimit: transaction.gas,
 			accessList: transaction.accessList !== undefined ? transaction.accessList : [],
 		}

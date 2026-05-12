@@ -1,13 +1,11 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import { CompleteVisualizedSimulation, ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import { TransactionNames } from './ConfirmTransaction.js'
-import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -16,6 +14,7 @@ import { RpcEntries } from '../../types/rpc.js'
 import { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
+import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -25,8 +24,7 @@ export function FetchSimulationStack() {
 	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation | undefined>(undefined)
-	const currentPendingTransaction = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
+	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
 
@@ -57,18 +55,18 @@ export function FetchSimulationStack() {
 	}, [])
 
 	const updateSimulation = async () => {
-		const simulationStack = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
+		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	const updateMetaData = async () => {
-		const data = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
+		const data = await requestPopupSimulationMetadata()
 		if (data === undefined) return
 		simulationMetadata.value = data.metadata
 	}
 
 	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestReadyAndListening' })
+		void sendPopupReadyAndListening('fetchSimulationStack')
 		updateSimulation()
 		updateMetaData()
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
@@ -86,18 +84,36 @@ export function FetchSimulationStack() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: false, uniqueRequestIdentifier: changeRequest.value.uniqueRequestIdentifier, simulationStackVersion: changeRequest.value?.simulationStackVersion } })
 	}
 
+	const simulationStackResults = useComputed<SimulationAndVisualisationResults | undefined>(() => {
+		const complete = completeVisualizedSimulation.value
+		if (complete.simulationState.kind === 'passthrough') return undefined
+		return {
+			blockNumber: complete.simulationState.value.blockNumber,
+			blockTimestamp: complete.simulationState.value.blockTimestamp,
+			simulationConductedTimestamp: complete.simulationState.value.simulationConductedTimestamp,
+			simulationStateInput: complete.simulationState.value.simulationStateInput,
+			addressBookEntries: complete.addressBookEntries,
+			visualizedSimulationState: complete.visualizedSimulationState,
+			rpcNetwork: complete.simulationState.value.rpcNetwork,
+			tokenPriceEstimates: complete.tokenPriceEstimates,
+			namedTokenIds: complete.namedTokenIds,
+		}
+	})
+
 	const isThereSimulationStack = useComputed(() => {
-		if (completeVisualizedSimulation.value === undefined) return false
-		if (completeVisualizedSimulation.value.visualizedSimulationState.success === false) return false
-		return completeVisualizedSimulation.value.numberOfAddressesMadeRich || completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks.length > 0
+		const stackResults = simulationStackResults.value
+		if (stackResults === undefined) return false
+		return stackResults.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0) || completeVisualizedSimulation.value?.numberOfAddressesMadeRich !== 0
 	})
 
 	const addressReferences = useComputed(() => {
 		if (simulationMetadata.value === undefined) return []
 		return simulationMetadata.value.addressBookEntries.filter((address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS)
 	})
+	const activeAddress = useSignal<bigint | undefined>(undefined)
+	const addressMetaData = useComputed(() => simulationMetadata.value?.addressBookEntries ?? [])
 
-	if (changeRequest.value === undefined || simulationMetadata.value === undefined || completeVisualizedSimulation.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
+	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	return (
 		<main>
 			<Hint>
@@ -157,10 +173,14 @@ export function FetchSimulationStack() {
 										<p class = 'paragraph'> Simulation stack:</p>
 										<div class = 'sub-importance-box'>
 											{ !isThereSimulationStack.value ? <p class = 'paragraph'> No simulation stack</p> : <>
-												<TransactionNames
-													completeVisualizedSimulation = { completeVisualizedSimulation }
-													currentPendingTransaction = { currentPendingTransaction }
-													includeCurrentTransaction = { false }
+												<SimulationStackRows
+													simulationAndVisualisationResults = { simulationStackResults }
+													removeTransactionOrSignedMessage = { undefined }
+													activeAddress = { activeAddress }
+													renameAddressCallBack = { renameAddressCallBack }
+													editEnsNamedHashCallBack = { () => undefined }
+													addressMetaData = { addressMetaData }
+													showTimePicker = { false }
 												/>
 											</> }
 										</div>
