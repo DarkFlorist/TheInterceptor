@@ -40,6 +40,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 			blockNumber: simulateExecutionReply.value.data.result.simulationState.blockNumber,
 			blockTimestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
 			simulationConductedTimestamp: simulateExecutionReply.value.data.result.simulationState.simulationConductedTimestamp,
+			simulationStateInput: simulateExecutionReply.value.data.result.simulationState.simulationStateInput,
 			addressBookEntries: simulateExecutionReply.value.data.result.addressBookEntries,
 			rpcNetwork: simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
 			tokenPriceEstimates: simulateExecutionReply.value.data.result.tokenPriceEstimates,
