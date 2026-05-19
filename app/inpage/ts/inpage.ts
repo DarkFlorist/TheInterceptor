@@ -100,6 +100,9 @@ interface ProviderMessage {
 	readonly data: unknown
 }
 
+type JsonRpcResponse = IJsonRpcSuccess<unknown> | IJsonRpcError
+type LegacyJsonRpcCallback = (error: IJsonRpcError | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
+
 type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((connectInfo: ProviderConnectInfo) => void)
 	| ((accounts: readonly string[]) => void)
@@ -291,13 +294,13 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
+	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | LegacyJsonRpcCallback) => {
 		const fullPayload = typeof payload === 'string' ? { method: payload, id: 1, params: [] } : payload
 		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
 			if (inpageWindow.ethereum === undefined) throw new Error('window.ethereum is missing')
 			switch (fullPayload.method) {
-				case 'eth_coinbase':
+				case 'eth_coinbase': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.selectedAddress ?? null }
 				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.selectedAddress === undefined || inpageWindow.ethereum.selectedAddress === null ? [] : [inpageWindow.ethereum.selectedAddress] }
 				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.networkVersion }
 				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.chainId }
@@ -306,32 +309,45 @@ class InterceptorMessageListener {
 		}
 		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
 	}
-	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
-		const payloadArray = Array.isArray(payload) ? payload : [payload]
-		payloadArray.map((param) => this.WindowEthereumRequest(param)
-			.then(result => callback(null, { jsonrpc: '2.0', id: param.id, result }))
-			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
-			.catch((error) => {
-				if (InterceptorMessageListener.getErrorCodeAndMessage(error)) {
-					const data = 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : {}
-					const stack = 'stack' in error && typeof error.stack === 'string' ? { stack: error.stack } : {}
-					return callback({
-						jsonrpc: '2.0',
-						id: param.id,
-						error: {
-							code: error.code,
-							message: error.message,
-							data: { ...data, ...stack }
-						}
-					}, null)
-				}
-				return callback({
+
+	private readonly getWindowEthereumSendAsyncResponse = async (param: SingleSendAsyncParam): Promise<JsonRpcResponse> => {
+		try {
+			const result = await this.WindowEthereumRequest(param)
+			return { jsonrpc: '2.0', id: param.id, result }
+		} catch (error) {
+			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) {
+				const data = 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : {}
+				const stack = 'stack' in error && typeof error.stack === 'string' ? { stack: error.stack } : {}
+				return {
 					jsonrpc: '2.0',
 					id: param.id,
-					error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
-				}, null)
-			})
-		)
+					error: {
+						code: error.code,
+						message: error.message,
+						data: { ...data, ...stack }
+					}
+				}
+			}
+			return {
+				jsonrpc: '2.0',
+				id: param.id,
+				error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
+			}
+		}
+	}
+
+	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: LegacyJsonRpcCallback) => {
+		if (Array.isArray(payload)) {
+			const responses = await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
+			callback(null, responses)
+			return
+		}
+		const response = await this.getWindowEthereumSendAsyncResponse(payload)
+		if ('error' in response) {
+			callback(response, null)
+			return
+		}
+		callback(null, response)
 	}
 
 	static exhaustivenessCheck = (_thing: never) => {}
@@ -459,6 +475,12 @@ class InterceptorMessageListener {
 		return true
 	}
 
+	private static readonly getProviderConnectInfo = (result: unknown): ProviderConnectInfo => {
+		if (typeof result === 'string') return { chainId: result }
+		if (Array.isArray(result) && typeof result[0] === 'string') return { chainId: result[0] }
+		throw new Error('wrong type')
+	}
+
 	private readonly requestChangeChainFromSigner = async (chainId: string) => {
 		if (this.signerWindowEthereumRequest === undefined) return
 
@@ -502,7 +524,7 @@ class InterceptorMessageListener {
 					if (this.connected) return
 					this.connected = true
 					for (const callback of this.onConnectCallBacks) {
-						callback({ chainId: replyRequest.result as string })
+						callback(InterceptorMessageListener.getProviderConnectInfo(replyRequest.result))
 					}
 					return
 				}

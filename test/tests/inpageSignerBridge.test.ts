@@ -59,7 +59,7 @@ function createFakeWindow() {
 								requestId: request.requestId,
 								type: 'result',
 								method: 'connected_to_signer',
-								result: { metamaskCompatibilityMode: false, activeAddress: '' },
+								result: { metamaskCompatibilityMode: true, activeAddress: signerAccounts[0] },
 							},
 						})
 						return
@@ -117,6 +117,53 @@ describe('inpage signer bridge', () => {
 			await import('../../app/inpage/ts/inpage.js')
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
+			const provider = fakeWindow.ethereum as {
+				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { jsonrpc: '2.0', id: string | number | null, result: unknown }
+				sendAsync: (payload: unknown, callback: (error: unknown, response: unknown) => void) => Promise<void>
+				on: (eventName: string, callback: (value: unknown) => void) => void
+			}
+			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: signerAccounts[0] })
+			let batchCallbackCount = 0
+			const batchReply = await new Promise<unknown>((resolve, reject) => {
+				provider.sendAsync([
+					{ id: 91, method: 'eth_chainId', params: [] },
+					{ id: 92, method: 'eth_accounts', params: [] },
+				], (error, response) => {
+					batchCallbackCount++
+					if (error !== null) {
+						reject(error)
+						return
+					}
+					resolve(response)
+				})
+			})
+			assert.equal(batchCallbackCount, 1)
+			assert.deepEqual(batchReply, [
+				{ jsonrpc: '2.0', id: 91, result: '0x' },
+				{ jsonrpc: '2.0', id: 92, result: '0x' },
+			])
+			const connectEvents: unknown[] = []
+			provider.on('connect', (value) => connectEvents.push(value))
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'disconnect',
+					result: [],
+				},
+			})
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'connect',
+					result: ['0x1'],
+				},
+			})
+			await waitFor(() => connectEvents.length === 1)
+			assert.deepEqual(connectEvents, [{ chainId: '0x1' }])
 
 			fakeWindow.dispatchEvent({
 				type: 'message',
