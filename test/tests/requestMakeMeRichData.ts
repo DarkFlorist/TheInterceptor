@@ -108,7 +108,7 @@ export async function main() {
 			} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService
 
 			const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined))
-			assert.equal(reply.type, 'RequestMakeMeRichDataReply')
+			assert.equal(reply.method, 'popup_requestMakeMeRichData')
 			assert.equal(reply.makeCurrentAddressRich, true)
 			assert.equal(reply.richList.length, 2)
 			assert.equal(reply.richList[0]?.addressBookEntry.address, ETHEREUM_LOGS_LOGGER_ADDRESS)
@@ -137,7 +137,7 @@ export async function main() {
 
 			const reply = await withSilencedConsole(async () => await requestMakeMeRichList({} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService, undefined))
 
-			assert.equal(reply.type, 'RequestMakeMeRichDataReply')
+			assert.equal(reply.method, 'popup_requestMakeMeRichData')
 			assert.equal(reply.makeCurrentAddressRich, false)
 			assert.equal(storageState.makeCurrentAddressRich, false)
 		})
@@ -151,7 +151,7 @@ export async function main() {
 
 			const reply = await withSilencedConsole(async () => await requestActiveAddresses())
 
-			assert.equal(reply.type, 'RequestActiveAddressesReply')
+			assert.equal(reply.method, 'popup_requestActiveAddresses')
 			assert.deepEqual(reply.activeAddresses, defaultActiveAddresses)
 			assert.ok(Array.isArray(storageState.userAddressBookEntriesV3))
 			assert.deepEqual(await getUserAddressBookEntries(), defaultActiveAddresses)
@@ -164,7 +164,7 @@ export async function main() {
 
 			const reply = await withSilencedConsole(async () => await requestLatestUnexpectedError())
 
-			assert.equal(reply.type, 'RequestLatestUnexpectedErrorReply')
+			assert.equal(reply.method, 'popup_requestLatestUnexpectedError')
 			assert.equal(reply.latestUnexpectedError, undefined)
 			assert.equal(storageState.latestUnexpectedError, undefined)
 		})
@@ -176,7 +176,7 @@ export async function main() {
 
 			const reply = await withSilencedConsole(async () => await requestSimulationMode())
 
-			assert.equal(reply.type, 'RequestSimulationModeReply')
+			assert.equal(reply.method, 'popup_requestSimulationMode')
 			assert.equal(reply.simulationMode, true)
 			assert.equal(storageState.simulationMode, true)
 		})

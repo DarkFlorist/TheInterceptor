@@ -29,7 +29,7 @@ function createBrowserMock() {
 			lastError: null,
 			async sendMessage(message: RuntimeMessage) {
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 				}
 				return undefined
 			},
@@ -159,7 +159,7 @@ export async function main() {
 	}
 
 	const removeTransaction = async (transactionIdentifier: bigint) => {
-		await modules.removeTransactionOrSignedMessage(simulator, {
+		await modules.removeTransactionOrSignedMessage(simulator, undefined, {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier },
 		})
