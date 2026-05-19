@@ -144,7 +144,7 @@ describe('backgroundUtils messaging', () => {
 			method: 'popup_requestLatestUnexpectedError',
 			latestUnexpectedError: {
 				method: 'popup_UnexpectedErrorOccured',
-				data: { timestamp, message: 'boom' },
+				data: { timestamp, message: 'boom', source: 'internal', code: 'unexpected_error', debugId: 'debug-1234' },
 			},
 		})
 
@@ -153,6 +153,9 @@ describe('backgroundUtils messaging', () => {
 		assert.equal(reply?.method, 'popup_requestLatestUnexpectedError')
 		assert.equal(reply?.latestUnexpectedError?.data.message, 'boom')
 		assert.equal(reply?.latestUnexpectedError?.data.timestamp.valueOf(), timestamp.valueOf())
+		assert.equal(reply?.latestUnexpectedError?.data.source, 'internal')
+		assert.equal(reply?.latestUnexpectedError?.data.code, 'unexpected_error')
+		assert.equal(reply?.latestUnexpectedError?.data.debugId, 'debug-1234')
 	})
 
 	test('reports request-specific parse errors for mismatched popup replies', async () => {

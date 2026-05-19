@@ -160,9 +160,58 @@ interface EIP6963ProviderInfo {
 }
 
 type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
+type ForwardedDiagnosticsRequestContext = {
+	readonly requestId?: number
+	readonly requestMethod?: string
+}
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
+
+function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function stringifyForwardedThrownValue(value: unknown) {
+	if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
+	if (typeof value === 'bigint') return value.toString()
+	try {
+		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
+		if (stringified !== undefined) return stringified
+	} catch (_error) {}
+	return String(value)
+}
+
+function getForwardedDiagnosticsSummary(error: unknown) {
+	if (error instanceof Error) return error.message
+	if (typeof error === 'string') return error
+	if (error === undefined) return 'Unexpected thrown value: undefined'
+	if (error === null) return 'Unexpected thrown value: null'
+	if (isForwardedDiagnosticsRecord(error) && typeof error['message'] === 'string') return error['message']
+	return String(error)
+}
+
+function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnosticsRequestContext {
+	if (!isForwardedDiagnosticsRecord(value)) return {}
+	return {
+		...(typeof value['requestId'] === 'number' ? { requestId: value['requestId'] } : {}),
+		...(typeof value['method'] === 'string' ? { requestMethod: value['method'] } : {}),
+	}
+}
+
+function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
+	return [
+		`${ source }: ${ summary }`,
+		`phase: ${ phase }`,
+		...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []),
+		...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []),
+		`thrown:\n${ stringifyForwardedThrownValue(thrown) }`,
+	].join('\n\n')
+}
+
+function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
+	return formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
+}
 
 class InterceptorMessageListener {
 	private connected = false
@@ -210,6 +259,21 @@ class InterceptorMessageListener {
 			throw error
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
+		}
+	}
+
+	private readonly reportInterceptorError = (diagnostics: string) => {
+		try {
+			window.postMessage({
+				interceptorRequest: true,
+				method: 'InterceptorError',
+				params: [diagnostics],
+				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
+				requestId: -1,
+			}, '*')
+		} catch(reportingError: unknown) {
+			console.error('Failed to report InterceptorError diagnostics')
+			console.error(reportingError)
 		}
 	}
 
@@ -593,11 +657,11 @@ class InterceptorMessageListener {
 		} catch(error: unknown) {
 			console.error(messageEvent)
 			console.error(error)
-			await this.sendMessageToBackgroundPage({ method: 'InterceptorError', params: [error] })
+			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			const requestId = 'requestId' in messageEvent.data && typeof messageEvent.data.requestId === 'number' ? messageEvent.data.requestId : undefined
 			if (requestId === undefined) return
 			const pendingRequest = this.outstandingRequests.get(requestId)
-			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+			if (pendingRequest === undefined) return
 			if (error instanceof Error) return pendingRequest.reject(error)
 			return pendingRequest.reject(this.parseRpcError(error))
 		}

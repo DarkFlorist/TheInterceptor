@@ -8,7 +8,13 @@ import { CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
-	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
+	data: funtypes.ReadonlyObject({
+		timestamp: EthereumTimestamp,
+		message: funtypes.String,
+		source: funtypes.String,
+		code: funtypes.String,
+		debugId: funtypes.Union(funtypes.String, funtypes.Undefined),
+	})
 })
 
 export type EnrichedRichListElement = funtypes.Static<typeof EnrichedRichListElement>
