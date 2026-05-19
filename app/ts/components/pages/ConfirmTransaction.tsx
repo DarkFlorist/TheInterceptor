@@ -44,6 +44,16 @@ const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulatio
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
+export function shouldDisableSignableMessageConfirm(params: {
+	isValidMessage: boolean
+	canSignMessage: boolean
+	forceSendEnabled: boolean
+	hasSupportedRpc: boolean
+}) {
+	if (!params.isValidMessage) return true
+	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
+}
+
 function UnderTransactions(param: UnderTransactionsParams) {
 	const absoluteStyle = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'
 	const nTx = param.pendingTransactionsAndSignableMessages.value.length
@@ -552,9 +562,12 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
-			if (currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage !== true) return true
-			return !isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress) && !forceSend
-			&& currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc === undefined
+			return shouldDisableSignableMessageConfirm({
+				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
+				canSignMessage: isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress),
+				forceSendEnabled: forceSend.value,
+				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+			})
 		}
 		if (forceSend.value) return false
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
