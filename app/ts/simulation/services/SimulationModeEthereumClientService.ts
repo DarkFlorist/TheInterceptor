@@ -7,7 +7,7 @@ import { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulatio
 import type { Abi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { hashMessage, hashTypedData, keccak256, stringToBytes } from 'viem/utils'
-import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
+import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -30,6 +30,8 @@ const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const EMPTY_TRIE_ROOT = 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421n
+const EMPTY_UNCLES_HASH = 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347n
 const getCodeAbi = [
 	{
 		type: 'function',
@@ -117,6 +119,21 @@ const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinim
 	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
 }
 
+const executionTransactionsTotalGasUsed = (simulatedTransactions: readonly ExecutionSimulatedTransaction[]) => {
+	return simulatedTransactions.reduce((totalGasUsed, simulatedTransaction) => totalGasUsed + simulatedTransaction.ethSimulateV1CallResult.gasUsed, 0n)
+}
+
+const getSimulationStateInputValue = (
+	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
+) => {
+	if (simulationStateInput === undefined) return undefined
+	return 'kind' in simulationStateInput
+		? simulationStateInput.kind === 'passthrough'
+			? undefined
+			: simulationStateInput.value
+		: simulationStateInput
+}
+
 const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => (
 	simulationStateInput.length === 0
 	|| (simulationStateInput.length === 1 && simulationStateInput[0]?.transactions.length === 0 && simulationStateInput[0]?.signedMessages.length === 0)
@@ -134,12 +151,7 @@ const createPreparedSimulationExecutionContext = async (
 	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
 	baseBlockTag: EthereumBlockTag = 'latest',
 ): Promise<PreparedSimulationExecutionContext | undefined> => {
-	if (simulationStateInput === undefined) return undefined
-	const resolvedSimulationInput = 'kind' in simulationStateInput
-		? simulationStateInput.kind === 'passthrough'
-			? undefined
-			: simulationStateInput.value
-		: simulationStateInput
+	const resolvedSimulationInput = getSimulationStateInputValue(simulationStateInput)
 	if (resolvedSimulationInput === undefined) return undefined
 	if (isEmptySimulationInput(resolvedSimulationInput)) return undefined
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
@@ -180,6 +192,254 @@ const createPreparedSimulationExecutionContext = async (
 		prepared,
 		executionBlocks,
 	}
+}
+
+const hashRlp = (items: Parameters<typeof rlpEncode>[0]) => BigInt(keccak256(rlpEncode(items)))
+
+const getSerializedTransactions = (transactions: readonly EthereumSendableSignedTransaction[]) => transactions.map((transaction) => serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(transaction)))
+
+const getLogsBloom = (logs: readonly EthereumEvent[]) => {
+	let bloom = 0n
+	for (const log of logs) {
+		const bloomInputs = [bigintToUint8Array(log.address, 20), ...log.topics.map((topic) => bigintToUint8Array(topic, 32))]
+		for (const bloomInput of bloomInputs) {
+			const hashed = stringToUint8Array(keccak256(bloomInput))
+			for (let offset = 0; offset < 6; offset += 2) {
+				const bitPosition = ((hashed[offset] ?? 0) << 8 | (hashed[offset + 1] ?? 0)) & 2047
+				bloom |= 1n << BigInt(bitPosition)
+			}
+		}
+	}
+	return bloom
+}
+
+const getSyntheticReceipts = (simulatedTransactions: readonly ExecutionSimulatedTransaction[]) => {
+	let cumulativeGasUsed = 0n
+	return simulatedTransactions.map((simulatedTransaction) => {
+		const receiptLogs = simulatedTransaction.ethSimulateV1CallResult.status === 'success' ? simulatedTransaction.ethSimulateV1CallResult.logs : []
+		const logsBloom = getLogsBloom(receiptLogs)
+		cumulativeGasUsed += simulatedTransaction.ethSimulateV1CallResult.gasUsed
+		return {
+			cumulativeGasUsed,
+			logs: receiptLogs,
+			logsBloom,
+			status: simulatedTransaction.ethSimulateV1CallResult.status,
+		}
+	})
+}
+
+const getSyntheticTransactionsRoot = (transactions: readonly EthereumSendableSignedTransaction[]) => {
+	const serializedTransactions = getSerializedTransactions(transactions)
+	if (serializedTransactions.length === 0) return EMPTY_TRIE_ROOT
+	return hashRlp([...serializedTransactions])
+}
+
+const getSyntheticReceiptsRoot = (simulatedTransactions: readonly ExecutionSimulatedTransaction[]) => {
+	const syntheticReceipts = getSyntheticReceipts(simulatedTransactions)
+	if (syntheticReceipts.length === 0) return EMPTY_TRIE_ROOT
+	return hashRlp(syntheticReceipts.map((receipt) => [
+		new Uint8Array([receipt.status === 'success' ? 1 : 0]),
+		stripLeadingZeros(bigintToUint8Array(receipt.cumulativeGasUsed, 32)),
+		bigintToUint8Array(receipt.logsBloom, 256),
+		receipt.logs.map((log) => [
+			bigintToUint8Array(log.address, 20),
+			log.topics.map((topic) => bigintToUint8Array(topic, 32)),
+			log.data,
+		]),
+	]))
+}
+
+const getSyntheticMixHash = (parentHash: bigint, blockHash: bigint) => hashRlp([
+	stringToBytes('mixHash'),
+	bigintToUint8Array(parentHash, 32),
+	bigintToUint8Array(blockHash, 32),
+])
+
+const getSyntheticStateRoot = (parentHash: bigint, blockHash: bigint, transactionsRoot: bigint, receiptsRoot: bigint) => hashRlp([
+	stringToBytes('stateRoot'),
+	bigintToUint8Array(parentHash, 32),
+	bigintToUint8Array(blockHash, 32),
+	bigintToUint8Array(transactionsRoot, 32),
+	bigintToUint8Array(receiptsRoot, 32),
+])
+
+const getApproximateBlockSize = (serializedTransactions: readonly Uint8Array[], receiptsPayloadLength = 0) => {
+	const transactionsPayloadLength = serializedTransactions.length === 0 ? 0 : rlpEncode([...serializedTransactions]).length
+	return BigInt(512 + transactionsPayloadLength + receiptsPayloadLength)
+}
+
+const withResolvedExecutionBlockGasAndBaseFee = (
+	parentBlock: NonNullable<EthereumBlockHeader>,
+	executionBlocks: readonly PreparedSimulatedExecutionBlock[],
+) => {
+	let previousGasUsed = parentBlock.gasUsed
+	let previousBaseFeePerGas = parentBlock.baseFeePerGas
+	return executionBlocks.map((executionBlock) => {
+		const gasUsed = executionTransactionsTotalGasUsed(executionBlock.simulatedTransactions)
+		const baseFeePerGas = executionBlock.inputBlock.simulateWithZeroBaseFee
+			? 0n
+			: previousBaseFeePerGas === undefined
+				? undefined
+				: getNextBaseFeePerGas(previousGasUsed, parentBlock.gasLimit, previousBaseFeePerGas)
+		const simulatedTransactions = executionBlock.simulatedTransactions.map((simulatedTransaction) => ({
+			...simulatedTransaction,
+			realizedGasPrice: calculateRealizedEffectiveGasPrice(simulatedTransaction.preSimulationTransaction.signedTransaction, baseFeePerGas ?? 0n),
+		}))
+		previousGasUsed = gasUsed
+		previousBaseFeePerGas = baseFeePerGas
+		return {
+			...executionBlock,
+			gasUsed,
+			baseFeePerGas,
+			simulatedTransactions,
+		}
+	})
+}
+
+type ExecutionBlockMetadataSource = {
+	blockHash: bigint
+	parentHash: bigint
+	blockNumber: bigint
+	blockTimestamp: Date
+	gasUsed: bigint
+	baseFeePerGas: bigint | undefined
+	totalDifficulty: bigint
+	simulatedTransactions: readonly ExecutionSimulatedTransaction[]
+}
+
+const getSimulatedMockBlockFromExecutionBlock = (
+	parentBlock: NonNullable<EthereumBlockHeader>,
+	block: ExecutionBlockMetadataSource,
+) => {
+	const transactions = block.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction.signedTransaction)
+	const serializedTransactions = getSerializedTransactions(transactions)
+	const receipts = getSyntheticReceipts(block.simulatedTransactions)
+	const receiptsPayloadLength = receipts.length === 0 ? 0 : rlpEncode(receipts.map((receipt) => [
+		new Uint8Array([receipt.status === 'success' ? 1 : 0]),
+		stripLeadingZeros(bigintToUint8Array(receipt.cumulativeGasUsed, 32)),
+		bigintToUint8Array(receipt.logsBloom, 256),
+		receipt.logs.map((log) => [
+			bigintToUint8Array(log.address, 20),
+			log.topics.map((topic) => bigintToUint8Array(topic, 32)),
+			log.data,
+		]),
+	])).length
+	const transactionsRoot = transactions.length === 0 ? EMPTY_TRIE_ROOT : hashRlp(serializedTransactions)
+	const receiptsRoot = getSyntheticReceiptsRoot(block.simulatedTransactions)
+	return {
+		author: parentBlock.miner,
+		difficulty: parentBlock.difficulty,
+		extraData: parentBlock.extraData,
+		gasLimit: parentBlock.gasLimit,
+		gasUsed: block.gasUsed,
+		hash: block.blockHash,
+		logsBloom: receipts.reduce((bloom, receipt) => bloom | receipt.logsBloom, 0n),
+		miner: parentBlock.miner,
+		mixHash: getSyntheticMixHash(block.parentHash, block.blockHash),
+		nonce: parentBlock.nonce,
+		number: block.blockNumber,
+		parentHash: block.parentHash,
+		receiptsRoot,
+		sha3Uncles: EMPTY_UNCLES_HASH,
+		stateRoot: getSyntheticStateRoot(block.parentHash, block.blockHash, transactionsRoot, receiptsRoot),
+		timestamp: block.blockTimestamp,
+		size: getApproximateBlockSize(serializedTransactions, receiptsPayloadLength),
+		totalDifficulty: block.totalDifficulty,
+		uncles: [],
+		baseFeePerGas: block.baseFeePerGas,
+		transactionsRoot,
+		transactions,
+		withdrawals: [],
+		withdrawalsRoot: EMPTY_TRIE_ROOT,
+	} as const
+}
+
+const createPreparedSimulatedExecutionBlocksFromInput = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationStateInput: ResolvedSimulationInput,
+) => {
+	if (simulationStateInput.kind === 'passthrough') return undefined
+	const resolvedSimulationInput = simulationStateInput.value
+	if (isEmptySimulationInput(resolvedSimulationInput)) return undefined
+	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	const { prepared, result } = await ethereumClientService.simulatePrepared(resolvedSimulationInput, parentBlock.number, requestAbortController)
+	let previousBlockHash = parentBlock.hash
+	let previousGasUsed = parentBlock.gasUsed
+	let previousBaseFeePerGas = parentBlock.baseFeePerGas
+	let previousBlockNumber = parentBlock.number
+	let previousTotalDifficulty = parentBlock.totalDifficulty ?? 0n
+	let executionBlockOffset = 0
+	const executionBlocks = prepared.inputBlocks.flatMap((preparedInputBlock, inputBlockIndex) => {
+		const sourceInputBlock = resolvedSimulationInput[inputBlockIndex]
+		if (sourceInputBlock === undefined) throw new Error('missing simulation input block while splitting execution results')
+		let transactionOffset = 0
+		const executionBlocksForInputBlock = Array.from({ length: preparedInputBlock.rpcBlockCount }, () => {
+			const blockOverride = prepared.blockOverrides[executionBlockOffset]
+			const rpcBlock = prepared.rpcBlocks[executionBlockOffset]
+			const resultBlock = result[executionBlockOffset]
+			if (blockOverride === undefined) throw new Error('missing block override while building execution blocks')
+			if (blockOverride.time === undefined) throw new Error('missing timestamp while building execution blocks')
+			if (rpcBlock === undefined) throw new Error('missing prepared rpc block while building execution blocks')
+			if (resultBlock === undefined) throw new Error('missing simulation result block while building execution blocks')
+			const transactionCount = rpcBlock.transactions.length
+			const sourceTransactions = sourceInputBlock.transactions.slice(transactionOffset, transactionOffset + transactionCount)
+			const rpcTransactions = rpcBlock.transactions.slice(0, transactionCount)
+			if (sourceTransactions.length !== transactionCount || rpcTransactions.length !== transactionCount) {
+				throw new Error('prepared rpc block transaction count did not match source input transactions')
+			}
+			if (resultBlock.calls.length !== transactionCount) throw new Error('simulation result transaction count did not match prepared block')
+			const gasUsed = resultBlock.calls.reduce((totalGasUsed, call) => totalGasUsed + call.gasUsed, 0n)
+			const baseFeePerGas = rpcBlock.simulateWithZeroBaseFee
+				? 0n
+				: previousBaseFeePerGas === undefined
+					? undefined
+					: getNextBaseFeePerGas(previousGasUsed, parentBlock.gasLimit, previousBaseFeePerGas)
+			const blockHash = getHashOfSimulatedBlockFromInput(resolvedSimulationInput, executionBlockOffset)
+			const blockNumber = previousBlockNumber + 1n
+			const simulatedTransactions: readonly ExecutionSimulatedTransaction[] = sourceTransactions.map((sourceTransaction, transactionIndex) => {
+				const preparedTransaction = rpcTransactions[transactionIndex]
+				const callResult = resultBlock.calls[transactionIndex]
+				if (preparedTransaction === undefined) throw new Error('missing prepared transaction while building execution block')
+				if (callResult === undefined) throw new Error('missing call result while building execution block')
+				const preSimulationTransaction: PreSimulationTransaction = {
+					signedTransaction: preparedTransaction.signedTransaction,
+					website: sourceTransaction.website,
+					created: sourceTransaction.created,
+					originalRequestParameters: sourceTransaction.originalRequestParameters,
+					transactionIdentifier: sourceTransaction.transactionIdentifier,
+				}
+				return {
+					preSimulationTransaction,
+					ethSimulateV1CallResult: callResult,
+					realizedGasPrice: calculateRealizedEffectiveGasPrice(preparedTransaction.signedTransaction, baseFeePerGas ?? 0n),
+				}
+			})
+			const executionBlock = {
+				inputBlock: rpcBlock,
+				blockNumber,
+				blockHash,
+				parentHash: previousBlockHash,
+				blockTimestamp: blockOverride.time,
+				gasUsed,
+				baseFeePerGas,
+				totalDifficulty: previousTotalDifficulty + parentBlock.difficulty,
+				simulatedTransactions,
+			}
+			previousBlockHash = blockHash
+			previousGasUsed = gasUsed
+			previousBaseFeePerGas = baseFeePerGas
+			previousBlockNumber = blockNumber
+			previousTotalDifficulty = executionBlock.totalDifficulty
+			executionBlockOffset += 1
+			transactionOffset += transactionCount
+			return executionBlock
+		})
+		if (transactionOffset !== sourceInputBlock.transactions.length) throw new Error('source transactions remained after splitting execution blocks')
+		return executionBlocksForInputBlock
+	})
+	return { parentBlock, executionBlocks }
 }
 
 const resolveSimulationBlockTag = (
@@ -580,7 +840,7 @@ const createPreparedSimulatedExecutionBlocks = async (
 	)
 	if (context === undefined) return []
 	let executionBlockOffset = 0
-	return context.prepared.inputBlocks.flatMap((preparedInputBlock, inputBlockIndex) => {
+	const executionBlocks = context.prepared.inputBlocks.flatMap((preparedInputBlock, inputBlockIndex) => {
 		const simulatedBlock = simulationState.simulatedBlocks[inputBlockIndex]
 		if (simulatedBlock === undefined) throw new Error('missing simulated block while splitting execution blocks')
 		let transactionOffset = 0
@@ -602,6 +862,7 @@ const createPreparedSimulatedExecutionBlocks = async (
 		if (transactionOffset !== simulatedBlock.simulatedTransactions.length) throw new Error('simulated transactions remained after splitting execution blocks')
 		return executionBlocksForInputBlock
 	})
+	return withResolvedExecutionBlockGasAndBaseFee(context.parentBlock, executionBlocks)
 }
 
 export const getPreSimulated = (simulatedTransactions: readonly SimulatedTransaction[]) => simulatedTransactions.map((transaction) => transaction.preSimulationTransaction)
@@ -742,6 +1003,9 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				currentLogIndex += simulatedTransaction.ethSimulateV1CallResult.status === 'success' ? simulatedTransaction.ethSimulateV1CallResult.logs.length : 0
 				continue
 			}
+			const receiptLogs = simulatedTransaction.ethSimulateV1CallResult.status === 'success'
+				? simulatedTransaction.ethSimulateV1CallResult.logs
+				: []
 			return {
 				...getTransactionSpecificFields(simulatedTransaction.preSimulationTransaction.signedTransaction),
 				blockHash: executionBlock.blockHash,
@@ -754,8 +1018,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				effectiveGasPrice: calculateRealizedEffectiveGasPrice(simulatedTransaction.preSimulationTransaction.signedTransaction, executionBlock.baseFeePerGas || 0n),
 				from: simulatedTransaction.preSimulationTransaction.signedTransaction.from,
 				to: simulatedTransaction.preSimulationTransaction.signedTransaction.to,
-				logs: simulatedTransaction.ethSimulateV1CallResult.status === 'success'
-					? simulatedTransaction.ethSimulateV1CallResult.logs.map((x, logIndex) => ({
+				logs: receiptLogs.map((x, logIndex) => ({
 						removed: false,
 						blockHash: executionBlock.blockHash,
 						address: x.address,
@@ -765,9 +1028,8 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 						blockNumber: executionBlock.blockNumber,
 						transactionIndex: BigInt(transactionIndex),
 						transactionHash: simulatedTransaction.preSimulationTransaction.signedTransaction.hash
-					}))
-					: [],
-				logsBloom: 0x0n, //TODO: what should this be?
+					})),
+				logsBloom: getLogsBloom(receiptLogs),
 				status: simulatedTransaction.ethSimulateV1CallResult.status
 			}
 		}
@@ -842,6 +1104,12 @@ const getSimulatedMockBlockFromPreparedContext = async (
 	const block = context.executionBlocks[blockIndex]
 	if (block === undefined) return null
 	const parentBlock = context.parentBlock
+	const transactions = block.inputBlock.transactions.map((transaction) => transaction.signedTransaction)
+	const serializedTransactions = getSerializedTransactions(transactions)
+	const transactionsRoot = getSyntheticTransactionsRoot(transactions)
+	const receiptsRoot = transactions.length === 0
+		? EMPTY_TRIE_ROOT
+		: hashRlp(transactions.map((transaction) => bigintToUint8Array(transaction.hash, 32)))
 	return {
 		author: parentBlock.miner,
 		difficulty: parentBlock.difficulty,
@@ -849,24 +1117,24 @@ const getSimulatedMockBlockFromPreparedContext = async (
 		gasLimit: parentBlock.gasLimit,
 		gasUsed: block.gasUsed,
 		hash: block.blockHash,
-		logsBloom: parentBlock.logsBloom, // TODO: this is wrong
+		logsBloom: 0n,
 		miner: parentBlock.miner,
-		mixHash: parentBlock.mixHash, // TODO: this is wrong
+		mixHash: getSyntheticMixHash(block.parentHash, block.blockHash),
 		nonce: parentBlock.nonce,
 		number: block.blockNumber,
 		parentHash: block.parentHash,
-		receiptsRoot: parentBlock.receiptsRoot, // TODO: this is wrong
-		sha3Uncles: parentBlock.sha3Uncles, // TODO: this is wrong
-		stateRoot: parentBlock.stateRoot, // TODO: this is wrong
+		receiptsRoot,
+		sha3Uncles: EMPTY_UNCLES_HASH,
+		stateRoot: getSyntheticStateRoot(block.parentHash, block.blockHash, transactionsRoot, receiptsRoot),
 		timestamp: block.blockTimestamp,
-		size: parentBlock.size, // TODO: this is wrong
+		size: getApproximateBlockSize(serializedTransactions),
 		totalDifficulty: block.totalDifficulty,
 		uncles: [],
 		baseFeePerGas: block.baseFeePerGas,
-		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
-		transactions: block.inputBlock.transactions.map((transaction) => transaction.signedTransaction),
+		transactionsRoot,
+		transactions,
 		withdrawals: [],
-		withdrawalsRoot: 0n, // TODO: this is wrong
+		withdrawalsRoot: EMPTY_TRIE_ROOT,
 	} as const
 }
 
@@ -926,7 +1194,11 @@ export async function getSimulatedBlockFromInput(ethereumClientService: Ethereum
 	}
 	const blockIndex = getExecutionBlockIndexForTag(context.parentBlock.number, context.executionBlocks.length, blockTag)
 	if (blockIndex === undefined) return null
-	const block = await getSimulatedMockBlockFromPreparedContext(context, blockIndex)
+	const executionArtifacts = await createPreparedSimulatedExecutionBlocksFromInput(ethereumClientService, requestAbortController, simulationStateInput)
+	if (executionArtifacts === undefined) return await ethereumClientService.getBlock(requestAbortController, blockTag, fullObjects)
+	const executionBlock = executionArtifacts.executionBlocks[blockIndex]
+	if (executionBlock === undefined) return null
+	const block = getSimulatedMockBlockFromExecutionBlock(executionArtifacts.parentBlock, executionBlock)
 	if (block === null) return null
 	if (fullObjects) return block
 	return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }
@@ -943,7 +1215,11 @@ export const getSimulatedBlockByHashFromInput = async (
 	if (context === undefined) return await ethereumClientService.getBlockByHash(blockHash, requestAbortController, fullObjects)
 	const blockIndex = context.executionBlocks.findIndex((block) => block.blockHash === blockHash)
 	if (blockIndex < 0) return await ethereumClientService.getBlockByHash(blockHash, requestAbortController, fullObjects)
-	const block = await getSimulatedMockBlockFromPreparedContext(context, blockIndex)
+	const executionArtifacts = await createPreparedSimulatedExecutionBlocksFromInput(ethereumClientService, requestAbortController, simulationStateInput)
+	if (executionArtifacts === undefined) return await ethereumClientService.getBlockByHash(blockHash, requestAbortController, fullObjects)
+	const executionBlock = executionArtifacts.executionBlocks[blockIndex]
+	if (executionBlock === undefined) return null
+	const block = getSimulatedMockBlockFromExecutionBlock(executionArtifacts.parentBlock, executionBlock)
 	if (block === null) return null
 	if (fullObjects) return block
 	return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }
@@ -955,21 +1231,22 @@ export const getSimulatedTransactionByHashFromInput = async (
 	simulationStateInput: ResolvedSimulationInput,
 	hash: bigint,
 ): Promise<EthereumSignedTransactionWithBlockData | null> => {
-		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
-		if (context === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
-		for (const executionBlock of context.executionBlocks) {
-			for (const [transactionIndex, transaction] of executionBlock.inputBlock.transactions.entries()) {
-				if (transaction.signedTransaction.hash !== hash) continue
-				const v = getSignedTransactionV(transaction.signedTransaction)
-				const gasPrice = 'gasPrice' in transaction.signedTransaction
-					? transaction.signedTransaction.gasPrice
-					: calculateRealizedEffectiveGasPrice(transaction.signedTransaction, executionBlock.baseFeePerGas || 0n)
-				return {
-				...transaction.signedTransaction,
+	const executionArtifacts = await createPreparedSimulatedExecutionBlocksFromInput(ethereumClientService, requestAbortController, simulationStateInput)
+	if (executionArtifacts === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
+	for (const executionBlock of executionArtifacts.executionBlocks) {
+		for (const [transactionIndex, simulatedTransaction] of executionBlock.simulatedTransactions.entries()) {
+			const transaction = simulatedTransaction.preSimulationTransaction.signedTransaction
+			if (transaction.hash !== hash) continue
+			const v = getSignedTransactionV(transaction)
+			const gasPrice = 'gasPrice' in transaction
+				? transaction.gasPrice
+				: calculateRealizedEffectiveGasPrice(transaction, executionBlock.baseFeePerGas || 0n)
+			return {
+				...transaction,
 				blockHash: executionBlock.blockHash,
 				blockNumber: executionBlock.blockNumber,
 				transactionIndex: BigInt(transactionIndex),
-				data: transaction.signedTransaction.input,
+				data: transaction.input,
 				v,
 				gasPrice,
 			}
@@ -1147,35 +1424,52 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)
 	const simulatedBlock = simulationState.simulatedBlocks[blockDelta]
 	const blockHeaderTemplate = getSimulatedBlockHeaderTemplate(simulationState, blockDelta)
+	const blockHash = getHashOfSimulatedBlock(simulationState, blockDelta)
+	const blockNumber = getSimulationBlockNumber(simulationState, blockDelta)
 	const parentHash = blockDelta === 0 ? blockHeaderTemplate?.parentHash ?? parentBlock.hash : getHashOfSimulatedBlock(simulationState, blockDelta - 1)
+	const blockTimestamp = simulatedBlock?.blockTimestamp || bigintSecondsToDate((dateToBigintSeconds(simulationState.blockTimestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit)))
+	const totalDifficulty = blockHeaderTemplate?.totalDifficulty ?? ((parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty)
+	const baseFeePerGas = simulatedBlock?.blockBaseFeePerGas ?? getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas)
+	const synthesizedBlock = simulatedBlock === undefined
+		? undefined
+		: getSimulatedMockBlockFromExecutionBlock(parentBlock, {
+			blockNumber,
+			blockHash,
+			parentHash,
+			blockTimestamp,
+			gasUsed: transactionQueueTotalGasUsed(simulatedBlock.simulatedTransactions),
+			baseFeePerGas,
+			totalDifficulty,
+			simulatedTransactions: simulatedBlock.simulatedTransactions,
+		})
 	return {
 		author: blockHeaderTemplate?.miner ?? parentBlock.miner,
 		difficulty: blockHeaderTemplate?.difficulty ?? parentBlock.difficulty,
 		extraData: blockHeaderTemplate?.extraData ?? parentBlock.extraData,
 		gasLimit: blockHeaderTemplate?.gasLimit ?? parentBlock.gasLimit,
-		gasUsed: blockHeaderTemplate?.gasUsed ?? transactionQueueTotalGasUsed(simulatedBlock?.simulatedTransactions || []),
-		hash: getHashOfSimulatedBlock(simulationState, blockDelta),
-		logsBloom: blockHeaderTemplate?.logsBloom ?? parentBlock.logsBloom,
+		gasUsed: blockHeaderTemplate?.gasUsed ?? synthesizedBlock?.gasUsed ?? transactionQueueTotalGasUsed(simulatedBlock?.simulatedTransactions || []),
+		hash: blockHash,
+		logsBloom: blockHeaderTemplate?.logsBloom ?? synthesizedBlock?.logsBloom ?? 0n,
 		miner: blockHeaderTemplate?.miner ?? parentBlock.miner,
-		mixHash: blockHeaderTemplate?.mixHash ?? parentBlock.mixHash,
+		mixHash: blockHeaderTemplate?.mixHash ?? synthesizedBlock?.mixHash ?? getSyntheticMixHash(parentHash, blockHash),
 		nonce: blockHeaderTemplate?.nonce ?? parentBlock.nonce,
-		number: getSimulationBlockNumber(simulationState, blockDelta),
+		number: blockNumber,
 		parentHash,
-		receiptsRoot: blockHeaderTemplate?.receiptsRoot ?? parentBlock.receiptsRoot,
-		sha3Uncles: blockHeaderTemplate?.sha3Uncles ?? parentBlock.sha3Uncles,
-		stateRoot: blockHeaderTemplate?.stateRoot ?? parentBlock.stateRoot,
-		timestamp: simulatedBlock?.blockTimestamp || bigintSecondsToDate((dateToBigintSeconds(simulationState.blockTimestamp) + getBlockTimeManipulationSeconds(DEFAULT_BLOCK_MANIPULATION.deltaToAdd, DEFAULT_BLOCK_MANIPULATION.deltaUnit))),
-		size: blockHeaderTemplate?.size ?? parentBlock.size,
-		totalDifficulty: blockHeaderTemplate?.totalDifficulty ?? ((parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty),
+		receiptsRoot: blockHeaderTemplate?.receiptsRoot ?? synthesizedBlock?.receiptsRoot ?? EMPTY_TRIE_ROOT,
+		sha3Uncles: blockHeaderTemplate?.sha3Uncles ?? synthesizedBlock?.sha3Uncles ?? EMPTY_UNCLES_HASH,
+		stateRoot: blockHeaderTemplate?.stateRoot ?? synthesizedBlock?.stateRoot ?? getSyntheticStateRoot(parentHash, blockHash, EMPTY_TRIE_ROOT, EMPTY_TRIE_ROOT),
+		timestamp: blockTimestamp,
+		size: blockHeaderTemplate?.size ?? synthesizedBlock?.size ?? getApproximateBlockSize([]),
+		totalDifficulty,
 		uncles: blockHeaderTemplate?.uncles ?? [],
-		baseFeePerGas: simulatedBlock?.blockBaseFeePerGas ?? getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
-		transactionsRoot: blockHeaderTemplate?.transactionsRoot ?? parentBlock.transactionsRoot,
-		transactions: simulatedBlock?.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction.signedTransaction) || [],
+		baseFeePerGas,
+		transactionsRoot: blockHeaderTemplate?.transactionsRoot ?? synthesizedBlock?.transactionsRoot ?? EMPTY_TRIE_ROOT,
+		transactions: synthesizedBlock?.transactions ?? [],
 		withdrawals: blockHeaderTemplate?.withdrawals ?? [],
 		...(blockHeaderTemplate?.blobGasUsed !== undefined ? { blobGasUsed: blockHeaderTemplate.blobGasUsed } : {}),
 		...(blockHeaderTemplate?.excessBlobGas !== undefined ? { excessBlobGas: blockHeaderTemplate.excessBlobGas } : {}),
 		...(blockHeaderTemplate?.parentBeaconBlockRoot !== undefined ? { parentBeaconBlockRoot: blockHeaderTemplate.parentBeaconBlockRoot } : {}),
-		...(blockHeaderTemplate?.withdrawalsRoot !== undefined ? { withdrawalsRoot: blockHeaderTemplate.withdrawalsRoot } : {}),
+		...(blockHeaderTemplate?.withdrawalsRoot !== undefined ? { withdrawalsRoot: blockHeaderTemplate.withdrawalsRoot } : { withdrawalsRoot: synthesizedBlock?.withdrawalsRoot ?? EMPTY_TRIE_ROOT }),
 	} as const
 }
 

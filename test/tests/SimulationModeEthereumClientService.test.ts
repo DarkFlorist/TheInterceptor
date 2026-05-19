@@ -770,6 +770,64 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				assert.equal(secondBlock.number, firstBlock.number + 1n)
 			})
 
+			test('input-based split execution blocks use simulated gas usage to progress base fee', async () => {
+				const splitSimulationStateInput = [{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 0n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 15n,
+						},
+						{
+							signedTransaction: mockSignTransaction({
+								...exampleTransaction,
+								nonce: 1n,
+								gas: 20_000_000n,
+							}),
+							website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+							created: new Date(),
+							originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+							transactionIdentifier: 16n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
+				const secondBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 2n, true)
+				if (firstBlock === null || secondBlock === null) throw new Error('split execution block missing')
+				if (firstBlock.baseFeePerGas === undefined || secondBlock.baseFeePerGas === undefined) throw new Error('base fee missing')
+
+				assert.equal(firstBlock.gasUsed, 0x5208n)
+				assert.equal(secondBlock.gasUsed, 0x6dd4n)
+				assert.ok(secondBlock.baseFeePerGas < firstBlock.baseFeePerGas)
+			})
+
+			test('input-based simulated blocks synthesize block metadata from simulated content', async () => {
+				const simulationStateInput = createSimulationStateInput()
+				const parentBlock = await ethereum.getBlock(undefined, blockNumber, true)
+				const firstBlock = await getBlockFromInput(simulationStateInput, blockNumber + 1n, true)
+				if (parentBlock === null || firstBlock === null) throw new Error('block missing')
+
+				assert.notEqual(firstBlock.logsBloom, 0n)
+				assert.notEqual(firstBlock.logsBloom, parentBlock.logsBloom)
+				assert.notEqual(firstBlock.mixHash, parentBlock.mixHash)
+				assert.notEqual(firstBlock.receiptsRoot, parentBlock.receiptsRoot)
+				assert.notEqual(firstBlock.stateRoot, parentBlock.stateRoot)
+				assert.notEqual(firstBlock.size, parentBlock.size)
+				assert.notEqual(firstBlock.transactionsRoot, parentBlock.transactionsRoot)
+				assert.equal(firstBlock.withdrawalsRoot, 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421n)
+			})
+
 			test('state-based receipt uses execution block placement after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},
@@ -844,6 +902,20 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 				assert.equal(receipt.blockNumber, blockNumber + 1n)
 				assert.equal(receipt.logs[0]?.blockNumber, receipt.blockNumber)
+			})
+
+			test('state-based receipt derives logsBloom from simulated logs', async () => {
+				const simulationStateInput = createSimulationStateInput()
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const transactionHash = simulationStateInput[0].transactions[0]?.signedTransaction.hash
+				if (transactionHash === undefined) throw new Error('transaction hash missing')
+				const receipt = await getReceiptFromState(simulationState, transactionHash)
+				const block = await getBlockFromInput(simulationStateInput, blockNumber + 1n, true)
+				if (receipt === null || block === null) throw new Error('simulated artifact missing')
+
+				assert.notEqual(receipt.logsBloom, 0n)
+				assert.equal(receipt.logsBloom, block.logsBloom)
 			})
 
 			test('state-based logs honor the first simulated execution block hash after gas splitting', async () => {
