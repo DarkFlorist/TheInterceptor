@@ -274,7 +274,9 @@ function FirstCard(param: FirstCardParams) {
 }
 
 export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	return isEmptySimulationAndVisualisationResults(simulationAndVisualisationResults)
+	const simulationStateInput = simulationAndVisualisationResults.simulationStateInput
+	if (simulationStateInput === undefined) return isEmptySimulationAndVisualisationResults(simulationAndVisualisationResults)
+	return !simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 }
 
 type SimulationResultsHeaderParams = {
