@@ -224,13 +224,13 @@ export function AddressBook() {
 						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
 					}
 				}
-				}
-				if (parsed.method !== 'popup_getAddressBookDataReply') return false
-				const reply = GetAddressBookDataReply.parse(msg)
-				if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
-					addressBookEntriesWithFilter.value = {
-						addressBookEntries: reply.data.entries,
-						activeFilter: reply.data.data.filter,
+			}
+			if (parsed.method !== 'popup_getAddressBookDataReply') return false
+			const reply = GetAddressBookDataReply.parse(msg)
+			if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
+				addressBookEntriesWithFilter.value = {
+					addressBookEntries: reply.data.entries,
+					activeFilter: reply.data.data.filter,
 				}
 			}
 			return false
