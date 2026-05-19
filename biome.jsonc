@@ -19,8 +19,35 @@
 		"enabled": true,
 		"rules": {
 			"recommended": false,
+			"complexity": {
+				"noForEach": "error",
+				"noUselessTernary": "error",
+				"useArrowFunction": "error",
+				"useFlatMap": "error",
+				"useLiteralKeys": "error",
+				"useOptionalChain": "error"
+			},
 			"correctness": {
 				"noUnusedImports": "error"
+			},
+			"style": {
+				"noInferrableTypes": "error",
+				"noUnusedTemplateLiteral": "error",
+				"noUselessElse": "error",
+				"useConsistentArrayType": "error",
+				"useConst": "error",
+				"useDefaultParameterLast": "error"
+			},
+			"suspicious": {
+				"noAssignInExpressions": "error",
+				"noConsole": {
+					"level": "error",
+					"options": {
+						"allow": ["assert", "error", "info", "trace", "warn"]
+					}
+				},
+				"noDoubleEquals": "error",
+				"noExplicitAny": "error"
 			}
 		}
 	}
