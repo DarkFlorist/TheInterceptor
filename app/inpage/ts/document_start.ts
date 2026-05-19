@@ -81,7 +81,6 @@ function injectScript(_content: string) {
 
 		// forward all page messages to the background script, which will then filter and process them
 		// anything reaching this boundary is untrusted page input unless the extension proves otherwise
-		// biome-ignore lint/suspicious/noExplicitAny: MessageEvent default signature
 		globalThis.addEventListener('message', (messageEvent: MessageEvent<any>) => {
 			if (extensionPort === undefined) return
 			if (
@@ -169,5 +168,4 @@ function injectScript(_content: string) {
 	}
 }
 
-// biome-ignore lint/style/noUnusedTemplateLiteral: Required for script injection
 injectScript(`[[injected.ts]]`)

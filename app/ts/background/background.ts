@@ -169,7 +169,6 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
@@ -485,7 +484,6 @@ export async function popupMessageHandler(
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
-		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
 		return {

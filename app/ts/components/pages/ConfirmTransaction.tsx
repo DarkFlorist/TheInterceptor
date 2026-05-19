@@ -508,7 +508,6 @@ export function ConfirmTransaction() {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
 		} catch(error) {
 			console.warn('Failed to confirm transaction')
-			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 			console.log({ error })
 		}
 	}

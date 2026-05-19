@@ -643,7 +643,6 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.warn('Failed to update tab with new webpage')
-		// biome-ignore lint/suspicious/noConsoleLog: <used for support debugging>
 		console.log({ error })
 	}
 	finally {

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { test } from 'bun:test'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 
 type RuntimeMessage = {
