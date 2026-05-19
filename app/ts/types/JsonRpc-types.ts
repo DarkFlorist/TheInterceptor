@@ -370,7 +370,7 @@ export const GetFilterLogs = funtypes.ReadonlyObject({
 export type InterceptorError = funtypes.Static<typeof InterceptorError>
 export const InterceptorError = funtypes.ReadonlyObject({
 	method: funtypes.Literal('InterceptorError'),
-	params: funtypes.Unknown,
+	params: funtypes.ReadonlyTuple(funtypes.String),
 })
 
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>

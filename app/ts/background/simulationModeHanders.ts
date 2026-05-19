@@ -11,7 +11,7 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -186,7 +186,8 @@ export async function getFilterLogs(request: GetFilterLogs, ethereumClientServic
 }
 
 export async function handleIterceptorError(request: InterceptorError) {
-	await handleUnexpectedError(request)
+	console.error('Ignoring page-originated InterceptorError for popup display.')
+	printError(request)
 	return { type: 'doNotReply' as const }
 }
 

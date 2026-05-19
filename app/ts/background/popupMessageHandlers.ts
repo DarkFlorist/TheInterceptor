@@ -913,7 +913,10 @@ export async function fetchSimulationStackRequestConfirmation(ethereumClientServ
 }
 
 export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
-	return handleUnexpectedError(new Error(parsedRequest.data.message))
+	return handleUnexpectedError(new Error(parsedRequest.data.message), {
+		source: parsedRequest.data.source,
+		code: parsedRequest.data.code,
+	})
 }
 
 export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
