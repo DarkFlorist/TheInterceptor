@@ -2,6 +2,7 @@ import { render } from 'preact'
 
 type AttributeMap = Record<string, string | undefined>
 type RenderContainer = Parameters<typeof render>[1]
+const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
 class TestNode {
 	readonly nodeType: number = 0
@@ -177,28 +178,25 @@ export function installDomMock() {
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
 
-	// @ts-expect-error test shim intentionally overrides the DOM globals
-	globalThis.document = document
-	// @ts-expect-error test shim intentionally overrides the DOM globals
-	globalThis.window = { document }
-	// @ts-expect-error test shim intentionally overrides the timer globals
-	globalThis.setInterval = () => 1
-	globalThis.clearInterval = () => undefined
-	globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+	defineGlobal('document', document)
+	defineGlobal('window', { document })
+	defineGlobal('setInterval', () => 1)
+	defineGlobal('clearInterval', () => undefined)
+	defineGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
 		callback(0)
 		return 1
 	})
-	globalThis.cancelAnimationFrame = () => undefined
+	defineGlobal('cancelAnimationFrame', () => undefined)
 
 	return {
 		document,
 		restore() {
-			globalThis.document = previousDocument
-			globalThis.window = previousWindow
-			globalThis.setInterval = previousSetInterval
-			globalThis.clearInterval = previousClearInterval
-			globalThis.requestAnimationFrame = previousRequestAnimationFrame
-			globalThis.cancelAnimationFrame = previousCancelAnimationFrame
+			defineGlobal('document', previousDocument)
+			defineGlobal('window', previousWindow)
+			defineGlobal('setInterval', previousSetInterval)
+			defineGlobal('clearInterval', previousClearInterval)
+			defineGlobal('requestAnimationFrame', previousRequestAnimationFrame)
+			defineGlobal('cancelAnimationFrame', previousCancelAnimationFrame)
 		},
 	}
 }
@@ -220,15 +218,14 @@ export function installDateMock(initialNow: Date | string | number) {
 		static UTC = RealDate.UTC
 	}
 
-	// @ts-expect-error test shim intentionally overrides the global Date constructor
-	globalThis.Date = MockDate
+	defineGlobal('Date', MockDate)
 
 	return {
 		setNow(nextNow: Date | string | number) {
 			currentNow = new RealDate(nextNow).getTime()
 		},
 		restore() {
-			globalThis.Date = RealDate
+			defineGlobal('Date', RealDate)
 		},
 	}
 }

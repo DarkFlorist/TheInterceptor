@@ -1,6 +1,4 @@
-// @ts-nocheck
 import * as assert from 'assert'
-import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -8,6 +6,34 @@ import { installDateMock, installDomMock } from './domMock.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
+const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+const abiRuntimeModulePath = '../../app/ts/utils/abiRuntime.js'
+const interceptorMessagesModulePath = '../../app/ts/types/interceptor-messages.js'
+const wireTypesModulePath = '../../app/ts/types/wire-types.js'
+const confirmTransactionModulePath = '../../app/ts/components/pages/ConfirmTransaction.js'
+const ethereumClientServiceModulePath = '../../app/ts/simulation/services/EthereumClientService.js'
+const storageVariablesModulePath = '../../app/ts/background/storageVariables.js'
+const popupMessageHandlersModulePath = '../../app/ts/background/popupMessageHandlers.js'
+const storageUtilsModulePath = '../../app/ts/utils/storageUtils.js'
+const constantsModulePath = '../../app/ts/utils/constants.js'
+const ethSimulateTypesModulePath = '../../app/ts/types/ethSimulate-types.js'
+
+async function loadModules() {
+	return {
+		...await import(abiRuntimeModulePath),
+		...await import(interceptorMessagesModulePath),
+		...await import(wireTypesModulePath),
+		...await import(confirmTransactionModulePath),
+		...await import(ethereumClientServiceModulePath),
+		...await import(storageVariablesModulePath),
+		...await import(popupMessageHandlersModulePath),
+		...await import(storageUtilsModulePath),
+		...await import(constantsModulePath),
+		...await import(ethSimulateTypesModulePath),
+	}
+}
+
+const modulesPromise = loadModules()
 
 function createBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
@@ -20,8 +46,7 @@ function createBrowserMock() {
 		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
 
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.browser = {
+	const browserMock = {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: any) {
@@ -83,11 +108,11 @@ function createBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
+	defineGlobal('browser', browserMock)
+	defineGlobal('chrome', { runtime: { id: 'test-extension' } })
 
 	return {
-		storage: globalThis.browser.storage,
+		storage: browserMock.storage,
 		dispatch(message: unknown) {
 			for (const listener of [...listeners]) listener(message)
 		},
@@ -163,11 +188,9 @@ function makePendingTransaction(simulationConductedTimestamp: Date) {
 	return pendingTransaction
 }
 
-const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
-const { serialize } = await import('../../app/ts/types/wire-types.js')
-const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 describe('ConfirmTransaction', () => {
 	test('updates the simulation age when a refreshed pending transaction arrives', async () => {
+		const modules = await modulesPromise
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
@@ -175,13 +198,13 @@ describe('ConfirmTransaction', () => {
 		const newerPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:09.000Z'))
 
 		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
+			render(h(modules.ConfirmTransaction, {}), dom.document.body)
 		})
 
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+				...modules.serialize(modules.UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 				data: {
 					pendingTransactionAndSignableMessages: [olderPendingTransaction],
@@ -195,7 +218,7 @@ describe('ConfirmTransaction', () => {
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+				...modules.serialize(modules.UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 				data: {
 					pendingTransactionAndSignableMessages: [newerPendingTransaction],
@@ -211,14 +234,11 @@ describe('ConfirmTransaction', () => {
 	})
 
 	test('updates the simulation age when the real refresh flow runs', { timeout: 15_000 }, async () => {
+		const modules = await modulesPromise
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 		const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
-		const { updateInterceptorTransactionStack, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
-		const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 
 		const fakeRpcNetwork = {
 			name: 'Test Chain',
@@ -262,24 +282,26 @@ describe('ConfirmTransaction', () => {
 			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumBlockHeader, fakeBlock)
+						return modules.serialize(modules.EthereumBlockHeader, fakeBlock)
 					case 'eth_getTransactionCount':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 0n)
+						return modules.serialize(modules.EthereumQuantity, 0n)
 					case 'eth_getBalance':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 0n)
+						return modules.serialize(modules.EthereumQuantity, 0n)
 					case 'eth_blockNumber':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 123n)
+						return modules.serialize(modules.EthereumQuantity, 123n)
 					case 'eth_getCode':
 						return '0x'
 					case 'eth_gasPrice':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 1n)
+						return modules.serialize(modules.EthereumQuantity, 1n)
 					case 'eth_simulateV1':
 						{
-							const multicallAbi = (await import('../../app/ts/utils/constants.js')).Multicall3ABI
-							const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [0n])
-							const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
-							const blockStateCalls = Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]
-							return serialize((await import('../../app/ts/types/ethSimulate-types.js')).EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
+							const balanceResult = modules.encodeFunctionReturn(modules.Multicall3ABI, 'getEthBalance', [0n])
+							const aggregate3Result = modules.encodeFunctionReturn(modules.Multicall3ABI, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
+							const firstParam = rpcRequest.params === undefined ? undefined : rpcRequest.params[0]
+							const blockStateCalls = typeof firstParam === 'object' && firstParam !== null && 'blockStateCalls' in firstParam && Array.isArray(firstParam.blockStateCalls)
+								? firstParam.blockStateCalls
+								: [{}]
+							return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
 								number: 123n,
 								hash: 0x9876n,
 								timestamp: 0x65920080n,
@@ -299,7 +321,7 @@ describe('ConfirmTransaction', () => {
 				}
 			},
 		}
-		const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const simulator = {
 			ethereum,
 			tokenPriceService: {
@@ -307,16 +329,16 @@ describe('ConfirmTransaction', () => {
 			},
 		}
 
-		await browserStorageLocalSet2({
+		await modules.browserStorageLocalSet2({
 			pendingTransactionsAndMessages: [olderPendingTransaction],
 		})
-		await updateInterceptorTransactionStack(() => ({ operations: [] }))
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+			await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 		})
 
-		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()
+		const [refreshedPendingTransaction] = await modules.getPendingTransactionsAndMessages()
 		if (refreshedPendingTransaction === undefined || refreshedPendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
 		assert.ok(
 			refreshedPendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp.getTime() >
@@ -324,13 +346,13 @@ describe('ConfirmTransaction', () => {
 		)
 
 		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
+			render(h(modules.ConfirmTransaction, {}), dom.document.body)
 		})
 
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+				...modules.serialize(modules.UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
 						pendingTransactionAndSignableMessages: [refreshedPendingTransaction],

@@ -1,12 +1,24 @@
 {
-	"extends": "./tsconfig.json",
 	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
 		"rootDir": ".",
-		"outDir": "test/js",
+		"jsx": "react-jsx",
+		"jsxImportSource": "preact",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"types": ["node", "firefox-webext-browser"],
+		"strict": true,
+		"skipLibCheck": true,
+		"noEmit": true
 	},
 	"include": [
-		"./app/ts/**/*.ts",
-		"./app/ts/**/*.tsx",
-		"./test/**/*.ts",
+		"./test/tests/confirmTransactionRenderedTimestamp.test.ts",
+		"./test/tests/importSimulationStack.test.tsx",
+		"./test/tests/domMock.ts",
+		"./test/bun-test.d.ts"
+	],
+	"exclude": [
+		"./test/benchmarks/**/*"
 	]
 }

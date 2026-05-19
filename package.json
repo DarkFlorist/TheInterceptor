@@ -5,6 +5,7 @@
 	"packageManager": "bun@1.3.12",
 	"scripts": {
 		"test": "bun test",
+		"typecheck:test": "bun --bun tsc --project tsconfig-test.json --noEmit",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
@@ -34,6 +35,7 @@
 	},
 	"devDependencies": {
 		"@types/firefox-webext-browser": "120.0.3",
+		"@types/node": "20.11.17",
 		"typescript": "5.4.5"
 	}
 }

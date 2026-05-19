@@ -1,81 +1,81 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
-import { InterceptorSimulationExport } from '../../app/ts/types/visualizer-types.js'
 
 const storageState: Record<string, unknown> = {}
-let runtimeSendMessage = async (_message: unknown) => undefined
+let runtimeSendMessage: (message: unknown) => Promise<unknown> = async (_message: unknown) => undefined
 let localSetBehavior = async (items: Record<string, unknown>) => {
 	Object.assign(storageState, items)
 }
+const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+const visualizerTypesModulePath = '../../app/ts/types/visualizer-types.js'
+const popupMessageHandlersModulePath = '../../app/ts/background/popupMessageHandlers.js'
+const importSimulationStackModulePath = '../../app/ts/components/pages/ImportSimulationStack.js'
+const { InterceptorSimulationExport } = await import(visualizerTypesModulePath)
 
 function installBrowser() {
-	Object.defineProperty(globalThis, 'browser', {
-		value: {
-			runtime: {
-				lastError: null,
-				getManifest: () => ({ manifest_version: 3 }),
-				sendMessage: async (message: unknown) => await runtimeSendMessage(message),
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			storage: {
-				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) {
-						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-					},
-					async set(items: Record<string, unknown>) {
-						await localSetBehavior(items)
-					},
-					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-					},
+	const browserMock = {
+		runtime: {
+			lastError: null,
+			getManifest: () => ({ manifest_version: 3 }),
+			sendMessage: async (message: unknown) => await runtimeSendMessage(message),
+			onMessage: { addListener: () => undefined, removeListener: () => undefined },
+			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+		},
+		storage: {
+			local: {
+				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					if (keys === undefined || keys === null) return { ...storageState }
+					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+				},
+				async set(items: Record<string, unknown>) {
+					await localSetBehavior(items)
+				},
+				async remove(keys: string | string[]) {
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
-			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
-			},
-			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
 		},
-		configurable: true,
-		writable: true,
-	})
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
+		tabs: {
+			async query() { return [] },
+			async get() { return undefined },
+			async update() { return undefined },
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+		},
+		windows: {
+			async get() { return undefined },
+			async update() { return undefined },
+		},
+		action: {
+			async setIcon() { return undefined },
+			async setTitle() { return undefined },
+			async setBadgeText() { return undefined },
+			async setBadgeBackgroundColor() { return undefined },
+		},
+		browserAction: {
+			async setIcon() { return undefined },
+			async setTitle() { return undefined },
+			async setBadgeText() { return undefined },
+			async setBadgeBackgroundColor() { return undefined },
+		},
+	}
+	defineGlobal('browser', browserMock)
+	defineGlobal('chrome', { runtime: { id: 'test-extension' } })
+	defineGlobal('indexedDB', undefined)
 }
 
 installBrowser()
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
-		...await import('../../app/ts/components/pages/ImportSimulationStack.js'),
+		...await import(popupMessageHandlersModulePath),
+		...await import(importSimulationStackModulePath),
 	}
 }
 
@@ -108,16 +108,19 @@ function resetEnvironment() {
 	localSetBehavior = async (items: Record<string, unknown>) => {
 		Object.assign(storageState, items)
 	}
-	Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
+	defineGlobal('indexedDB', undefined)
 }
 
-function collectElements(node: any, tagName: string, results: any[] = []) {
+type ClickableElement = { l?: Record<string, (event: { currentTarget: ClickableElement }) => unknown> }
+type ElementTreeNode = ClickableElement & { tagName?: string, childNodes?: readonly ElementTreeNode[], textContent?: string }
+
+function collectElements(node: ElementTreeNode | undefined, tagName: string, results: ElementTreeNode[] = []) {
 	if (node?.tagName === tagName.toUpperCase()) results.push(node)
 	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
 	return results
 }
 
-async function clickElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
+async function clickElement(element: ClickableElement) {
 	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
 	if (clickHandler === undefined) throw new Error('Expected click handler')
 	await clickHandler({ currentTarget: element })
@@ -132,7 +135,7 @@ describe('import simulation stack', () => {
 			Object.assign(storageState, items)
 		}
 
-		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack(undefined, undefined, { method: 'popup_importSimulationStack', data: exportPayload })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
