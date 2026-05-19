@@ -1,6 +1,6 @@
 import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { CompoundTimeLock } from '../utils/abi.js'
-import { addressString, bigintSecondsToDate, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, bigintSecondsToDate, checksummedAddress, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
@@ -79,7 +79,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		input: stringToUint8Array(encodeFunctionCallLoose(CompoundTimeLock, 'executeTransactions', [targets, values, signatures, calldatas, eta])),
 	}
 
-	if (eta >= parentBlock.timestamp.getTime()) throw new Error('ETA has passed already')
+	if (eta <= dateToBigintSeconds(parentBlock.timestamp)) throw new Error('ETA has passed already')
 	const query = [{
 		calls: [executingTransaction],
 		blockOverrides: {
@@ -95,7 +95,12 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	}]
 	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined))[0]?.calls[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('ethSimulateV1 result was undefined')
-	return { ethSimulateV1CallResult, executingTransaction }
+	return {
+		ethSimulateV1CallResult,
+		executingTransaction,
+		executionTimestamp: bigintSecondsToDate(eta),
+		executionStateOverrides: query[0]?.stateOverrides ?? {},
+	}
 }
 
 export const parseVoteInputParameters = (args: Record<string, unknown>) => {
