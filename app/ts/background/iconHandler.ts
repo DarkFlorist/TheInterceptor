@@ -11,6 +11,8 @@ import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 
+const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
+
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
 	if (!(await doesTabExist(tabId))) return
@@ -119,8 +121,29 @@ export async function retrieveWebsiteDetails(tabId: number) {
 		if (maxRetries <= 0) break // timeout
 	}
 	const tab = await safeGetTab(tabId)
+	const pageUrl = tab?.url ?? 'unknown'
+	const failToLoadFavicon = (reason: string) => {
+		console.warn(`Failed to load favicon for tab ${ tabId } (${ pageUrl }): ${ reason }`)
+		return { title: tab?.title, icon: undefined }
+	}
+	const faviconUrl = tab?.favIconUrl
+	if (faviconUrl === undefined || faviconUrl === '') return { title: tab?.title, icon: undefined }
+
+	let parsedFaviconUrl: URL
+	try {
+		parsedFaviconUrl = tab?.url === undefined ? new URL(faviconUrl) : new URL(faviconUrl, tab.url)
+	} catch {
+		return failToLoadFavicon(`invalid favicon URL ${ faviconUrl }`)
+	}
+
+	if (!ALLOWED_FAVICON_PROTOCOLS.has(parsedFaviconUrl.protocol)) {
+		return failToLoadFavicon(`unsupported URL scheme ${ parsedFaviconUrl.protocol }`)
+	}
+
+	const faviconResult = await imageToUri(parsedFaviconUrl.toString())
+	if (faviconResult.failureReason !== undefined) return failToLoadFavicon(faviconResult.failureReason)
 	return {
 		title: tab?.title,
-		icon: tab?.favIconUrl === undefined ? undefined : await imageToUri(tab.favIconUrl)
+		icon: faviconResult.data
 	}
 }
