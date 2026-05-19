@@ -94,7 +94,13 @@ export class ErrorBoundary extends Component<{ children?: ComponentChildren, onE
 	}
 }
 
-export type CaughtError = { message: string, timestamp: Date }
+export type CaughtError = {
+	message: string
+	timestamp: Date
+	source?: string
+	code?: string
+	debugId?: string
+}
 
 type UnexpectedErrorParams = {
 	error: CaughtError | undefined

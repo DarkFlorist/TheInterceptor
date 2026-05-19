@@ -1,27 +1,40 @@
-import { isFailedToFetchError } from './errors.js'
 import { Future } from './future.js'
 
-export async function imageToUri(url: string, maxSizeInBytes = 1048576) {
+export type ImageToUriResult = {
+	data: string | undefined
+	failureReason: string | undefined
+}
+
+const imageToUriFailed = (failureReason: string): ImageToUriResult => ({ data: undefined, failureReason })
+const imageToUriSucceeded = (data: string): ImageToUriResult => ({ data, failureReason: undefined })
+
+async function readBlobAsDataUrl(blob: Blob): Promise<ImageToUriResult> {
+	const reader = new FileReader()
+	const future = new Future<ImageToUriResult>
+
+	reader.onloadend = () => {
+		if (typeof reader.result !== 'string') return future.resolve(imageToUriFailed('file reader failed'))
+		return future.resolve(imageToUriSucceeded(reader.result))
+	}
+	reader.onerror = () => future.resolve(imageToUriFailed('file reader failed'))
+	reader.onabort = () => future.resolve(imageToUriFailed('file reader aborted'))
+	reader.readAsDataURL(blob)
+	return await future
+}
+
+export async function imageToUri(url: string, maxSizeInBytes = 1048576): Promise<ImageToUriResult> {
 	try {
 		const response = await fetch(url)
+		if (!response.ok) return imageToUriFailed(`HTTP ${ response.status }${ response.statusText === '' ? '' : ` ${ response.statusText }` }`)
+		const contentType = response.headers.get('content-type')
+		if (contentType !== null && !contentType.startsWith('image/')) return imageToUriFailed(`response was not an image (${ contentType })`)
 		const blob = await response.blob()
-		const reader = new FileReader()
-		const future = new Future<string | undefined>
-
-		reader.onloadend = () => future.resolve(reader.result === null ? undefined : reader.result as string)
-		reader.onerror = () => future.resolve(undefined)
-		reader.onabort = () => future.resolve(undefined)
-		reader.readAsDataURL(blob)
-		const data = await future
-
-		if (data === undefined || data.length > maxSizeInBytes) return undefined
-		return data
+		const result = await readBlobAsDataUrl(blob)
+		if (result.failureReason !== undefined || result.data === undefined) return result
+		if (result.data.length > maxSizeInBytes) return imageToUriFailed(`image data exceeded ${ maxSizeInBytes } bytes`)
+		return result
 	} catch (error) {
-		if (error instanceof Error) {
-			console.warn(error)
-			if (isFailedToFetchError(error)) return undefined
-		}
+		if (error instanceof Error) return imageToUriFailed(`fetch failed (${ error.message })`)
 		throw error
-
 	}
 }

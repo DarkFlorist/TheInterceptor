@@ -3,6 +3,10 @@ function listenContentScript(connectionName: string | undefined) {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
 	}
+	type ForwardedDiagnosticsRequestContext = {
+		readonly requestId?: number
+		readonly requestMethod?: string
+	}
 
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
@@ -21,7 +25,53 @@ function listenContentScript(connectionName: string | undefined) {
 	let pageHidden = false
 	let extensionPort: browser.runtime.Port | undefined = undefined
 
-	// forward all message events to the background script, which will then filter and process them
+	const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+	const stringifyForwardedThrownValue = (value: unknown) => {
+		if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
+		if (typeof value === 'bigint') return value.toString()
+		try {
+			const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
+			if (stringified !== undefined) return stringified
+		} catch (_error) {}
+		return String(value)
+	}
+	const getForwardedDiagnosticsSummary = (error: unknown) => {
+		if (error instanceof Error) return error.message
+		if (typeof error === 'string') return error
+		if (error === undefined) return 'Unexpected thrown value: undefined'
+		if (error === null) return 'Unexpected thrown value: null'
+		if (isForwardedDiagnosticsRecord(error) && typeof error['message'] === 'string') return error['message']
+		return String(error)
+	}
+	const getForwardedDiagnosticsRequestContext = (value: unknown): ForwardedDiagnosticsRequestContext => {
+		if (!isForwardedDiagnosticsRecord(value)) return {}
+		return {
+			...(typeof value['requestId'] === 'number' ? { requestId: value['requestId'] } : {}),
+			...(typeof value['method'] === 'string' ? { requestMethod: value['method'] } : {}),
+		}
+	}
+	const formatForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => {
+		return [
+			`${ source }: ${ summary }`,
+			`phase: ${ phase }`,
+			...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []),
+			...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []),
+			`thrown:\n${ stringifyForwardedThrownValue(thrown) }`,
+		].join('\n\n')
+	}
+	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
+	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script' | 'document-start', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, message, raw, context)
+	const reportInterceptorError = (diagnostics: string) => {
+		if (extensionPort === undefined) return
+		try {
+			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
+		} catch(reportingError: unknown) {
+			console.error(reportingError)
+		}
+	}
+
+	// forward all page messages to the background script, which will then filter and process them
+	// anything reaching this boundary is untrusted page input unless the extension proves otherwise
 	// biome-ignore lint/suspicious/noExplicitAny: MessageEvent default signature
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<any>) => {
 		if (extensionPort === undefined) return
@@ -46,7 +96,7 @@ function listenContentScript(connectionName: string | undefined) {
 				}
 				if (error.message?.includes('User denied')) return // user denied signature
 			}
-			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(error)] } })
+			reportInterceptorError(serializeForwardedDiagnostics('content-script', 'forward page message', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			throw error
 		}
 	})
@@ -60,8 +110,7 @@ function listenContentScript(connectionName: string | undefined) {
 			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
-				if (extensionPort === undefined) return
-				extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [JSON.stringify(messageEvent)] } })
+				reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'receive background message', 'Malformed message from background script', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 				return
 			}
 			try {

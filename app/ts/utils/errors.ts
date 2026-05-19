@@ -1,7 +1,15 @@
 import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
-import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import { InterceptorError, JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
+
+export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
+
+type UnexpectedErrorMetadata = {
+	source?: string
+	code?: string
+	debugId?: string
+}
 
 export class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
@@ -41,8 +49,23 @@ export function isFailedToFetchError(error: Error) {
 
 export const isNewBlockAbort = (error: Error) => error.message?.includes(NEW_BLOCK_ABORT)
 
+function getForwardedDiagnostics(error: unknown): string | undefined {
+	const maybeInterceptorError = InterceptorError.safeParse(error)
+	if (!maybeInterceptorError.success) return undefined
+	return maybeInterceptorError.value.params[0]
+}
+
+function normalizeUnexpectedError(error: unknown) {
+	if (typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string') {
+		return { message: error.message }
+	}
+	return { message: GENERIC_UNEXPECTED_ERROR_MESSAGE }
+}
+
 export function printError(error: unknown) {
 	console.error(error)
+	const forwardedDiagnostics = getForwardedDiagnostics(error)
+	if (forwardedDiagnostics !== undefined) console.error('forwarded diagnostics:', forwardedDiagnostics)
 	if (error instanceof Error) {
 		try {
 			if ('data' in error) console.error('data: ', JSON.stringify(error.data))
@@ -53,14 +76,24 @@ export function printError(error: unknown) {
 	}
 }
 
-export async function handleUnexpectedError(error: unknown) {
+function generateDebugId() {
+	return globalThis.crypto.randomUUID().slice(0, 8)
+}
+
+export async function handleUnexpectedError(error: unknown, metadata: UnexpectedErrorMetadata = {}) {
+	const debugId = metadata.debugId ?? generateDebugId()
+	console.error('Unexpected Interceptor error', { debugId, source: metadata.source ?? 'internal', code: metadata.code ?? 'unexpected_error' })
 	printError(error)
 	console.trace()
+	const normalizedError = normalizeUnexpectedError(error)
 	const errorMessage = {
 		method: 'popup_UnexpectedErrorOccured' as const,
 		data: {
 			timestamp: new Date(),
-			message: typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string' ? error.message : 'Please see The Interceptors console for more details on the error.'
+			message: normalizedError.message,
+			source: metadata.source ?? 'internal',
+			code: metadata.code ?? 'unexpected_error',
+			debugId,
 		}
 	}
 	await setLatestUnexpectedError(errorMessage)

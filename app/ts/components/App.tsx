@@ -500,7 +500,7 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
-	function onRenderError(error: Error) { unexpectedError.value = { method: 'popup_UnexpectedErrorOccured', data: { message: error.message, timestamp: new Date() } } }
+	function onRenderError(error: Error) { unexpectedError.value = { method: 'popup_UnexpectedErrorOccured', data: { message: error.message, timestamp: new Date(), source: 'popup', code: 'render_error', debugId: undefined } } }
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
 		boundaryResetKey.value += 1
