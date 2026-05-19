@@ -172,13 +172,13 @@ const SearchForm = (props: SearchFormProps) => {
 }
 
 const WebsiteSettingsList = () => {
-	const { websiteAccessList } = useWebsiteAccess()
+	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 
 	return (
 		<section style = { { paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
 			{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : <>
-				<ul role = 'listbox'>{ websiteAccessList.value.map((access, index) => <WebsiteAccessOverview websiteAccess = { access } checked = { index === 0 } />) }</ul>
+				<ul role = 'listbox'>{ websiteAccessList.value.map((access) => <WebsiteAccessOverview websiteAccess = { access } checked = { selectedDomain.value === access.website.websiteOrigin } />) }</ul>
 				<input type = 'submit' style = { { display: 'none' } } />
 			</> }
 		</section>
@@ -203,7 +203,7 @@ type WebsiteAccessOverviewProps = {
 
 const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
 	const handleChange = () => {
-		window.location.href = `${ window.location.pathname }${ URL_HASH_PREFIX }${ websiteAccess.website.websiteOrigin }`
+		window.location.hash = `${ URL_HASH_KEY }:${ websiteAccess.website.websiteOrigin }`
 	}
 
 	const getWebsiteStatus = () => {
@@ -215,8 +215,8 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 
 	return (
 		<li role = 'option'>
-			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } defaultChecked = { checked } />
-			<label htmlFor = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } } onClick = { handleChange }>
+			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
+			<label htmlFor = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } }>
 				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
 					<img role = 'img' src = { websiteAccess.website.icon } style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
 					<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
