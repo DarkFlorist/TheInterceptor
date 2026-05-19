@@ -5,6 +5,10 @@ import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 const responseHeaders = { 'Content-Type': 'application/json' }
 const testAddress = 0x0000000000000000000000000000000000000001n
+const HTTP_STATUS_TOO_MANY_REQUESTS = 429
+const JSON_RPC_ERROR_CODE_INVALID_PARAMS = -32602
+const JSON_RPC_ERROR_CODE_INTERNAL_ERROR = -32603
+const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
 
 function installFetchMock(responses: Response[]) {
 	const previousFetch = globalThis.fetch
@@ -26,8 +30,8 @@ function installFetchMock(responses: Response[]) {
 describe('EthereumJSONRpcRequestHandler caching', () => {
 	test('does not cache transient HTTP failures', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32005, message: 'rate limited' } }), { status: 429, headers: responseHeaders }),
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: -32005, message: 'rate limited' } }), { status: 429, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, message: 'rate limited' } }), { status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, message: 'rate limited' } }), { status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
@@ -42,7 +46,7 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 	test('caches deterministic non-ok JSON-RPC failures', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'invalid params' } }), { status: 400, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: 400, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
@@ -57,8 +61,8 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 	test('does not cache transient JSON-RPC server errors returned with ok responses', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32603, message: 'internal error' } }), { status: 200, headers: responseHeaders }),
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: -32603, message: 'internal error' } }), { status: 200, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: 200, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: 200, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 

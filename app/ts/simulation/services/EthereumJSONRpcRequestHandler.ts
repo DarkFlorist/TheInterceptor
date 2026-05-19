@@ -8,17 +8,35 @@ import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
 
 type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
 
-const NON_CACHEABLE_HTTP_STATUSES = new Set([408, 425, 429])
-const NON_CACHEABLE_JSON_RPC_ERROR_CODES = new Set([-32603, -32002, -32005])
+const HTTP_STATUS_REQUEST_TIMEOUT = 408
+const HTTP_STATUS_TOO_EARLY = 425
+const HTTP_STATUS_TOO_MANY_REQUESTS = 429
+const HTTP_STATUS_SERVER_ERROR_RANGE_START = 500
+
+const JSON_RPC_ERROR_CODE_INTERNAL_ERROR = -32603
+const JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE = -32002
+const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
+
+const TRANSIENT_HTTP_STATUS_CODES = new Set([
+	HTTP_STATUS_REQUEST_TIMEOUT,
+	HTTP_STATUS_TOO_EARLY,
+	HTTP_STATUS_TOO_MANY_REQUESTS,
+])
+
+const TRANSIENT_JSON_RPC_ERROR_CODES = new Set([
+	JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
+	JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE,
+	JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED,
+])
 
 function isNonCacheableHttpStatus(status: number) {
-	return status >= 500 || NON_CACHEABLE_HTTP_STATUSES.has(status)
+	return status >= HTTP_STATUS_SERVER_ERROR_RANGE_START || TRANSIENT_HTTP_STATUS_CODES.has(status)
 }
 
 function isNonCacheableJsonRpcError(response: unknown) {
 	const jsonRpcError = JsonRpcErrorResponse.safeParse(response)
 	if (!jsonRpcError.success) return false
-	return NON_CACHEABLE_JSON_RPC_ERROR_CODES.has(jsonRpcError.value.error.code)
+	return TRANSIENT_JSON_RPC_ERROR_CODES.has(jsonRpcError.value.error.code)
 }
 
 function shouldCacheResponse(response: ResolvedResponse) {
