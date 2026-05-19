@@ -32,7 +32,6 @@ import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import type { PopupBootstrapData } from '../types/interceptor-reply-messages.js'
 import { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
@@ -458,39 +457,6 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 export async function requestNewHomeData(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
 	const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'cached' })
 	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
-}
-
-export async function requestBootstrapData(ethereum: EthereumClientService): Promise<PopupBootstrapData> {
-	const [settings, rpcConnectionStatus, rpcEntries, preSimulationBlockTimeManipulation, latestUnexpectedError, activeAddresses, richData, currentTabId] = await Promise.all([
-		getSettings(),
-		getRpcConnectionStatus(),
-		getRpcList(),
-		getPreSimulationBlockTimeManipulation(),
-		getLatestUnexpectedError(),
-		getActiveAddresses(),
-		getCachedRichData(),
-		getCurrentTabId(),
-	])
-	const tabId = currentTabId ?? await getLastKnownCurrentTabId()
-	const tabState = await (tabId === undefined ? getTabState(-1) : getTabState(tabId))
-	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
-	return {
-		activeAddresses,
-		fixedAddressRichList: richData.richList,
-		makeCurrentAddressRich: richData.makeCurrentAddressRich,
-		latestUnexpectedError,
-		settings,
-		rpcEntries,
-		tabState,
-		currentBlockNumber: ethereum.getCachedBlock()?.number,
-		rpcConnectionStatus,
-		tabId,
-		interceptorDisabled,
-		preSimulationBlockTimeManipulation,
-		visualizedSimulatorState: undefined,
-		websiteAccessAddressMetadata: [],
-	}
 }
 
 export async function refreshHomeData(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {

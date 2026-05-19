@@ -22,11 +22,11 @@ import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
-import type { EnrichedRichListElement, PopupBootstrapData, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 
 type ProviderErrorsParam = {
@@ -186,57 +186,6 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 	}
 
-	const applyBootstrapData = (reply: PopupBootstrapData) => {
-		const wasLoaded = isSettingsLoaded.value
-		isSettingsLoaded.value = true
-		activeAddresses.value = reply.activeAddresses
-		fixedAddressRichList.value = reply.fixedAddressRichList
-		makeCurrentAddressRich.value = reply.makeCurrentAddressRich
-		unexpectedError.value = reply.latestUnexpectedError
-		rpcEntries.value = reply.rpcEntries
-		currentTabId.value = reply.tabId
-		activeSigningAddress.value = reply.tabState.activeSigningAddress
-		interceptorDisabled.value = reply.interceptorDisabled
-		rpcNetwork.value = reply.settings.activeRpcNetwork
-		activeSimulationAddress.value = reply.settings.activeSimulationAddress
-		useSignersAddressAsActiveAddress.value = reply.settings.useSignersAddressAsActiveAddress
-		websiteAccess.value = reply.settings.websiteAccess
-		simulationMode.value = reply.settings.simulationMode
-		if (!wasLoaded) tabIconDetails.value = reply.tabState.tabIconDetails
-		tabState.value = reply.tabState
-		currentBlockNumber.value = reply.currentBlockNumber
-		rpcConnectionStatus.value = reply.rpcConnectionStatus
-		preSimulationBlockTimeManipulation.value = reply.preSimulationBlockTimeManipulation
-		websiteAccessAddressMetadata.value = reply.websiteAccessAddressMetadata
-		if (reply.visualizedSimulatorState !== undefined) {
-			const simulationState = reply.visualizedSimulatorState.simulationState
-			if (simulationState.kind === 'passthrough') {
-				simVisResults.value = PASSTHROUGH_STATE
-			} else {
-				simVisResults.value = toResolvedSimulationResults({
-					blockNumber: simulationState.value.blockNumber,
-					blockTimestamp: simulationState.value.blockTimestamp,
-					simulationConductedTimestamp: simulationState.value.simulationConductedTimestamp,
-					simulationStateInput: simulationState.value.simulationStateInput,
-					visualizedSimulationState: reply.visualizedSimulatorState.visualizedSimulationState,
-					rpcNetwork: simulationState.value.rpcNetwork,
-					tokenPriceEstimates: reply.visualizedSimulatorState.tokenPriceEstimates,
-					addressBookEntries: reply.visualizedSimulatorState.addressBookEntries,
-					namedTokenIds: reply.visualizedSimulatorState.namedTokenIds,
-				})
-			}
-			simulationUpdatingState.value = reply.visualizedSimulatorState.simulationUpdatingState
-			simulationResultState.value = reply.visualizedSimulatorState.simulationResultState
-		}
-		if (appPage.value.page === 'Unknown') {
-			if (reply.settings.openedPage.page === 'AddNewAddress' || reply.settings.openedPage.page === 'ModifyAddress') {
-				appPage.value = { ...reply.settings.openedPage, state: new Signal(reply.settings.openedPage.state) }
-			} else {
-				appPage.value = reply.settings.openedPage
-			}
-		}
-	}
-
 	useEffect(() => {
 		if (popupRefreshAppliedGeneration.value === 0) return
 		if (popupRefreshAppliedGeneration.value === 1) {
@@ -244,23 +193,6 @@ export function App() {
 		}
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.refreshRendered)
 	}, [popupRefreshAppliedGeneration.value])
-
-	useEffect(() => {
-		let cancelled = false
-		void (async () => {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_requestBootstrapData' })
-			if (cancelled) return
-			if (reply !== undefined) {
-				applyBootstrapData(reply)
-			} else {
-				await requestCachedHomeData()
-			}
-			if (!cancelled) void sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
-		})()
-		return () => {
-			cancelled = true
-		}
-	}, [])
 
 	useEffect(() => {
 		const setSimulationState = (
@@ -401,6 +333,13 @@ export function App() {
 		return () => {
 			browser.runtime.onMessage.removeListener(replyPopupMessageListener)
 		}
+	}, [])
+
+	useEffect(() => {
+		void (async () => {
+			await requestCachedHomeData()
+			void sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+		})()
 	}, [])
 
 	function goHome() {

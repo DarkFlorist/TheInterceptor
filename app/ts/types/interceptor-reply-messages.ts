@@ -1,12 +1,8 @@
 
 import * as funtypes from 'funtypes'
-import type { Codec } from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
-import { Page } from './exportedSettingsTypes.js'
-import { RpcEntries, RpcNetwork } from './rpc.js'
-import { RpcConnectionStatus, TabState } from './user-interface-types.js'
-import { BlockTimeManipulation, CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId } from './visualizer-types.js'
-import { PopupOrTabId, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { PopupOrTabId } from './websiteAccessTypes.js'
+import { CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId } from './visualizer-types.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
@@ -26,33 +22,6 @@ export const EnrichedRichListElement = funtypes.ReadonlyObject({
 	addressBookEntry: AddressBookEntry,
 	makingRich: funtypes.Boolean,
 	type: funtypes.Union(funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded'), funtypes.Literal('CurrentActiveAddress')),
-})
-
-const BootstrapSettings = funtypes.ReadonlyObject({
-	activeSimulationAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-	activeRpcNetwork: RpcNetwork,
-	openedPage: Page,
-	useSignersAddressAsActiveAddress: funtypes.Boolean,
-	websiteAccess: WebsiteAccessArray,
-	simulationMode: funtypes.Boolean,
-})
-
-export type PopupBootstrapData = funtypes.Static<typeof PopupBootstrapData>
-export const PopupBootstrapData = funtypes.ReadonlyObject({
-	activeAddresses: funtypes.ReadonlyArray(AddressBookEntry),
-	fixedAddressRichList: funtypes.ReadonlyArray(EnrichedRichListElement),
-	makeCurrentAddressRich: funtypes.Boolean,
-	latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
-	settings: BootstrapSettings,
-	rpcEntries: RpcEntries,
-	tabState: TabState,
-	currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-	rpcConnectionStatus: RpcConnectionStatus,
-	tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
-	interceptorDisabled: funtypes.Boolean,
-	preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
-	websiteAccessAddressMetadata: funtypes.ReadonlyArray(AddressBookEntry),
 })
 
 type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
@@ -175,24 +144,7 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type PopupRequestsRepliesMap = {
-	popup_requestBootstrapData: typeof PopupBootstrapData
-	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
-	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
-	popup_requestSimulationMode: typeof RequestSimulationModeReply
-	popup_requestLatestUnexpectedError: typeof RequestLatestUnexpectedErrorReply
-	popup_requestInterceptorSimulationInput: typeof RequestInterceptorSimulationInputReply
-	popup_importSimulationStack: typeof ImportSimulationStackReply
-	popup_requestCompleteVisualizedSimulation: typeof RequestCompleteVisualizedSimulationReply
-	popup_requestSimulationMetadata: typeof RequestSimulationMetadataReply
-	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
-	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
-	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
-	popup_readyAndListening: typeof PopupReadyAndListeningReply
-}
-
-export const PopupRequestsReplies: PopupRequestsRepliesMap = {
-	popup_requestBootstrapData: PopupBootstrapData,
+export const PopupRequestsReplies = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -217,25 +169,9 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: ChainIdWithUniversal })
 }).asReadonly()
 
-export type PopupRequests =
-	| funtypes.Static<typeof RequestAbiAndNameFromBlockExplorer>
-	| funtypes.Static<typeof RequestIdentifyAddress>
-	| { method: 'popup_requestBootstrapData' }
-	| { method: 'popup_requestMakeMeRichData' }
-	| { method: 'popup_requestActiveAddresses' }
-	| { method: 'popup_requestSimulationMode' }
-	| { method: 'popup_requestLatestUnexpectedError' }
-	| { method: 'popup_requestInterceptorSimulationInput' }
-	| { method: 'popup_importSimulationStack', data: InterceptorSimulationExport }
-	| { method: 'popup_requestCompleteVisualizedSimulation' }
-	| { method: 'popup_requestSimulationMetadata' }
-	| { method: 'popup_isMainPopupWindowOpen' }
-	| { method: 'popup_readyAndListening', data: { page: 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'fetchSimulationStack' } }
-
-export const PopupMessageReplyRequests: Codec<PopupRequests> = funtypes.Union(
+export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestBootstrapData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -258,26 +194,11 @@ export const PopupMessageReplyRequests: Codec<PopupRequests> = funtypes.Union(
 	}),
 )
 
+export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
 export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
-export type PopupReplyOption =
-	| PopupBootstrapData
-	| RequestMakeMeRichDataReply
-	| RequestActiveAddressesReply
-	| RequestSimulationModeReply
-	| RequestLatestUnexpectedErrorReply
-	| RequestInterceptorSimulationInputReply
-	| ImportSimulationStackReply
-	| RequestCompleteVisualizedSimulationReply
-	| RequestSimulationMetadataReply
-	| RequestAbiAndNameFromBlockExplorerReply
-	| RequestIdentifyAddressReply
-	| RequestIsMainWindowOpen
-	| PopupReadyAndListeningReply
-	| undefined
-
-export const PopupReplyOption: Codec<PopupReplyOption> = funtypes.Union(
-	PopupBootstrapData,
+export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
+export const PopupReplyOption = funtypes.Union(
 	RequestMakeMeRichDataReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
