@@ -5,6 +5,8 @@ import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 const responseHeaders = { 'Content-Type': 'application/json' }
 const testAddress = 0x0000000000000000000000000000000000000001n
+const HTTP_STATUS_OK = 200
+const HTTP_STATUS_BAD_REQUEST = 400
 const HTTP_STATUS_TOO_MANY_REQUESTS = 429
 const JSON_RPC_ERROR_CODE_INVALID_PARAMS = -32602
 const JSON_RPC_ERROR_CODE_INTERNAL_ERROR = -32603
@@ -46,7 +48,7 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 	test('caches deterministic non-ok JSON-RPC failures', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: 400, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: HTTP_STATUS_BAD_REQUEST, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
@@ -61,8 +63,8 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 	test('does not cache transient JSON-RPC server errors returned with ok responses', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: 200, headers: responseHeaders }),
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: 200, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
