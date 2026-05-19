@@ -1,6 +1,6 @@
 # Agent Notes
 
-- After completing a user-requested task that changes code, before handing off, run `bun test`, `bun run build`, `bun run typecheck`, and `bun run biome:check`.
+- After completing a user-requested task that changes code, before handing off, run `bun test`, `bun run setup-chrome`, `bun run typecheck`, and `bun run lint`.
 - Run that full validation suite after the whole task is complete, not after every intermediate edit.
 - Do not stop after local edits if any validation step fails; fix the failures or explain the blocker clearly.
 - Prefer targeted changes that keep the existing architecture intact unless a broader refactor is explicitly requested.
