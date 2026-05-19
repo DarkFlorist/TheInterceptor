@@ -170,11 +170,6 @@ type Page = { page: 'Home', accessRequestId: string }
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState>, accessRequestId: string }
 	| { page: 'ChangeActiveAddress', accessRequestId: string }
 
-export function getSelectedPendingAccessRequest(pendingAccessRequests: PendingAccessRequests, accessRequestId: string | undefined) {
-	if (accessRequestId === undefined) return pendingAccessRequests[0]
-	return pendingAccessRequests.find((request) => request.accessRequestId === accessRequestId)
-}
-
 export function InterceptorAccess() {
 	const pendingAccessRequests = useSignal<PendingAccessRequests>([])
 	const activeAddresses = useSignal<AddressBookEntries>([])
@@ -319,36 +314,33 @@ export function InterceptorAccess() {
 	}
 
 	if (pendingAccessRequests.value.length === 0) return <main></main>
-	const selectedPendingAccessRequest = getSelectedPendingAccessRequest(
-		pendingAccessRequests.value,
-		appPage.value.page === 'Home' ? undefined : appPage.value.accessRequestId,
-	)
-	const isModalActive = appPage.value.page !== 'Home' && selectedPendingAccessRequest !== undefined
+	const pendingAccessRequest = pendingAccessRequests.value[0]
+	if (pendingAccessRequest === undefined) throw new Error('pending access request was undefined')
 
 	return <main>
 		<Hint>
-			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
-				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedPendingAccessRequest !== undefined
-						? <AddNewAddress
-							setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
-							modifyAddressWindowState = { appPage.value.state }
-							close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-							activeAddress = { selectedPendingAccessRequest.requestAccessToAddress?.address }
-							rpcEntries = { rpcEntries }
-						/>
-						: <></>
-					}
+			<div class = { `modal ${ appPage.value.page !== 'Home' ? 'is-active' : ''}` }>
+				{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress'
+					? <AddNewAddress
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						modifyAddressWindowState = { appPage.value.state }
+						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
+						activeAddress = { pendingAccessRequest.requestAccessToAddress?.address }
+						rpcEntries = { rpcEntries }
+					/>
+					: <></>
+				}
 
-					{ appPage.value.page === 'ChangeActiveAddress' && selectedPendingAccessRequest !== undefined
-						? <ChangeActiveAddress
-							setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
-							signerAccounts = { selectedPendingAccessRequest.signerAccounts }
-							close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-							activeAddresses = { activeAddresses }
-							signerName = { selectedPendingAccessRequest.signerName }
-							renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
-							addNewAddress = { () => addNewAddress(appPage.value.accessRequestId) }
-						/>
+				{ appPage.value.page === 'ChangeActiveAddress'
+					? <ChangeActiveAddress
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						signerAccounts = { pendingAccessRequest.signerAccounts }
+						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
+						activeAddresses = { activeAddresses }
+						signerName = { pendingAccessRequest.signerName }
+						renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
+						addNewAddress = { () => addNewAddress(appPage.value.accessRequestId) }
+					/>
 					: <></>
 				}
 			</div>
