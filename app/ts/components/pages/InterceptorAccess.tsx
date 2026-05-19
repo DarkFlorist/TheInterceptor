@@ -329,26 +329,26 @@ export function InterceptorAccess() {
 		<Hint>
 			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
 				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedPendingAccessRequest !== undefined
-						? <AddNewAddress
-							setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
-							modifyAddressWindowState = { appPage.value.state }
-							close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-							activeAddress = { selectedPendingAccessRequest.requestAccessToAddress?.address }
-							rpcEntries = { rpcEntries }
-						/>
-						: <></>
-					}
+					? <AddNewAddress
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						modifyAddressWindowState = { appPage.value.state }
+						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
+						activeAddress = { selectedPendingAccessRequest.requestAccessToAddress?.address }
+						rpcEntries = { rpcEntries }
+					/>
+					: <></>
+				}
 
-					{ appPage.value.page === 'ChangeActiveAddress' && selectedPendingAccessRequest !== undefined
-						? <ChangeActiveAddress
-							setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
-							signerAccounts = { selectedPendingAccessRequest.signerAccounts }
-							close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-							activeAddresses = { activeAddresses }
-							signerName = { selectedPendingAccessRequest.signerName }
-							renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
-							addNewAddress = { () => addNewAddress(appPage.value.accessRequestId) }
-						/>
+				{ appPage.value.page === 'ChangeActiveAddress' && selectedPendingAccessRequest !== undefined
+					? <ChangeActiveAddress
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						signerAccounts = { selectedPendingAccessRequest.signerAccounts }
+						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
+						activeAddresses = { activeAddresses }
+						signerName = { selectedPendingAccessRequest.signerName }
+						renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
+						addNewAddress = { () => addNewAddress(appPage.value.accessRequestId) }
+					/>
 					: <></>
 				}
 			</div>
