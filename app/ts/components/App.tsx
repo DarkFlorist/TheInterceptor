@@ -68,15 +68,16 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 	| { page: 'ChangeActiveAddress' }
 	| { page: 'ImportSimulation', state: Signal<string> }
 
-type LazyPageComponent<T> = ((props: T) => JSX.Element) | undefined
+type LazyPageComponent<T extends object> = ((props: T) => JSX.Element) | undefined
+type LazyPageModule<T extends object, ExportName extends string> = Record<ExportName, (props: T) => JSX.Element>
 
-function useLazyPage<T>(loader: () => Promise<Record<string, unknown>>, selector: (module: Record<string, unknown>) => (props: T) => JSX.Element) {
+function useLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
 	const component = useSignal<LazyPageComponent<T>>(undefined)
 	useEffect(() => {
 		let cancelled = false
 		void loader().then((module) => {
 			if (cancelled) return
-			component.value = selector(module)
+			component.value = module[exportName]
 		})
 		return () => {
 			cancelled = true
@@ -85,40 +86,39 @@ function useLazyPage<T>(loader: () => Promise<Record<string, unknown>>, selector
 	return component
 }
 
-function LazyChangeActiveAddress(props: ChangeActiveAddressParam) {
-	const component = useLazyPage(() => import('./pages/ChangeActiveAddress.js'), (module) => module['ChangeActiveAddress'] as (props: ChangeActiveAddressParam) => JSX.Element)
-	if (component.value === undefined) return <CenterToPageTextSpinner />
-	const Component = component.value
-	return <Component { ...props } />
+function createLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
+	return function LazyPage(props: T) {
+		const component = useLazyPage(loader, exportName)
+		if (component.value === undefined) return <CenterToPageTextSpinner />
+		const Component = component.value
+		return <Component { ...props } />
+	}
 }
 
-function LazyAddNewAddress(props: AddAddressParam) {
-	const component = useLazyPage(() => import('./pages/AddNewAddress.js'), (module) => module['AddNewAddress'] as (props: AddAddressParam) => JSX.Element)
-	if (component.value === undefined) return <CenterToPageTextSpinner />
-	const Component = component.value
-	return <Component { ...props } />
-}
+const LazyChangeActiveAddress = createLazyPage<ChangeActiveAddressParam, 'ChangeActiveAddress'>(
+	() => import('./pages/ChangeActiveAddress.js'),
+	'ChangeActiveAddress',
+)
 
-function LazyInterceptorAccessList(props: InterceptorAccessListParams) {
-	const component = useLazyPage(() => import('./pages/InterceptorAccessList.js'), (module) => module['InterceptorAccessList'] as (props: InterceptorAccessListParams) => JSX.Element)
-	if (component.value === undefined) return <CenterToPageTextSpinner />
-	const Component = component.value
-	return <Component { ...props } />
-}
+const LazyAddNewAddress = createLazyPage<AddAddressParam, 'AddNewAddress'>(
+	() => import('./pages/AddNewAddress.js'),
+	'AddNewAddress',
+)
 
-function LazyEditEnsLabelHash(props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) {
-	const component = useLazyPage(() => import('./pages/EditEnsLabelHash.js'), (module) => module['EditEnsLabelHash'] as (props: { close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }) => JSX.Element)
-	if (component.value === undefined) return <CenterToPageTextSpinner />
-	const Component = component.value
-	return <Component { ...props } />
-}
+const LazyInterceptorAccessList = createLazyPage<InterceptorAccessListParams, 'InterceptorAccessList'>(
+	() => import('./pages/InterceptorAccessList.js'),
+	'InterceptorAccessList',
+)
 
-function LazyImportSimulationStack(props: { close: () => void, simulationInput: Signal<string> }) {
-	const component = useLazyPage(() => import('./pages/ImportSimulationStack.js'), (module) => module['ImportSimulationStack'] as (props: { close: () => void, simulationInput: Signal<string> }) => JSX.Element)
-	if (component.value === undefined) return <CenterToPageTextSpinner />
-	const Component = component.value
-	return <Component { ...props } />
-}
+const LazyEditEnsLabelHash = createLazyPage<{ close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }, 'EditEnsLabelHash'>(
+	() => import('./pages/EditEnsLabelHash.js'),
+	'EditEnsLabelHash',
+)
+
+const LazyImportSimulationStack = createLazyPage<{ close: () => void, simulationInput: Signal<string> }, 'ImportSimulationStack'>(
+	() => import('./pages/ImportSimulationStack.js'),
+	'ImportSimulationStack',
+)
 
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
