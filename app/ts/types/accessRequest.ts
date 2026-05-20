@@ -154,6 +154,32 @@ const PendingSignableMessage = funtypes.Intersect(
 	)
 )
 
+type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
+const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
+	type: funtypes.Literal('SignableMessage'),
+	popupOrTabId: PopupOrTabId,
+	originalRequestParameters: SignMessageParams,
+	simulationMode: funtypes.Boolean,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	created: EthereumTimestamp,
+	website: Website,
+	activeAddress: EthereumAddress,
+	approvalStatus: PendingTransactionApprovalStatus,
+})
+
+export type PopupPendingSignableMessage = funtypes.Static<typeof PopupPendingSignableMessage>
+export const PopupPendingSignableMessage = funtypes.Intersect(
+	PopupPendingSignableMessageBase,
+	funtypes.Union(
+		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
+		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
+	)
+)
+
 export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
+
+export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction
+const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction)
+export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype

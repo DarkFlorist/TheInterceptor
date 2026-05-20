@@ -27,7 +27,14 @@ async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientSe
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, requestAbortController, signedMessageTransaction.fakeSignedFor)
 	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
-	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
+	const basicParams = {
+		website: signedMessageTransaction.website,
+		created: signedMessageTransaction.created,
+		simulationMode: signedMessageTransaction.simulationMode,
+		messageIdentifier: signedMessageTransaction.messageIdentifier,
+		activeAddress: activeAddressWithMetadata,
+		signerName,
+	}
 	const originalParams = signedMessageTransaction
 	const isValid = isValidMessage(signedMessageTransaction.originalRequestParameters)
 
