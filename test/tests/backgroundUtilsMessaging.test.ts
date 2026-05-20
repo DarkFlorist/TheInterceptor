@@ -92,7 +92,7 @@ describe('backgroundUtils messaging', () => {
 		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-		assert.equal(storageState['latestUnexpectedError'], undefined)
+		assert.equal(storageState.latestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
@@ -102,7 +102,7 @@ describe('backgroundUtils messaging', () => {
 
 		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 
-		assert.equal(storageState['latestUnexpectedError'], undefined)
+		assert.equal(storageState.latestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
@@ -114,7 +114,7 @@ describe('backgroundUtils messaging', () => {
 		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
 
 		assert.equal(reply, undefined)
-		assert.equal(storageState['latestUnexpectedError'], undefined)
+		assert.equal(storageState.latestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
@@ -170,7 +170,7 @@ describe('backgroundUtils messaging', () => {
 		const latestUnexpectedError = await getLatestUnexpectedError()
 
 		assert.equal(reply, undefined)
-		assert.equal(typeof storageState['latestUnexpectedError'], 'object')
+		assert.equal(typeof storageState.latestUnexpectedError, 'object')
 		assert.equal(latestUnexpectedError?.method, 'popup_UnexpectedErrorOccured')
 		assert.ok(latestUnexpectedError?.data.message.includes('popup_requestLatestUnexpectedError'))
 		assert.ok(!latestUnexpectedError?.data.message.includes('popup_requestMakeMeRichData'))

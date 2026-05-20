@@ -1,6 +1,6 @@
 import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
-import { InterceptorError, JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'

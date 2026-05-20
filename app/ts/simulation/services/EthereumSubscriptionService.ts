@@ -1,12 +1,12 @@
-import { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
+import type { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
-import { EthereumClientService } from './EthereumClientService.js'
+import type { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
-import { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
-import { WebsiteSocket } from '../../utils/requests.js'
+import type { WebsiteSocket } from '../../utils/requests.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 

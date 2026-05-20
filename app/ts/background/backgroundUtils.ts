@@ -1,11 +1,11 @@
-import { MessageToPopup, MessageToPopupPayload, PopupMessage, PopupReadyAndListeningPage, Settings, WindowMessage } from '../types/interceptor-messages.js'
-import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
+import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
+import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
-import { PopupOrTabId } from '../types/websiteAccessTypes.js'
+import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { PopupMessageReplyRequests, PopupRequests, PopupRequestsReplies, PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 
 function isIgnorableClosedMessageChannelError(error: Error) {
 	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')

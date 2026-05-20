@@ -109,7 +109,7 @@ describe('inpage signer bridge', () => {
 					super(type)
 					this.detail = init?.detail as T
 				}
-				public initCustomEvent(): void {}
+				public initCustomEvent(): void { return undefined }
 			}
 		}
 

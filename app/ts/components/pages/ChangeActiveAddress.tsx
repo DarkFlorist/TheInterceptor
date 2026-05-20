@@ -1,5 +1,5 @@
 
-import { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
+import type { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
@@ -33,11 +33,11 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/address-book.svg'/>
+						<img src = '../img/address-book.svg' width = '24' height = '24'/>
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'>
+					<p class = 'paragraph'>
 					Change Active Address
 					</p>
 				</div>
@@ -57,7 +57,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 												<div style = 'border: 1px solid white; width: 40px; height: 40px;'>
 													<p class = 'title' style = 'text-align: center'> S </p>
 												</div>
-												: <img src = { getSignerLogo(param.signerName) } style = 'max-width: 40px; max-height: 40px'/>
+												: <img src = { getSignerLogo(param.signerName) } width = '40' height = '40' style = 'max-width: 40px; max-height: 40px'/>
 											}
 										</figure>
 									</div>
@@ -74,7 +74,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					{ param.activeAddresses === undefined
 						? <></>
 						: param.activeAddresses.value.map((activeAddress) => (
-							<li>
+							<li key = { activeAddress.address.toString() }>
 								<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
 									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 										<BigAddress

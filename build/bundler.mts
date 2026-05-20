@@ -50,7 +50,7 @@ export function replaceImport(filePath: string, text: string) {
 	return replaced
 }
 
-async function* getFiles(topDir: string): AsyncGenerator<string, any, undefined> {
+async function* getFiles(topDir: string): AsyncGenerator<string, void, undefined> {
 	const dirContents = await fs.readdir(topDir, { withFileTypes: true })
 	for (const dir of dirContents) {
 		const res = path.resolve(topDir, dir.name);
@@ -87,6 +87,5 @@ async function replaceImportsInJSFiles() {
 
 replaceImportsInJSFiles().catch(error => {
 	console.error(error)
-	debugger
 	process.exit(1)
 })

@@ -1,17 +1,17 @@
 import { useEffect } from 'preact/hooks'
-import { RenameAddressCallBack } from './types/user-interface-types.js'
+import type { RenameAddressCallBack } from './types/user-interface-types.js'
 import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
-import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
-import { ModifyAddressWindowState } from './types/visualizer-types.js'
+import type { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
+import type { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { ChainEntry, RpcEntries } from './types/rpc.js'
+import type { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
 import { addressEditEntry } from './components/ui-utils.js'
@@ -57,11 +57,11 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/address-book.svg'/>
+						<img src = '../img/address-book.svg' width = '24' height = '24'/>
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { `Remove ${ filterDefs[param.category] }` } </p>
+					<p class = 'paragraph'> { `Remove ${ filterDefs[param.category] }` } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />

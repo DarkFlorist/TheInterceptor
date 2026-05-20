@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { describe, run, runIfRoot, should } from '../micro-should.js'
 
@@ -10,23 +9,9 @@ type RuntimeMessage = {
 
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
-
-	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-	}
-
-	const removeItems = (keys: string | string[]) => {
-		const entries = Array.isArray(keys) ? keys : [keys]
-		for (const key of entries) delete storageState[key]
-	}
-
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.browser = {
+	const browser = {
 		runtime: {
-			lastError: null,
+			lastError: null as browser.runtime._LastError | undefined | null,
 			async sendMessage(message: RuntimeMessage) {
 				if (message.method === 'popup_isMainPopupWindowOpen') {
 					return { type: 'RequestIsMainPopupWindowOpenReply', data: { isOpen: false } }
@@ -68,14 +53,26 @@ function createBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
+
+	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
+		if (keys === undefined || keys === null) return { ...storageState }
+		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
+		if (typeof keys === 'string') return { [keys]: storageState[keys] }
+		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+	}
+
+	const removeItems = (keys: string | string[]) => {
+		const entries = Array.isArray(keys) ? keys : [keys]
+		for (const key of entries) delete storageState[key]
+	}
+
+	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 
 	return {
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
-			// @ts-expect-error test shim intentionally overrides extension globals
-			globalThis.browser.runtime.lastError = undefined
+			browser.runtime.lastError = undefined
 		},
 	}
 }

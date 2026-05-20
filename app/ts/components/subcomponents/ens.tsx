@@ -1,5 +1,5 @@
-import { JSX } from 'preact/jsx-runtime'
-import { EthereumBytes32 } from '../../types/wire-types.js'
+import type { JSX } from 'preact/jsx-runtime'
+import type { EthereumBytes32 } from '../../types/wire-types.js'
 import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { zorbImageDataURI } from './EnsGradient.js'
@@ -18,20 +18,20 @@ type NameHashComponentParams = {
 export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 	const name = params.name !== undefined ? (params.addDotEth ? `${ params.name }.eth` : params.name) : bytes32String(params.nameHash)
 	return (
-		<span className = 'small-address-container' data-value = { name }>
+		<span class = 'small-address-container' data-value = { name }>
 			<span class = 'address-text-holder'>
 				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
 					<span style = 'margin-right: 5px'>
 						<CopyToClipboard content = { name } copyMessage = 'Copied!'>
-							<img style = { { display: 'block', width: '1em', height: '1em', 'min-width': '1em', 'max-height': '1em' } } src = { zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash))) }/>
+							<img style = { { display: 'block', width: '1em', height: '1em', 'min-width': '1em', 'max-height': '1em' } } width = '16' height = '16' src = { zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash))) }/>
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 						<p class = 'address-text noselect nopointer' style = 'color: var(--text-color)'>{ name }</p>
 					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>
+					<button class = 'button is-primary is-small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>
 						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
+							<img src = '../img/rename.svg' width = '16' height = '16'/>
 						</span>
 					</button>
 				</span>

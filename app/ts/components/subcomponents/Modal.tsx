@@ -1,4 +1,4 @@
-import { ComponentChildren, createContext, JSX, RefObject } from 'preact'
+import { type ComponentChildren, createContext, type JSX, type RefObject } from 'preact'
 import { useContext, useEffect, useRef } from 'preact/hooks'
 
 /**

@@ -178,7 +178,9 @@ function stringifyForwardedThrownValue(value: unknown) {
 	try {
 		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
 		if (stringified !== undefined) return stringified
-	} catch (_error) {}
+	} catch (_error) {
+		// Ignore serialization failures and fall back to String(value).
+	}
 	return String(value)
 }
 
@@ -187,15 +189,19 @@ function getForwardedDiagnosticsSummary(error: unknown) {
 	if (typeof error === 'string') return error
 	if (error === undefined) return 'Unexpected thrown value: undefined'
 	if (error === null) return 'Unexpected thrown value: null'
-	if (isForwardedDiagnosticsRecord(error) && typeof error['message'] === 'string') return error['message']
+	if (isForwardedDiagnosticsRecord(error)) {
+		const { message } = error
+		if (typeof message === 'string') return message
+	}
 	return String(error)
 }
 
 function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnosticsRequestContext {
 	if (!isForwardedDiagnosticsRecord(value)) return {}
+	const { requestId, method } = value
 	return {
-		...(typeof value['requestId'] === 'number' ? { requestId: value['requestId'] } : {}),
-		...(typeof value['method'] === 'string' ? { requestMethod: value['method'] } : {}),
+		...(typeof requestId === 'number' ? { requestId } : {}),
+		...(typeof method === 'string' ? { requestMethod: method } : {}),
 	}
 }
 
@@ -334,7 +340,7 @@ class InterceptorMessageListener {
 		)
 	}
 
-	static exhaustivenessCheck = (_thing: never) => {}
+	static exhaustivenessCheck = (_thing: never) => undefined
 
 	private readonly WindowEthereumOn = (kind: OnMessage, callback: AnyCallBack) => {
 		if (inpageWindow.ethereum === undefined) throw new Error('window.ethereum is not defined')
@@ -490,8 +496,8 @@ class InterceptorMessageListener {
 					if (this.currentAddress === replyAddress) return
 					this.currentAddress = replyAddress
 					if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-						try { inpageWindow.ethereum.selectedAddress = replyAddress } catch(error) {}
-						if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) try { inpageWindow.web3.accounts = reply } catch(error) {}
+						try { inpageWindow.ethereum.selectedAddress = replyAddress } catch (_error) { /* Ignore compatibility assignment failures. */ }
+						if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) try { inpageWindow.web3.accounts = reply } catch (_error) { /* Ignore compatibility assignment failures. */ }
 					}
 					for (const callback of this.onAccountsChangedCallBacks) {
 						callback(reply)
@@ -519,8 +525,8 @@ class InterceptorMessageListener {
 					if (this.activeChainId === reply) return
 					this.activeChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
-						try { inpageWindow.ethereum.chainId = reply } catch(error) {}
-						try { inpageWindow.ethereum.networkVersion = Number(reply).toString(10) } catch(error) {}
+						try { inpageWindow.ethereum.chainId = reply } catch (_error) { /* Ignore compatibility assignment failures. */ }
+						try { inpageWindow.ethereum.networkVersion = Number(reply).toString(10) } catch (_error) { /* Ignore compatibility assignment failures. */ }
 					}
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
@@ -601,16 +607,16 @@ class InterceptorMessageListener {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 							const addrArray = forwardRequest.result as string[]
 							const addr = addrArray[0] ?? ''
-							try { inpageWindow.ethereum.selectedAddress = addr } catch(e) {}
-							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) try { inpageWindow.web3.accounts = addrArray } catch(e) {}
+							try { inpageWindow.ethereum.selectedAddress = addr } catch (_error) { /* Ignore compatibility assignment failures. */ }
+							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) try { inpageWindow.web3.accounts = addrArray } catch (_error) { /* Ignore compatibility assignment failures. */ }
 							this.currentAddress = addr
 							break
 						}
 						case 'eth_chainId': {
 							if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
 							const chainId = forwardRequest.result as string
-							try { inpageWindow.ethereum.chainId = chainId } catch(e) {}
-							try { inpageWindow.ethereum.networkVersion = Number(chainId).toString(10) } catch(e) {}
+							try { inpageWindow.ethereum.chainId = chainId } catch (_error) { /* Ignore compatibility assignment failures. */ }
+							try { inpageWindow.ethereum.networkVersion = Number(chainId).toString(10) } catch (_error) { /* Ignore compatibility assignment failures. */ }
 							this.activeChainId = chainId
 							break
 						}
@@ -671,11 +677,11 @@ class InterceptorMessageListener {
 		this.metamaskCompatibilityMode = enable
 		if (enable) {
 			if (inpageWindow.ethereum === undefined) return
-			if (!('isMetamask' in inpageWindow.ethereum)) try { inpageWindow.ethereum.isMetaMask = true } catch(e) {}
+			if (!('isMetamask' in inpageWindow.ethereum)) try { inpageWindow.ethereum.isMetaMask = true } catch (_error) { /* Ignore compatibility assignment failures. */ }
 			if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
-				try { inpageWindow.web3.currentProvider = inpageWindow.ethereum } catch(e) {}
+				try { inpageWindow.web3.currentProvider = inpageWindow.ethereum } catch (_error) { /* Ignore compatibility assignment failures. */ }
 			} else {
-				try { inpageWindow.web3 = { accounts: [], currentProvider: inpageWindow.ethereum } } catch(e) {}
+				try { inpageWindow.web3 = { accounts: [], currentProvider: inpageWindow.ethereum } } catch (_error) { /* Ignore compatibility assignment failures. */ }
 			}
 		}
 	}
@@ -691,7 +697,7 @@ class InterceptorMessageListener {
 				&& connectSignerReply.activeAddress !== undefined && typeof connectSignerReply.activeAddress === 'string') {
 					this.currentAddress = connectSignerReply.activeAddress
 					if (connectSignerReply.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-						try { inpageWindow.ethereum.selectedAddress = this.currentAddress } catch(error) { }
+						try { inpageWindow.ethereum.selectedAddress = this.currentAddress } catch (_error) { /* Ignore compatibility assignment failures. */ }
 					}
 				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string }
 			}

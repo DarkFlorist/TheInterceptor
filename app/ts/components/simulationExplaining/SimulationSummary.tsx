@@ -1,6 +1,6 @@
-import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, summarizeLogs, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
-import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, MaybeSimulatedTransaction, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
+import { type Erc1155TokenBalanceChange, type Erc721and1155OperatorChange, summarizeLogs, type SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
+import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
+import { type Erc721TokenApprovalChange, type SimulatedAndVisualizedTransaction, type ResolvedSimulationResults, type SimulationAndVisualisationResults, type ERC20TokenApprovalChange, type Erc20TokenBalanceChange, type TransactionWithAddressBookEntries, type NamedTokenId, type MaybeSimulatedTransaction, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
@@ -10,20 +10,20 @@ import { addressString, bytes32String, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
-import { EthereumTimestamp } from '../../types/wire-types.js'
-import { RpcNetwork } from '../../types/rpc.js'
-import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
-import { Website } from '../../types/websiteAccessTypes.js'
+import type { EthereumTimestamp } from '../../types/wire-types.js'
+import type { RpcNetwork } from '../../types/rpc.js'
+import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
-import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
+import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
+import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
-import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import { type SignalOrValue } from '../../utils/signals.js'
+import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
+import type { SignalOrValue } from '../../utils/signals.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -36,9 +36,9 @@ type Erc20BalanceChangeParams = {
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
-		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange) => {
+		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange, index) => {
 			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
-			return <div class = 'vertical-center' style = 'display: flex'>
+			return <div key = { `${ erc20TokenBalanceChange.address.toString() }-${ index }-${ erc20TokenBalanceChange.changeAmount.toString() }` } class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant.value ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<TokenWithAmount
 						tokenEntry = { erc20TokenBalanceChange }
@@ -130,8 +130,8 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	if (param.erc20TokenApprovalChanges.length === 0) return <></>
 	return <>
 		{ param.erc20TokenApprovalChanges.map((token) => (
-			token.approvals.map((entryToApprove) => (
-				<Erc20ApprovalChange { ...{
+			token.approvals.map((entryToApprove, index) => (
+				<Erc20ApprovalChange key = { `${ token.address.toString() }-${ entryToApprove.address.toString() }-${ index }` } { ...{
 					...token,
 					entryToApprove: entryToApprove,
 					change: entryToApprove.change,
@@ -160,7 +160,7 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	if ( param.Erc721TokenBalanceChanges.length === 0 ) return <></>
 	return <>
 		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
-			<div class = 'vertical-center' style = 'display: flex'>
+			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant.value ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 					<p class = 'noselect nopointer' style = { `color: ${ param.textColor }; align-items: center` }>
 						&nbsp;{ `${ tokenChange.received ? '+' : '-' }` }&nbsp;
@@ -194,8 +194,8 @@ type Erc721Or1155OperatorChangesParams = {
 export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesParams) {
 	if (param.erc721or1155OperatorChanges.length === 0) return <></>
 	return <>
-		{ param.erc721or1155OperatorChanges.map((token) => (
-			<div class = 'vertical-center' style = 'display: flex'>
+		{ param.erc721or1155OperatorChanges.map((token, index) => (
+			<div key = { `${ token.address.toString() }-${ token.operator?.address.toString() ?? 'none' }-${ index }` } class = 'vertical-center' style = 'display: flex'>
 				{ token.operator !== undefined ?
 					<div class = { param.isImportant.value ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
@@ -260,7 +260,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 	return <> { param.Erc721TokenIdApprovalChanges.length > 0 ?
 		<>
 			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => (
-				<div class = 'vertical-center' style = 'display: flex'>
+				<div key = { `${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-${ approvalsChange.approvedEntry.address.toString() }` } class = 'vertical-center' style = 'display: flex'>
 					<div class = { param.isImportant.value ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
@@ -309,7 +309,7 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 
 	return <>
 		{ param.Erc1155TokenBalanceChanges.map((tokenChange) => (
-			<div class = 'vertical-center' style = 'display: flex'>
+			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant.value ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 					<TokenWithAmount
 						tokenEntry = { tokenChange }
@@ -477,7 +477,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	</>
 }
 
-function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint | undefined): [Array<[number, SummaryOutcome]>, Array<[number, SummaryOutcome]>] {
+function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint | undefined): [[number, SummaryOutcome][], [number, SummaryOutcome][]] {
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
 		balanceSummary.summaryFor.useAsActiveAddress || balanceSummary.summaryFor.address === activeAddress
 	)
@@ -594,7 +594,7 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : 
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { icon.value } />
+				<img src = { icon.value } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
@@ -617,7 +617,7 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { '../img/error-icon.svg' } />
+				<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
@@ -714,11 +714,11 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = { icon } />
+						<img src = { icon } width = '24' height = '24' />
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> Simulation Outcome </p>
+					<p class = 'paragraph'> Simulation Outcome </p>
 				</div>
 			</header>
 			<div class = 'card-content'>
@@ -771,7 +771,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							copyMessage = 'Interceptor Simulation input copied!'
 							classNames = { 'btn btn--outline is-small' }
 						>
-							<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
+							<p class = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
 								<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 									<ExportIcon/>
 								</span>

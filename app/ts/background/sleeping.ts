@@ -1,4 +1,4 @@
-import { EthereumClientService } from "../simulation/services/EthereumClientService.js"
+import type { EthereumClientService } from "../simulation/services/EthereumClientService.js"
 import { TIME_BETWEEN_BLOCKS } from "../utils/constants.js"
 import { modifyObject } from "../utils/typescript.js"
 import { sendPopupMessageToOpenWindows } from "./backgroundUtils.js"

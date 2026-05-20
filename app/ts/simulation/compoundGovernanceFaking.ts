@@ -2,10 +2,10 @@ import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-t
 import { CompoundTimeLock } from '../utils/abi.js'
 import { addressString, bigintSecondsToDate, checksummedAddress, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
-import { EthereumClientService } from './services/EthereumClientService.js'
+import type { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
-import { AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from './services/SimulationModeEthereumClientService.js'
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
 
@@ -68,7 +68,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const timeLockContract = EthereumAddress.parse(funtypes.String.parse(timeLockContractResult))
 	if (governanceContractCalls[1]?.status !== 'success') throw new Error('proposal simulation call failed')
 	const proposal = decodeFunctionOutputObjectLoose(governanceContract.abi, 'proposals', governanceContractCalls[1].returnData)
-	const eta: bigint = funtypes.BigInt.parse(proposal['eta'])
+	const { eta: rawEta } = proposal
+	const eta: bigint = funtypes.BigInt.parse(rawEta)
 	if (eta === undefined) throw new Error('eta is undefined')
 	if (governanceContractCalls[2]?.status !== 'success') throw new Error('getActions return value was undefined')
 	const [targets, values, signatures, calldatas] = decodeFunctionOutputLoose(governanceContract.abi, 'getActions', governanceContractCalls[2].returnData)
@@ -104,14 +105,22 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 }
 
 export const parseVoteInputParameters = (args: Record<string, unknown>) => {
-	if (args['proposalId'] === undefined) throw new Error('proposal Id missing from vote call')
-	if (args['support'] === undefined) throw new Error('support missing from vote call')
+	const {
+		proposalId: rawProposalId,
+		support: rawSupport,
+		reason: rawReason,
+		params: rawParams,
+		signature: rawSignature,
+		address: rawAddress,
+	} = args
+	if (rawProposalId === undefined) throw new Error('proposal Id missing from vote call')
+	if (rawSupport === undefined) throw new Error('support missing from vote call')
 	return {
-		proposalId: funtypes.BigInt.parse(args['proposalId']),
-		support: funtypes.Union(funtypes.Boolean, funtypes.BigInt).parse(args['support']),
-		reason: args['reason'] !== undefined ? funtypes.String.parse(args['reason']) : undefined,
-		params: args['params'] !== undefined ? EthereumData.parse(args['params']) : undefined,
-		signature: args['signature'] !== undefined ? EthereumData.parse(args['signature']) : undefined,
-		voter: args['address'] !== undefined ? EthereumAddress.parse(args['address']) : undefined,
+		proposalId: funtypes.BigInt.parse(rawProposalId),
+		support: funtypes.Union(funtypes.Boolean, funtypes.BigInt).parse(rawSupport),
+		reason: rawReason !== undefined ? funtypes.String.parse(rawReason) : undefined,
+		params: rawParams !== undefined ? EthereumData.parse(rawParams) : undefined,
+		signature: rawSignature !== undefined ? EthereumData.parse(rawSignature) : undefined,
+		voter: rawAddress !== undefined ? EthereumAddress.parse(rawAddress) : undefined,
 	}
 }

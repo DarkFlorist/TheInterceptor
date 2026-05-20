@@ -1,14 +1,14 @@
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, getSimulatedBlock, getSimulatedTransactionByHash, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
-import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { GetBlockReturn, JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_getBlockByNumber_7702_invalid_auth_yParity_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../RPCResponses.js'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
-import { SimulationState, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { type SimulationState, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -19,7 +19,7 @@ function parseRequest(data: string) {
 class MockEthereumJSONRpcRequestHandler {
 	public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
 
-	public clearCache = () => {}
+	public clearCache = () => undefined
 
 	public getChainId = async () => 5n
 
@@ -73,7 +73,7 @@ const rpcNetwork = {
 	weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 }
 
-const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
 
 const simulationState: SimulationState = {
 	blockNumber: blockNumber,

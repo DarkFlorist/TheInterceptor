@@ -1,4 +1,4 @@
-import { render } from 'preact'
+import type { render } from 'preact'
 
 type AttributeMap = Record<string, string | undefined>
 type RenderContainer = Parameters<typeof render>[1]
@@ -124,13 +124,13 @@ class TestElement extends TestNode {
 		delete this.attributes[name]
 	}
 
-	addEventListener() {}
-	removeEventListener() {}
-	focus() {}
-	blur() {}
-	showPopover() {}
-	hidePopover() {}
-	togglePopover() {}
+	addEventListener() { return undefined }
+	removeEventListener() { return undefined }
+	focus() { return undefined }
+	blur() { return undefined }
+	showPopover() { return undefined }
+	hidePopover() { return undefined }
+	togglePopover() { return undefined }
 
 	getAttribute(name: string) {
 		return this.attributes[name] ?? null
@@ -152,8 +152,8 @@ class TestDocument {
 		this.body = new TestElement(this, 'body')
 	}
 
-	addEventListener() {}
-	removeEventListener() {}
+	addEventListener() { return undefined }
+	removeEventListener() { return undefined }
 
 	createElement(tagName: string) {
 		return new TestElement(this, tagName)
@@ -177,12 +177,9 @@ export function installDomMock() {
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
 
-	// @ts-expect-error test shim intentionally overrides the DOM globals
-	globalThis.document = document
-	// @ts-expect-error test shim intentionally overrides the DOM globals
-	globalThis.window = { document }
-	// @ts-expect-error test shim intentionally overrides the timer globals
-	globalThis.setInterval = () => 1
+	Object.defineProperty(globalThis, 'document', { value: document, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'window', { value: { document }, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'setInterval', { value: () => 1, configurable: true, writable: true })
 	globalThis.clearInterval = () => undefined
 	globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
 		callback(0)
@@ -220,8 +217,7 @@ export function installDateMock(initialNow: Date | string | number) {
 		static UTC = RealDate.UTC
 	}
 
-	// @ts-expect-error test shim intentionally overrides the global Date constructor
-	globalThis.Date = MockDate
+	Object.defineProperty(globalThis, 'Date', { value: MockDate, configurable: true, writable: true })
 
 	return {
 		setNow(nextNow: Date | string | number) {

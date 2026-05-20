@@ -1,4 +1,4 @@
-import { Signal, useSignalEffect } from '@preact/signals'
+import { type Signal, useSignalEffect } from '@preact/signals'
 import { useRef } from 'preact/hooks'
 
 export type TooltipConfig = {

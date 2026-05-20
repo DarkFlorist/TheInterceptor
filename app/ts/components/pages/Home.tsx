@@ -1,5 +1,5 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
-import { SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
+import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
+import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
@@ -9,18 +9,18 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { Website } from '../../types/websiteAccessTypes.js'
-import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
+import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, ImportIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
-import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
+import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
+import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 
 function scheduleAfterPaint(callback: () => void) {
@@ -65,7 +65,7 @@ function FirstCardHeader(param: FirstCardParams) {
 		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
 			<div>
 				<ToolTip content = { tabIconReason }>
-					<img className = 'noselect nopointer' src = { param.tabIconDetails.value.icon } style = { { display: 'block', width: '3rem', height: '3rem' } } />
+					<img class = 'noselect nopointer' src = { param.tabIconDetails.value.icon } width = '48' height = '48' style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
 			<div>
@@ -98,12 +98,12 @@ type InterceptorDisabledButtonParams = {
 }
 
 function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
-	return <button disabled = { website.value === undefined } className = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
+	return <button disabled = { website.value === undefined } class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
 		{ interceptorDisabled.value ? <>
-			<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
+			<span class = 'icon'> <img src = { ICON_ACTIVE } width = '24' height = '24'/> </span>
 			<span> Enable</span>
 		</> : <>
-			<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
+			<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED } width = '24' height = '24'/> </span>
 			<span> Disable</span>
 		</> }
 	</button>
@@ -169,7 +169,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 				<div style = { { display: 'flex', flexDirection: 'column' } } >
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
-						<label class = 'form-control' style = 'gap: 1em;'>
+						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
 							<input type = 'checkbox' checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
 							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>
 						</label>
@@ -244,7 +244,7 @@ function FirstCard(param: FirstCardParams) {
 				{ !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
-							<button className = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
+							<button class = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
 								<SignerLogoText
 									signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }
 									text = { `Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
@@ -288,17 +288,17 @@ type SimulationResultsHeaderParams = {
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	return <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 		<div class = 'log-cell' style = 'justify-content: left;'>
-			<p className = 'h1'> Simulation Results </p>
+			<p class = 'h1'> Simulation Results </p>
 		</div>
 		<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
-			<button className = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
+			<button class = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 					<ImportIcon/>
 				</span>
 				<span>Import Simulation Stack</span>
 			</button>
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
-				<button className = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
+				<button class = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<BroomIcon />
 					</span>

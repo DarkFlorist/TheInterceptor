@@ -82,7 +82,7 @@ export class EthereumJSONRpcRequestHandler {
 		const requestId = ++this.nextRequestId
 		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs, requestAbortController)
 		if (responseObject.responseState === 'failed') {
-			console.log({ rpcRequest, response: responseObject.response })
+			console.warn({ rpcRequest, response: responseObject.response })
 			const errorResponse = JsonRpcErrorResponse.safeParse(await responseObject.response.json())
 			if (errorResponse.success) throw new JsonRpcResponseError(errorResponse.value)
 			throw new Error(`Query to RPC server ${ this.rpcUrl } failed with error code: ${ responseObject.response?.status } while quering for ${ rpcRequest.method }.`)

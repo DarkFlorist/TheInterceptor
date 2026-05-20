@@ -1,6 +1,6 @@
-import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from "../types/interceptor-messages.js"
-import { WebsiteSocket, checkAndPrintRuntimeLastError } from "../utils/requests.js"
-import { WebsiteTabConnections } from "../types/user-interface-types.js"
+import { type InterceptedRequestForward, InterceptorMessageToInpage, type SubscriptionReplyOrCallBack } from "../types/interceptor-messages.js"
+import { type WebsiteSocket, checkAndPrintRuntimeLastError } from "../utils/requests.js"
+import type { WebsiteTabConnections } from "../types/user-interface-types.js"
 import { websiteSocketToString } from "./backgroundUtils.js"
 import { serialize } from "../types/wire-types.js"
 

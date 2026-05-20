@@ -1,8 +1,8 @@
 import { toRlp as encodeRlp } from 'viem/utils'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
-import { DistributiveOmit, assertNever } from './typescript.js'
-import { EthereumSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
+import { type DistributiveOmit, assertNever } from './typescript.js'
+import type { EthereumSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 
 interface IUnsignedTransactionLegacy {
 	readonly type: 'legacy'

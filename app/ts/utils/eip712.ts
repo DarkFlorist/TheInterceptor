@@ -1,9 +1,9 @@
-import { EIP712Message, EIP712Types, Eip712Number } from '../types/eip721.js'
+import { type EIP712Message, type EIP712Types, Eip712Number } from '../types/eip721.js'
 import { EthereumAddress, EthereumData } from '../types/wire-types.js'
 import { String } from 'funtypes'
-import { JSONEncodeableObject, typeJSONEncodeable } from './json.js'
-import { SafeTx } from '../types/personal-message-definitions.js'
-import { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-signing-types.js'
+import type { JSONEncodeableObject, typeJSONEncodeable } from './json.js'
+import type { SafeTx } from '../types/personal-message-definitions.js'
+import type { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-signing-types.js'
 import { hashStruct, hashTypedData } from 'viem/utils'
 import { addressString } from './bigint.js'
 import { assertNever, modifyObject } from './typescript.js'
@@ -19,8 +19,9 @@ const eip712DomainFieldTypes = {
 } as const
 
 const hashDomain = (domain: Record<string, unknown>, types: EIP712Types) => {
-	const eip712Domain = types['EIP712Domain'] !== undefined
-		? { EIP712Domain: types['EIP712Domain'] }
+	const { EIP712Domain } = types
+	const eip712Domain = EIP712Domain !== undefined
+		? { EIP712Domain }
 		: { EIP712Domain: Object.entries(eip712DomainFieldTypes).filter(([name]) => domain[name] !== undefined).map(([name, type]) => ({ name, type })) }
 	return hashStruct({ data: domain, primaryType: 'EIP712Domain', types: eip712Domain })
 }
@@ -127,7 +128,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	if (intMatch) {
 		// Use BigInt to check numeric ranges
 		const isUnsigned = intMatch[1] === 'u'
-		if (!intMatch[2]) return { valid: false, reason: `intMatch was undefined` }
+		if (!intMatch[2]) return { valid: false, reason: "intMatch was undefined" }
 		const bitWidth = parseInt(intMatch[2])
 		if (bitWidth < 8 || bitWidth > 256) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be in range [8,256]` }
 		if (!Number.isInteger(bitWidth / 8)) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be divisible by 8.` }
@@ -216,14 +217,14 @@ const areNamesUnique = (items: readonly { name: string, type: string }[]): boole
 
 const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP712Types): { valid: true, tree: SolidityTypeTree } | { valid: false, reason: string } => {
 	const structNames = Object.keys(nonExtractedTypes)
-	let extracted: SolidityTypeTree = {}
+	const extracted: SolidityTypeTree = {}
 	const subSimplifyTypesToSolidityTypes = (root: string, nonExtractedTypes: EIP712Types, depth: number): { valid: true, TypeDefinitionArray: TypeDefinition[] } | { valid: false, reason: string } => {
 		if (depth > 10) return { valid: false, reason: 'stack too deep' }
 		const rootType = nonExtractedTypes[root]
 		const nonExtractedTypesArray = Object.entries(nonExtractedTypes)
 		if (rootType === undefined) return { valid: false, reason: 'stack too deep' }
 		if (!areNamesUnique(rootType)) return { valid: false, reason: 'not unique type names' }
-		let extractedTypes: TypeDefinition[] = []
+		const extractedTypes: TypeDefinition[] = []
 		for (const currentType of rootType) {
 			if (!isValidSolidityType(currentType.type, structNames)) return { valid: false, reason: `unknown type: ${ currentType.type }` }
 			const baseType = getBaseType(currentType.type)
@@ -277,7 +278,7 @@ const isValidEIP712DomainOrder = (expected: readonly string[], test: readonly st
 }
 
 export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid: true } | { valid: false, reason: string } => {
-	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: `EIP712 message should only have 4 fields` }
+	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: "EIP712 message should only have 4 fields" }
 
 	const validEIP712DomainEntries = [
 		{ name: 'name', type: 'string' },
@@ -286,7 +287,7 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 		{ name: 'verifyingContract', type: 'address' },
 		{ name: 'salt', type: 'bytes32' }
 	]
-	const eip712Domain = maybeEip712Message.types['EIP712Domain']
+	const { EIP712Domain: eip712Domain } = maybeEip712Message.types
 	if (eip712Domain === undefined) return { valid: false, reason: 'EIP712Domain does not exist' }
 
 	for (const expectedEntry of validEIP712DomainEntries) {
@@ -297,11 +298,12 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 	}
 
 	// domain matches its typing
-	if ('chainId' in maybeEip712Message.domain && !Eip712Number.safeParse(maybeEip712Message.domain['chainId']).success) return { valid: false, reason: 'EIP712Domain.chainId is in wrong type' }
-	if ('version' in maybeEip712Message.domain && !String.safeParse(maybeEip712Message.domain['version']).success) return { valid: false, reason: 'EIP712Domain.version is in wrong type' }
-	if ('verifyingContract' in maybeEip712Message.domain && !EthereumAddress.safeParse(maybeEip712Message.domain['verifyingContract']).success) return { valid: false, reason: 'EIP712Domain.verifyingContract is in wrong type' }
-	if ('name' in maybeEip712Message.domain && !String.safeParse(maybeEip712Message.domain['name']).success) return { valid: false, reason: 'EIP712Domain.name is in wrong type' }
-	if ('salt' in maybeEip712Message.domain && !EthereumData.safeParse(maybeEip712Message.domain['salt']).success) return { valid: false, reason: 'EIP712Domain.salt is in wrong type' }
+	const { chainId, version, verifyingContract, name, salt } = maybeEip712Message.domain
+	if ('chainId' in maybeEip712Message.domain && !Eip712Number.safeParse(chainId).success) return { valid: false, reason: 'EIP712Domain.chainId is in wrong type' }
+	if ('version' in maybeEip712Message.domain && !String.safeParse(version).success) return { valid: false, reason: 'EIP712Domain.version is in wrong type' }
+	if ('verifyingContract' in maybeEip712Message.domain && !EthereumAddress.safeParse(verifyingContract).success) return { valid: false, reason: 'EIP712Domain.verifyingContract is in wrong type' }
+	if ('name' in maybeEip712Message.domain && !String.safeParse(name).success) return { valid: false, reason: 'EIP712Domain.name is in wrong type' }
+	if ('salt' in maybeEip712Message.domain && !EthereumData.safeParse(salt).success) return { valid: false, reason: 'EIP712Domain.salt is in wrong type' }
 
 	if (!isValidEIP712DomainOrder(validEIP712DomainEntries.map((entry) => entry.name), eip712Domain.map((entry) => entry.name))) throw new Error('domain types are in wrong order')
 
@@ -385,7 +387,7 @@ const extractPrimaryTypesUsedInMessage = (eip712Message: EIP712Message) => {
 	const types = simplifyTypesToSolidityTypesOnly(eip712Message.primaryType, eip712Message.types)
 	if (!types.valid) throw new Error('could not extract types')
 
-	function pickKeys<T extends Record<string, any>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
+	function pickKeys<T extends Record<string, unknown>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
 		const result = {} as Pick<T, K>
 		for (const key of keys) {
 			if (key in obj) {

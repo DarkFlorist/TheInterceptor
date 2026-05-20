@@ -37,14 +37,14 @@ const makeMockBrowser = () => {
 			},
 		},
 		tabs: {
-			onRemoved: { addListener: () => {}, removeListener: () => {} },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			query: async () => [],
 			get: async () => undefined,
 			update: async () => undefined,
 			reload: async () => undefined,
 			create: async () => undefined,
 			remove: async () => undefined,
-			onUpdated: { addListener: () => {}, removeListener: () => {} },
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		windows: {
 			get: async () => undefined,
@@ -55,10 +55,8 @@ const makeMockBrowser = () => {
 }
 
 const mockBrowser = makeMockBrowser()
-// @ts-expect-error test shim for extension APIs
-globalThis.browser = mockBrowser
-// @ts-expect-error test shim for extension APIs
-globalThis.chrome = { runtime: { id: 'test-extension' } }
+Object.defineProperty(globalThis, 'browser', { value: mockBrowser, configurable: true, writable: true })
+Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 
 const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
@@ -116,13 +114,13 @@ const resetStack = async () => {
 			{ type: 'Transaction', preSimulationTransaction: tx2 },
 		],
 	}))
-	delete mockBrowser.__storage['popupVisualisation']
-	delete mockBrowser.__storage['preSimulationBlockTimeManipulation']
-	delete mockBrowser.__storage['makeCurrentAddressRich']
-	delete mockBrowser.__storage['fixedAddressRichList']
-	delete mockBrowser.__storage['simulationMode']
-	delete mockBrowser.__storage['activeSimulationAddress']
-	delete mockBrowser.__storage['activeRpcNetwork']
+	delete mockBrowser.__storage.popupVisualisation
+	delete mockBrowser.__storage.preSimulationBlockTimeManipulation
+	delete mockBrowser.__storage.makeCurrentAddressRich
+	delete mockBrowser.__storage.fixedAddressRichList
+	delete mockBrowser.__storage.simulationMode
+	delete mockBrowser.__storage.activeSimulationAddress
+	delete mockBrowser.__storage.activeRpcNetwork
 }
 
 describe('simulate delay editor', () => {

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -111,7 +110,14 @@ function resetEnvironment() {
 	Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
 }
 
-function collectElements(node: any, tagName: string, results: any[] = []) {
+type TestDomNode = {
+	readonly tagName?: string
+	readonly childNodes?: readonly TestDomNode[]
+	readonly textContent?: string | null
+	readonly l?: Record<string, (event: unknown) => unknown>
+}
+
+function collectElements(node: TestDomNode | null | undefined, tagName: string, results: TestDomNode[] = []) {
 	if (node?.tagName === tagName.toUpperCase()) results.push(node)
 	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
 	return results

@@ -4,7 +4,7 @@ import { ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
-import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
+import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 export function ChangeChain() {
@@ -41,15 +41,15 @@ export function ChangeChain() {
 	if (chainChangeData.value === undefined) return <main></main>
 	return (
 		<main>
-			<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+			<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
 				<header class = 'card-header window-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
-							<img src = '../img/access-key.svg'/>
+							<img src = '../img/access-key.svg' width = '24' height = '24'/>
 						</span>
 					</div>
 					<div class = 'card-header-title'>
-						<p className = 'paragraph'>
+						<p class = 'paragraph'>
 							Chain Change Request
 						</p>
 					</div>
@@ -61,14 +61,14 @@ export function ChangeChain() {
 								? <></>
 								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 									<div class = 'image is-64x64'>
-										<img src = { chainChangeData.value.website.icon }/>
+										<img src = { chainChangeData.value.website.icon } width = '64' height = '64'/>
 									</div>
 								</figure>
 						}
 					</article>
 					<div class = 'media-content' style = 'padding-bottom: 10px'>
 						<div class = 'content'>
-							<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+							<p class = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
 								<b>	{ chainChangeData.value.website.websiteOrigin } </b>
 								would like to switch to
 								<b> { chainChangeData.value.rpcNetwork.name } </b>
@@ -86,13 +86,13 @@ export function ChangeChain() {
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<button
-							className = { 'button is-danger' }
+							class = { 'button is-danger' }
 							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 							onClick = { reject } >
 							Don't change
 						</button>
 						<button
-							className = { 'button is-primary' }
+							class = { 'button is-primary' }
 							disabled = { chainChangeData.value.rpcNetwork.httpsRpc === undefined && ( (!connectAnyway.value && !chainChangeData.value.simulationMode ) || chainChangeData.value.simulationMode ) }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>

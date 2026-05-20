@@ -10,7 +10,7 @@ interface SomeTimeAgoProps {
 export function getSomeTimeAgoText(
 	priorTimestamp: Date,
 	currentTimestamp: Date,
-	countBackwards: boolean = false,
+	countBackwards = false,
 	diffToText: (secondsDiff: number) => string = humanReadableDateDelta,
 ) {
 	const timeDiff = (priorTimestamp.getTime() - currentTimestamp.getTime()) / 1000
@@ -19,7 +19,7 @@ export function getSomeTimeAgoText(
 
 export function SomeTimeAgo(props: SomeTimeAgoProps) {
 	const priorTimestampMs = props.priorTimestamp.getTime()
-	const getTimeDiff = () => (priorTimestampMs - new Date().getTime()) / 1000
+	const getTimeDiff = () => (priorTimestampMs - Date.now()) / 1000
 	const timeDiff = useSignal(getTimeDiff())
 	const diffTotext = props.diffToText !== undefined ? props.diffToText : humanReadableDateDelta
 	const humanReadableTimeDiff = useComputed(() => diffTotext(props.countBackwards ? timeDiff.value : -timeDiff.value))

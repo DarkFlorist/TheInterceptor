@@ -1,24 +1,24 @@
-import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
+import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
-import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
+import { type InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
-import { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
-import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { ResolvedSimulationInput, ResolvedSimulationState, toResolvedSimulationInput } from '../../types/visualizer-types.js'
+import type { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
+import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
+import { type ResolvedSimulationInput, type ResolvedSimulationState, toResolvedSimulationInput } from '../../types/visualizer-types.js'
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getCurrentSimulationInput } from '../simulationUpdating.js'
 
-let pendForUserReply: Future<FetchSimulationStackRequestConfirmation> | undefined = undefined
+let pendForUserReply: Future<FetchSimulationStackRequestConfirmation> | undefined 
 
-let openedDialog: PopupOrTab | undefined = undefined
+let openedDialog: PopupOrTab | undefined 
 const MAX_DECISION_CACHE = 100
 let simulationStackDecisions: { identifier: string, hash: string, accept: boolean }[] = []
 

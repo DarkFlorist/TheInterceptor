@@ -21,14 +21,18 @@
 			"recommended": false,
 			"complexity": {
 				"noForEach": "error",
+				"noUselessUndefinedInitialization": "error",
 				"noUselessTernary": "error",
+				"useDateNow": "error",
 				"useArrowFunction": "error",
 				"useFlatMap": "error",
 				"useLiteralKeys": "error",
 				"useOptionalChain": "error"
 			},
 			"correctness": {
-				"noUnusedImports": "error"
+				"noUnusedImports": "error",
+				"useImageSize": "error",
+				"useJsxKeyInIterable": "error"
 			},
 			"style": {
 				"noInferrableTypes": "error",
@@ -36,7 +40,8 @@
 				"noUselessElse": "error",
 				"useConsistentArrayType": "error",
 				"useConst": "error",
-				"useDefaultParameterLast": "error"
+				"useDefaultParameterLast": "error",
+				"useImportType": "error"
 			},
 			"suspicious": {
 				"noAssignInExpressions": "error",
@@ -46,8 +51,12 @@
 						"allow": ["assert", "error", "info", "trace", "warn"]
 					}
 				},
+				"noDebugger": "error",
 				"noDoubleEquals": "error",
-				"noExplicitAny": "error"
+				"noEmptyBlockStatements": "error",
+				"noExplicitAny": "error",
+				"noReactSpecificProps": "error",
+				"useIterableCallbackReturn": "error"
 			}
 		}
 	}

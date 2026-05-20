@@ -123,7 +123,7 @@ export const checkAndThrowRuntimeLastError = () => {
 
 export const checkAndPrintRuntimeLastError = () => {
 	const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
-	if (error !== null && error !== undefined && error.message !== undefined) console.log(error)
+	if (error !== null && error !== undefined && error.message !== undefined) console.error(error)
 }
 
 export const getHostWithPort = (urlString: string): string => {

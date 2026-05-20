@@ -1,8 +1,8 @@
 import { useEffect } from 'preact/hooks'
 import { Notice } from '../subcomponents/Error.js'
-import { ComponentChildren, createRef } from 'preact'
+import { type ComponentChildren, createRef } from 'preact'
 import { XMarkIcon } from '../subcomponents/icons.js'
-import { Signal, useComputed, useSignal } from '@preact/signals'
+import { type Signal, useComputed, useSignal } from '@preact/signals'
 import { isJSON } from '../../utils/json.js'
 import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { InterceptorSimulationExport } from '../../types/visualizer-types.js'
@@ -80,11 +80,11 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/address-book.svg'/>
+						<img src = '../img/address-book.svg' width = '24' height = '24'/>
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { 'Import Interceptor Simulation Stack' } </p>
+					<p class = 'paragraph'> { 'Import Interceptor Simulation Stack' } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />

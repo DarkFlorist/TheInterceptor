@@ -4,7 +4,7 @@ import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.j
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
-import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { type RpcConnectionStatus, TabIcon, type TabState, type WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
@@ -70,7 +70,7 @@ export async function updateExtensionBadge() {
 	const connectionStatus = await getRpcConnectionStatus()
 	if (connectionStatus?.isConnected === false || noNewBlockForOverTwoMins(connectionStatus) && connectionStatus && connectionStatus.retrying) {
 		const nextConnectionAttempt = new Date(connectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
-		if (nextConnectionAttempt.getTime() - new Date().getTime() > 0) {
+		if (nextConnectionAttempt.getTime() - Date.now()> 0) {
 			await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
 			return await setExtensionBadgeText({ text: '!' })
 		}
@@ -95,7 +95,7 @@ export async function retrieveWebsiteDetails(tabId: number) {
 		browser.tabs.onUpdated.addListener(listener)
 		const tab = await safeGetTab(tabId)
 		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
-		let timeout = undefined
+		let timeout 
 		try {
 			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
 			await waitForLoadedFuture

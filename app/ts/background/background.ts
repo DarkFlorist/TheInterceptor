@@ -1,27 +1,27 @@
-import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
+import { type InpageScriptRequest, PopupMessage, type RPCReply, type Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack } from './storageVariables.js'
 import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMakeMeRichList } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack } from './simulationModeHanders.js'
 import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, handleUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, popupReadyAndListening } from './popupMessageHandlers.js'
-import { PASSTHROUGH_STATE, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState, WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
-import { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput, mockSignTransaction } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
-import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
-import { Website } from '../types/websiteAccessTypes.js'
-import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
-import { RpcNetwork } from '../types/rpc.js'
+import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain } from '../types/JsonRpc-types.js'
+import type { Website } from '../types/websiteAccessTypes.js'
+import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 import { last } from '../utils/array.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
@@ -30,10 +30,10 @@ import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { buildExecutionSimulationStateFromPreparedInput, buildSimulationStateFromPreparedInput, createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, prepareSimulationInputForRpc, visualizeSimulatorState } from './simulationUpdating.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 
-let simulationAbortController = new AbortController()
+const simulationAbortController = new AbortController()
 
 export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
 	try {
@@ -169,7 +169,7 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		console.log({ request })
+		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
@@ -411,9 +411,9 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
-			let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined = undefined
-			let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined = undefined
-			let simulationStatePromise: Promise<ResolvedSimulationState> | undefined = undefined
+			let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined 
+			let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined 
+			let simulationStatePromise: Promise<ResolvedSimulationState> | undefined 
 			const getSimulationInput = async () => {
 				if (!settings.simulationMode) return PASSTHROUGH_STATE
 				if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
@@ -484,7 +484,7 @@ export async function popupMessageHandler(
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
-		console.log({ request })
+		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
 		return {
 			error: {

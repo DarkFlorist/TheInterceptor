@@ -1,17 +1,17 @@
-import { EthereumClientService } from './services/EthereumClientService.js'
-import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
+import type { EthereumClientService } from './services/EthereumClientService.js'
+import { type EthereumAddress, EthereumData, type EthereumQuantity } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_CONTENT_HASH_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_EXPIRY_EXTENDED, ENS_FUSES_SET, ENS_NAME_CHANGED, ENS_CONTROLLER_NAME_REGISTERED, ENS_BASE_REGISTRAR_NAME_RENEWED, ENS_NAME_UNWRAPPED, ENS_NEW_OWNER, ENS_NEW_RESOLVER, ENS_NEW_TTL, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_CONTROLLER_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_REVERSE_CLAIMED, ENS_REVERSE_REGISTRAR, ENS_TEXT_CHANGED, ENS_TEXT_CHANGED_KEY_VALUE, ENS_TOKEN_WRAPPER, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG, ENS_BASE_REGISTRAR_NAME_REGISTERED, ENS_NAME_WRAPPED } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsContentHashChanged, handleEnsExpiryExtended, handleEnsFusesSet, handleEnsNameChanged, handleEnsNameUnWrapped, handleEnsNewOwner, handleEnsNewResolver, handleEnsNewTtl, handleEnsControllerNameRenewed, handleEnsReverseClaimed, handleEnsTextChanged, handleEnsTextChangedKeyValue, handleEnsTransfer, handleErc721ApprovalForAllLog, handleControllerNameRegistered, handleBaseRegistrarNameRenewed, handleWithdrawalLog, handleBaseRegistrarNameRegistered, handleNameWrapped } from './logHandlers.js'
-import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
+import type { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { getAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
 import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
-import { EthereumEvent } from '../types/ethSimulate-types.js'
-import { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
+import type { EthereumEvent } from '../types/ethSimulate-types.js'
+import type { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 
 type TokenLogHandler = (event: EthereumEvent) => TokenVisualizerResult[]
@@ -118,7 +118,7 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 			args: valuesWithTypes,
 		}
 	} catch (e: unknown) {
-		console.log(transaction)
+		console.warn({ transaction })
 		console.error(e)
 		return nonParsed
 	}

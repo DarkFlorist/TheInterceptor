@@ -1,6 +1,6 @@
 import type { Abi, AbiItem } from 'viem'
 import { printError } from './errors.js'
-import { ErrorWithCodeAndOptionalData } from '../types/error.js'
+import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { decodeAbiValues, decodeErrorLoose, normalizeAbi, type AbiLike } from './abiRuntime.js'
 
 const ERROR_STRING_PREFIX = '0x08c379a0' // Error(string)
@@ -174,8 +174,8 @@ const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAn
 export const decodeEthereumError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData): DecodedError => {
 	try {
 		if (error.data === '0x') return handleEmptyError(error)
-		if (error.data !== undefined && error.data.startsWith(ERROR_STRING_PREFIX)) return handleRevertError(error)
-		if (error.data !== undefined && error.data.startsWith(PANIC_CODE_PREFIX)) return handlePanicError(error)
+		if (error.data?.startsWith(ERROR_STRING_PREFIX)) return handleRevertError(error)
+		if (error.data?.startsWith(PANIC_CODE_PREFIX)) return handlePanicError(error)
 		if (error.data !== undefined) return handleCustomError(errorAbis, error)
 		return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
 	} catch (decodingError: unknown) {

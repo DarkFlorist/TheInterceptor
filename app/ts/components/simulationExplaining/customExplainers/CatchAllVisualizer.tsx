@@ -1,19 +1,19 @@
-import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
-import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
+import { type Erc1155OperatorChange, Erc20ApprovalChanges, type Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
+import type { Erc721TokenApprovalChange, ERC20TokenApprovalChange, SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { TokenSymbol, TokenAmount } from '../../subcomponents/coins.js'
-import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
+import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
 import { EnsEventsExplainer } from './EnsEventExplainer.js'
-import { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import type { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
-import { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { ReadonlySignal, useComputed } from '@preact/signals'
-import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
-import { RpcNetwork } from '../../../types/rpc.js'
+import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
+import { type ReadonlySignal, useComputed } from '@preact/signals'
+import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
+import type { RpcNetwork } from '../../../types/rpc.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -37,8 +37,8 @@ export function tokenEventToTokenSymbolParams(tokenEvent: TokenVisualizerResultW
 
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams) {
 	return <>
-		{ param.tokenVisualizerResults.map((tokenEvent) => (
-			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>
+		{ param.tokenVisualizerResults.filter((tokenEvent) => !tokenEvent.isApproval).map((tokenEvent, index) => (
+			<div key = { `${ tokenEvent.token.address.toString() }-${ index }` } class = 'vertical-center'>
 				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
@@ -158,7 +158,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 			</div>
 		</div>
 		{ (param.simTx.transaction.to === undefined || ensEvents.length > 0) && eventTypesForEachAccount.length > 0 ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
-		{ eventTypesForEachAccount.map((eventsGrouped, index) => <div>
+		{ eventTypesForEachAccount.map((eventsGrouped, index) => <div key = { addressString(eventsGrouped.currentAddress.address) }>
 			<BigAddress
 				addressBookEntry = { eventsGrouped.currentAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }

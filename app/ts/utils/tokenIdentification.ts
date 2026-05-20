@@ -1,8 +1,8 @@
 import { Erc20ABI, Erc721ABI } from './abi.js'
-import { EthereumAddress } from '../types/wire-types.js'
-import { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { EthereumAddress } from '../types/wire-types.js'
+import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { checksummedAddress, stringToUint8Array } from './bigint.js'
-import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
+import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
 
 type EOA = {

@@ -1,16 +1,16 @@
-import { DistributedOmit, assertNever } from '../../../utils/typescript.js'
-import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
+import { type DistributedOmit, assertNever } from '../../../utils/typescript.js'
+import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
-import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
-import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { SimulatedAndVisualizedSimpleTokenTransferTransaction } from '../identifyTransaction.js'
-import { AddressBookEntry } from '../../../types/addressBookTypes.js'
+import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
+import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
+import type { SimulatedAndVisualizedSimpleTokenTransferTransaction } from '../identifyTransaction.js'
+import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
-import { RpcNetwork } from '../../../types/rpc.js'
+import type { RpcNetwork } from '../../../types/rpc.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 import { extractTokenEvents } from '../../../background/metadataUtils.js'
-import { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 
 export type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -85,7 +85,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 		</span>
 		{ viaProxypath === undefined ? <></> : <div style = 'display: flex;'>
 			<p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }> Via proxy:&nbsp;</p>
-			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ '-> '}&nbsp;</p>) } </>
+			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ '-> '}&nbsp;</p>) } </>
 		</div> }
 	</div>
 }

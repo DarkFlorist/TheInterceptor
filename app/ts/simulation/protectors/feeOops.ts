@@ -1,6 +1,6 @@
-import { SimulationState } from '../../types/visualizer-types.js'
-import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
-import { EthereumClientService } from '../services/EthereumClientService.js'
+import type { SimulationState } from '../../types/visualizer-types.js'
+import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import type { EthereumClientService } from '../services/EthereumClientService.js'
 
 export async function feeOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
 	if (transaction.type === '1559' || transaction.type === '4844' || transaction.type === '7702') {
