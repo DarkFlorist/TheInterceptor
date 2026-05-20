@@ -9,7 +9,7 @@ import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './ad
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
+import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
@@ -505,14 +505,14 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 export type UpdateConfirmTransactionDialogPendingTransactions = {
 	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
 	readonly data: {
-		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+		readonly pendingTransactionAndSignableMessages: readonly PopupPendingTransactionOrSignableMessage[]
 		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
 	}
 }
 const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
-		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
+		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()

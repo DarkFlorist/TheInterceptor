@@ -17,7 +17,7 @@ import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
-import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
@@ -52,6 +52,45 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
+export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
+	switch (pending.type) {
+		case 'Transaction':
+			return pending
+		case 'SignableMessage': {
+			const base = {
+				type: pending.type,
+				popupOrTabId: pending.popupOrTabId,
+				originalRequestParameters: pending.originalRequestParameters,
+				simulationMode: pending.simulationMode,
+				uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+				created: pending.created,
+				website: pending.website,
+				activeAddress: pending.activeAddress,
+				approvalStatus: pending.approvalStatus,
+			}
+			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
+			switch (transactionOrMessageCreationStatus) {
+				case 'Simulated':
+					return {
+						...base,
+						transactionOrMessageCreationStatus,
+						visualizedPersonalSignRequest: pending.visualizedPersonalSignRequest,
+					}
+				case 'Crafting':
+				case 'Simulating':
+					return {
+						...base,
+						transactionOrMessageCreationStatus,
+					}
+				default:
+					return assertNever(transactionOrMessageCreationStatus)
+			}
+		}
+		default:
+			return assertNever(pending)
+	}
+}
+
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
 		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating))
@@ -63,13 +102,13 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 			currentBlockNumber: await currentBlockNumberPromise,
 			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : createPassthroughCompleteVisualizedSimulation(),
 		} }
-		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: {
-				pendingTransactionAndSignableMessages,
-				currentBlockNumber: await currentBlockNumberPromise,
+			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+				data: {
+					pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
+					currentBlockNumber: await currentBlockNumberPromise,
+				}
 			}
-		}
 		await Promise.all([
 			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
 			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')

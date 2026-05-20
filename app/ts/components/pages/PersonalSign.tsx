@@ -22,7 +22,7 @@ import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelec
 import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { ReadonlySignal } from '@preact/signals'
 
 type SignatureCardParams = {
