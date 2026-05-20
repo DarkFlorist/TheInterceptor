@@ -100,6 +100,10 @@ interface ProviderMessage {
 	readonly data: unknown
 }
 
+type SignerAccountsReply =
+	| { readonly type: 'success', readonly accounts: readonly string[], readonly requestAccounts: boolean }
+	| { readonly type: 'error', readonly error: { readonly code: number, readonly message: string, readonly data?: unknown }, readonly requestAccounts: boolean }
+
 type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((connectInfo: ProviderConnectInfo) => void)
 	| ((accounts: readonly string[]) => void)
@@ -232,7 +236,7 @@ class InterceptorMessageListener {
 	private currentSigner: Signer = 'NoSigner'
 
 	private signerAccounts: string[] = []
-	private pendingSignerAddressRequest: InterceptorFuture<boolean> | undefined = undefined
+	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
 
 	public constructor() {
 		this.injectEthereumIntoWindow()
@@ -415,8 +419,8 @@ class InterceptorMessageListener {
 	private readonly requestAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		if (this.pendingSignerAddressRequest !== undefined) {
-			await this.pendingSignerAddressRequest
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+			const pendingReply = await this.pendingSignerAddressRequest
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [pendingReply] })
 			return
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
@@ -425,14 +429,19 @@ class InterceptorMessageListener {
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+			const signerReply = { type: 'success', accounts: this.signerAccounts, requestAccounts: true } as const
+			this.pendingSignerAddressRequest.resolve(signerReply)
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 			return
 		} catch (error: unknown) {
-			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error }] })
-			if (error instanceof Error) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
-			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
+			const signerReply = InterceptorMessageListener.getErrorCodeAndMessage(error)
+				? { type: 'error', requestAccounts: true, error } as const
+				: error instanceof Error
+					? { type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } } as const
+					: { type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } } as const
+			this.pendingSignerAddressRequest.resolve(signerReply)
+			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 		} finally {
-			this.pendingSignerAddressRequest.resolve(true)
 			this.pendingSignerAddressRequest = undefined
 		}
 	}
