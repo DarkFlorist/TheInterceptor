@@ -1,12 +1,10 @@
 import { useEffect } from 'preact/hooks'
+import type { JSX } from 'preact'
 import { defaultActiveAddresses } from '../background/settings.js'
 import { PASSTHROUGH_STATE, type ResolvedSimulationResults, type ResolvedSimulationState, type TokenPriceEstimate, type SimulationUpdatingState, type SimulationResultState, type NamedTokenId, type ModifyAddressWindowState, type EditEnsNamedHashWindowState, type VisualizedSimulationState, type BlockTimeManipulation, type CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
-import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
-import { AddNewAddress } from './pages/AddNewAddress.js'
-import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
 import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
@@ -24,13 +22,12 @@ import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
-import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
-import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
+import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -70,6 +67,58 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
 	| { page: 'ChangeActiveAddress' }
 	| { page: 'ImportSimulation', state: Signal<string> }
+
+type LazyPageComponent<T extends object> = ((props: T) => JSX.Element) | undefined
+type LazyPageModule<T extends object, ExportName extends string> = Record<ExportName, (props: T) => JSX.Element>
+
+function useLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
+	const component = useSignal<LazyPageComponent<T>>(undefined)
+	useEffect(() => {
+		let cancelled = false
+		void loader().then((module) => {
+			if (cancelled) return
+			component.value = module[exportName]
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [])
+	return component
+}
+
+function createLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
+	return function LazyPage(props: T) {
+		const component = useLazyPage(loader, exportName)
+		if (component.value === undefined) return <CenterToPageTextSpinner />
+		const Component = component.value
+		return <Component { ...props } />
+	}
+}
+
+const LazyChangeActiveAddress = createLazyPage<ChangeActiveAddressParam, 'ChangeActiveAddress'>(
+	() => import('./pages/ChangeActiveAddress.js'),
+	'ChangeActiveAddress',
+)
+
+const LazyAddNewAddress = createLazyPage<AddAddressParam, 'AddNewAddress'>(
+	() => import('./pages/AddNewAddress.js'),
+	'AddNewAddress',
+)
+
+const LazyInterceptorAccessList = createLazyPage<InterceptorAccessListParams, 'InterceptorAccessList'>(
+	() => import('./pages/InterceptorAccessList.js'),
+	'InterceptorAccessList',
+)
+
+const LazyEditEnsLabelHash = createLazyPage<{ close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }, 'EditEnsLabelHash'>(
+	() => import('./pages/EditEnsLabelHash.js'),
+	'EditEnsLabelHash',
+)
+
+const LazyImportSimulationStack = createLazyPage<{ close: () => void, simulationInput: Signal<string> }, 'ImportSimulationStack'>(
+	() => import('./pages/ImportSimulationStack.js'),
+	'ImportSimulationStack',
+)
 
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
@@ -454,13 +503,13 @@ export function App() {
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><EditEnsLabelHash
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyEditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><InterceptorAccessList
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyInterceptorAccessList
 								goHome = { goHome }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
@@ -468,7 +517,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ChangeActiveAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								signerAccounts = { tabState.value?.signerAccounts ?? [] }
 								close = { goHome }
@@ -479,7 +528,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><AddNewAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyAddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
@@ -488,7 +537,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ImportSimulationStack
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
 							/></ErrorBoundary>

@@ -100,6 +100,13 @@ interface ProviderMessage {
 	readonly data: unknown
 }
 
+type JsonRpcResponse = IJsonRpcSuccess<unknown> | IJsonRpcError
+type LegacyJsonRpcCallback = (error: IJsonRpcError | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
+
+type SignerAccountsReply =
+	| { readonly type: 'success', readonly accounts: readonly string[], readonly requestAccounts: boolean }
+	| { readonly type: 'error', readonly error: { readonly code: number, readonly message: string, readonly data?: unknown }, readonly requestAccounts: boolean }
+
 type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((connectInfo: ProviderConnectInfo) => void)
 	| ((accounts: readonly string[]) => void)
@@ -261,7 +268,7 @@ class InterceptorMessageListener {
 	private currentSigner: Signer = 'NoSigner'
 
 	private signerAccounts: string[] = []
-	private pendingSignerAddressRequest: InterceptorFuture<boolean> | undefined = undefined
+	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
 
 	public constructor() {
 		this.injectEthereumIntoWindow()
@@ -318,13 +325,13 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
+	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | LegacyJsonRpcCallback) => {
 		const fullPayload = typeof payload === 'string' ? { method: payload, id: 1, params: [] } : payload
 		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
 			if (inpageWindow.ethereum === undefined) throw new Error('window.ethereum is missing')
 			switch (fullPayload.method) {
-				case 'eth_coinbase':
+				case 'eth_coinbase': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.selectedAddress ?? null }
 				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.selectedAddress === undefined || inpageWindow.ethereum.selectedAddress === null ? [] : [inpageWindow.ethereum.selectedAddress] }
 				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.networkVersion }
 				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: inpageWindow.ethereum.chainId }
@@ -333,32 +340,45 @@ class InterceptorMessageListener {
 		}
 		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
 	}
-	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
-		const payloadArray = Array.isArray(payload) ? payload : [payload]
-		payloadArray.map((param) => this.WindowEthereumRequest(param)
-			.then(result => callback(null, { jsonrpc: '2.0', id: param.id, result }))
-			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
-			.catch((error) => {
-				if (InterceptorMessageListener.getErrorCodeAndMessage(error)) {
-					const data = 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : {}
-					const stack = 'stack' in error && typeof error.stack === 'string' ? { stack: error.stack } : {}
-					return callback({
-						jsonrpc: '2.0',
-						id: param.id,
-						error: {
-							code: error.code,
-							message: error.message,
-							data: { ...data, ...stack }
-						}
-					}, null)
-				}
-				return callback({
+
+	private readonly getWindowEthereumSendAsyncResponse = async (param: SingleSendAsyncParam): Promise<JsonRpcResponse> => {
+		try {
+			const result = await this.WindowEthereumRequest(param)
+			return { jsonrpc: '2.0', id: param.id, result }
+		} catch (error) {
+			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) {
+				const data = 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : {}
+				const stack = 'stack' in error && typeof error.stack === 'string' ? { stack: error.stack } : {}
+				return {
 					jsonrpc: '2.0',
 					id: param.id,
-					error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
-				}, null)
-			})
-		)
+					error: {
+						code: error.code,
+						message: error.message,
+						data: { ...data, ...stack }
+					}
+				}
+			}
+			return {
+				jsonrpc: '2.0',
+				id: param.id,
+				error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
+			}
+		}
+	}
+
+	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: LegacyJsonRpcCallback) => {
+		if (Array.isArray(payload)) {
+			const responses = await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
+			callback(null, responses)
+			return
+		}
+		const response = await this.getWindowEthereumSendAsyncResponse(payload)
+		if ('error' in response) {
+			callback(response, null)
+			return
+		}
+		callback(null, response)
 	}
 
 	static exhaustivenessCheck = (_thing: never) => undefined
@@ -442,8 +462,8 @@ class InterceptorMessageListener {
 	private readonly requestAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		if (this.pendingSignerAddressRequest !== undefined) {
-			await this.pendingSignerAddressRequest
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+			const pendingReply = await this.pendingSignerAddressRequest
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [pendingReply] })
 			return
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
@@ -452,14 +472,19 @@ class InterceptorMessageListener {
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+			const signerReply = { type: 'success', accounts: this.signerAccounts, requestAccounts: true } as const
+			this.pendingSignerAddressRequest.resolve(signerReply)
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 			return
 		} catch (error: unknown) {
-			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error }] })
-			if (error instanceof Error) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
-			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
+			const signerReply = InterceptorMessageListener.getErrorCodeAndMessage(error)
+				? { type: 'error', requestAccounts: true, error } as const
+				: error instanceof Error
+					? { type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } } as const
+					: { type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } } as const
+			this.pendingSignerAddressRequest.resolve(signerReply)
+			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 		} finally {
-			this.pendingSignerAddressRequest.resolve(true)
 			this.pendingSignerAddressRequest = undefined
 		}
 	}
@@ -484,6 +509,12 @@ class InterceptorMessageListener {
 		if (typeof (error as { code: unknown }).code !== 'number') return false
 		if (typeof (error as { message: unknown }).message !== 'string') return false
 		return true
+	}
+
+	private static readonly getProviderConnectInfo = (result: unknown): ProviderConnectInfo => {
+		if (typeof result === 'string') return { chainId: result }
+		if (Array.isArray(result) && typeof result[0] === 'string') return { chainId: result[0] }
+		throw new Error('wrong type')
 	}
 
 	private readonly requestChangeChainFromSigner = async (chainId: string) => {
@@ -529,7 +560,7 @@ class InterceptorMessageListener {
 					if (this.connected) return
 					this.connected = true
 					for (const callback of this.onConnectCallBacks) {
-						callback({ chainId: replyRequest.result as string })
+						callback(InterceptorMessageListener.getProviderConnectInfo(replyRequest.result))
 					}
 					return
 				}

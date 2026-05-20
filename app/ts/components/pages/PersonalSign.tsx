@@ -22,8 +22,8 @@ import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelec
 import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import type { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { ReadonlySignal } from '@preact/signals'
+import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest

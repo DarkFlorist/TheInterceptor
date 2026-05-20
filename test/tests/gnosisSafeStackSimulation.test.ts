@@ -257,13 +257,6 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 	const safeMessage: VisualizedPersonalSignRequestSafeTx = {
 		activeAddress,
 		rpcNetwork: fakeRpcNetwork,
-		request: {
-			method: 'eth_signTypedData_v4',
-			params: [],
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
-		},
 		simulationMode: true,
 		signerName: 'NoSigner',
 		quarantineReasons: [],
