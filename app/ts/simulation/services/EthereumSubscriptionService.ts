@@ -52,7 +52,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
 		if (websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
 			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
-			break
+			continue
 		}
 		switch (subscriptionOrFilter.type) {
 			case 'newHeads': {
