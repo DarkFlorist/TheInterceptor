@@ -1,16 +1,13 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 const responseHeaders = { 'Content-Type': 'application/json' }
 const testAddress = 0x0000000000000000000000000000000000000001n
 const HTTP_STATUS_OK = 200
 const HTTP_STATUS_BAD_REQUEST = 400
-const HTTP_STATUS_TOO_MANY_REQUESTS = 429
-const JSON_RPC_ERROR_CODE_INVALID_PARAMS = -32602
-const JSON_RPC_ERROR_CODE_INTERNAL_ERROR = -32603
-const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
 
 function installFetchMock(responses: Response[]) {
 	const previousFetch = globalThis.fetch

@@ -5,17 +5,17 @@ import { keccak256, stringToBytes } from 'viem/utils'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
 import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
+import {
+	HTTP_STATUS_REQUEST_TIMEOUT,
+	HTTP_STATUS_SERVER_ERROR_RANGE_START,
+	HTTP_STATUS_TOO_EARLY,
+	HTTP_STATUS_TOO_MANY_REQUESTS,
+	JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
+	JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED,
+	JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE,
+} from '../../utils/constants.js'
 
 type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
-
-const HTTP_STATUS_REQUEST_TIMEOUT = 408
-const HTTP_STATUS_TOO_EARLY = 425
-const HTTP_STATUS_TOO_MANY_REQUESTS = 429
-const HTTP_STATUS_SERVER_ERROR_RANGE_START = 500
-
-const JSON_RPC_ERROR_CODE_INTERNAL_ERROR = -32603
-const JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE = -32002
-const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
 
 const TRANSIENT_HTTP_STATUS_CODES = new Set([
 	HTTP_STATUS_REQUEST_TIMEOUT,
