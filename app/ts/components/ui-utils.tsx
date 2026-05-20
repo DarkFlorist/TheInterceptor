@@ -67,7 +67,7 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 	function convertTens(num: number) {
 		if (num < 10) return ones[num]
 		if (num >= 10 && num < 20) return teens[num - 10]
-		return tens[Math.floor(num / 10)] + " " + ones[num % 10]
+		return tens[Math.floor(num / 10)] + ' ' + ones[num % 10]
 	}
 
 	if (num === 0) return 'zero'

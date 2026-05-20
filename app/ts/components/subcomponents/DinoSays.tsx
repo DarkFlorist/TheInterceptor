@@ -1,4 +1,4 @@
-import { XMarkIcon } from "./icons.js"
+import { XMarkIcon } from './icons.js'
 
 export function DinoSays( { text } : { text: string }) {
 	return <div class = 'media'>

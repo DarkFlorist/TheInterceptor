@@ -16,6 +16,14 @@ function injectScript(_content: string) {
 			readonly requestId?: number
 			readonly requestMethod?: string
 		}
+		const stringifyForwardedFallbackError = (error: unknown) => error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`
+		const stringifyForwardedFallbackValue = (value: unknown) => {
+			try {
+				return String(value)
+			} catch (error: unknown) {
+				return `[failed to stringify value: ${ stringifyForwardedFallbackError(error) }]`
+			}
+		}
 
 		/**
 		 * this script executed within the context of the active tab when the user clicks the extension bar button
@@ -41,10 +49,11 @@ function injectScript(_content: string) {
 			try {
 				const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
 				if (stringified !== undefined) return stringified
-			} catch (_error) {
-				// Ignore serialization failures and fall back to String(value).
+			} catch (error: unknown) {
+				const fallbackValue = stringifyForwardedFallbackValue(value)
+				return `${ fallbackValue }\n\n[serialization fallback: ${ stringifyForwardedFallbackError(error) }]`
 			}
-			return String(value)
+			return stringifyForwardedFallbackValue(value)
 		}
 		const getForwardedDiagnosticsSummary = (error: unknown) => {
 			if (error instanceof Error) return error.message
@@ -174,4 +183,4 @@ function injectScript(_content: string) {
 	}
 }
 
-injectScript("[[injected.ts]]")
+injectScript('[[injected.ts]]')

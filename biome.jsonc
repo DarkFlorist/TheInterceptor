@@ -21,6 +21,7 @@
 			"recommended": false,
 			"complexity": {
 				"noForEach": "error",
+				"noUselessCatch": "error",
 				"noUselessUndefinedInitialization": "error",
 				"noUselessTernary": "error",
 				"useDateNow": "error",

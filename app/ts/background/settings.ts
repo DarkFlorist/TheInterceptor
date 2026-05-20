@@ -94,7 +94,7 @@ const wethForChainId = new Map<string, EthereumAddress>([
 	['42161', 0x82af49447d8a07e3bd95bd0d56f35241523fbab1n], // Arbitrum
 ])
 
-export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: "https://api.etherscan.io/v2/api", apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
+export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://api.etherscan.io/v2/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 

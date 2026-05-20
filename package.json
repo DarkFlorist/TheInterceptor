@@ -24,7 +24,10 @@
 		"biome": "bunx --bun @biomejs/biome@2.3.11",
 		"biome:check": "bun run biome lint .",
 		"biome:fix": "bun run biome lint --write --unsafe .",
-		"lint": "bun run biome:check"
+		"lint:catches": "bun ./scripts/check-comment-only-catches.mts",
+		"lint:quotes": "bun ./scripts/check-single-quotes.mts",
+		"lint:quotes:fix": "bun ./scripts/check-single-quotes.mts --write",
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",

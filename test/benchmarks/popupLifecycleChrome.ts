@@ -319,15 +319,15 @@ async function openPopupAndCollect(context: BenchmarkContext, scenario: Scenario
 			try {
 				await waitForPerformanceMark(popupConnection, POPUP_REFRESH_COMPLETE_MARK, 15_000)
 				popupRefreshCompleteSnapshot = await getPerformanceSnapshot(popupConnection)
-			} catch {
-				// Best effort: the popup may never acknowledge the refresh in this real-browser setup.
+			} catch (error: unknown) {
+				console.warn('Popup benchmark did not observe the refresh-complete performance mark within the timeout.', error)
 			}
 			let popupRefreshRenderedSnapshot = popupRefreshCompleteSnapshot
 			try {
 				await waitForPerformanceMark(popupConnection, POPUP_REFRESH_RENDERED_MARK, 15_000)
 				popupRefreshRenderedSnapshot = await getPerformanceSnapshot(popupConnection)
-			} catch {
-				// Best effort: the popup may not emit a separate post-render mark in every run.
+			} catch (error: unknown) {
+				console.warn('Popup benchmark did not observe the refresh-rendered performance mark within the timeout.', error)
 			}
 			const popupRefreshCompleteMs = absoluteTime(popupRefreshCompleteSnapshot, POPUP_REFRESH_COMPLETE_MARK) === undefined ? undefined : requiredTiming(launchEpochMs, popupRefreshCompleteSnapshot, POPUP_REFRESH_COMPLETE_MARK)
 			const popupRefreshRenderedMs = absoluteTime(popupRefreshRenderedSnapshot, POPUP_REFRESH_RENDERED_MARK) === undefined ? undefined : requiredTiming(launchEpochMs, popupRefreshRenderedSnapshot, POPUP_REFRESH_RENDERED_MARK)

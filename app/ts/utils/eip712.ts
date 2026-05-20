@@ -128,7 +128,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	if (intMatch) {
 		// Use BigInt to check numeric ranges
 		const isUnsigned = intMatch[1] === 'u'
-		if (!intMatch[2]) return { valid: false, reason: "intMatch was undefined" }
+		if (!intMatch[2]) return { valid: false, reason: 'intMatch was undefined' }
 		const bitWidth = parseInt(intMatch[2])
 		if (bitWidth < 8 || bitWidth > 256) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be in range [8,256]` }
 		if (!Number.isInteger(bitWidth / 8)) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be divisible by 8.` }
@@ -278,7 +278,7 @@ const isValidEIP712DomainOrder = (expected: readonly string[], test: readonly st
 }
 
 export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid: true } | { valid: false, reason: string } => {
-	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: "EIP712 message should only have 4 fields" }
+	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: 'EIP712 message should only have 4 fields' }
 
 	const validEIP712DomainEntries = [
 		{ name: 'name', type: 'string' },
