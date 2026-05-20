@@ -67,9 +67,15 @@ function parsePopupReply<Request extends PopupRequests>(message: Request, reply:
 
 export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request> | undefined> {
 	try {
-		const reply = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
-		if (reply === null || reply === undefined) return undefined
-		return parsePopupReply(message, reply)
+		const response = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
+		if (response === null || response === undefined) return undefined
+		if (typeof response === 'object' && response !== null && 'error' in response) {
+			const responseError = response.error
+			if (typeof responseError === 'object' && responseError !== null && 'message' in responseError && typeof responseError.message === 'string') {
+				throw new Error(responseError.message)
+			}
+		}
+		return parsePopupReply(message, response)
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isIgnorableClosedMessageChannelError(error)) return undefined
