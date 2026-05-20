@@ -176,6 +176,12 @@ type AddressBookEntriesWithFilter = {
 	activeFilter: FilterKey
 }
 
+export function doesReplyMatchViewFilter(viewFilter: ViewFilter, replyFilter: GetAddressBookDataReply['data']['data']) {
+	if (viewFilter.chain?.chainId !== replyFilter.chainId) return false
+	if (viewFilter.activeFilter !== replyFilter.filter) return false
+	return viewFilter.searchString === replyFilter.searchString
+}
+
 export function AddressBook() {
 	const addressBookEntriesWithFilter = useSignal<AddressBookEntriesWithFilter>({ addressBookEntries: [], activeFilter: 'My Active Addresses' })
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
@@ -221,7 +227,7 @@ export function AddressBook() {
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return false
 			const reply = GetAddressBookDataReply.parse(msg)
-			if (activeChain.peek()?.chainId === reply.data.data.chainId) {
+			if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
 				addressBookEntriesWithFilter.value = {
 					addressBookEntries: reply.data.entries,
 					activeFilter: reply.data.data.filter,
