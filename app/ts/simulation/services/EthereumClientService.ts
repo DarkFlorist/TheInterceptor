@@ -72,7 +72,7 @@ export class EthereumClientService {
 	public getCachedBlock = () => {
 		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
 		// if the block is older than MAX_BLOCK_CACHE block intervals, invalidate cache
-		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE) return undefined
+		if ((Date.now() - this.cachedBlock.timestamp.getTime()) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE * 1000) return undefined
 		return this.cachedBlock
 	}
 	public cleanup = () => this.setBlockPolling(false)

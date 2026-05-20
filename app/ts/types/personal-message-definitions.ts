@@ -1,7 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'
-import { InterceptedRequest } from '../utils/requests.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -356,7 +355,6 @@ const PersonalSignRequestBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		activeAddress: AddressBookEntry,
 		rpcNetwork: RpcNetwork,
-		request: InterceptedRequest,
 		simulationMode: funtypes.Boolean,
 		signerName: SignerName,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
