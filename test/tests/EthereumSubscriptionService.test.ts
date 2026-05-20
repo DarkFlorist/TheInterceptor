@@ -340,4 +340,45 @@ const blockNumber = 8443561n
 			assert.equal(emittedBlockNumbers.length, 3)
 			assert.deepEqual(emittedBlockNumbers, [blockNumber, blockNumber + 1n, blockNumber + 2n])
 		})
+
+		test('newHeads skips stale subscriptions without suppressing later live subscribers', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+			const liveSocket = { tabId: 2, connectionName: 2n } as const
+			const postedMessages: InterceptorMessageToInpage[] = []
+			const port = {
+				postMessage(message: unknown) {
+					postedMessages.push(InterceptorMessageToInpage.parse(message))
+				},
+			} as unknown as browser.runtime.Port
+			const websiteTabConnections = new Map([
+				[2, {
+					connections: {
+						'2-0x2': {
+							port,
+							socket: liveSocket,
+							websiteOrigin: 'test',
+							approved: true,
+							wantsToConnect: false,
+						},
+					},
+				}],
+			])
+
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, { tabId: 1, connectionName: 1n })
+			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
+
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+
+			const emittedBlockNumbers = postedMessages.flatMap((message) => {
+				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
+				if (!('result' in message) || !('result' in message.result)) throw new Error('wrong subscription payload')
+				if (message.result.result === null) throw new Error('missing block payload')
+				return [message.result.result.number]
+			})
+
+			assert.deepEqual(emittedBlockNumbers, [blockNumber])
+		})
 	})
