@@ -14,6 +14,11 @@ const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 	UNISWAP_V3_ROUTER
 ])
 
+const hasKnownCommonTokenMetadata = (address: EthereumAddress) => {
+	const normalizedAddress = addressString(address)
+	return tokenMetadata.has(normalizedAddress) || erc721Metadata.has(normalizedAddress) || erc1155Metadata.has(normalizedAddress)
+}
+
 export async function getCodeOrError(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, address: EthereumAddress) {
 	const code = await getSimulatedCode(ethereum, requestAbortController, toResolvedSimulationState(simulationState), address)
 	if (code.statusCode !== 'failure') return code
@@ -26,9 +31,7 @@ export async function commonTokenOops(transaction: EthereumUnsignedTransaction, 
 	if (transaction.to === null) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
 	if (!ADDITIONAL_BAD_TRANSFER_TARGETS.has(transferInfo.arguments.to)) return
-	if (tokenMetadata.get(addressString(transferInfo.arguments.to)) === undefined) return
-	if (erc721Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
-	if (erc1155Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
+	if (!hasKnownCommonTokenMetadata(transaction.to)) return
 	const to = await identifyAddress(ethereum, requestAbortController, transferInfo.arguments.to)
-	return `Attempt to send tokens to a contract ${ to } that cannot receive such tokens`
+	return `Attempt to send tokens to a contract (${ to.name }) that cannot receive such tokens`
 }
