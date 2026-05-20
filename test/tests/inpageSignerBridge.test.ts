@@ -9,6 +9,8 @@ function createFakeWindow() {
 	const backgroundEthAccountsReplies: unknown[] = []
 	const interceptorErrorPayloads: unknown[] = []
 	const signerAccounts = ['0x1111111111111111111111111111111111111111']
+	let blockRequestAccounts = false
+	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined = undefined
 
 	const fakeSigner = {
 		isMetaMask: true,
@@ -19,7 +21,13 @@ function createFakeWindow() {
 				case 'eth_chainId':
 					return '0x1'
 				case 'eth_accounts':
+					return signerAccounts
 				case 'eth_requestAccounts':
+					if (blockRequestAccounts) {
+						return await new Promise<string[]>((_resolve, reject) => {
+							rejectPendingRequestAccounts = reject
+						})
+					}
 					return signerAccounts
 				default:
 					throw new Error(`Unexpected signer request: ${method}`)
@@ -59,7 +67,7 @@ function createFakeWindow() {
 								requestId: request.requestId,
 								type: 'result',
 								method: 'connected_to_signer',
-								result: { metamaskCompatibilityMode: false, activeAddress: '' },
+								result: { metamaskCompatibilityMode: true, activeAddress: signerAccounts[0] },
 							},
 						})
 						return
@@ -68,6 +76,16 @@ function createFakeWindow() {
 						return
 					case 'eth_accounts_reply':
 						backgroundEthAccountsReplies.push((request.params?.[0] as { accounts?: unknown } | undefined) ?? {})
+						fakeWindow.dispatchEvent({
+							type: 'message',
+							data: {
+								interceptorApproved: true,
+								requestId: request.requestId,
+								type: 'result',
+								method: 'eth_accounts_reply',
+								result: undefined,
+							},
+						})
 						return
 					default:
 						fakeWindow.dispatchEvent({
@@ -85,7 +103,15 @@ function createFakeWindow() {
 		},
 	}
 
-	return { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts, interceptorErrorPayloads }
+	return {
+		fakeWindow,
+		signerRequests,
+		backgroundEthAccountsReplies,
+		signerAccounts,
+		interceptorErrorPayloads,
+		setBlockRequestAccounts: (value: boolean) => { blockRequestAccounts = value },
+		rejectPendingRequestAccounts: (error: { code: number, message: string }) => rejectPendingRequestAccounts?.(error),
+	}
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 2000) {
@@ -100,7 +126,15 @@ describe('inpage signer bridge', () => {
 	test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
-		const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts, interceptorErrorPayloads } = createFakeWindow()
+		const {
+			fakeWindow,
+			signerRequests,
+			backgroundEthAccountsReplies,
+			signerAccounts,
+			interceptorErrorPayloads,
+			setBlockRequestAccounts,
+			rejectPendingRequestAccounts,
+		} = createFakeWindow()
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -117,6 +151,53 @@ describe('inpage signer bridge', () => {
 			await import('../../app/inpage/ts/inpage.js')
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
+			const provider = fakeWindow.ethereum as {
+				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { jsonrpc: '2.0', id: string | number | null, result: unknown }
+				sendAsync: (payload: unknown, callback: (error: unknown, response: unknown) => void) => Promise<void>
+				on: (eventName: string, callback: (value: unknown) => void) => void
+			}
+			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: signerAccounts[0] })
+			let batchCallbackCount = 0
+			const batchReply = await new Promise<unknown>((resolve, reject) => {
+				provider.sendAsync([
+					{ id: 91, method: 'eth_chainId', params: [] },
+					{ id: 92, method: 'eth_accounts', params: [] },
+				], (error, response) => {
+					batchCallbackCount++
+					if (error !== null) {
+						reject(error)
+						return
+					}
+					resolve(response)
+				})
+			})
+			assert.equal(batchCallbackCount, 1)
+			assert.deepEqual(batchReply, [
+				{ jsonrpc: '2.0', id: 91, result: '0x' },
+				{ jsonrpc: '2.0', id: 92, result: '0x' },
+			])
+			const connectEvents: unknown[] = []
+			provider.on('connect', (value) => connectEvents.push(value))
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'disconnect',
+					result: [],
+				},
+			})
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'connect',
+					result: ['0x1'],
+				},
+			})
+			await waitFor(() => connectEvents.length === 1)
+			assert.deepEqual(connectEvents, [{ chainId: '0x1' }])
 
 			fakeWindow.dispatchEvent({
 				type: 'message',
@@ -145,6 +226,32 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts', 'eth_requestAccounts'])
 			await waitFor(() => backgroundEthAccountsReplies.length === 2)
 			assert.deepEqual((backgroundEthAccountsReplies[1] as { accounts?: unknown }).accounts, signerAccounts)
+			setBlockRequestAccounts(true)
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_eth_requestAccounts',
+					result: [],
+				},
+			})
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_eth_requestAccounts',
+					result: [],
+				},
+			})
+			await waitFor(() => signerRequests.filter((method) => method === 'eth_requestAccounts').length === 2)
+			rejectPendingRequestAccounts({ code: 4001, message: 'User rejected the request.' })
+			await waitFor(() => backgroundEthAccountsReplies.length === 4)
+			assert.deepEqual(backgroundEthAccountsReplies.slice(2), [
+				{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } },
+				{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } },
+			])
 
 			fakeWindow.dispatchEvent({
 				type: 'message',
