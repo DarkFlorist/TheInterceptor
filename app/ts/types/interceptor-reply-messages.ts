@@ -2,8 +2,8 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId } from './visualizer-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
