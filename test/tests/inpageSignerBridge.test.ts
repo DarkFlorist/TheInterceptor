@@ -9,6 +9,8 @@ function createFakeWindow() {
 	const backgroundEthAccountsReplies: unknown[] = []
 	const interceptorErrorPayloads: unknown[] = []
 	const signerAccounts = ['0x1111111111111111111111111111111111111111']
+	let blockRequestAccounts = false
+	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined = undefined
 
 	const fakeSigner = {
 		isMetaMask: true,
@@ -19,7 +21,13 @@ function createFakeWindow() {
 				case 'eth_chainId':
 					return '0x1'
 				case 'eth_accounts':
+					return signerAccounts
 				case 'eth_requestAccounts':
+					if (blockRequestAccounts) {
+						return await new Promise<string[]>((_resolve, reject) => {
+							rejectPendingRequestAccounts = reject
+						})
+					}
 					return signerAccounts
 				default:
 					throw new Error(`Unexpected signer request: ${method}`)
@@ -68,6 +76,16 @@ function createFakeWindow() {
 						return
 					case 'eth_accounts_reply':
 						backgroundEthAccountsReplies.push((request.params?.[0] as { accounts?: unknown } | undefined) ?? {})
+						fakeWindow.dispatchEvent({
+							type: 'message',
+							data: {
+								interceptorApproved: true,
+								requestId: request.requestId,
+								type: 'result',
+								method: 'eth_accounts_reply',
+								result: undefined,
+							},
+						})
 						return
 					default:
 						fakeWindow.dispatchEvent({
@@ -85,7 +103,15 @@ function createFakeWindow() {
 		},
 	}
 
-	return { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts, interceptorErrorPayloads }
+	return {
+		fakeWindow,
+		signerRequests,
+		backgroundEthAccountsReplies,
+		signerAccounts,
+		interceptorErrorPayloads,
+		setBlockRequestAccounts: (value: boolean) => { blockRequestAccounts = value },
+		rejectPendingRequestAccounts: (error: { code: number, message: string }) => rejectPendingRequestAccounts?.(error),
+	}
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 2000) {
@@ -100,7 +126,15 @@ describe('inpage signer bridge', () => {
 	test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
-		const { fakeWindow, signerRequests, backgroundEthAccountsReplies, signerAccounts, interceptorErrorPayloads } = createFakeWindow()
+		const {
+			fakeWindow,
+			signerRequests,
+			backgroundEthAccountsReplies,
+			signerAccounts,
+			interceptorErrorPayloads,
+			setBlockRequestAccounts,
+			rejectPendingRequestAccounts,
+		} = createFakeWindow()
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -145,6 +179,32 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(signerRequests, ['eth_chainId', 'eth_accounts', 'eth_requestAccounts'])
 			await waitFor(() => backgroundEthAccountsReplies.length === 2)
 			assert.deepEqual((backgroundEthAccountsReplies[1] as { accounts?: unknown }).accounts, signerAccounts)
+			setBlockRequestAccounts(true)
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_eth_requestAccounts',
+					result: [],
+				},
+			})
+			fakeWindow.dispatchEvent({
+				type: 'message',
+				data: {
+					interceptorApproved: true,
+					type: 'result',
+					method: 'request_signer_to_eth_requestAccounts',
+					result: [],
+				},
+			})
+			await waitFor(() => signerRequests.filter((method) => method === 'eth_requestAccounts').length === 2)
+			rejectPendingRequestAccounts({ code: 4001, message: 'User rejected the request.' })
+			await waitFor(() => backgroundEthAccountsReplies.length === 4)
+			assert.deepEqual(backgroundEthAccountsReplies.slice(2), [
+				{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } },
+				{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } },
+			])
 
 			fakeWindow.dispatchEvent({
 				type: 'message',
