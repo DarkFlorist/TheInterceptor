@@ -8,6 +8,7 @@ function injectScript(_content: string) {
 	}
 
 	function listenContentScript(connectionName: string | undefined) {
+		const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 		const checkAndThrowRuntimeLastError = () => {
 			const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 			if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
@@ -41,6 +42,7 @@ function injectScript(_content: string) {
 		const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
 		let pageHidden = false
 		let extensionPort: browser.runtime.Port | undefined 
+		let inpagePort: MessagePort | undefined
 
 		const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 		const stringifyForwardedThrownValue = (value: unknown) => {
@@ -94,22 +96,15 @@ function injectScript(_content: string) {
 			}
 		}
 
-		// forward all page messages to the background script, which will then filter and process them
-		// anything reaching this boundary is untrusted page input unless the extension proves otherwise
-		globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+		const forwardInpageMessageToBackground = (data: unknown) => {
 			if (extensionPort === undefined) return
 			if (
-				typeof messageEvent !== 'object'
-				|| messageEvent === null
-				|| !('data' in messageEvent)
-				|| typeof messageEvent.data !== 'object'
-				|| messageEvent.data === null
-				|| !('interceptorRequest' in messageEvent.data)
+				typeof data !== 'object'
+				|| data === null
+				|| !('interceptorRequest' in data)
 			) return
 			try {
-				// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
-				if (!('data' in messageEvent) || !(typeof messageEvent.data === 'object' && messageEvent.data !== null) || !('interceptorRequest' in messageEvent.data)) return
-				extensionPort.postMessage({ data: messageEvent.data })
+				extensionPort.postMessage({ data })
 				checkAndThrowRuntimeLastError()
 			} catch (error) {
 				if (error instanceof Error) {
@@ -119,9 +114,26 @@ function injectScript(_content: string) {
 					}
 					if (error.message?.includes('User denied')) return // user denied signature
 				}
-				reportInterceptorError(serializeForwardedDiagnostics('document-start', 'forward page message', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
+				reportInterceptorError(serializeForwardedDiagnostics('document-start', 'forward page message', error, getForwardedDiagnosticsRequestContext(data)))
 				throw error
 			}
+		}
+
+		globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+			if (
+				inpagePort !== undefined
+				|| typeof messageEvent.data !== 'object'
+				|| messageEvent.data === null
+				|| !('type' in messageEvent.data)
+				|| messageEvent.data.type !== INTERCEPTOR_BRIDGE_PORT_MESSAGE
+			) return
+			const port = messageEvent.ports[0]
+			if (port === undefined) {
+				reportInterceptorError(createForwardedDiagnosticsFromRaw('document-start', 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
+				return
+			}
+			inpagePort = port
+			inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
 		})
 
 		const connect = () => {
@@ -137,7 +149,11 @@ function injectScript(_content: string) {
 					return
 				}
 				try {
-					globalThis.postMessage(messageEvent, '*')
+					if (inpagePort === undefined) {
+						reportInterceptorError(createForwardedDiagnosticsFromRaw('document-start', 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
+						return
+					}
+					inpagePort.postMessage(messageEvent)
 					checkAndThrowRuntimeLastError()
 				} catch (error) {
 					console.error(error)
@@ -170,13 +186,13 @@ function injectScript(_content: string) {
 	}
 
 	try {
+		listenContentScript(undefined)
 		const container = document.head || document.documentElement
 		const scriptTag = document.createElement('script')
 		scriptTag.setAttribute('async', 'false')
 		scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
 		container.insertBefore(scriptTag, container.children[1])
 		container.removeChild(scriptTag)
-		listenContentScript(undefined)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 	  	console.error('Interceptor: Provider injection failed.', error)

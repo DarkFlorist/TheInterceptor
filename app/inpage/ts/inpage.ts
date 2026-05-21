@@ -85,6 +85,76 @@ type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly typ
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
+const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
+
+type InterceptorApprovedMessageCandidate = {
+	readonly interceptorApproved?: unknown
+	readonly method?: unknown
+	readonly type?: unknown
+	readonly requestId?: unknown
+	readonly params?: unknown
+	readonly subscription?: unknown
+	readonly replyWithSignersReply?: unknown
+	readonly result?: unknown
+	readonly error?: unknown
+}
+
+type InterceptorErrorCandidate = {
+	readonly code?: unknown
+	readonly message?: unknown
+	readonly data?: unknown
+}
+
+const isMessageCandidate = (value: unknown): value is InterceptorApprovedMessageCandidate => typeof value === 'object' && value !== null
+const isErrorCandidate = (value: unknown): value is InterceptorErrorCandidate => typeof value === 'object' && value !== null
+
+function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForward | undefined {
+	if (!isMessageCandidate(data)) return undefined
+	if (data.interceptorApproved !== true) return undefined
+	const method = data.method
+	if (typeof method !== 'string') return undefined
+	const type = data.type
+	if (type !== 'result' && type !== 'forwardToSigner') return undefined
+	const requestId = data.requestId
+	const params = data.params
+	const subscription = data.subscription
+	const base = {
+		interceptorApproved: true as const,
+		method,
+		...(typeof requestId === 'number' ? { requestId } : {}),
+		...(Array.isArray(params) ? { params } : {}),
+		...(typeof subscription === 'string' ? { subscription } : {}),
+	}
+	if (type === 'forwardToSigner') return {
+		...base,
+		type: 'forwardToSigner',
+		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+	}
+	const hasResult = 'result' in data
+	const maybeError = data.error
+	if (hasResult && maybeError !== undefined) return undefined
+	if (isErrorCandidate(maybeError)) {
+		const { code, message } = maybeError
+		if (typeof code !== 'number' || typeof message !== 'string') return undefined
+		const errorData = maybeError.data
+		return {
+			...base,
+			type: 'result',
+			error: {
+				code,
+				message,
+				...(errorData !== undefined && typeof errorData === 'object' && errorData !== null ? { data: errorData } : {}),
+			},
+		}
+	}
+	if (!hasResult) return undefined
+	return {
+		...base,
+		type: 'result',
+		result: data.result,
+	}
+}
+
 interface ProviderConnectInfo {
 	readonly chainId: string
 }
@@ -254,6 +324,7 @@ class InterceptorMessageListener {
 	private requestId = 0
 	private metamaskCompatibilityMode = false
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
+	private extensionMessagePort: MessagePort | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
 
@@ -271,11 +342,19 @@ class InterceptorMessageListener {
 	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
 
 	public constructor() {
+		this.connectToContentScript()
 		this.injectEthereumIntoWindow()
 		this.onPageLoad()
 	}
 
 	private readonly WindowEthereumIsConnected = () => this.connected
+
+	private readonly connectToContentScript = () => {
+		const channel = new MessageChannel()
+		this.extensionMessagePort = channel.port1
+		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
+		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
+	}
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
 		this.requestId++
@@ -283,13 +362,14 @@ class InterceptorMessageListener {
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, future)
 		try {
-			window.postMessage({
+			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
+			this.extensionMessagePort.postMessage({
 				interceptorRequest: true,
 				method: messageMethodAndParams.method,
 				params: messageMethodAndParams.params,
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
-			}, '*')
+			})
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
@@ -298,13 +378,14 @@ class InterceptorMessageListener {
 
 	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
-			window.postMessage({
+			if (this.extensionMessagePort === undefined) return
+			this.extensionMessagePort.postMessage({
 				interceptorRequest: true,
 				method: 'InterceptorError',
 				params: [diagnostics],
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: -1,
-			}, '*')
+			})
 		} catch(reportingError: unknown) {
 			console.error('Failed to report InterceptorError diagnostics')
 			console.error(reportingError)
@@ -630,21 +711,23 @@ class InterceptorMessageListener {
 		return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', maybeErrorObject )
 	}
 
-	public readonly onMessage = async (messageEvent: unknown) => {
+	public readonly onWindowMessage = (messageEvent: unknown) => {
 		this.checkIfCoinbaseInjectionMessageAndInject(messageEvent)
+	}
+
+	public readonly onMessage = async (messageEvent: unknown) => {
 		if (
 			typeof messageEvent !== 'object'
 			|| messageEvent === null
 			|| !('data' in messageEvent)
 			|| typeof messageEvent.data !== 'object'
 			|| messageEvent.data === null
-			|| !('interceptorApproved' in messageEvent.data)
 		) return
 		try {
 			if (!('ethereum' in inpageWindow) || !inpageWindow.ethereum) throw new Error('window.ethereum missing')
-			if (!('method' in messageEvent.data)) throw new Error('missing method field')
+			const forwardRequest = parseInterceptorApprovedMessage(messageEvent.data)
+			if (forwardRequest === undefined) throw new Error('Malformed message from content script')
 			if (!('type' in messageEvent)) throw new Error('missing type field')
-			const forwardRequest = messageEvent.data as InterceptedRequestForward //use 'as' here as we don't want to inject funtypes here
 			if (forwardRequest.type === 'result' && 'error' in forwardRequest) {
 				if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 				const pending = this.outstandingRequests.get(forwardRequest.requestId)
@@ -653,7 +736,7 @@ class InterceptorMessageListener {
 			}
 			if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
 				if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
-					switch (messageEvent.data.method) {
+					switch (forwardRequest.method) {
 						case 'eth_requestAccounts':
 						case 'eth_accounts': {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
@@ -875,7 +958,7 @@ class InterceptorMessageListener {
 
 function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
-	window.addEventListener('message', interceptorMessageListener.onMessage)
+	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 	window.dispatchEvent(new Event('ethereum#initialized'))
 
 	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor
