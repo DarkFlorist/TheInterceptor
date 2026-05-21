@@ -1,8 +1,8 @@
-import { normalize } from 'viem/ens'
+import { ens_normalize } from './viem.js'
 
 export const normalizeEnsNameOrUndefined = (name: string) => {
 	try {
-		return normalize(name)
+		return ens_normalize(name)
 	} catch {
 		return undefined
 	}

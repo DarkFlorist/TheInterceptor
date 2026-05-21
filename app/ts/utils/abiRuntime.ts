@@ -14,17 +14,18 @@ import type {
 	Hex,
 } from 'viem'
 import {
-	bytesToHex,
+	parseAbiItem,
+	parseAbiParameters,
 	decodeAbiParameters,
 	decodeEventLog,
 	decodeFunctionData,
 	encodeAbiParameters,
 	formatAbiItem,
-	parseAbiItem,
-	parseAbiParameters,
+	concat,
+	bytesToHex,
 	toEventSelector,
 	toFunctionSelector,
-} from 'viem/utils'
+} from './viem.js'
 
 export type AbiLike = string | readonly (string | AbiItem)[]
 
@@ -176,7 +177,7 @@ const encodeFunctionCallUnchecked = (abi: Abi, functionName: string, args: reado
 	const fragment = getFunctionFragmentInternal(abi, functionName, args.length)
 	if (fragment === undefined) throw new Error(`Unknown function ${ functionName }`)
 	const encodedArgs = encodeAbiParameters(fragment.inputs, encodeValuesForParameters(fragment.inputs, args))
-	return `${ toFunctionSelector(formatAbiItem(fragment)) }${ encodedArgs.slice(2) }`
+	return concat([toFunctionSelector(formatAbiItem(fragment)), encodedArgs])
 }
 
 const encodeFunctionReturnUnchecked = (abi: Abi, functionName: string, values: readonly unknown[]): Hex => {

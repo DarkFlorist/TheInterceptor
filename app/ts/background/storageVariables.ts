@@ -11,10 +11,8 @@ import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { namehash } from 'viem/ens'
+import { keccak256, namehash, stringToBytes } from '../utils/viem.js'
 import { isValidEnsName } from '../utils/ens.js'
-import { bytesToUnsigned } from '../utils/bigint.js'
-import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
@@ -312,7 +310,7 @@ export const getEnsLabelHashes = async () => (await browserStorageLocalGet('ensL
 
 const ensLabelHashesSemaphore = new Semaphore(1)
 export async function addEnsLabelHash(label: string) {
-	const entry = { label, labelHash: bytesToUnsigned(keccak_256(label)) }
+	const entry = { label, labelHash: BigInt(keccak256(stringToBytes(label))) }
 	await ensLabelHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsLabelHashes() || []
 		if (oldEntries.find((old) => old.labelHash === entry.labelHash)) return
