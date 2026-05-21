@@ -3,9 +3,9 @@ import { defaultRpcs, getSettings } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
-import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { EthereumBlockHeader } from '../types/wire-types.js'
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { EthereumBlockHeader } from '../types/wire-types.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -17,17 +17,17 @@ import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
-import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { type OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
-import { createSimulationServices, resetSimulationServices, ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
+import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
-let simulationServices: SimulationServices | undefined = undefined
+let simulationServices: SimulationServices | undefined 
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')

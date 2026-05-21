@@ -1,17 +1,17 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumSendableSignedTransaction } from '../../types/wire-types.js'
-import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
+import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
+import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { keccak256 } from 'viem/utils'
 import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { BlockCalls, BlockOverrides, EthSimulateV1Result, EthSimulateV1Params } from '../../types/ethSimulate-types.js'
-import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
+import { EthGetStorageAtResponse, EthTransactionReceiptResponse, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { DEFAULT_BLOCK_MANIPULATION, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
-import { RpcEntry } from '../../types/rpc.js'
-import { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
-import { MessageHashAndSignature } from '../../utils/eip712.js'
+import type { RpcEntry } from '../../types/rpc.js'
+import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { getCurrentTimestampString } from '../../components/ui-utils.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 
@@ -72,7 +72,7 @@ export class EthereumClientService {
 	public getCachedBlock = () => {
 		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
 		// if the block is older than MAX_BLOCK_CACHE block intervals, invalidate cache
-		if ((Date.now() - this.cachedBlock.timestamp.getTime() * 1000) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE) return undefined
+		if ((Date.now() - this.cachedBlock.timestamp.getTime()) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE * 1000) return undefined
 		return this.cachedBlock
 	}
 	public cleanup = () => this.setBlockPolling(false)
@@ -244,7 +244,7 @@ export class EthereumClientService {
 		const splitTransactionsByGasLimit = (currentTransactions: EthereumSendableSignedTransaction[], gasLimit: bigint): EthereumSendableSignedTransaction[][] => {
 			const transactionChunks: EthereumSendableSignedTransaction[][] = []
 			let currentChunk: EthereumSendableSignedTransaction[] = []
-			let currentChunkGasSum: bigint = 0n
+			let currentChunkGasSum = 0n
 			for (const transaction of currentTransactions) {
 				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
 				if (currentChunkGasSum + transaction.gas <= gasLimit) {

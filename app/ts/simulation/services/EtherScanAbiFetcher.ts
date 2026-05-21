@@ -1,11 +1,11 @@
 import { EtherscanGetABIResult, EtherscanSourceCodeResult, SourcifyMetadataResult } from '../../types/etherscan.js'
-import { EthereumAddress } from '../../types/wire-types.js'
+import type { EthereumAddress } from '../../types/wire-types.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { getDefaultBlockExplorer } from '../../background/settings.js'
-import { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
-import { BlockExplorer, RpcEntries } from '../../types/rpc.js'
+import type { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
+import type { BlockExplorer, RpcEntries } from '../../types/rpc.js'
 import { getRpcList } from '../../background/storageVariables.js'
-import { Result } from 'funtypes'
+import type { Result } from 'funtypes'
 import { isValidAbiString } from '../../utils/abiRuntime.js'
 
 async function fetchJson(url: string): Promise<{ success: true, result: unknown } | { success: false, error: string }> {

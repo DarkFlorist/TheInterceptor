@@ -1,7 +1,7 @@
-import { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import { SimulationState } from '../../types/visualizer-types.js'
-import { EthereumClientService } from '../services/EthereumClientService.js'
+import type { SimulationState } from '../../types/visualizer-types.js'
+import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 
 export async function sendToNonContact(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {

@@ -2,19 +2,19 @@ import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString }
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
+import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { WebsiteSocket, getHostWithPort } from '../utils/requests.js'
-import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
+import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
-import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -242,7 +242,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 	}
 }
 
-let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
+let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
 let previousDecralativeNetRequestBlockIdentifier = ''
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {

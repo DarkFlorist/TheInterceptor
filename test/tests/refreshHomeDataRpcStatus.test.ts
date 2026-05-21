@@ -128,7 +128,7 @@ describe('refreshHomeData', () => {
 
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { /* noop test stub */ },
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},

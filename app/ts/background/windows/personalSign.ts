@@ -1,13 +1,13 @@
-import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
 import { getAddressesForSolidityTypes, identifyAddress } from '../metadataUtils.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { SignedMessageTransaction } from '../../types/visualizer-types.js'
-import { RpcNetwork } from '../../types/rpc.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
+import type { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -27,7 +27,14 @@ async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientSe
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, requestAbortController, signedMessageTransaction.fakeSignedFor)
 	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
-	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
+	const basicParams = {
+		website: signedMessageTransaction.website,
+		created: signedMessageTransaction.created,
+		simulationMode: signedMessageTransaction.simulationMode,
+		messageIdentifier: signedMessageTransaction.messageIdentifier,
+		activeAddress: activeAddressWithMetadata,
+		signerName,
+	}
 	const originalParams = signedMessageTransaction
 	const isValid = isValidMessage(signedMessageTransaction.originalRequestParameters)
 
@@ -94,7 +101,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
-		const chainid = message.domain['chainId']?.type === 'unsignedInteger' ? message.domain['chainId'].value : undefined
+		const { chainId } = message.domain
+		const chainid = chainId?.type === 'unsignedInteger' ? chainId.value : undefined
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,

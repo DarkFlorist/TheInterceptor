@@ -1,23 +1,23 @@
-import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
+import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
+import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
-import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
+import type { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
-import { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
-import { PendingAccessRequest } from '../../types/accessRequest.js'
-import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
-import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { TokenPriceService } from '../../simulation/services/priceEstimator.js'
-import { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import type { PendingAccessRequest } from '../../types/accessRequest.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
+import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -25,7 +25,7 @@ type OpenedDialogWithListeners = {
 	onCloseTab: (id: number) => void
 } | undefined
 
-let openedDialog: OpenedDialogWithListeners = undefined
+let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 

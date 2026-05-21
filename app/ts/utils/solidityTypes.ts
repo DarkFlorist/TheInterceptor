@@ -2,8 +2,8 @@ import { assertNever } from './typescript.js'
 import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '../types/wire-types.js'
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { EnrichedGroupedSolidityType, PureGroupedSolidityType, SignedBigInt, SolidityType } from '../types/solidityType.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { type EnrichedGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, type SolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
 
 function getSolidityTypeCategory(type: SolidityType) {

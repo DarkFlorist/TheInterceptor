@@ -1,14 +1,14 @@
-import { ComponentChildren } from 'preact'
-import { JSX } from 'preact/jsx-runtime'
+import type { ComponentChildren } from 'preact'
+import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
-import { Website } from '../../types/websiteAccessTypes.js'
+import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
-import { ActionableIconProps, ActionableTextProps, MultilineCard } from './MultilineCard.js'
+import { type ActionableIconProps, type ActionableTextProps, MultilineCard } from './MultilineCard.js'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
@@ -41,7 +41,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } } />
+				<img src = { param.logoUri } width = '16' height = '16' style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } } />
 			</AddressIconFrame>
 		)
 	}
@@ -112,7 +112,7 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 		</div>
 		<div class = 'log-cell'>
 			<div class = 'media-right'>
-				<button className = 'button is-primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
+				<button class = 'button is-primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
 					{ params.buttonText }
 				</button>
 			</div>
@@ -133,7 +133,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
 
 	const generateIcon = () => {
-		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } style = { { minWidth: '1em', minHeight: '1em' } } />
+		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } width = '16' height = '16' style = { { minWidth: '1em', minHeight: '1em' } } />
 		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
@@ -146,7 +146,7 @@ export function WebsiteOriginText({ website }: { website: SignalOrValue<Website 
 	const { icon, websiteOrigin, title } = currentWebsite
 	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
-			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;' /> }
+			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' style = 'width: 24px; height: 24px;' /> }
 		</span>
 
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>

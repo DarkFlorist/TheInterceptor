@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -9,12 +9,12 @@ import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough, 
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
-import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
-import { Website } from '../../types/websiteAccessTypes.js'
-import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
-import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import { RpcEntries } from '../../types/rpc.js'
-import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
+import type { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
+import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
+import type { RpcEntries } from '../../types/rpc.js'
+import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
@@ -23,7 +23,7 @@ function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <span style = 'font-weight: 900; line-height: 48px'>
 		{ icon === undefined
 			? <></>
-			: <img src = { icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
+			: <img src = { icon } width = '48' height = '48' style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
 		}
 		{ title }
 	</span>
@@ -63,7 +63,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 						? <DinoSays text = { 'Given its size, a tiny dinosaur wouldn\'t be expected to know any...' } />
 						: <ul>
 							{ associatedAddresses.map( (info, index) => (
-								<li style = { `margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1  ? '10px;' : '0px' }` } >
+								<li key = { info.address.toString() } style = { `margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1  ? '10px;' : '0px' }` } >
 									<BigAddress
 										addressBookEntry = { info }
 										renameAddressCallBack = { renameAddressCallBack }
@@ -82,7 +82,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 	return <>
 		{ accessRequest.requestAccessToAddress === undefined ?
 		<div style = 'margin: 10px'>
-			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
+			<p class = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
 				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 				<br/>
 				would like to connect to The Interceptor
@@ -90,7 +90,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 		</div> :
 			<>
 				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
-					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
+					<p class = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
 						<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 						&nbsp;would like to connect to your account:
 					</p>
@@ -152,10 +152,10 @@ function AccessRequests(param: AccessRequestParam) {
 
 			<nav class = 'popup-button-row'>
 				<div style = 'display: flex; flex-direction: row;'>
-					<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
+					<button class = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
 						Deny Access
 					</button>
-					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
+					<button class = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
 						Grant Access
 					</button>
 				</div>
@@ -169,6 +169,11 @@ const DISABLED_DELAY_MS = 500
 type Page = { page: 'Home', accessRequestId: string }
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState>, accessRequestId: string }
 	| { page: 'ChangeActiveAddress', accessRequestId: string }
+
+export function getSelectedPendingAccessRequest(pendingAccessRequests: PendingAccessRequests, accessRequestId: string | undefined) {
+	if (accessRequestId === undefined) return pendingAccessRequests[0]
+	return pendingAccessRequests.find((request) => request.accessRequestId === accessRequestId)
+}
 
 export function InterceptorAccess() {
 	const pendingAccessRequests = useSignal<PendingAccessRequests>([])
@@ -283,7 +288,7 @@ export function InterceptorAccess() {
 
 	const informationChangedRecently = useComputed(() => {
 		timeTicker.value
-		return new Date().getTime() < informationUpdatedTimestamp.value + DISABLED_DELAY_MS
+		return Date.now()< informationUpdatedTimestamp.value + DISABLED_DELAY_MS
 	})
 
 	useEffect(() => {
@@ -314,30 +319,33 @@ export function InterceptorAccess() {
 	}
 
 	if (pendingAccessRequests.value.length === 0) return <main></main>
-	const pendingAccessRequest = pendingAccessRequests.value[0]
-	if (pendingAccessRequest === undefined) throw new Error('pending access request was undefined')
+	const selectedPendingAccessRequest = getSelectedPendingAccessRequest(
+		pendingAccessRequests.value,
+		appPage.value.page === 'Home' ? undefined : appPage.value.accessRequestId,
+	)
+	const isModalActive = appPage.value.page !== 'Home' && selectedPendingAccessRequest !== undefined
 
 	return <main>
 		<Hint>
-			<div class = { `modal ${ appPage.value.page !== 'Home' ? 'is-active' : ''}` }>
-				{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress'
+			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
+				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedPendingAccessRequest !== undefined
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
 						modifyAddressWindowState = { appPage.value.state }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-						activeAddress = { pendingAccessRequest.requestAccessToAddress?.address }
+						activeAddress = { selectedPendingAccessRequest.requestAccessToAddress?.address }
 						rpcEntries = { rpcEntries }
 					/>
 					: <></>
 				}
 
-				{ appPage.value.page === 'ChangeActiveAddress'
+				{ appPage.value.page === 'ChangeActiveAddress' && selectedPendingAccessRequest !== undefined
 					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
-						signerAccounts = { pendingAccessRequest.signerAccounts }
+						signerAccounts = { selectedPendingAccessRequest.signerAccounts }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddresses = { activeAddresses }
-						signerName = { pendingAccessRequest.signerName }
+						signerName = { selectedPendingAccessRequest.signerName }
 						renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
 						addNewAddress = { () => addNewAddress(appPage.value.accessRequestId) }
 					/>

@@ -1,9 +1,9 @@
-import { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import type { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction } from '../../types/visualizer-types.js'
+import type { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
-import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
@@ -13,31 +13,31 @@ import { SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendV
 import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleTokenApprovalVisualisation.js'
 import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { bigintSecondsToDate, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
-import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { RpcNetwork } from '../../types/rpc.js'
+import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
+import type { RpcNetwork } from '../../types/rpc.js'
 import { ProxyTokenTransferVisualisation } from './customExplainers/ProxySendVisualisations.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponents/ens.js'
+import { type EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponents/ens.js'
 import { insertBetweenElements } from '../subcomponents/misc.js'
-import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
-import { DeltaUnit, TimePicker, TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
-import { ReadonlySignal, useComputed, useSignal } from '@preact/signals'
-import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
+import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
+import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { useEffect } from 'preact/hooks'
-import { type SignalOrValue } from '../../utils/signals.js'
+import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
-import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
-import { Website } from '../../types/websiteAccessTypes.js'
-import { type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
+import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -61,7 +61,7 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 
 export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: readonly string[] }) {
 	return <> {
-		quarantineReasons.map((quarantineReason) => <ErrorComponent text = { quarantineReason } containerStyle = { { margin: '0px', 'margin-top': '10px', 'margin-bottom': '10px' } }/>)
+		quarantineReasons.map((quarantineReason, index) => <ErrorComponent key = { `${ quarantineReason }-${ index }` } text = { quarantineReason } containerStyle = { { margin: '0px', 'margin-top': '10px', 'margin-bottom': '10px' } }/>)
 	} </>
 }
 
@@ -192,7 +192,7 @@ function PendingStackHeader({ title, website, statusIcon } : { title: string, we
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { statusIcon } />
+				<img src = { statusIcon } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
@@ -545,16 +545,18 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 	if (tokenEvents.length === 0) return <p class = 'paragraph'> No token events </p>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
-		routes.map((tokenVisualizerResult) => (
+		routes.map((tokenVisualizerResult, index) => (
 			<TokenLogEvent
+				key = { index }
 				tokenVisualizerResult = { tokenVisualizerResult }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.transaction.from.address }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
 	:
-		tokenEvents.map((tokenEvent) => (
+		tokenEvents.map((tokenEvent, index) => (
 			<TokenLogEvent
+				key = { index }
 				tokenVisualizerResult = { tokenEvent }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.transaction.from.address }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -585,7 +587,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 				<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
 			</div>
 			<div class = 'log-cell' style = { 'grid-column: 2 / 4; display: flex; flex-wrap: wrap;' } >
-				{ params.nonTokenLog.topics.map((topic) => <p class = 'paragraph' style = { textStyle }> { bytes32String(topic) } </p>) }
+				{ params.nonTokenLog.topics.map((topic, index) => <p key = { `${ bytes32String(topic) }-${ index }` } class = 'paragraph' style = { textStyle }> { bytes32String(topic) } </p>) }
 			</div>
 		</>
 	}
@@ -632,7 +634,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
 	return <span class = 'nontoken-log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
-		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
+		{ param.nonTokenLogs.map((nonTokenLog, index) => <NonTokenLogEvent key = { index } nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
 	</span>
 }
 

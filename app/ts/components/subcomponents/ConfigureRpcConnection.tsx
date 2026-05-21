@@ -1,7 +1,7 @@
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
-import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
+import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -9,7 +9,7 @@ import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { type EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { XMarkIcon } from './icons.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
@@ -28,7 +28,7 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 
 const throwImprovedError = (error: Error, url: string) => {
 	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
-	if (error.message.startsWith('Failed to fetch')) throw new Error(`Failed to connect to the RPC.`)
+	if (error.message.startsWith('Failed to fetch')) throw new Error('Failed to connect to the RPC.')
 	throw error
 }
 

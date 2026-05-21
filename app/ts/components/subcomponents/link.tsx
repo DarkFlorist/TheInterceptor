@@ -1,5 +1,5 @@
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { WebsiteSocket } from '../../utils/requests.js'
+import type { WebsiteSocket } from '../../utils/requests.js'
 
 type LinkParam = {
 	websiteSocket: WebsiteSocket

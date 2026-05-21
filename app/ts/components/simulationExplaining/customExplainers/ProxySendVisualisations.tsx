@@ -1,11 +1,11 @@
-import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { SimulatedAndVisualizedProxyTokenTransferTransaction } from '../identifyTransaction.js'
+import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
+import type { SimulatedAndVisualizedProxyTokenTransferTransaction } from '../identifyTransaction.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
-import { AddressBeforeAfter, BeforeAfterAddress, SimpleSend, getAsset } from './SimpleSendVisualisations.js'
-import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
-import { RpcNetwork } from '../../../types/rpc.js'
-import { AddressBookEntry } from '../../../types/addressBookTypes.js'
+import { AddressBeforeAfter, type BeforeAfterAddress, SimpleSend, getAsset } from './SimpleSendVisualisations.js'
+import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
+import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
+import type { RpcNetwork } from '../../../types/rpc.js'
+import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { extractTokenEvents } from '../../../background/metadataUtils.js'
@@ -46,7 +46,7 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 		</span>
 		{ viaProxypath === undefined ? <></> : <span style = 'display: flex;'>
 			<p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }> Via proxy:&nbsp;</p>
-			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ ','}&nbsp;</p>) } </>
+			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ ','}&nbsp;</p>) } </>
 		</span> }
 	</div>
 }

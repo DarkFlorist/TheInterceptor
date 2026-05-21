@@ -1,24 +1,24 @@
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
-import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedTransactionCount, mockSignTransaction, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
+import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { InterceptorTransactionStack, PASSTHROUGH_STATE, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
-import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumUnsignedTransaction, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
-import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { keccak256, parseTransaction as parseSerializedTransaction, recoverAddress, serializeTransaction, stringToBytes } from 'viem/utils'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
-import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
+import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
-import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
@@ -26,7 +26,7 @@ import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
-import { TokenPriceService } from '../../simulation/services/priceEstimator.js'
+import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -52,6 +52,45 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
+export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
+	switch (pending.type) {
+		case 'Transaction':
+			return pending
+		case 'SignableMessage': {
+			const base = {
+				type: pending.type,
+				popupOrTabId: pending.popupOrTabId,
+				originalRequestParameters: pending.originalRequestParameters,
+				simulationMode: pending.simulationMode,
+				uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+				created: pending.created,
+				website: pending.website,
+				activeAddress: pending.activeAddress,
+				approvalStatus: pending.approvalStatus,
+			}
+			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
+			switch (transactionOrMessageCreationStatus) {
+				case 'Simulated':
+					return {
+						...base,
+						transactionOrMessageCreationStatus,
+						visualizedPersonalSignRequest: pending.visualizedPersonalSignRequest,
+					}
+				case 'Crafting':
+				case 'Simulating':
+					return {
+						...base,
+						transactionOrMessageCreationStatus,
+					}
+				default:
+					return assertNever(transactionOrMessageCreationStatus)
+			}
+		}
+		default:
+			return assertNever(pending)
+	}
+}
+
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
 		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating))
@@ -68,7 +107,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 			data: {
-				pendingTransactionAndSignableMessages,
+				pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
 				currentBlockNumber: await currentBlockNumberPromise,
 				rpcConnectionStatus: await rpcConnectionStatusPromise,
 			}

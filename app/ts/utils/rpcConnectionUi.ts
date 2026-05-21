@@ -1,4 +1,4 @@
-import { RpcConnectionStatus } from '../types/user-interface-types.js'
+import type { RpcConnectionStatus } from '../types/user-interface-types.js'
 import { TIME_BETWEEN_BLOCKS } from './constants.js'
 
 export type RpcWarningState = {

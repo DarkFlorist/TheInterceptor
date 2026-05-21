@@ -219,7 +219,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { /* noop test stub */ },
 			async jsonRpcRequest(rpcRequest: { method: string }) {
 				if (rpcRequest.method === 'eth_blockNumber') return '0x7b'
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)

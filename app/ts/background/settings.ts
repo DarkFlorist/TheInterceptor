@@ -1,15 +1,15 @@
 import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
-import { Settings } from '../types/interceptor-messages.js'
+import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { EthereumAddress } from '../types/wire-types.js'
-import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import type { EthereumAddress } from '../types/wire-types.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { BlockTimeManipulation } from '../types/visualizer-types.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 
@@ -94,7 +94,7 @@ const wethForChainId = new Map<string, EthereumAddress>([
 	['42161', 0x82af49447d8a07e3bd95bd0d56f35241523fbab1n], // Arbitrum
 ])
 
-export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: `https://api.etherscan.io/v2/api`, apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
+export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://api.etherscan.io/v2/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 

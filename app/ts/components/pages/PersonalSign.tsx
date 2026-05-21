@@ -1,29 +1,29 @@
 import { useSignal } from '@preact/signals'
 import { bigintSecondsToDate, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
-import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
+import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
+import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
-import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
+import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
 import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import { ReadonlySignal } from '@preact/signals'
+import type { ReadonlySignal } from '@preact/signals'
+import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -53,7 +53,7 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign Gnosis Safe message',
 		}
 		case 'EIP712': {
-			const domainName = data.message.domain['name']
+			const { name: domainName } = data.message.domain
 			const name = domainName?.type === 'string' ? `${ domainName.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'
 			return {
 				title: `${ name } signing request`,
@@ -97,7 +97,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } />
+				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
@@ -225,7 +225,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 		if (entry.type === 'record[]') {
 			return <>
 				<CellElement text = { `${ name }: ` }/>
-				<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
+				<CellElement text = { entry.value.map((value, index) => <EIP712Table key = { index } enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
 			</>
 		}
 		if (entry.type === 'record') {
@@ -240,7 +240,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 		</>
 	}
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
-		{ Object.entries(enrichedEIP712Message).map(([name, entry]) => <EIP712Entry entry = { entry } name = { name }/>) }
+		{ Object.entries(enrichedEIP712Message).map(([name, entry]) => <EIP712Entry key = { name } entry = { entry } name = { name }/>) }
 	</span>
 }
 

@@ -84,8 +84,7 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	return result
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
-export function stringifyJSONWithBigInts(value: any, space?: string | number): string {
+export function stringifyJSONWithBigInts(value: unknown, space?: string | number): string {
 	return JSON.stringify(value, (_key, value) => {
 		if (typeof value === 'bigint') return `0x${ value.toString(16) }`
 		if (value instanceof Uint8Array) return '0x' + Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -150,7 +149,7 @@ export const dateToBigintSeconds = (date: Date) => BigInt(date.getTime()) / 1000
 export function generate256BitRandomBigInt(): bigint {
 	const cryptoInterface = globalThis.crypto
 	if (cryptoInterface === undefined || cryptoInterface.getRandomValues === undefined) {
-		throw new Error("Secure random number generator is not available in this environment")
+		throw new Error('Secure random number generator is not available in this environment')
 	}
 	const randomBytes = new Uint8Array(32)
 	cryptoInterface.getRandomValues(randomBytes)

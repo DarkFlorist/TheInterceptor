@@ -1,6 +1,6 @@
 
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
@@ -54,12 +54,12 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 	simulationState.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 )
 
-export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState: boolean = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
 		if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState.kind === 'simulated') {
-			const ageSeconds = (new Date().getTime() - popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
+			const ageSeconds = (Date.now()- popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
 		const isMainPopupWindowOpenReply = await requestIsMainPopupWindowOpen()

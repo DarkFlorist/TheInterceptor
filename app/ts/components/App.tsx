@@ -1,36 +1,33 @@
 import { useEffect } from 'preact/hooks'
+import type { JSX } from 'preact'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { PASSTHROUGH_STATE, ResolvedSimulationResults, ResolvedSimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
-import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
+import { PASSTHROUGH_STATE, type ResolvedSimulationResults, type ResolvedSimulationState, type TokenPriceEstimate, type SimulationUpdatingState, type SimulationResultState, type NamedTokenId, type ModifyAddressWindowState, type EditEnsNamedHashWindowState, type VisualizedSimulationState, type BlockTimeManipulation, type CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
 import { Home } from './pages/Home.js'
-import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
+import type { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
-import { AddNewAddress } from './pages/AddNewAddress.js'
-import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
 import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
-import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
+import { UpdateHomePage, type Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
-import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
+import type { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
-import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
+import type { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
-import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
-import { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
-import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
 import { getRpcWarningState, shouldShowRpcWarningCountdown } from '../utils/rpcConnectionUi.js'
+import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -81,6 +78,58 @@ type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' |
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
 	| { page: 'ChangeActiveAddress' }
 	| { page: 'ImportSimulation', state: Signal<string> }
+
+type LazyPageComponent<T extends object> = ((props: T) => JSX.Element) | undefined
+type LazyPageModule<T extends object, ExportName extends string> = Record<ExportName, (props: T) => JSX.Element>
+
+function useLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
+	const component = useSignal<LazyPageComponent<T>>(undefined)
+	useEffect(() => {
+		let cancelled = false
+		void loader().then((module) => {
+			if (cancelled) return
+			component.value = module[exportName]
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [])
+	return component
+}
+
+function createLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
+	return function LazyPage(props: T) {
+		const component = useLazyPage(loader, exportName)
+		if (component.value === undefined) return <CenterToPageTextSpinner />
+		const Component = component.value
+		return <Component { ...props } />
+	}
+}
+
+const LazyChangeActiveAddress = createLazyPage<ChangeActiveAddressParam, 'ChangeActiveAddress'>(
+	() => import('./pages/ChangeActiveAddress.js'),
+	'ChangeActiveAddress',
+)
+
+const LazyAddNewAddress = createLazyPage<AddAddressParam, 'AddNewAddress'>(
+	() => import('./pages/AddNewAddress.js'),
+	'AddNewAddress',
+)
+
+const LazyInterceptorAccessList = createLazyPage<InterceptorAccessListParams, 'InterceptorAccessList'>(
+	() => import('./pages/InterceptorAccessList.js'),
+	'InterceptorAccessList',
+)
+
+const LazyEditEnsLabelHash = createLazyPage<{ close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }, 'EditEnsLabelHash'>(
+	() => import('./pages/EditEnsLabelHash.js'),
+	'EditEnsLabelHash',
+)
+
+const LazyImportSimulationStack = createLazyPage<{ close: () => void, simulationInput: Signal<string> }, 'ImportSimulationStack'>(
+	() => import('./pages/ImportSimulationStack.js'),
+	'ImportSimulationStack',
+)
 
 export function App() {
 	const appPage = useSignal<Page>({ page: 'Unknown' })
@@ -418,15 +467,15 @@ export function App() {
 					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 						<div class = 'navbar-brand'>
 							<a class = 'navbar-item' style = 'cursor: unset'>
-								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
+								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32'/>
 								<p style = 'color: var(--text-color); padding-left: 5px;'>THE INTERCEPTOR
 									<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 								</p>
 							</a>
 							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-								<img src = '../img/internet.svg' width = '32' onClick = { openWebsiteAccess }/>
-								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
-								<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
+								<img src = '../img/internet.svg' width = '32' height = '32' onClick = { openWebsiteAccess }/>
+								<img src = '../img/address-book.svg' width = '32' height = '32' onClick = { openAddressBook }/>
+								<img src = '../img/settings.svg' width = '32' height = '32' onClick = { openSettings }/>
 							</a>
 						</div>
 					</nav>
@@ -465,13 +514,13 @@ export function App() {
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><EditEnsLabelHash
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyEditEnsLabelHash
 								close = { goHome }
 								editEnsNamedHashWindowState = { appPage.value.state }
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AccessList' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><InterceptorAccessList
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyInterceptorAccessList
 								goHome = { goHome }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
@@ -479,7 +528,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ChangeActiveAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyChangeActiveAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								signerAccounts = { tabState.value?.signerAccounts ?? [] }
 								close = { goHome }
@@ -490,7 +539,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><AddNewAddress
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyAddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								modifyAddressWindowState = { appPage.value.state }
 								close = { goHome }
@@ -499,7 +548,7 @@ export function App() {
 							/></ErrorBoundary>
 						: <></> }
 						{ appPage.value.page === 'ImportSimulation' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><ImportSimulationStack
+							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyImportSimulationStack
 								close = { goHome }
 								simulationInput = { appPage.value.state }
 							/></ErrorBoundary>

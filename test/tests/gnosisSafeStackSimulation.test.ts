@@ -257,13 +257,6 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 	const safeMessage: VisualizedPersonalSignRequestSafeTx = {
 		activeAddress,
 		rpcNetwork: fakeRpcNetwork,
-		request: {
-			method: 'eth_signTypedData_v4',
-			params: [],
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
-		},
 		simulationMode: true,
 		signerName: 'NoSigner',
 		quarantineReasons: [],
@@ -311,10 +304,10 @@ describe('Gnosis Safe stack simulation', () => {
 		}
 
 		const fakeBlock = makeFakeBlock(123n)
-		let aggregate3BlockStateCallCount: number | undefined = undefined
+		let aggregate3BlockStateCallCount: number | undefined 
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { return undefined },
 			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':
@@ -458,7 +451,7 @@ describe('Gnosis Safe stack simulation', () => {
 		const fakeBlock = makeFakeBlock(123n)
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { return undefined },
 			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':

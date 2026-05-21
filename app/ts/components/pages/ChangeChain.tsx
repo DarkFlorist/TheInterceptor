@@ -1,15 +1,32 @@
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
-import { ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
-import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
+import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+
+export function getChangeChainActionState(params: { hasSupportedRpc: boolean, simulationMode: boolean }) {
+	if (params.hasSupportedRpc) return {
+		approveButtonText: 'Change chain',
+		errorText: undefined,
+		approveDisabled: false,
+	}
+	if (params.simulationMode) return {
+		approveButtonText: 'Change chain unavailable',
+		errorText: 'This chain is not supported by The Interceptor in Simulation mode. Switch to Signing mode and try again if you want to continue without simulation protection.',
+		approveDisabled: true,
+	}
+	return {
+		approveButtonText: 'Change chain unavailable',
+		errorText: 'This chain is not supported by The Interceptor. This dialog cannot disable it for you. If you want to continue without its protection, disable The Interceptor from the main popup and retry the chain change in your wallet.',
+		approveDisabled: true,
+	}
+}
 
 export function ChangeChain() {
 	const chainChangeData = useSignal<PendingChainChangeConfirmationPromise | undefined>(undefined)
-	const connectAnyway = useSignal<boolean>(false)
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -39,17 +56,21 @@ export function ChangeChain() {
 	}
 
 	if (chainChangeData.value === undefined) return <main></main>
+	const actionState = getChangeChainActionState({
+		hasSupportedRpc: chainChangeData.value.rpcNetwork.httpsRpc !== undefined,
+		simulationMode: chainChangeData.value.simulationMode,
+	})
 	return (
 		<main>
-			<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+			<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
 				<header class = 'card-header window-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
-							<img src = '../img/access-key.svg'/>
+							<img src = '../img/access-key.svg' width = '24' height = '24'/>
 						</span>
 					</div>
 					<div class = 'card-header-title'>
-						<p className = 'paragraph'>
+						<p class = 'paragraph'>
 							Chain Change Request
 						</p>
 					</div>
@@ -61,42 +82,34 @@ export function ChangeChain() {
 								? <></>
 								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 									<div class = 'image is-64x64'>
-										<img src = { chainChangeData.value.website.icon }/>
+										<img src = { chainChangeData.value.website.icon } width = '64' height = '64'/>
 									</div>
 								</figure>
 						}
 					</article>
 					<div class = 'media-content' style = 'padding-bottom: 10px'>
 						<div class = 'content'>
-							<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+							<p class = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
 								<b>	{ chainChangeData.value.website.websiteOrigin } </b>
 								would like to switch to
 								<b> { chainChangeData.value.rpcNetwork.name } </b>
 							</p>
-							{ chainChangeData.value.rpcNetwork.httpsRpc === undefined && chainChangeData.value.simulationMode ?
-								<ErrorComponent text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without its protection.' }/>
-							: <></> }
-							{ chainChangeData.value.rpcNetwork.httpsRpc === undefined && !chainChangeData.value.simulationMode ?
-								<ErrorCheckBox
-									text = { 'This chain is not supported by The Interceptor. Would you like to disable The Interceptor and attempt to connect anyway?' }
-									checked = { connectAnyway }
-								/>
-							: <></> }
+							{ actionState.errorText === undefined ? <></> : <ErrorComponent text = { actionState.errorText }/> }
 						</div>
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<button
-							className = { 'button is-danger' }
+							class = { 'button is-danger' }
 							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 							onClick = { reject } >
 							Don't change
 						</button>
 						<button
-							className = { 'button is-primary' }
-							disabled = { chainChangeData.value.rpcNetwork.httpsRpc === undefined && ( (!connectAnyway.value && !chainChangeData.value.simulationMode ) || chainChangeData.value.simulationMode ) }
+							class = { 'button is-primary' }
+							disabled = { actionState.approveDisabled }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>
-							{ chainChangeData.value.rpcNetwork.httpsRpc !== undefined ? 'Change chain' : 'Disable The Interceptor and change' }
+							{ actionState.approveButtonText }
 						</button>
 					</div>
 				</div>

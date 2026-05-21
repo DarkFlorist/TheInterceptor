@@ -1,5 +1,5 @@
-import { EthereumBlockHeader } from '../types/wire-types.js'
-import { RpcEntry } from '../types/rpc.js'
+import type { EthereumBlockHeader } from '../types/wire-types.js'
+import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'

@@ -129,6 +129,5 @@ const files = [
 
 vendorDependencies(files).catch(error => {
 	console.error(error)
-	debugger
 	process.exit(1)
 })

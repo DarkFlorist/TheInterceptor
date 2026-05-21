@@ -1,4 +1,4 @@
-import { Signal, useSignal } from '@preact/signals'
+import { type Signal, useSignal } from '@preact/signals'
 type Inactive = { state: 'inactive' }
 type Pending = { state: 'pending' }
 type Resolved<T> = { state: 'resolved', value: T }

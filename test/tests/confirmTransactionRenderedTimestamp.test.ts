@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
@@ -20,11 +19,10 @@ function createBrowserMock() {
 		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
 
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.browser = {
+	const browser = {
 		runtime: {
-			lastError: null,
-			async sendMessage(message: any) {
+			lastError: null as browser.runtime._LastError | undefined | null,
+			async sendMessage(message: unknown) {
 				for (const listener of [...listeners]) listener(message)
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
@@ -83,11 +81,11 @@ function createBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	// @ts-expect-error test shim intentionally overrides extension globals
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
+	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 
 	return {
-		storage: globalThis.browser.storage,
+		storage: browser.storage,
 		dispatch(message: unknown) {
 			for (const listener of [...listeners]) listener(message)
 		},
@@ -260,7 +258,7 @@ describe('ConfirmTransaction', () => {
 		}
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { return undefined },
 			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':

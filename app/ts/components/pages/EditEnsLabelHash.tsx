@@ -1,8 +1,8 @@
 
 import { Notice } from '../subcomponents/Error.js'
 import { bytes32String, bytesToUnsigned } from '../../utils/bigint.js'
-import { EditEnsNamedHashWindowState } from '../../types/visualizer-types.js'
-import { ComponentChildren, createRef } from 'preact'
+import type { EditEnsNamedHashWindowState } from '../../types/visualizer-types.js'
+import { type ComponentChildren, createRef } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { keccak_256 } from '@noble/hashes/sha3'
@@ -68,7 +68,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		const ref = createRef<HTMLInputElement>()
 		useEffect(() => { ref.current?.focus() }, [])
 		return <input
-			className = 'input title is-5 is-spaced'
+			class = 'input title is-5 is-spaced'
 			type = 'text'
 			value = { value }
 			placeholder = { placeholder }
@@ -86,11 +86,11 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/address-book.svg'/>
+						<img src = '../img/address-book.svg' width = '24' height = '24'/>
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'What is the correct ENS label for this hash?' : 'What is the correct ENS name for this hash?' } </p>
+					<p class = 'paragraph'> { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'What is the correct ENS label for this hash?' : 'What is the correct ENS name for this hash?' } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
@@ -102,7 +102,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 						<div class = 'container' style = 'margin-bottom: 10px;'>
 							<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 								<CellElement element = { <Text text = { 'Hash: ' }/> }/>
-								<CellElement element = { <TextInput value = { bytes32String(param.editEnsNamedHashWindowState.nameHash) } setInput = {() => {} } disabled = { true } placeholder = {''}/> } />
+								<CellElement element = { <TextInput value = { bytes32String(param.editEnsNamedHashWindowState.nameHash) } setInput = { () => undefined } disabled = { true } placeholder = {''}/> } />
 								<CellElement element = { <Text text = { 'Name: ' }/> }/>
 								<CellElement element = { <TextInput value = { param.editEnsNamedHashWindowState.name ? param.editEnsNamedHashWindowState.name : name.value } disabled = { param.editEnsNamedHashWindowState.name !== undefined || inputDisabled.value } setInput = { validateAndSetName } placeholder = { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'ENS label, eg. "vitalik"' : 'ENS name, eg "vitalik.eth"' }/> } />
 							</span>

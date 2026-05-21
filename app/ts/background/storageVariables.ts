@@ -1,22 +1,22 @@
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { type PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
-import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
-import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
+import type { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import type { SignerName } from '../types/signerTypes.js'
+import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { namehash } from 'viem/ens'
 import { isValidEnsName } from '../utils/ens.js'
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { modifyObject } from '../utils/typescript.js'
-import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
@@ -232,7 +232,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 	}
 }
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
-	const rawEntries = (await browser.storage.local.get('userAddressBookEntriesV3'))['userAddressBookEntriesV3']
+	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
 	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
 	if (rawEntries === undefined) return defaultActiveAddresses
@@ -285,7 +285,7 @@ export async function setLatestUnexpectedError(latestUnexpectedError: Unexpected
 }
 
 export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured | undefined> {
-	const rawError = (await browser.storage.local.get('latestUnexpectedError'))['latestUnexpectedError']
+	const { latestUnexpectedError: rawError } = await browser.storage.local.get('latestUnexpectedError')
 	const parsedError = await browserStorageLocalSafeParseGet('latestUnexpectedError')
 	if (parsedError?.latestUnexpectedError !== undefined) return parsedError.latestUnexpectedError
 	if (rawError === undefined) return undefined

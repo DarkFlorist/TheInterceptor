@@ -16,6 +16,14 @@ function injectScript(_content: string) {
 			readonly requestId?: number
 			readonly requestMethod?: string
 		}
+		const stringifyForwardedFallbackError = (error: unknown) => error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`
+		const stringifyForwardedFallbackValue = (value: unknown) => {
+			try {
+				return String(value)
+			} catch (error: unknown) {
+				return `[failed to stringify value: ${ stringifyForwardedFallbackError(error) }]`
+			}
+		}
 
 		/**
 		 * this script executed within the context of the active tab when the user clicks the extension bar button
@@ -32,7 +40,7 @@ function injectScript(_content: string) {
 		}
 		const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
 		let pageHidden = false
-		let extensionPort: browser.runtime.Port | undefined = undefined
+		let extensionPort: browser.runtime.Port | undefined 
 
 		const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 		const stringifyForwardedThrownValue = (value: unknown) => {
@@ -41,22 +49,29 @@ function injectScript(_content: string) {
 			try {
 				const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
 				if (stringified !== undefined) return stringified
-			} catch (_error) {}
-			return String(value)
+			} catch (error: unknown) {
+				const fallbackValue = stringifyForwardedFallbackValue(value)
+				return `${ fallbackValue }\n\n[serialization fallback: ${ stringifyForwardedFallbackError(error) }]`
+			}
+			return stringifyForwardedFallbackValue(value)
 		}
 		const getForwardedDiagnosticsSummary = (error: unknown) => {
 			if (error instanceof Error) return error.message
 			if (typeof error === 'string') return error
 			if (error === undefined) return 'Unexpected thrown value: undefined'
 			if (error === null) return 'Unexpected thrown value: null'
-			if (isForwardedDiagnosticsRecord(error) && typeof error['message'] === 'string') return error['message']
+			if (isForwardedDiagnosticsRecord(error)) {
+				const { message } = error
+				if (typeof message === 'string') return message
+			}
 			return String(error)
 		}
 		const getForwardedDiagnosticsRequestContext = (value: unknown): ForwardedDiagnosticsRequestContext => {
 			if (!isForwardedDiagnosticsRecord(value)) return {}
+			const { requestId, method } = value
 			return {
-				...(typeof value['requestId'] === 'number' ? { requestId: value['requestId'] } : {}),
-				...(typeof value['method'] === 'string' ? { requestMethod: value['method'] } : {}),
+				...(typeof requestId === 'number' ? { requestId } : {}),
+				...(typeof method === 'string' ? { requestMethod: method } : {}),
 			}
 		}
 		const formatForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => {
@@ -81,8 +96,7 @@ function injectScript(_content: string) {
 
 		// forward all page messages to the background script, which will then filter and process them
 		// anything reaching this boundary is untrusted page input unless the extension proves otherwise
-		// biome-ignore lint/suspicious/noExplicitAny: MessageEvent default signature
-		globalThis.addEventListener('message', (messageEvent: MessageEvent<any>) => {
+		globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
 			if (extensionPort === undefined) return
 			if (
 				typeof messageEvent !== 'object'
@@ -169,5 +183,4 @@ function injectScript(_content: string) {
 	}
 }
 
-// biome-ignore lint/style/noUnusedTemplateLiteral: Required for script injection
-injectScript(`[[injected.ts]]`)
+injectScript('[[injected.ts]]')

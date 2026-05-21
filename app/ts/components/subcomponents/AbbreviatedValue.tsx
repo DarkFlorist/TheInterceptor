@@ -1,4 +1,4 @@
-import { ComponentChild } from 'preact'
+import type { ComponentChild } from 'preact'
 import { bigintToNumberFormatParts } from '../../utils/bigint.js'
 
 export const AbbreviatedValue = ({ amount, decimals = 18n }: { amount: bigint, decimals?: bigint }) => {

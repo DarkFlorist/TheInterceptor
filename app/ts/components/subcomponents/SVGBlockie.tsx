@@ -1,5 +1,5 @@
 import { useMemo } from 'preact/hooks'
-import { JSX } from 'preact/jsx-runtime'
+import type { JSX } from 'preact/jsx-runtime'
 import { addressString } from '../../utils/bigint.js'
 
 function generateIdenticon(options: { address: bigint; size?: number }) {
@@ -101,7 +101,7 @@ export function Blockie({ address, style }: SVGBlockieProps) {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity
 
-				return <rect width = { pixelSize } height = { pixelSize } x = { ((index % pixelDensity) * 64) / pixelDensity } y = { Math.floor(index / pixelDensity) * pixelSize } fill = { fill } shape-rendering = 'crispEdges' />
+				return <rect key = { index } width = { pixelSize } height = { pixelSize } x = { ((index % pixelDensity) * 64) / pixelDensity } y = { Math.floor(index / pixelDensity) * pixelSize } fill = { fill } shape-rendering = 'crispEdges' />
 			}) }
 		</svg>
 	)

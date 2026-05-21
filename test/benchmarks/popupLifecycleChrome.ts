@@ -107,9 +107,9 @@ function formatStats(label: string, result: Stats | undefined) {
 }
 
 function printStatsGroup(title: string, entries: readonly (readonly [string, Stats | undefined])[]) {
-	console.log(title)
+	console.warn(title)
 	for (const [label, result] of entries) {
-		console.log(formatStats(`    ${ label }`, result))
+		console.warn(formatStats(`    ${ label }`, result))
 	}
 }
 
@@ -319,15 +319,15 @@ async function openPopupAndCollect(context: BenchmarkContext, scenario: Scenario
 			try {
 				await waitForPerformanceMark(popupConnection, POPUP_REFRESH_COMPLETE_MARK, 15_000)
 				popupRefreshCompleteSnapshot = await getPerformanceSnapshot(popupConnection)
-			} catch {
-				// Best effort: the popup may never acknowledge the refresh in this real-browser setup.
+			} catch (error: unknown) {
+				console.warn('Popup benchmark did not observe the refresh-complete performance mark within the timeout.', error)
 			}
 			let popupRefreshRenderedSnapshot = popupRefreshCompleteSnapshot
 			try {
 				await waitForPerformanceMark(popupConnection, POPUP_REFRESH_RENDERED_MARK, 15_000)
 				popupRefreshRenderedSnapshot = await getPerformanceSnapshot(popupConnection)
-			} catch {
-				// Best effort: the popup may not emit a separate post-render mark in every run.
+			} catch (error: unknown) {
+				console.warn('Popup benchmark did not observe the refresh-rendered performance mark within the timeout.', error)
 			}
 			const popupRefreshCompleteMs = absoluteTime(popupRefreshCompleteSnapshot, POPUP_REFRESH_COMPLETE_MARK) === undefined ? undefined : requiredTiming(launchEpochMs, popupRefreshCompleteSnapshot, POPUP_REFRESH_COMPLETE_MARK)
 			const popupRefreshRenderedMs = absoluteTime(popupRefreshRenderedSnapshot, POPUP_REFRESH_RENDERED_MARK) === undefined ? undefined : requiredTiming(launchEpochMs, popupRefreshRenderedSnapshot, POPUP_REFRESH_RENDERED_MARK)
@@ -432,7 +432,7 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 
 async function runStackedScenario(context: BenchmarkContext, transactionPageUrl: string) {
 	const { stackLength, setupRpcRequests, stackedSetup } = await prepareStackedTransaction(context, transactionPageUrl)
-	console.log(`  transaction stack prepared with ${ stackLength } operation${ stackLength === 1 ? '' : 's' }`)
+	console.warn(`  transaction stack prepared with ${ stackLength } operation${ stackLength === 1 ? '' : 's' }`)
 	const sample = await openPopupAndCollect(context, 'stacked')
 	return { ...sample, setupRpcRequests, stackedSetup }
 }
@@ -458,9 +458,9 @@ async function runScenarioManyTimes(scenario: ScenarioName, iterations: number, 
 }
 
 async function main() {
-	const scenarioFilter = (process.env['BENCH_SCENARIO'] ?? 'all').toLowerCase()
-	const iterations = Number(process.env['BENCH_ITERATIONS'] ?? '1')
-	if (!Number.isFinite(iterations) || iterations <= 0) throw new Error(`Invalid BENCH_ITERATIONS value: ${ process.env['BENCH_ITERATIONS'] ?? '1' }`)
+	const scenarioFilter = (process.env.BENCH_SCENARIO ?? 'all').toLowerCase()
+	const iterations = Number(process.env.BENCH_ITERATIONS ?? '1')
+	if (!Number.isFinite(iterations) || iterations <= 0) throw new Error(`Invalid BENCH_ITERATIONS value: ${ process.env.BENCH_ITERATIONS ?? '1' }`)
 	const transactionPageServer = scenarioFilter === 'all' || scenarioFilter === 'stacked'
 		? await startTransactionStackPageServer()
 		: undefined
@@ -508,10 +508,9 @@ async function main() {
 				rpcTotalDurationMs: rpcSummary.totalDurationMs,
 				rpcMethods: rpcMethodStats,
 			}
-
-			console.log(`${ summary.name } (${ summary.iterations } run${ summary.iterations === 1 ? '' : 's' }, ${ summary.launchMode }):`)
+			console.warn(`${ summary.name } (${ summary.iterations } run${ summary.iterations === 1 ? '' : 's' }, ${ summary.launchMode }):`)
 			if (stackedSetups.length > 0) {
-				console.log('  note: the next three groups start when the transaction test page loads, before the main popup is opened.')
+				console.warn('  note: the next three groups start when the transaction test page loads, before the main popup is opened.')
 				printStatsGroup('  send transaction path / page load -> page milestones:', [
 					['provider ready', stackedSetupTiming(stackedSetups, 'page', 'interceptor:benchmark:tx:provider-ready')],
 					['access request shown', stackedSetupTiming(stackedSetups, 'page', 'interceptor:benchmark:tx:requesting-access')],
@@ -544,7 +543,7 @@ async function main() {
 				])
 			}
 			if (run.scenario === 'stacked') {
-				console.log('  note: the next two groups start later, at main popup open, so they exclude the send-transaction setup path above.')
+				console.warn('  note: the next two groups start later, at main popup open, so they exclude the send-transaction setup path above.')
 			}
 			printStatsGroup('  main popup only / open path (starts at main popup open):', [
 				['script start', summary.popupScriptStart],
@@ -558,27 +557,27 @@ async function main() {
 				['background refresh end', summary.workerRefreshEnd],
 			])
 			if (setupRpcRequests.length > 0) {
-				console.log(`  rpc / setup (${ setupRpcSummary.totalRequests } request${ setupRpcSummary.totalRequests === 1 ? '' : 's' }, ${ roundToTwoDecimals(setupRpcSummary.totalDurationMs) } ms cumulative):`)
+				console.warn(`  rpc / setup (${ setupRpcSummary.totalRequests } request${ setupRpcSummary.totalRequests === 1 ? '' : 's' }, ${ roundToTwoDecimals(setupRpcSummary.totalDurationMs) } ms cumulative):`)
 				if (setupRpcMethodStats.length === 0) {
-					console.log('    n/a')
+					console.warn('    n/a')
 				} else {
 					for (const methodStats of setupRpcMethodStats) {
-						console.log(formatRpcMethodStats(`    ${ methodStats.method }`, requireRpcMethodStats(methodStats, methodStats.method)))
+						console.warn(formatRpcMethodStats(`    ${ methodStats.method }`, requireRpcMethodStats(methodStats, methodStats.method)))
 					}
 				}
 			}
-			console.log(`  rpc / popup (${ summary.rpcTotalRequests } request${ summary.rpcTotalRequests === 1 ? '' : 's' }, ${ roundToTwoDecimals(summary.rpcTotalDurationMs) } ms cumulative):`)
+			console.warn(`  rpc / popup (${ summary.rpcTotalRequests } request${ summary.rpcTotalRequests === 1 ? '' : 's' }, ${ roundToTwoDecimals(summary.rpcTotalDurationMs) } ms cumulative):`)
 			if (summary.rpcMethods.length === 0) {
-				console.log('    n/a')
+				console.warn('    n/a')
 			} else {
 				for (const methodStats of summary.rpcMethods) {
-					console.log(formatRpcMethodStats(`    ${ methodStats.method }`, requireRpcMethodStats(methodStats, methodStats.method)))
+					console.warn(formatRpcMethodStats(`    ${ methodStats.method }`, requireRpcMethodStats(methodStats, methodStats.method)))
 				}
 			}
 			if (summary.popupRefreshComplete === undefined) {
-				console.log('  popup refresh state applied was not observed within the benchmark wait window.')
+				console.warn('  popup refresh state applied was not observed within the benchmark wait window.')
 			}
-			console.log('')
+			console.warn('')
 		}
 	} finally {
 		if (transactionPageServer !== undefined) await transactionPageServer.close().catch(() => undefined)

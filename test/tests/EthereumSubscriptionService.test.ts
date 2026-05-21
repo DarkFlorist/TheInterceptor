@@ -3,8 +3,8 @@ import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createExecutionSimulationState, DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
-import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
@@ -99,7 +99,7 @@ const blockNumber = 8443561n
 	class MockEthereumJSONRpcRequestHandler {
 		public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
 
-		public clearCache = () => {}
+		public clearCache = () => undefined
 
 		public getChainId = async () => 5n
 
@@ -144,7 +144,7 @@ const blockNumber = 8443561n
 		chainId: 1n,
 	} as const
 
-	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
 	const createSimulationInput = (gas: bigint, nonce: bigint, transactionIdentifier: bigint) => [{
 		stateOverrides: {},
 		transactions: [{
@@ -339,5 +339,46 @@ const blockNumber = 8443561n
 			})
 			assert.equal(emittedBlockNumbers.length, 3)
 			assert.deepEqual(emittedBlockNumbers, [blockNumber, blockNumber + 1n, blockNumber + 2n])
+		})
+
+		test('newHeads skips stale subscriptions without suppressing later live subscribers', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+			const liveSocket = { tabId: 2, connectionName: 2n } as const
+			const postedMessages: InterceptorMessageToInpage[] = []
+			const port = {
+				postMessage(message: unknown) {
+					postedMessages.push(InterceptorMessageToInpage.parse(message))
+				},
+			} as unknown as browser.runtime.Port
+			const websiteTabConnections = new Map([
+				[2, {
+					connections: {
+						'2-0x2': {
+							port,
+							socket: liveSocket,
+							websiteOrigin: 'test',
+							approved: true,
+							wantsToConnect: false,
+						},
+					},
+				}],
+			])
+
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, { tabId: 1, connectionName: 1n })
+			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
+
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+
+			const emittedBlockNumbers = postedMessages.flatMap((message) => {
+				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
+				if (!('result' in message) || !('result' in message.result)) throw new Error('wrong subscription payload')
+				if (message.result.result === null) throw new Error('missing block payload')
+				return [message.result.result.number]
+			})
+
+			assert.deepEqual(emittedBlockNumbers, [blockNumber])
 		})
 	})

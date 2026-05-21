@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { UnionToIntersection } from '../utils/typescript.js'
+import type { UnionToIntersection } from '../utils/typescript.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {

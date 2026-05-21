@@ -1,22 +1,22 @@
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
-import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import { PendingTransaction } from '../types/accessRequest.js'
-import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
-import { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { BlockTimeManipulation, ExecutionSimulationState, NonSimulatedAndVisualizedTransaction, PreSimulationTransaction, SignedMessageTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock, VisualizedSimulatorState, toResolvedSimulationInput } from '../types/visualizer-types.js'
+import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
+import type { PendingTransaction } from '../types/accessRequest.js'
+import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
+import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
+import { type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
-import { DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
+import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
-import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
+import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -196,7 +196,8 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
 		if (params === undefined) return returnError('Could not find the voting function')
-		const proposalId = funtypes.BigInt.parse(params.namedArgs['proposalId'])
+		const { proposalId: rawProposalId } = params.namedArgs
+		const proposalId = funtypes.BigInt.parse(rawProposalId)
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId)

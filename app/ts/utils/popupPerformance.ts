@@ -21,11 +21,8 @@ export const POPUP_PERFORMANCE_MARKS = {
 const marked = new Set<string>()
 
 export function markPerformance(mark: string) {
-	try {
-		performance.mark(mark)
-	} catch {
-		// Ignore environments that do not support performance marks.
-	}
+	if (typeof globalThis.performance?.mark !== 'function') return
+	globalThis.performance.mark(mark)
 }
 
 export function markPerformanceOnce(mark: string) {
@@ -36,9 +33,6 @@ export function markPerformanceOnce(mark: string) {
 
 export function clearPerformanceMarks() {
 	marked.clear()
-	try {
-		performance.clearMarks()
-	} catch {
-		// Ignore environments that do not support clearing performance marks.
-	}
+	if (typeof globalThis.performance?.clearMarks !== 'function') return
+	globalThis.performance.clearMarks()
 }

@@ -1,11 +1,11 @@
-import { EnsEvent } from '../../../types/EnrichedEthereumData.js'
-import { RpcNetwork } from '../../../types/rpc.js'
-import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
+import type { EnsEvent } from '../../../types/EnrichedEthereumData.js'
+import type { RpcNetwork } from '../../../types/rpc.js'
+import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { bigintSecondsToDate, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { Ether } from '../../subcomponents/coins.js'
-import { EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../../subcomponents/ens.js'
+import { type EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../../subcomponents/ens.js'
 
 type EnsEvenExplainerParam = {
 	ensEvent: EnsEvent,
@@ -411,8 +411,8 @@ type EnsEvenExplainerParams = {
 
 export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
 	return <>
-		{ param.ensEvents.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed').map((ensEvent) =>
-			<div class = 'vertical-center'>
+		{ param.ensEvents.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed').map((ensEvent, index) =>
+			<div key = { `${ ensEvent.subType }-${ index }` } class = 'vertical-center'>
 				<div class = 'box token-box vertical-center positive-box' style = 'display: inline-block'>
 					<VisualizeEnsEvent ensEvent = { ensEvent } textColor = { param.textColor } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/>
 				</div>

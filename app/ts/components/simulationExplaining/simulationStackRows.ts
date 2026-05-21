@@ -1,6 +1,6 @@
-import { SignedMessageTransaction, SimulationStateInput, VisualizedSimulationState } from '../../types/visualizer-types.js'
-import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
-import { PreSimulationTransaction, NonSimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
+import type { SignedMessageTransaction, SimulationStateInput, VisualizedSimulationState } from '../../types/visualizer-types.js'
+import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import type { PreSimulationTransaction, NonSimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
 
 export type SimulationStackTransactionRow = {
 	type: 'Transaction'

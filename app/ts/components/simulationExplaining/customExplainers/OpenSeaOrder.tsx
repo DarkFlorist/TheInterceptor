@@ -1,11 +1,11 @@
-import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { OpenSeaOrderMessageWithAddressBookEntries, SeaPortSingleConsiderationWithAddressBookEntries, SeaPortSingleOfferWithAddressBookEntries } from '../../../types/personal-message-definitions.js'
+import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
+import type { OpenSeaOrderMessageWithAddressBookEntries, SeaPortSingleConsiderationWithAddressBookEntries, SeaPortSingleOfferWithAddressBookEntries } from '../../../types/personal-message-definitions.js'
 import { TokenOrEthSymbol, TokenOrEthValue } from '../../subcomponents/coins.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDateFromSeconds } from '../../ui-utils.js'
-import { RpcNetwork } from '../../../types/rpc.js'
+import type { RpcNetwork } from '../../../types/rpc.js'
 
 const tokenStyle = { 'font-weight': '500', 'color:': 'var(--text-color)' }
 
@@ -83,12 +83,12 @@ export function OrderComponents(param: OrderComponentsParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Offer </p>
 			<div class = 'box swap-box'>
-				{ param.openSeaOrderMessage.offer.map((offer) => <SwapGrid orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/> ) }
+				{ param.openSeaOrderMessage.offer.map((offer, index) => <SwapGrid key = { index } orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/> ) }
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
 				<span class = 'log-table-4' style = 'justify-content: center; column-gap: 5px;'>
-					{ param.openSeaOrderMessage.consideration.map((consideration) => <VisualizeOpenSeaAsset consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork } /> ) }
+					{ param.openSeaOrderMessage.consideration.map((consideration, index) => <VisualizeOpenSeaAsset key = { index } consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork } /> ) }
 				</span>
 			</div>
 		</div>

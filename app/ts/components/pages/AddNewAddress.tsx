@@ -1,20 +1,20 @@
 import { isAddress } from 'viem/utils'
 import { useEffect } from 'preact/hooks'
-import { AddAddressParam } from '../../types/user-interface-types.js'
+import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
-import { ComponentChildren, createRef } from 'preact'
-import { AddressBookEntry, AddressBookEntryType, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
+import { type ComponentChildren, createRef } from 'preact'
+import type { AddressBookEntry, AddressBookEntryType, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
-import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
-import { ChainEntry, RpcEntries } from '../../types/rpc.js'
-import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import type { ChainEntry, RpcEntries } from '../../types/rpc.js'
+import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
@@ -59,7 +59,7 @@ function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
 	useEffect(() => { ref.current?.focus() }, [])
 	return <input
-		className = 'input title is-5 is-spaced'
+		class = 'input title is-5 is-spaced'
 		type = 'text'
 		value = { nameInput }
 		placeholder = { 'What should we call this address?' }
@@ -80,7 +80,7 @@ type AddressInputParams = {
 function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
 	return <input
 		disabled = { disabled }
-		className = 'input subtitle is-7 is-spaced'
+		class = 'input subtitle is-7 is-spaced'
 		type = 'text'
 		value = { addressInput }
 		placeholder = { '0x0...' }
@@ -112,7 +112,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	const ref = createRef<HTMLInputElement>()
 	useEffect(() => { ref.current?.focus() }, [])
 	return <input
-		className = 'input is-spaced'
+		class = 'input is-spaced'
 		type = 'text'
 		value = { abiInput }
 		placeholder = { 'no abi' }
@@ -196,11 +196,11 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<CellElement element = { <AddressInput disabled = { modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
+						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
+						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
 					</> : <></> }
 					<CellElement element = { <Text text = { 'Abi: ' }/> }/>
 					<CellElement element = { <>
@@ -413,11 +413,11 @@ export function AddNewAddress(param: AddAddressParam) {
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/address-book.svg'/>
+						<img src = '../img/address-book.svg' width = '24' height = '24'/>
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { getCardTitle() } </p>
+					<p class = 'paragraph'> { getCardTitle() } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />

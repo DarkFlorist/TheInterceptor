@@ -1,7 +1,7 @@
 import { keccak256, stringToBytes } from 'viem/utils'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
-import { RpcNetwork } from '../types/rpc.js'
-import { SimulationStateInput } from '../types/visualizer-types.js'
+import type { RpcNetwork } from '../types/rpc.js'
+import type { SimulationStateInput } from '../types/visualizer-types.js'
 import { getSimulationInputHash } from '../utils/simulationFingerprint.js'
 
 export function getPopupVisualisationFingerprint(simulationStateInput: SimulationStateInput, rpcNetwork: RpcNetwork, blockNumber: bigint) {

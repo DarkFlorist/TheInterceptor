@@ -1,9 +1,9 @@
 import { bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
 import { Erc1155ABI } from '../utils/abi.js'
-import { EthereumEvent } from '../types/ethSimulate-types.js'
+import type { EthereumEvent } from '../types/ethSimulate-types.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { extractENSFuses } from '../utils/ethereumNameService.js'
-import { ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
+import type { ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { decodeEventStrict } from '../utils/abiRuntime.js'
 
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {

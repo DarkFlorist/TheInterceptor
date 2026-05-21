@@ -1,6 +1,6 @@
 import type { ComponentChild, ComponentChildren } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
-import { Signal, useSignal, useSignalEffect } from '@preact/signals'
+import { type Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 interface Props {
 	children: ComponentChild | ComponentChild[]
