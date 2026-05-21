@@ -11,7 +11,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getHostWithPortFromOriginLike, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -140,7 +140,7 @@ export async function getSettings() : Promise<Settings> {
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
-	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
+	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => getHostWithPortFromOriginLike(site.website.websiteOrigin))
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })

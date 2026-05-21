@@ -131,6 +131,21 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
+export const getOriginWithPort = (urlString: string): string => {
+	const url = new URL(urlString)
+	if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin
+	return getHostWithPort(urlString)
+}
+
+export const getHostWithPortFromOriginLike = (originLike: string): string => {
+	if (!originLike.includes('://')) return originLike
+	try {
+		return getHostWithPort(originLike)
+	} catch {
+		return originLike
+	}
+}
+
 export const silenceChromeUnCaughtPromise = async <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction

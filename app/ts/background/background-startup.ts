@@ -9,7 +9,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getOriginWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
@@ -107,7 +107,7 @@ async function onContentScriptConnected(getCurrentSimulationServices: () => Simu
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const websiteOrigin = getHostWithPort(port.sender.url)
+	const websiteOrigin = getOriginWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
 	silenceChromeUnCaughtPromise(websitePromise)
@@ -267,7 +267,7 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await waitForBackgroundStartup()
 	if (changeInfo.status !== 'complete') return
 	if (tab.url === undefined) return
-	const websiteOrigin = getHostWithPort(tab.url)
+	const websiteOrigin = getOriginWithPort(tab.url)
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
