@@ -127,12 +127,9 @@ const getHashOfSimulatedBlockFromInput = (simulationStateInput: SimulationStateI
 	return BigInt(keccak256(stringToBytes(`${ getSimulationInputHash(simulationStateInput) }:${ blockDelta }`)))
 }
 
-const createPreparedSimulationExecutionContext = async (
-	ethereumClientService: EthereumClientService,
-	requestAbortController: AbortController | undefined,
+const resolvePreparedSimulationInput = (
 	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
-	baseBlockTag: EthereumBlockTag = 'latest',
-): Promise<PreparedSimulationExecutionContext | undefined> => {
+) => {
 	if (simulationStateInput === undefined) return undefined
 	const resolvedSimulationInput = 'kind' in simulationStateInput
 		? simulationStateInput.kind === 'passthrough'
@@ -141,9 +138,15 @@ const createPreparedSimulationExecutionContext = async (
 		: simulationStateInput
 	if (resolvedSimulationInput === undefined) return undefined
 	if (isEmptySimulationInput(resolvedSimulationInput)) return undefined
-	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
-	if (parentBlock === null) throw new Error('The latest block is null')
-	const prepared = await ethereumClientService.prepareEthSimulateV1Input(resolvedSimulationInput, parentBlock.number, requestAbortController)
+	return resolvedSimulationInput
+}
+
+const createSimulationExecutionContextFromPreparedInput = (
+	resolvedSimulationInput: SimulationStateInputMinimalData,
+	parentBlock: NonNullable<EthereumBlockHeader>,
+	prepared: PreparedEthSimulateV1Input,
+	simulatedResult: EthSimulateV1Result | undefined,
+): PreparedSimulationExecutionContext => {
 	let previousBlockHash = parentBlock.hash
 	let previousGasUsed = parentBlock.gasUsed
 	let previousBaseFeePerGas = parentBlock.baseFeePerGas
@@ -153,15 +156,18 @@ const createPreparedSimulationExecutionContext = async (
 		const blockOverride = prepared.blockOverrides[blockIndex]
 		if (blockOverride === undefined) throw new Error('missing block override for prepared simulation block')
 		if (blockOverride.time === undefined) throw new Error('missing timestamp for prepared simulation block')
-		const gasUsed = transactionQueueTotalGasLimitFromInput(inputBlock)
-		const baseFeePerGas = previousBaseFeePerGas === undefined ? undefined : getNextBaseFeePerGas(previousGasUsed, parentBlock.gasLimit, previousBaseFeePerGas)
+		const simulatedBlock = simulatedResult?.[blockIndex]
+		if (simulatedResult !== undefined && simulatedBlock === undefined) throw new Error('missing simulated result block for prepared simulation block')
+		const gasUsed = simulatedBlock?.gasUsed ?? transactionQueueTotalGasLimitFromInput(inputBlock)
+		const baseFeePerGas = simulatedBlock?.baseFeePerGas ?? (previousBaseFeePerGas === undefined ? undefined : getNextBaseFeePerGas(previousGasUsed, parentBlock.gasLimit, previousBaseFeePerGas))
 		const blockHash = getHashOfSimulatedBlockFromInput(resolvedSimulationInput, blockIndex)
+		const blockTimestamp = simulatedBlock === undefined ? blockOverride.time : bigintSecondsToDate(simulatedBlock.timestamp)
 		const executionBlock = {
 			inputBlock,
 			blockNumber: previousBlockNumber + 1n,
 			blockHash,
 			parentHash: previousBlockHash,
-			blockTimestamp: blockOverride.time,
+			blockTimestamp,
 			gasUsed,
 			baseFeePerGas,
 			totalDifficulty: previousTotalDifficulty + parentBlock.difficulty,
@@ -179,6 +185,34 @@ const createPreparedSimulationExecutionContext = async (
 		prepared,
 		executionBlocks,
 	}
+}
+
+const createPreparedSimulationExecutionContext = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
+	baseBlockTag: EthereumBlockTag = 'latest',
+): Promise<PreparedSimulationExecutionContext | undefined> => {
+	const resolvedSimulationInput = resolvePreparedSimulationInput(simulationStateInput)
+	if (resolvedSimulationInput === undefined) return undefined
+	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	const prepared = await ethereumClientService.prepareEthSimulateV1Input(resolvedSimulationInput, parentBlock.number, requestAbortController)
+	return createSimulationExecutionContextFromPreparedInput(resolvedSimulationInput, parentBlock, prepared, undefined)
+}
+
+const createSimulatedPreparedSimulationExecutionContext = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
+	baseBlockTag: EthereumBlockTag = 'latest',
+): Promise<PreparedSimulationExecutionContext | undefined> => {
+	const resolvedSimulationInput = resolvePreparedSimulationInput(simulationStateInput)
+	if (resolvedSimulationInput === undefined) return undefined
+	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	const { prepared, result } = await ethereumClientService.simulatePrepared(resolvedSimulationInput, parentBlock.number, requestAbortController)
+	return createSimulationExecutionContextFromPreparedInput(resolvedSimulationInput, parentBlock, prepared, result)
 }
 
 const resolveSimulationBlockTag = (
@@ -927,7 +961,9 @@ export async function getSimulatedBlockFromInput(ethereumClientService: Ethereum
 	}
 	const blockIndex = getExecutionBlockIndexForTag(context.parentBlock.number, context.executionBlocks.length, blockTag)
 	if (blockIndex === undefined) return null
-	const block = await getSimulatedMockBlockFromPreparedContext(context, blockIndex)
+	const simulatedContext = await createSimulatedPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+	if (simulatedContext === undefined) return null
+	const block = await getSimulatedMockBlockFromPreparedContext(simulatedContext, blockIndex)
 	if (block === null) return null
 	if (fullObjects) return block
 	return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }
@@ -944,7 +980,9 @@ export const getSimulatedBlockByHashFromInput = async (
 	if (context === undefined) return await ethereumClientService.getBlockByHash(blockHash, requestAbortController, fullObjects)
 	const blockIndex = context.executionBlocks.findIndex((block) => block.blockHash === blockHash)
 	if (blockIndex < 0) return await ethereumClientService.getBlockByHash(blockHash, requestAbortController, fullObjects)
-	const block = await getSimulatedMockBlockFromPreparedContext(context, blockIndex)
+	const simulatedContext = await createSimulatedPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+	if (simulatedContext === undefined) return null
+	const block = await getSimulatedMockBlockFromPreparedContext(simulatedContext, blockIndex)
 	if (block === null) return null
 	if (fullObjects) return block
 	return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }

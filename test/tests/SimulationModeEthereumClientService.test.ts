@@ -180,6 +180,55 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			simulateWithZeroBaseFee: false,
 		}] as const
 
+		const createSimulationStateInputWithGas = (gas: bigint): Parameters<typeof toResolvedSimulationInput>[0] => [{
+			stateOverrides: {},
+			transactions: [{
+				signedTransaction: mockSignTransaction({
+					...exampleTransaction,
+					nonce: 0n,
+					gas,
+				}),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+				transactionIdentifier: 101n,
+			}],
+			signedMessages: [],
+			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+			simulateWithZeroBaseFee: false,
+		}]
+
+		const createSplitSimulationStateInput = (): Parameters<typeof toResolvedSimulationInput>[0] => [{
+			stateOverrides: {},
+			transactions: [
+				{
+					signedTransaction: mockSignTransaction({
+						...exampleTransaction,
+						nonce: 0n,
+						gas: 20_000_000n,
+					}),
+					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+					created: new Date(),
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+					transactionIdentifier: 102n,
+				},
+				{
+					signedTransaction: mockSignTransaction({
+						...exampleTransaction,
+						nonce: 1n,
+						gas: 20_000_000n,
+					}),
+					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+					created: new Date(),
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+					transactionIdentifier: 103n,
+				},
+			],
+			signedMessages: [],
+			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+			simulateWithZeroBaseFee: false,
+		}]
+
 		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
@@ -651,6 +700,43 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			assert.equal(latestBlock.hash, sameBlock.hash)
 				assert.equal(roundTripped.hash, latestBlock.hash)
 				assert.equal(roundTripped.number, latestBlock.number)
+			})
+
+			test('input-based simulated block gasUsed comes from eth_simulateV1 result', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+				const simulationStateInput = createSimulationStateInputWithGas(100_000n)
+
+				const latestBlock = await getBlockFromInput(simulationStateInput, 'latest', true)
+				if (latestBlock === null) throw new Error('latest simulated block missing')
+
+				assert.equal(latestBlock.gasUsed, 0x5208n)
+				assert.equal(requestHandler.ethSimulateV1Calls.length, 1)
+			})
+
+			test('input-based getBlockByHash gasUsed comes from eth_simulateV1 result', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+				const simulationStateInput = createSimulationStateInputWithGas(100_000n)
+
+				const latestBlock = await getBlockFromInput(simulationStateInput, 'latest', true)
+				if (latestBlock === null) throw new Error('latest simulated block missing')
+				const roundTripped = await getBlockByHashFromInput(simulationStateInput, latestBlock.hash, true)
+				if (roundTripped === null) throw new Error('round-tripped block missing')
+
+				assert.equal(roundTripped.gasUsed, 0x5208n)
+				assert.equal(requestHandler.ethSimulateV1Calls.length, 2)
+			})
+
+			test('input-based split execution block gasUsed comes from each eth_simulateV1 result block', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+				const simulationStateInput = createSplitSimulationStateInput()
+
+				const firstExecutionBlock = await getBlockFromInput(simulationStateInput, blockNumber + 1n, true)
+				const secondExecutionBlock = await getBlockFromInput(simulationStateInput, blockNumber + 2n, true)
+				if (firstExecutionBlock === null || secondExecutionBlock === null) throw new Error('simulated split execution block missing')
+
+				assert.equal(firstExecutionBlock.gasUsed, 0x5208n)
+				assert.equal(secondExecutionBlock.gasUsed, 0x6dd4n)
+				assert.equal(requestHandler.ethSimulateV1Calls.length, 2)
 			})
 
 			test('input-based simulated block hash changes when transaction contents change', async () => {
