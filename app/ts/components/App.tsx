@@ -10,7 +10,7 @@ import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
 import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
-import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -22,7 +22,6 @@ import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
-import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { addressEditEntry, humanReadableDate } from './ui-utils.js'
 import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
@@ -31,6 +30,7 @@ import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.j
 import { ImportSimulationStack } from './pages/ImportSimulationStack.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
+import { getRpcWarningState, shouldShowRpcWarningCountdown } from '../utils/rpcConnectionUi.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -48,21 +48,32 @@ type NetworkErrorParams = {
 }
 
 export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
-	if (rpcConnectionStatus.value === undefined) return <></>
-	const nextConnectionAttempt = new Date(rpcConnectionStatus.value.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
-	if (rpcConnectionStatus.value.retrying === false) return <></>
-	return <>
-		{ rpcConnectionStatus.value.isConnected === false ?
-			<ErrorComponent warning = { true } text = {
-				<>Unable to connect to { rpcConnectionStatus.value.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
-			}/>
-		: <></> }
-		{ rpcConnectionStatus.value.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus.value) && rpcConnectionStatus.value.latestBlock !== null ?
-			<ErrorComponent warning = { true } text = {
-				<>The connected RPC ({ rpcConnectionStatus.value.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.value.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.value.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
-			}/>
-		: <></> }
-	</>
+	const status = rpcConnectionStatus.value
+	if (status === undefined) return <></>
+	const warningState = getRpcWarningState(status)
+	if (warningState.kind === 'none') return <></>
+	const showCountdown = shouldShowRpcWarningCountdown(warningState)
+
+	if (warningState.kind === 'disconnected') {
+		if (warningState.retryState === 'paused') {
+			return <ErrorComponent warning = { true } text = { <>Unable to connect to { status.rpcNetwork.name }. Retrying resumes when the extension becomes active.</> }/>
+		}
+		if (showCountdown && warningState.nextRetryAt !== undefined) {
+			return <ErrorComponent warning = { true } text = { <>Unable to connect to { status.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { warningState.nextRetryAt } countBackwards = { true }/>.</> }/>
+		}
+		return <ErrorComponent warning = { true } text = { <>Unable to connect to { status.rpcNetwork.name }. Retrying now.</> }/>
+	}
+
+	const latestBlock = status.latestBlock
+	if (latestBlock === undefined || latestBlock === null) return <></>
+	if (showCountdown && warningState.nextRetryAt !== undefined) {
+		return <ErrorComponent warning = { true } text = {
+			<>The connected RPC ({ status.rpcNetwork.name }) seems to be stuck at block { latestBlock.number } (occurred on: { humanReadableDate(latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { warningState.nextRetryAt } countBackwards = { true }/>.</>
+		}/>
+	}
+	return <ErrorComponent warning = { true } text = {
+		<>The connected RPC ({ status.rpcNetwork.name }) seems to be stuck at block { latestBlock.number } (occurred on: { humanReadableDate(latestBlock.timestamp) }). Retrying now.</>
+	}/>
 }
 
 type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' | 'Unknown' }

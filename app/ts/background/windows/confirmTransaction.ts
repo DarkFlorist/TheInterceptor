@@ -9,7 +9,7 @@ import { InterceptorTransactionStack, PASSTHROUGH_STATE, WebsiteCreatedEthereumU
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { keccak256, parseTransaction as parseSerializedTransaction, recoverAddress, serializeTransaction, stringToBytes } from 'viem/utils'
@@ -57,10 +57,12 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating))
 		const settings = getSettings()
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
+		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber: await currentBlockNumberPromise,
+			rpcConnectionStatus: await rpcConnectionStatusPromise,
 			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : createPassthroughCompleteVisualizedSimulation(),
 		} }
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
@@ -68,6 +70,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 			data: {
 				pendingTransactionAndSignableMessages,
 				currentBlockNumber: await currentBlockNumberPromise,
+				rpcConnectionStatus: await rpcConnectionStatusPromise,
 			}
 		}
 		await Promise.all([

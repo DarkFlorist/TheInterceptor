@@ -9,6 +9,7 @@ import { isConfirmTransactionFocused } from "./windows/confirmTransaction.js"
 const updateConnectionStatusRetry = async (ethereumClientService: EthereumClientService) => {
 	const status = await getRpcConnectionStatus()
 	if (status === undefined) return
+	// This is used for sleep/wake retry-state transitions in addition to real RPC fetch failures.
 	const rpcConnectionStatus = modifyObject(status, { retrying: ethereumClientService.isBlockPolling() })
 	await setRpcConnectionStatus(rpcConnectionStatus)
 	await updateExtensionBadge()

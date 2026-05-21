@@ -1,15 +1,16 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
-import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
-import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
+import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
 
@@ -62,18 +63,11 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }
 
-export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {
-	return connectionStatus?.latestBlock && (connectionStatus.lastConnnectionAttempt.getTime() - connectionStatus.latestBlock.timestamp.getTime()) > 2 * 60 * 1000
-}
-
 export async function updateExtensionBadge() {
-	const connectionStatus = await getRpcConnectionStatus()
-	if (connectionStatus?.isConnected === false || noNewBlockForOverTwoMins(connectionStatus) && connectionStatus && connectionStatus.retrying) {
-		const nextConnectionAttempt = new Date(connectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
-		if (nextConnectionAttempt.getTime() - new Date().getTime() > 0) {
-			await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
-			return await setExtensionBadgeText({ text: '!' })
-		}
+	const warningState = getRpcWarningState(await getRpcConnectionStatus())
+	if (warningState.kind !== 'none') {
+		await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
+		return await setExtensionBadgeText({ text: '!' })
 	}
 	await setExtensionBadgeBackgroundColor({ color: PRIMARY_COLOR })
 	return await setExtensionBadgeText( { text: '' } )

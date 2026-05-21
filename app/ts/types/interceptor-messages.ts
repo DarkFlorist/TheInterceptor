@@ -487,6 +487,7 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: CompleteVisualizedSimulation,
 		currentBlockNumber: EthereumQuantity,
+		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 	})
 }).asReadonly()
 
@@ -507,6 +508,7 @@ export type UpdateConfirmTransactionDialogPendingTransactions = {
 	readonly data: {
 		readonly pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
 		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
+		readonly rpcConnectionStatus: funtypes.Static<typeof RpcConnectionStatus>
 	}
 }
 const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => funtypes.ReadonlyObject({
@@ -514,6 +516,7 @@ const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => fun
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
+		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 	})
 }).asReadonly()
 type UpdateConfirmTransactionDialogPendingTransactionsRuntype = ReturnType<typeof createUpdateConfirmTransactionDialogPendingTransactionsRuntype>

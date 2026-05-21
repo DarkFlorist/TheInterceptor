@@ -287,6 +287,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
+	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const promises = await getPendingTransactionsAndMessages()
 	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService))
 	const first = promises[0]
@@ -300,6 +301,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				data: {
 					visualizedSimulatorState: await visualizedSimulatorStatePromise,
 					currentBlockNumber: await currentBlockNumberPromise,
+					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
@@ -311,6 +313,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 						transactionOrMessageCreationStatus: 'Simulated' as const
 					}, ...promises.slice(1)],
 					currentBlockNumber: await currentBlockNumberPromise,
+					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
 			await Promise.all([
@@ -333,9 +336,10 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 										statusCode: 'success',
 										data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
 									}
-								})
+									})
 							, ...promises.slice(1)],
 						currentBlockNumber: await currentBlockNumberPromise,
+						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
 				}
 				const message: UpdateConfirmTransactionDialog = {
@@ -343,6 +347,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					data: {
 						visualizedSimulatorState: await visualizedSimulatorStatePromise,
 						currentBlockNumber: await currentBlockNumberPromise,
+						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
 				}
 				await Promise.all([
@@ -466,7 +471,7 @@ export async function refreshHomeData(ethereum: EthereumClientService, tokenPric
 		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
 		const settings = await getSettings()
-		if (settings.activeRpcNetwork.httpsRpc !== undefined) makeSureInterceptorIsNotSleeping(ethereum)
+		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum)
 		const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'fresh' })
 		await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 	} finally {
