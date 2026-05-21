@@ -232,10 +232,49 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	}
 	return approvedTabs
 }
+const parseWebsiteOriginLike = (websiteOrigin: string) => {
+	try {
+		const parsed = new URL(websiteOrigin.includes('://') ? websiteOrigin : `https://${ websiteOrigin }`)
+		if (parsed.hostname.length === 0) return undefined
+		return {
+			hostname: parsed.hostname,
+			hostWithPort: parsed.port ? `${ parsed.hostname }:${ parsed.port }` : parsed.hostname,
+			hasPort: parsed.port.length > 0,
+		}
+	} catch {
+		return undefined
+	}
+}
+
+const getWebsiteOriginHostWithPort = (websiteOrigin: string) => parseWebsiteOriginLike(websiteOrigin)?.hostWithPort
+
+export const getDeclarativeNetRequestInitiatorDomain = (websiteOrigin: string) => {
+	const parsed = parseWebsiteOriginLike(websiteOrigin)
+	if (parsed === undefined || parsed.hasPort) return undefined
+	return parsed.hostname
+}
+
+const getTabIdsForBlockedWebsiteOrigins = (websiteTabConnections: WebsiteTabConnections, blockedWebsiteOrigins: ReadonlySet<string>) => {
+	const tabIdsToBlock = new Set<number>()
+	for (const tabConnection of websiteTabConnections.values()) {
+		for (const connection of Object.values(tabConnection.connections)) {
+			if (connection === undefined) continue
+			if (blockedWebsiteOrigins.has(connection.websiteOrigin)) tabIdsToBlock.add(connection.socket.tabId)
+		}
+	}
+	return [...tabIdsToBlock]
+}
+
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
-	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	const activeAddressTabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
+	const websiteAccessesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
+	const sitesToBlock = websiteAccessesToBlock.map((acccess) => acccess.website.websiteOrigin)
+	const portScopedSitesToBlock = new Set(websiteAccessesToBlock
+		.filter((access) => getDeclarativeNetRequestInitiatorDomain(access.website.websiteOrigin) === undefined)
+		.map((access) => getWebsiteOriginHostWithPort(access.website.websiteOrigin))
+		.filter((websiteOrigin): websiteOrigin is string => websiteOrigin !== undefined))
+	const tabIdsToBlock = [...new Set([...activeAddressTabIdsToBlock, ...getTabIdsForBlockedWebsiteOrigins(websiteTabConnections, portScopedSitesToBlock)])]
 	return {
 		tabIdsToBlock,
 		sitesToBlock
@@ -248,6 +287,7 @@ const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
+		const initiatorDomainsToBlock = [...new Set(sitesToBlock.map(getDeclarativeNetRequestInitiatorDomain).filter((domain): domain is string => domain !== undefined && domain.length > 0))]
 		// check if the rules would change, if not, just bail out
 		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
@@ -256,14 +296,14 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		if (browser.runtime.getManifest().manifest_version === 3) {
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
 			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
-			if (sitesToBlock.length !== 0) {
+			if (initiatorDomainsToBlock.length !== 0) {
 				await browser.declarativeNetRequest.updateDynamicRules({
 					removeRuleIds: dynamicRuleIds,
 					addRules: [{
 						id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 						priority: 1,
 						action : { type: 'block' as const },
-						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+						condition: { initiatorDomains: initiatorDomainsToBlock, domainType: 'thirdParty' as const }
 					}]
 				})
 			} else {
