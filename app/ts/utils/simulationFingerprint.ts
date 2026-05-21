@@ -1,4 +1,4 @@
-import { keccak256, stringToBytes } from 'viem/utils'
+import { stringToBytes, keccak256 } from './viem.js'
 import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from './ethereum.js'
 import type { SimulationStateInput, SimulationStateInputMinimalData } from '../types/visualizer-types.js'

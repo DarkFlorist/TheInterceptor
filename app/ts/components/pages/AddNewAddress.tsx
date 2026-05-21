@@ -1,4 +1,4 @@
-import { isAddress } from 'viem/utils'
+import { isAddress } from '../../utils/viem.js'
 import { useEffect } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'

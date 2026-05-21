@@ -5,7 +5,7 @@ import { PASSTHROUGH_STATE, type ResolvedSimulationResults, type ResolvedSimulat
 import { Home } from './pages/Home.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
-import { getAddress, isAddress } from 'viem/utils'
+import { getAddress, isAddress } from '../utils/viem.js'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'

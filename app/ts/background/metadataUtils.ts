@@ -1,8 +1,8 @@
-import { addressString, addressStringWithout0x, bytesToUnsigned } from '../utils/bigint.js'
+import { addressString, addressStringWithout0x } from '../utils/bigint.js'
 import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
-import { getAddress } from 'viem/utils'
+import { getAddress, keccak256, stringToBytes } from '../utils/viem.js'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
@@ -14,7 +14,6 @@ import { defaultActiveAddresses } from './settings.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
-import { keccak_256 } from '@noble/hashes/sha3'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
@@ -242,7 +241,7 @@ export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetad
 
 export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) => {
 	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
-	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address)).map((label) => ({ label, labelHash: bytesToUnsigned(keccak_256(label)) }))
+	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address)).map((label) => ({ label, labelHash: BigInt(keccak256(stringToBytes(label))) }))
 	const newLabels = [...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
 
 	// update the mappings if we have new labels

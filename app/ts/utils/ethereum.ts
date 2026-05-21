@@ -1,4 +1,4 @@
-import { toRlp as encodeRlp } from 'viem/utils'
+import { toRlp as encodeRlp } from './viem.js'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { type DistributiveOmit, assertNever } from './typescript.js'

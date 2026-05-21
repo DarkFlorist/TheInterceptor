@@ -27,7 +27,8 @@ import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
-let simulationServices: SimulationServices | undefined 
+let simulationServices: SimulationServices | undefined = undefined
+let resetActiveRpcNetwork: ResetSimulationServices | undefined = undefined
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
@@ -235,46 +236,62 @@ async function startup() {
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
 	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
-	const resetActiveRpcNetwork: ResetSimulationServices = (rpcNetwork) => {
+	resetActiveRpcNetwork = (rpcNetwork) => {
 		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	}
-	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-		await catchAllErrorsAndCall(async () => {
-			if (changeInfo.status !== 'complete') return
-			if (tab.url === undefined) return
-			const websiteOrigin = getHostWithPort(tab.url)
-			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
-			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
-			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
-			})
-		})
-		browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(() => onContentScriptConnected(getSimulationServices, resetActiveRpcNetwork, port, websiteTabConnections)))
-		browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
-			const { ethereum, tokenPriceService } = getSimulationServices()
-			return await popupMessageHandler(websiteTabConnections, ethereum, tokenPriceService, resetActiveRpcNetwork, message, await getSettings())
-		})))
-
-		const recursiveCheckIfInterceptorShouldSleep = async () => {
-			await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
-			setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
-		}
+	const recursiveCheckIfInterceptorShouldSleep = async () => {
+		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
+		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
+	}
 
 	recursiveCheckIfInterceptorShouldSleep()
 
 	await updateExtensionBadge()
-
-	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		return await onCloseWindowOrTab({ type: 'popup' as const, id }, ethereum, tokenPriceService, websiteTabConnections)
-	})
-	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		return await onCloseWindowOrTab({ type: 'tab' as const, id }, ethereum, tokenPriceService, websiteTabConnections)
-	})
-	addWindowTabListeners(onCloseWindow, onCloseTab)
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
 }
 
-startup()
+const backgroundStartupPromise = startup()
+
+async function waitForBackgroundStartup() {
+	await backgroundStartupPromise
+	const currentResetActiveRpcNetwork = resetActiveRpcNetwork
+	if (currentResetActiveRpcNetwork === undefined) throw new Error('Background startup reset handler is not initialized')
+	return {
+		resetActiveRpcNetwork: currentResetActiveRpcNetwork,
+		simulationServices: getSimulationServices(),
+	}
+}
+
+const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedChangeInfo, tab: browser.tabs.Tab) => await catchAllErrorsAndCall(async () => {
+	await waitForBackgroundStartup()
+	if (changeInfo.status !== 'complete') return
+	if (tab.url === undefined) return
+	const websiteOrigin = getHostWithPort(tab.url)
+	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
+	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
+	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
+})
+
+const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
+	const { simulationServices } = await waitForBackgroundStartup()
+	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+})
+
+const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
+	const { simulationServices } = await waitForBackgroundStartup()
+	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+})
+
+// MV3 service worker event listeners must be registered synchronously at module load.
+browser.tabs.onUpdated.addListener(onTabUpdated)
+browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
+	const { resetActiveRpcNetwork } = await waitForBackgroundStartup()
+	return await onContentScriptConnected(getSimulationServices, resetActiveRpcNetwork, port, websiteTabConnections)
+}))
+browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+	const { simulationServices, resetActiveRpcNetwork } = await waitForBackgroundStartup()
+	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, await getSettings())
+})))
+addWindowTabListeners(onCloseWindow, onCloseTab)

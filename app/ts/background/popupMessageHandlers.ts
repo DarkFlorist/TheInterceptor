@@ -19,7 +19,7 @@ import type { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
-import { isAddress } from 'viem/utils'
+import { isAddress } from '../utils/viem.js'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -853,6 +853,7 @@ async function getCachedRichData() {
 		getFixedAddressRichList(),
 	])
 	return {
+		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedAddressRichList.map(async(element) => (
 			{ ...element, addressBookEntry: await getActiveAddressEntry(element.address) }
 		))),

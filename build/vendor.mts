@@ -2,15 +2,12 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
 import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
-import { createHash } from 'node:crypto'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const nodeModulesDirectory = path.join(directoryOfThisFile, '..', 'node_modules')
-const browserResolvedImports = {
-	'@noble/hashes/crypto': path.join(nodeModulesDirectory, '@noble', 'hashes', 'esm', 'crypto.js'),
-} as const
+const vendoredDependencyMirrorDirectoryName = '__dependencies__'
 
-const importMapDependencies = [
+const vendoredDependencies = [
 	'webextension-polyfill',
 	'preact',
 	'preact/jsx-runtime',
@@ -36,6 +33,7 @@ const importMapDependencies = [
 const extraPackageRoots = [
 	'ox',
 	'abitype',
+	'@adraffy/ens-normalize',
 	'@scure/base',
 	'@scure/bip32',
 	'@scure/bip39',
@@ -43,22 +41,141 @@ const extraPackageRoots = [
 	'@noble/ciphers',
 ] as const
 
+const vendorTypeShims = [
+	{
+		pathParts: ['viem', '_esm', 'utils', 'index.d.ts'],
+		contents: "export * from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'ens', 'index.d.ts'],
+		contents: "export * from 'viem/ens'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'accounts', 'index.d.ts'],
+		contents: "export * from 'viem/accounts'\n",
+	},
+	{
+		pathParts: ['@noble', 'hashes', 'esm', 'sha3.d.ts'],
+		contents: "export * from '@noble/hashes/sha3'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeAbiParameters.d.ts'],
+		contents: "export { decodeAbiParameters } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeEventLog.d.ts'],
+		contents: "export { decodeEventLog } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeFunctionData.d.ts'],
+		contents: "export { decodeFunctionData } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'abi', 'encodeAbiParameters.d.ts'],
+		contents: "export { encodeAbiParameters } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'abi', 'encodePacked.d.ts'],
+		contents: "export { encodePacked } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'abi', 'formatAbiItem.d.ts'],
+		contents: "export { formatAbiItem } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'address', 'getAddress.d.ts'],
+		contents: "export { getAddress } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'address', 'getContractAddress.d.ts'],
+		contents: "export { getCreate2Address } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'address', 'isAddress.d.ts'],
+		contents: "export { isAddress } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'data', 'concat.d.ts'],
+		contents: "export { concat } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toHex.d.ts'],
+		contents: "export { bytesToHex } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toBytes.d.ts'],
+		contents: "export { stringToBytes } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toRlp.d.ts'],
+		contents: "export { toRlp } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'ens', 'namehash.d.ts'],
+		contents: "export { namehash } from 'viem/ens'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'hash', 'keccak256.d.ts'],
+		contents: "export { keccak256 } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'hash', 'toEventSelector.d.ts'],
+		contents: "export { toEventSelector } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'hash', 'toFunctionSelector.d.ts'],
+		contents: "export { toFunctionSelector } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'signature', 'recoverAddress.d.ts'],
+		contents: "export { recoverAddress } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'signature', 'hashMessage.d.ts'],
+		contents: "export { hashMessage } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'signature', 'hashTypedData.d.ts'],
+		contents: "export { hashStruct, hashTypedData } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'transaction', 'parseTransaction.d.ts'],
+		contents: "export { parseTransaction } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'transaction', 'serializeTransaction.d.ts'],
+		contents: "export { serializeTransaction } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'utils', 'unit', 'formatUnits.d.ts'],
+		contents: "export { formatUnits } from 'viem/utils'\n",
+	},
+	{
+		pathParts: ['viem', '_esm', 'accounts', 'privateKeyToAccount.d.ts'],
+		contents: "export { privateKeyToAccount } from 'viem/accounts'\n",
+	},
+	{
+		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiItem.d.ts'],
+		contents: "export { parseAbiItem } from 'abitype'\n",
+	},
+	{
+		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiParameters.d.ts'],
+		contents: "export { parseAbiParameters } from 'abitype'\n",
+	},
+	{
+		pathParts: ['@adraffy', 'ens-normalize', 'dist', 'index.d.ts'],
+		contents: "export { ens_normalize } from '@adraffy/ens-normalize'\n",
+	},
+] as const
+
 const getPackageRoot = (packageName: string) => packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0]!
-const toFileSystemPath = (value: string) => value.startsWith('file://') ? url.fileURLToPath(value) : value
 
 const vendoredPackageRoots = [...new Set([
-	...importMapDependencies.map(getPackageRoot),
+	...vendoredDependencies.map(getPackageRoot),
 	...extraPackageRoots,
 ])]
 
-const getVendoredImportMapLocation = (packageName: string) => {
-	const resolvedPath = browserResolvedImports[packageName as keyof typeof browserResolvedImports] ?? toFileSystemPath(import.meta.resolveSync(packageName))
-	const relativePath = path.relative(nodeModulesDirectory, resolvedPath)
-	if (relativePath.startsWith('..')) throw new Error(`Unable to vendor ${ packageName }: ${ resolvedPath } is outside ${ nodeModulesDirectory }`)
-	return `../${ path.join('vendor', relativePath).replace(/\\/g, '/') }`
-}
-
-async function vendorDependencies(files: string[]) {
+async function vendorDependencies() {
 	await fs.rm(path.join(directoryOfThisFile, '..', 'app', 'vendor'), { recursive: true, force: true })
 	for (const packageRoot of vendoredPackageRoots) {
 		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
@@ -70,6 +187,7 @@ async function vendorDependencies(files: string[]) {
 			if (path.endsWith('.ts')) return true
 			if (path.endsWith('.mjs')) return true
 			if (path.endsWith('.mts')) return true
+			if (path.endsWith('package.json')) return true
 			if (path.endsWith('.map')) return true
 			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
 			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
@@ -77,29 +195,30 @@ async function vendorDependencies(files: string[]) {
 			return false
 		}
 		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
+		await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
 	}
+	await writeVendorTypeShims()
+}
 
-	const importmap = importMapDependencies.reduce((importmap, packageName) => {
-		importmap.imports[packageName] = getVendoredImportMapLocation(packageName)
-		return importmap
-	}, { imports: {} as Record<string, string> })
-	const importmapJson = `\n${JSON.stringify(importmap, undefined, '\t')
-		.replace(/^/mg, '\t\t')}\n\t\t`
-
-	// replace in files
-	for ( const file of files ) {
-		const indexHtmlPath = path.join(directoryOfThisFile, '..', 'app', file)
-		const oldIndexHtml = await fs.readFile(indexHtmlPath, 'utf8')
-		const newIndexHtml = oldIndexHtml.replace(/<script type = 'importmap'>[\s\S]*?<\/script>/m, `<script type = 'importmap'>${ importmapJson }</script>`)
-		await fs.writeFile(indexHtmlPath, newIndexHtml)
+async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {
+	const nestedNodeModulesDirectoryPath = path.join(packageDirectoryPath, 'node_modules')
+	const nestedDependenciesDirectoryPath = path.join(packageDirectoryPath, vendoredDependencyMirrorDirectoryName)
+	try {
+		const nestedNodeModulesStats = await fs.stat(nestedNodeModulesDirectoryPath)
+		if (!nestedNodeModulesStats.isDirectory()) return
+	} catch {
+		return
 	}
+	await fs.rm(nestedDependenciesDirectoryPath, { recursive: true, force: true })
+	await fs.rename(nestedNodeModulesDirectoryPath, nestedDependenciesDirectoryPath)
+}
 
-	// update the new hash to manifest.json
-	const base64EncodedSHA256 = createHash('sha256').update(importmapJson).digest('base64')
-	const manifestLocation = path.join(directoryOfThisFile, '..', 'app', 'manifestV2.json')
-	const oldManifest = await fs.readFile(manifestLocation, 'utf8')
-	const newManifest = oldManifest.replace(/sha256-[\s\S]*?'/m, `sha256-${ base64EncodedSHA256 }'`)
-	await fs.writeFile(manifestLocation, newManifest)
+async function writeVendorTypeShims() {
+	for (const shim of vendorTypeShims) {
+		const destinationPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', ...shim.pathParts)
+		await fs.mkdir(path.dirname(destinationPath), { recursive: true })
+		await fs.writeFile(destinationPath, shim.contents)
+	}
 }
 
 // rewrite the source paths in sourcemap files so they show up in the debugger in a reasonable location and if two source maps refer to the same (relative) path, we end up with them distinguished in the browser debugger
@@ -115,19 +234,7 @@ async function rewriteSourceMapSourcePath(packageName: string, sourcePath: strin
 	await fs.writeFile(destinationPath, JSON.stringify(fileContents))
 }
 
-const files = [
-	'html/background.html',
-	'html/popup.html',
-	'html/confirmTransaction.html',
-	'html/interceptorAccess.html',
-	'html/changeChain.html',
-	'html/fetchSimulationStack.html',
-	'html/addressBook.html',
-	'html/settingsView.html',
-	'html/websiteAccess.html'
-]
-
-vendorDependencies(files).catch(error => {
+vendorDependencies().catch(error => {
 	console.error(error)
 	process.exit(1)
 })

@@ -1,13 +1,12 @@
 
 import { Notice } from '../subcomponents/Error.js'
-import { bytes32String, bytesToUnsigned } from '../../utils/bigint.js'
+import { bytes32String } from '../../utils/bigint.js'
 import type { EditEnsNamedHashWindowState } from '../../types/visualizer-types.js'
 import { type ComponentChildren, createRef } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
-import { keccak_256 } from '@noble/hashes/sha3'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { namehash } from 'viem/ens'
+import { keccak256, namehash, stringToBytes } from '../../utils/viem.js'
 import { isValidEnsName } from '../../utils/ens.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 
@@ -42,7 +41,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 	async function validateAndSetName(nameInput: string) {
 		name.value = nameInput
 		if (param.editEnsNamedHashWindowState.type === 'labelHash') {
-			const hash = bytesToUnsigned(keccak_256(nameInput))
+			const hash = BigInt(keccak256(stringToBytes(nameInput)))
 			if (hash !== param.editEnsNamedHashWindowState.nameHash) {
 				errorString.value = `The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`
 				return
