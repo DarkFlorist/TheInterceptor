@@ -639,15 +639,14 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 		return
 	}
 	try {
-		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
+		await browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
 		checkAndThrowRuntimeLastError()
+		return
 	} catch (error) {
 		console.warn('Failed to update tab with new webpage')
 		console.warn({ error })
 	}
-	finally {
-		await browser.tabs.create({ url: parsedRequest.data.url, active: true })
-	}
+	await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 }
 
 // reload all connected tabs of the same origin and the current webpage
