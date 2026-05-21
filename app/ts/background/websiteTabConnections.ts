@@ -1,5 +1,5 @@
-import { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { WebsiteSocket } from '../utils/requests.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { WebsiteSocket } from '../utils/requests.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 
 export function removeWebsiteTabConnection(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {

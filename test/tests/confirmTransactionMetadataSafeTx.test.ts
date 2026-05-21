@@ -395,7 +395,9 @@ describe('SafeTx confirm transaction metadata', () => {
 		const fakeBlock = makeFakeBlock(123n)
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() {
+				return undefined
+			},
 			async jsonRpcRequest(rpcRequest: { method: string }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':
@@ -440,7 +442,9 @@ describe('SafeTx confirm transaction metadata', () => {
 		const fakeBlock = makeFakeBlock(456n)
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() {
+				return undefined
+			},
 			async jsonRpcRequest(rpcRequest: { method: string }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':

@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
-import { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
+import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type RuntimeMessage = {

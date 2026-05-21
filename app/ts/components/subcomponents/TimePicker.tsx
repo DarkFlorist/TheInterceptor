@@ -1,6 +1,6 @@
-import { Signal, batch, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { type Signal, batch, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { DropDownMenu } from './DropDownMenu.js'
-import { JSX } from 'preact/jsx-runtime'
+import type { JSX } from 'preact/jsx-runtime'
 import { assertNever } from '../../utils/typescript.js'
 import { dateToBigintSeconds } from '../../utils/bigint.js'
 

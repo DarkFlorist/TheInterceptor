@@ -1,21 +1,22 @@
 import { useEffect } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { defaultActiveAddresses } from '../background/settings.js'
-import { PASSTHROUGH_STATE, ResolvedSimulationResults, ResolvedSimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId, ModifyAddressWindowState, EditEnsNamedHashWindowState, VisualizedSimulationState, BlockTimeManipulation, CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type ResolvedSimulationResults, type ResolvedSimulationState, type TokenPriceEstimate, type SimulationUpdatingState, type SimulationResultState, type NamedTokenId, type ModifyAddressWindowState, type EditEnsNamedHashWindowState, type VisualizedSimulationState, type BlockTimeManipulation, type CompleteVisualizedSimulation, toResolvedSimulationResults } from '../types/visualizer-types.js'
 import { Home } from './pages/Home.js'
-import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
+import type { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { getAddress, isAddress } from 'viem/utils'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
-import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
+import { UpdateHomePage, type Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
-import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
+import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
+import type { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
-import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
+import type { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
 import { SignersLogoName } from './subcomponents/signers.js'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
@@ -26,7 +27,6 @@ import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../types/i
 import { PopupMessageReplyRequests } from '../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
-import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 
 type ProviderErrorsParam = {
@@ -456,15 +456,15 @@ export function App() {
 					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 						<div class = 'navbar-brand'>
 							<a class = 'navbar-item' style = 'cursor: unset'>
-								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
+								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32'/>
 								<p style = 'color: var(--text-color); padding-left: 5px;'>THE INTERCEPTOR
 									<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 								</p>
 							</a>
 							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-								<img src = '../img/internet.svg' width = '32' onClick = { openWebsiteAccess }/>
-								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
-								<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
+								<img src = '../img/internet.svg' width = '32' height = '32' onClick = { openWebsiteAccess }/>
+								<img src = '../img/address-book.svg' width = '32' height = '32' onClick = { openAddressBook }/>
+								<img src = '../img/settings.svg' width = '32' height = '32' onClick = { openSettings }/>
 							</a>
 						</div>
 					</nav>

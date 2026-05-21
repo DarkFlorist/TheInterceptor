@@ -1,4 +1,4 @@
-import * as funtypes from 'funtypes'
+import type * as funtypes from 'funtypes'
 import { serialize } from '../types/wire-types.js'
 
 export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisualisation'
@@ -11,8 +11,8 @@ type IndexedDbLookup =
 	| { kind: 'available', found: true, value: unknown }
 	| { kind: 'unavailable' }
 
-let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined = undefined
-let indexedDbSource: IDBFactory | undefined = undefined
+let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined 
+let indexedDbSource: IDBFactory | undefined 
 
 function canUseIndexedDb() {
 	return typeof indexedDB !== 'undefined'

@@ -1,5 +1,5 @@
 import { BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO } from '../../utils/constants.js'
-import { SignerName } from '../../types/signerTypes.js'
+import type { SignerName } from '../../types/signerTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 const signerLogos = {
@@ -21,7 +21,7 @@ export function getSignerLogo(signerName: SignerName) {
 export function SignerLogoText(param: { signerName: SignalOrValue<SignerName>, text: SignalOrValue<string> }) {
 	const signerLogo = getSignerLogo(resolveSignal(param.signerName))
 	return <p style = 'line-height: 24px; display: inline-block;'>
-		{ signerLogo ? <img style = 'width: 24px; height: 24px; vertical-align: text-top;' src = { signerLogo }/> : <></> }
+		{ signerLogo ? <img style = 'width: 24px; height: 24px; vertical-align: text-top;' width = '24' height = '24' src = { signerLogo }/> : <></> }
 		{ resolveSignal(param.text) }
 	</p>
 }

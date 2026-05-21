@@ -1,13 +1,13 @@
-import { SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../types/visualizer-types.js'
+import { type SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../types/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { addressString } from '../../utils/bigint.js'
 import { TokenAmount, TokenOrEthValue, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever } from '../../utils/typescript.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 
 type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 const BeforeAfterBalance = funtypes.ReadonlyObject({

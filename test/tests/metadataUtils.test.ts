@@ -16,13 +16,12 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(requestHandler, async () => {}, async () => {}, rpcEntry)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
 
 describe('getAddressMetaData', () => {
 	test('contain USDC Coin', async () => {
 		const metadata = await identifyAddress(ethereum, undefined, 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n, false)
-		// biome-ignore lint/suspicious/noConsoleLog: test runner logs
-		console.log(metadata)
+		console.warn(metadata)
 		assert.equal(metadata.name, 'USDC')
 	})
 })

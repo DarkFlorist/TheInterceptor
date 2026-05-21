@@ -1,11 +1,11 @@
 import { addressString } from '../utils/bigint.js'
-import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
-import { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
+import type { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
+import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
+import type { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'
-import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, ParsedEnsEvent } from '../types/EnrichedEthereumData.js'
-import { RpcNetwork } from '../types/rpc.js'
+import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, ParsedEnsEvent } from '../types/EnrichedEthereumData.js'
+import type { RpcNetwork } from '../types/rpc.js'
 
 const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, addressMetaData: Map<string, AddressBookEntry>) => {
 	const getNameHash = (node: bigint) => ens.ensNameHashes.find((nameHash) => nameHash.nameHash === node) ?? { nameHash: node, name: undefined }
@@ -119,7 +119,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 				case 'ENS': return enrichEnsEvent(event, ens, addressMetaData)
 				case 'Parsed': return({ ...event, type: 'Parsed' })
 				case 'NonParsed': return({ ...event, type: 'NonParsed' })
-				default: assertNever(event)
+				default: return assertNever(event)
 			}
 		})
 

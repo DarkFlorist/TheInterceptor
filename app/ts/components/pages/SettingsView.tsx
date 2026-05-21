@@ -1,7 +1,7 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { MessageToPopup, ImportSettingsReply } from '../../types/interceptor-messages.js'
-import { RpcEntries, RpcEntry } from '../../types/rpc.js'
+import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
+import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
@@ -102,11 +102,11 @@ function ImportExport() {
 			: <></> }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
-				<label className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
+				<label class = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
 					Import settings
 					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>
-				<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
+				<button class = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
 					Export settings
 				</button>
 			</div>
@@ -156,11 +156,11 @@ export function SettingsView() {
 			<header class = 'card-head card-header window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/settings.svg' />
+						<img src = '../img/settings.svg' width = '24' height = '24' />
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'>
+					<p class = 'paragraph'>
 						Settings
 					</p>
 				</div>
@@ -168,7 +168,7 @@ export function SettingsView() {
 			<section class = 'card-body' style = 'padding-bottom: 10px'>
 				<ul>
 					<li>
-						<p className = 'paragraph'>Misc</p>
+						<p class = 'paragraph'>Misc</p>
 						<CheckBoxSetting
 							text = { 'Open popups as tabs (experimental)' }
 							checked = { useTabsInsteadOfPopup.value }
@@ -181,7 +181,7 @@ export function SettingsView() {
 						/>
 					</li>
 					<li>
-						<p className = 'paragraph'>Export & Import</p>
+						<p class = 'paragraph'>Export & Import</p>
 						<ImportExport/>
 					</li>
 					<li>
@@ -220,7 +220,7 @@ const RpcListings = () => {
 
 	return (
 		<ul class = 'grid' style = '--gap-y: 0.5rem'>
-			{ rpcEntries.value.map(entry => <RpcSummary info = { entry } />) }
+			{ rpcEntries.value.map((entry) => <RpcSummary key = { JSON.stringify(serialize(RpcEntry, entry)) } info = { entry } />) }
 		</ul>
 	)
 }

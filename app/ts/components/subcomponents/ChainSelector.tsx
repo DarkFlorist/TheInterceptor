@@ -1,7 +1,7 @@
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../ui-utils.js'
-import { ChainEntry, RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
-import { ReadonlySignal, Signal, useComputed } from '@preact/signals'
-import { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
+import type { ChainEntry, RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
+import { type ReadonlySignal, type Signal, useComputed } from '@preact/signals'
+import type { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
 import { DropDownMenu } from './DropDownMenu.js'
 
 interface RpcSelectorParams {

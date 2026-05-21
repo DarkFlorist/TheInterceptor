@@ -1,5 +1,5 @@
-import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { ComponentChildren, createContext, toChildArray } from 'preact'
+import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { type ComponentChildren, createContext, toChildArray } from 'preact'
 import { useContext, useEffect } from 'preact/hooks'
 
 type ViewConfig = {
@@ -71,7 +71,7 @@ const Triggers = () => {
 	return (
 		<fieldset onChange = { handleChange }>
 			{ views.value.map((view) => (
-				<label>
+				<label key = { view.value }>
 					<input type = 'radio' name = { id } value = { view.value } defaultChecked = { view.isActive } />
 					<span>{ view.title }</span>
 				</label>

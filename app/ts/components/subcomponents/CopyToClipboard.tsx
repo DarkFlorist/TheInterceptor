@@ -1,5 +1,5 @@
-import { ComponentChildren, JSX } from 'preact'
-import { Signal } from '@preact/signals'
+import type { ComponentChildren, JSX } from 'preact'
+import type { Signal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
 
 type CopySource = { content: string } | { copyFunction: () => Promise<string | undefined> }

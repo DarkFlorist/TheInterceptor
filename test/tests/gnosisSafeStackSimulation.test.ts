@@ -304,10 +304,10 @@ describe('Gnosis Safe stack simulation', () => {
 		}
 
 		const fakeBlock = makeFakeBlock(123n)
-		let aggregate3BlockStateCallCount: number | undefined = undefined
+		let aggregate3BlockStateCallCount: number | undefined 
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { return undefined },
 			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':
@@ -451,7 +451,7 @@ describe('Gnosis Safe stack simulation', () => {
 		const fakeBlock = makeFakeBlock(123n)
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { return undefined },
 			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':

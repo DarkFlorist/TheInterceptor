@@ -1,4 +1,4 @@
-import { ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
+import { type ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
 import { useMemo } from 'preact/hooks'
 
 export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements ReadonlySignal<Signal<T> | undefined> {

@@ -1,7 +1,7 @@
-import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import { SimulationState } from '../../types/visualizer-types.js'
-import { EthereumClientService } from '../services/EthereumClientService.js'
+import type { SimulationState } from '../../types/visualizer-types.js'
+import type { EthereumClientService } from '../services/EthereumClientService.js'
 
 export async function selfTokenOops(transaction: EthereumUnsignedTransaction, _ethereum: EthereumClientService, _requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)

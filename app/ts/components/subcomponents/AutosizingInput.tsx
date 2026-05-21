@@ -1,5 +1,5 @@
-import { JSX } from 'preact/jsx-runtime'
-import { batch, Signal, useSignal, useSignalEffect } from '@preact/signals'
+import type { JSX } from 'preact/jsx-runtime'
+import { batch, type Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { OptionalSignal } from '../../utils/OptionalSignal.js'
 
 interface BaseInputModel extends Omit<JSX.HTMLAttributes<HTMLInputElement>, 'value' | 'onInput'> {
@@ -65,9 +65,8 @@ function isParsedInputModel<T>(model: UnparsedInputModel | ParsedInputModel<T>):
 function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
 	if (isParsedInputModel(model)) {
 		return <ParsedInput { ...model }/>
-	} else {
-		return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
 	}
+		return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
 }
 
 interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>, Pick<UnparsedInputModel, 'key' | 'type' | 'pattern' | 'placeholder' | 'required' | 'onChange' | 'autocomplete'> {

@@ -1,8 +1,8 @@
-import { JSX } from 'preact/jsx-runtime'
+import type { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
 import { CopyIcon, EditIcon } from './icons.js'
-import { Tooltip, TooltipConfig } from './Tooltip.js'
+import { Tooltip, type TooltipConfig } from './Tooltip.js'
 
 type InlineCardProps = {
 	icon: () => JSX.Element

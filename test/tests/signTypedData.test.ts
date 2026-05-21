@@ -21,7 +21,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(new MockRequestHandler(), async () => {}, async () => {}, rpcEntry)
+const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
 
 describe('EIP712', () => {
 	test('can convert oversized number to bigint', () => {

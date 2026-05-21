@@ -1,24 +1,24 @@
 import { useContext, useEffect, useRef } from 'preact/hooks'
 import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { ComponentChildren, createContext, JSX } from 'preact'
-import { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
+import { type ComponentChildren, createContext, type JSX } from 'preact'
+import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { Modal } from '../subcomponents/Modal.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
-import { MessageToPopup, RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
-import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { MessageToPopup, type RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { createPortal } from 'preact/compat'
 import { useOptionalComputed } from '../../utils/OptionalSignal.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import { RpcEntries } from '../../types/rpc.js'
+import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import type { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { addressEditEntry } from '../ui-utils.js'
-import { OptionalSignal } from '../../utils/OptionalSignal.js'
+import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -178,7 +178,7 @@ const WebsiteSettingsList = () => {
 		<section style = { { paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
 			{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : <>
-				<ul role = 'listbox'>{ websiteAccessList.value.map((access) => <WebsiteAccessOverview websiteAccess = { access } checked = { selectedDomain.value === access.website.websiteOrigin } />) }</ul>
+				<ul role = 'listbox'>{ websiteAccessList.value.map((access) => <WebsiteAccessOverview key = { access.website.websiteOrigin } websiteAccess = { access } checked = { selectedDomain.value === access.website.websiteOrigin } />) }</ul>
 				<input type = 'submit' style = { { display: 'none' } } />
 			</> }
 		</section>
@@ -216,9 +216,9 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 	return (
 		<li role = 'option'>
 			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
-			<label htmlFor = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } }>
+			<label for = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } }>
 				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
-					<img role = 'img' src = { websiteAccess.website.icon } style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
+					<img role = 'img' src = { websiteAccess.website.icon } width = '24' height = '24' style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
 					<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
 						<div style = { { flex: 1 } }>
 							<h4 class = 'truncate' style = { { contain: 'inline-size',  color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ websiteAccess.website.title }</h4>
@@ -369,7 +369,7 @@ const AddressAccessList = ({ websiteAccess, renameAddressCallBack }: { websiteAc
 		<Collapsible summary = 'Address Access' defaultOpen>
 			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', marginTop: '0.5rem' } }>Configure website access to these address(es). <button type = 'button' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', border: '1px solid', width: '1rem', height: '1rem', padding: 0, borderRadius: '100%', display: 'inline-flex' } }>?</button></p>
 				<div style = { { display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' } }>
-		{ access.addressAccess.map(addressAcces => <AddressAccessCard website = { website } addressAccess = { addressAcces } renameAddressCallBack = { renameAddressCallBack }/>) }
+		{ access.addressAccess.map((addressAcces) => <AddressAccessCard key = { addressAcces.address.toString() } website = { website } addressAccess = { addressAcces } renameAddressCallBack = { renameAddressCallBack }/>) }
 			</div>
 		</Collapsible>
 	)
@@ -415,7 +415,7 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website.value } /> from accessing or using <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => {} } />
+				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website.value } /> from accessing or using <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => undefined } />
 				</div>
 				<p style = { { marginBlock: '1rem' } }>Remove the website's access to this address anyway?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
@@ -574,7 +574,7 @@ const WebsiteCard = ({ website }: { website: Website | undefined }) => {
 	if (website === undefined) return <></>
 	return (
 		<div style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.125rem 0.25rem', borderRadius: '2px', backgroundColor: 'var(--card-bg-color)', verticalAlign: 'bottom' } }>
-			<img style = { { inlineSize: '1rem' } } src = { website.icon } />
+			<img style = { { inlineSize: '1rem' } } width = '16' height = '16' src = { website.icon } />
 			<div style = { { fontSize: '0.875rem', color: 'var(--text-color)' } }>{ website.websiteOrigin }</div>
 		</div>
 	)

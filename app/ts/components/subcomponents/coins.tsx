@@ -1,14 +1,14 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/services/priceEstimator.js'
 import { abs, bigintToDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { TokenPriceEstimate } from '../../types/visualizer-types.js'
+import type { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
-import { JSX } from 'preact/jsx-runtime'
+import type { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
-import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
+import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
-import { RpcNetwork } from '../../types/rpc.js'
+import type { RpcNetwork } from '../../types/rpc.js'
 import { Blockie } from './SVGBlockie.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
 import { InlineCard } from './InlineCard.js'
@@ -76,7 +76,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		tokenEntry = { getNativeTokenErc20(rpcNetwork) }
 		useFullTokenName = { param.useFullTokenName }
 		style = { param.style }
-		renameAddressCallBack = { () => {} }
+		renameAddressCallBack = { () => undefined }
 		fontSize = { param.fontSize }
 	/>
 }
@@ -155,7 +155,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 
 	const generateIcon = () => {
 		if (param.tokenEntry.logoUri === undefined) return <Blockie address = { param.tokenEntry.address } />
-		return <img style = { { minWidth: '1em', minHeight: '1em' } } src = { param.tokenEntry.logoUri } />
+		return <img style = { { minWidth: '1em', minHeight: '1em' } } width = '16' height = '16' src = { param.tokenEntry.logoUri } />
 	}
 	if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) {
 		return <InlineCard icon = { generateIcon } label = { tokenName } style = { { ...defaultCardStyles, ...param.style } } noCopy = { true } noExpandButtons />

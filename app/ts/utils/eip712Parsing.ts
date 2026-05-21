@@ -1,6 +1,6 @@
-import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { JSONEncodeableObject, JSONEncodeableObjectArray } from '../utils/json.js'
-import { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord } from '../types/eip721.js'
+import type { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord } from '../types/eip721.js'
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'
 import { SolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'

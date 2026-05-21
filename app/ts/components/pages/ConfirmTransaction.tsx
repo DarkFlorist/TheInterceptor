@@ -1,23 +1,23 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
-import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, MaybeSimulatedTransaction, ModifyAddressWindowState, VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
+import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
-import { CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
+import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
-import { EthereumBytes32, serialize } from '../../types/wire-types.js'
+import { type EthereumBytes32, serialize } from '../../types/wire-types.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -25,10 +25,10 @@ import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { InvalidMessage, SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
-import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
+import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
-import { ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import { RpcEntries } from '../../types/rpc.js'
+import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
+import type { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 
@@ -60,11 +60,14 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.pendingTransactionsAndSignableMessages.value.map((pendingTransaction, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
-			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div class = 'card' style = { style }>
+			const stackItemKey = pendingTransaction.type === 'Transaction'
+				? `transaction-${ pendingTransaction.transactionIdentifier.toString() }`
+				: `message-${ pendingTransaction.uniqueRequestIdentifier.requestId.toString() }`
+			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div key = { stackItemKey } class = 'card' style = { style }>
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
-							{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? <img src = '../img/error-icon.svg'/> : <Spinner height = '2em'/> }
+							{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? <img src = '../img/error-icon.svg' width = '24' height = '24'/> : <Spinner height = '2em'/> }
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
@@ -80,17 +83,17 @@ function UnderTransactions(param: UnderTransactionsParams) {
 				if (pendingTransaction.popupVisualisation.statusCode === 'success' && pendingTransaction.popupVisualisation.data.visualizedSimulationState.success) {
 					const simTx = getResultsForTransaction(pendingTransaction.popupVisualisation.data.visualizedSimulationState, pendingTransaction.transactionIdentifier)
 					if (simTx === undefined) throw new Error('No simulated and visualized transactions')
-					return <div class = 'card' style = { style }>
+					return <div key = { stackItemKey } class = 'card' style = { style }>
 						<TransactionHeader simTx = { simTx } />
 						<div style = { absoluteStyle }></div>
 					</div>
 				}
-				return <div class = 'card' style = { style }>
+				return <div key = { stackItemKey } class = 'card' style = { style }>
 					<TransactionHeaderForFailedToSimulate website = { pendingTransaction.transactionToSimulate.website } />
 					<div style = { absoluteStyle }></div>
 				</div>
 			}
-			return <div class = 'card' style = { style }>
+			return <div key = { stackItemKey } class = 'card' style = { style }>
 				<SignatureHeader visualizedPersonalSignRequest = { pendingTransaction.visualizedPersonalSignRequest }/>
 				<div style = { absoluteStyle }></div>
 			</div>
@@ -129,7 +132,7 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 	return <nav class = 'breadcrumb has-succeeds-separator is-small'>
 		<ul>
 			{ namesWithCurrentTransaction.value.map((name, index) => (
-				<li style = 'margin: 0px;'>
+				<li key = { `${ index }-${ name }` } style = 'margin: 0px;'>
 					<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : ''}` }>
 						<p class = 'paragraph' style = { `margin: 0px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'color: var(--disabled-text-color)' : ''}` }>
 							{ name }
@@ -189,7 +192,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
-							<img src = { '../img/error-icon.svg' } />
+							<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
@@ -379,7 +382,7 @@ type RejectButtonParams = {
 }
 const RejectButton = ({ onClick }: RejectButtonParams) => {
 	return <div style = 'display: flex;'>
-		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
+		<button class = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
 			{ 'Reject' }
 		</button>
 	</div>
@@ -406,10 +409,10 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 	if (identified === undefined) return <RejectButton onClick = { reject }/>
 
 	return <div style = 'display: flex; flex-direction: row;'>
-		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
+		<button class = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
 			{ identified.rejectAction }
 		</button>
-		<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
+		<button class = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
 			{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
 				<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
 				</> : <>
@@ -518,8 +521,7 @@ export function ConfirmTransaction() {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
 		} catch(error) {
 			console.warn('Failed to confirm transaction')
-			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
-			console.log({ error })
+			console.warn({ error })
 		}
 	}
 	async function reject() {

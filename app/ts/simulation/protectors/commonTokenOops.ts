@@ -1,10 +1,10 @@
 import { UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from '../../utils/constants.js'
-import { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
 import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import { SimulationState, toResolvedSimulationState } from '../../types/visualizer-types.js'
-import { EthereumClientService } from '../services/EthereumClientService.js'
+import { type SimulationState, toResolvedSimulationState } from '../../types/visualizer-types.js'
+import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 

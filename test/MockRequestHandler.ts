@@ -1,4 +1,4 @@
-import { EthereumJsonRpcRequest } from '../app/ts/types/JsonRpc-types.js'
+import type { EthereumJsonRpcRequest } from '../app/ts/types/JsonRpc-types.js'
 
 export class MockRequestHandler {
 	public rpcUrl = 'https://rpc-goerli.dark.florist/flipcardtrustone'
@@ -8,7 +8,7 @@ export class MockRequestHandler {
 		throw new Error('should not be called')
 	}
 
-	public clearCache = () => {}
+	public clearCache = () => undefined
 
 	public getChainId = async () => 5n
 }

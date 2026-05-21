@@ -3,8 +3,8 @@ import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createExecutionSimulationState, DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
-import { JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
@@ -99,7 +99,7 @@ const blockNumber = 8443561n
 	class MockEthereumJSONRpcRequestHandler {
 		public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
 
-		public clearCache = () => {}
+		public clearCache = () => undefined
 
 		public getChainId = async () => 5n
 
@@ -144,7 +144,7 @@ const blockNumber = 8443561n
 		chainId: 1n,
 	} as const
 
-	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
 	const createSimulationInput = (gas: bigint, nonce: bigint, transactionIdentifier: bigint) => [{
 		stateOverrides: {},
 		transactions: [{

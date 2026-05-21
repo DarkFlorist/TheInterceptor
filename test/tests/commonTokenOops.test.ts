@@ -63,7 +63,9 @@ const rpcEntry = {
 
 const requestHandler: IEthereumJSONRpcRequestHandler = {
 	rpcUrl: rpcEntry.httpsRpc,
-	clearCache() {},
+	clearCache() {
+		return undefined
+	},
 	async getChainId() {
 		return rpcEntry.chainId
 	},

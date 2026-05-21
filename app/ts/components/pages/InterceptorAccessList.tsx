@@ -1,12 +1,12 @@
-import { InterceptorAccessListParams } from '../../types/user-interface-types.js'
+import type { InterceptorAccessListParams } from '../../types/user-interface-types.js'
 import { useSignal, useSignalEffect } from '@preact/signals'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
+import type { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 
 interface ModifiedAddressAccess {
@@ -199,11 +199,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/internet.svg'/>
+						<img src = '../img/internet.svg' width = '24' height = '24'/>
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'>
+					<p class = 'paragraph'>
 						Website Access
 					</p>
 				</div>
@@ -219,7 +219,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 								<div class = 'card-content'>
 									<div class = 'media'>
 										<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
-											<p className = 'paragraph'> No website is given access to The Interceptor </p>
+											<p class = 'paragraph'> No website is given access to The Interceptor </p>
 										</div>
 									</div>
 								</div>
@@ -227,13 +227,13 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						</li>
 					: <></> }
 					{ editableAccessList.value === undefined ? <></> : editableAccessList.value.map((access, accessListIndex) => (
-						<li>
+						<li key = { access.websiteAccess.website.websiteOrigin }>
 							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
 									<div class = 'card-header'>
 										<div class = 'card-header-icon unset-cursor' >
 											<p class = 'image is-24x24'>
-												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon }/>
+												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon } width = '24' height = '24'/>
 											</p>
 										</div>
 										<div class = 'card-header-title' style = 'width: 13em'>
@@ -241,7 +241,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												content = { access.websiteAccess.website.websiteOrigin }
 												copyMessage = 'Website address copied!'
 											>
-												<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block; width: 13em'>
+												<p class = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block; width: 13em'>
 													{ access.websiteAccess.website.websiteOrigin }
 												</p>
 											</CopyToClipboard>
@@ -266,9 +266,9 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												<input type = 'checkbox' checked = { access.declarativeNetRequestBlockMode === 'block-all' } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { declarativeNetRequestBlockMode: e.target.checked ? 'block-all' : 'disabled' }) } } } />
 												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Block all external requests made by the site (not recommended). </p>
 											</label>
-											{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
+											{ access.addressAccess.length === 0 ? <p class = 'paragraph'> No individual address accesses given </p> : <>
 												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
-													<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
+													<li key = { addressString(websiteAccessAddress.address) } style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
 														{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
 															<div style = 'display: flex; width: 100%; overflow: hidden;'>
 																<SmallAddress

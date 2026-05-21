@@ -1,7 +1,7 @@
-import { StateOverrides } from '../types/ethSimulate-types.js'
-import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../types/simulationStackTypes.js'
-import { ResolvedSimulationState, SimulatedTransaction } from '../types/visualizer-types.js'
-import { EthereumAddress } from '../types/wire-types.js'
+import type { StateOverrides } from '../types/ethSimulate-types.js'
+import type { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../types/simulationStackTypes.js'
+import type { ResolvedSimulationState, SimulatedTransaction } from '../types/visualizer-types.js'
+import type { EthereumAddress } from '../types/wire-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { handleERC20TransferLog } from './logHandlers.js'
 

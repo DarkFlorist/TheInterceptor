@@ -303,7 +303,7 @@ export const decodeFunctionOutputObjectLoose = (abiLike: AbiLike, functionName: 
 	return toNamedArgs(fragment.outputs, values)
 }
 
-export const decodeCallDataLoose = (abiLike: AbiLike, data: Hex | Uint8Array, value: bigint = 0n): LooseParsedAbiCall | undefined => {
+export const decodeCallDataLoose = (abiLike: AbiLike, data: Hex | Uint8Array, value = 0n): LooseParsedAbiCall | undefined => {
 	const abi = normalizeAbi(abiLike)
 	const encodedData = toHex(data)
 	const fragment = getFunctionFragmentInternal(abi, functionSelectorFromData(encodedData))

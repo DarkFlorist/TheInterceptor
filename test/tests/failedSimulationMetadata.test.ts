@@ -1,10 +1,9 @@
-// @ts-nocheck
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
 function installBrowserMock() {
-	const storageState = {}
-	globalThis.browser = {
+	const storageState: Record<string, unknown> = {}
+	const browser = {
 		runtime: {
 			lastError: null,
 			async sendMessage() { return undefined },
@@ -50,7 +49,8 @@ function installBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
+	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 }
 
 installBrowserMock()
@@ -75,7 +75,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() {},
+			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
 				throw new Error(`Unexpected RPC method: ${ request.method }`)
 			},

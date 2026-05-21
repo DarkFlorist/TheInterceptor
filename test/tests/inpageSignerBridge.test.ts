@@ -10,7 +10,7 @@ function createFakeWindow() {
 	const interceptorErrorPayloads: unknown[] = []
 	const signerAccounts = ['0x1111111111111111111111111111111111111111']
 	let blockRequestAccounts = false
-	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined = undefined
+	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined
 
 	const fakeSigner = {
 		isMetaMask: true,
@@ -143,7 +143,7 @@ describe('inpage signer bridge', () => {
 					super(type)
 					this.detail = init?.detail as T
 				}
-				public initCustomEvent(): void {}
+				public initCustomEvent(): void { return undefined }
 			}
 		}
 

@@ -1,45 +1,63 @@
 {
-	"$schema": "https://biomejs.dev/schemas/1.6.1/schema.json",
-	"organizeImports": {
-		"enabled": false
-	},
+	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
 	"vcs": {
 		"enabled": true,
-		"clientKind": "git"
+		"clientKind": "git",
+		"useIgnoreFile": true
 	},
 	"files": {
-		"include": ["app/**/*.ts", "app/**/*.tsx", "test/**/*.ts", "build/**/*.mts"]
+		"includes": ["app/**/*.ts", "app/**/*.tsx", "test/**/*.ts", "build/**/*.mts"],
+		"ignoreUnknown": true
+	},
+	"formatter": {
+		"enabled": false
+	},
+	"assist": {
+		"enabled": false
 	},
 	"linter": {
 		"enabled": true,
 		"rules": {
 			"recommended": false,
 			"complexity": {
-				"noForEach": "warn",
-				"useArrowFunction": "warn",
-				"useFlatMap": "warn",
-				"useLiteralKeys": "warn",
-				"useOptionalChain": "warn"
+				"noForEach": "error",
+				"noUselessCatch": "error",
+				"noUselessUndefinedInitialization": "error",
+				"noUselessTernary": "error",
+				"useDateNow": "error",
+				"useArrowFunction": "error",
+				"useFlatMap": "error",
+				"useLiteralKeys": "error",
+				"useOptionalChain": "error"
 			},
 			"correctness": {
-				"noUnusedImports": "warn"
+				"noUnusedImports": "error",
+				"useImageSize": "error",
+				"useJsxKeyInIterable": "error"
 			},
 			"style": {
-				"noUselessElse": "warn",
-				"noUnusedTemplateLiteral": "warn",
-				"noInferrableTypes": "warn",
-				"useDefaultParameterLast": "warn",
-				"useConsistentArrayType": "warn",
-				"useConst": "warn"
+				"noInferrableTypes": "error",
+				"noUnusedTemplateLiteral": "error",
+				"noUselessElse": "error",
+				"useConsistentArrayType": "error",
+				"useConst": "error",
+				"useDefaultParameterLast": "error",
+				"useImportType": "error"
 			},
 			"suspicious": {
-				"noDoubleEquals": "warn",
-				"noConsoleLog": "warn",
-				"noExplicitAny": "warn",
-				"noAssignInExpressions": "warn"
-			},
-			"nursery": {
-				"noUselessTernary": "warn"
+				"noAssignInExpressions": "error",
+				"noConsole": {
+					"level": "error",
+					"options": {
+						"allow": ["assert", "error", "info", "trace", "warn"]
+					}
+				},
+				"noDebugger": "error",
+				"noDoubleEquals": "error",
+				"noEmptyBlockStatements": "error",
+				"noExplicitAny": "error",
+				"noReactSpecificProps": "error",
+				"useIterableCallbackReturn": "error"
 			}
 		}
 	}

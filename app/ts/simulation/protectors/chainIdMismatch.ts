@@ -1,6 +1,6 @@
-import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
-import { SimulationState } from '../../types/visualizer-types.js'
-import { EthereumClientService } from '../services/EthereumClientService.js'
+import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import type { SimulationState } from '../../types/visualizer-types.js'
+import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getChainName } from '../../utils/constants.js'
 
 export async function chainIdMismatch(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, _requestAbortController: AbortController | undefined, _simulationState: SimulationState) {

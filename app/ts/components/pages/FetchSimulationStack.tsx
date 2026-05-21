@@ -2,16 +2,16 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
-import { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
+import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
-import { AddressBookEntry } from '../../types/addressBookTypes.js'
+import { type CompleteVisualizedSimulation, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import Hint from '../subcomponents/Hint.js'
-import { RpcEntries } from '../../types/rpc.js'
-import { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
+import type { RpcEntries } from '../../types/rpc.js'
+import type { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
@@ -42,7 +42,7 @@ export function FetchSimulationStack() {
 				updateMetaData()
 				return false
 			}
-			else if (parsed.method === 'popup_requestSettingsReply') {
+			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
 				return false
 			}
@@ -128,15 +128,15 @@ export function FetchSimulationStack() {
 						/>
 					: <></> }
 				</div>
-				<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+				<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
 					<header class = 'card-header window-header'>
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'>
-								<img src = '../img/access-key.svg'/>
+								<img src = '../img/access-key.svg' width = '24' height = '24'/>
 							</span>
 						</div>
 						<div class = 'card-header-title'>
-							<p className = 'paragraph'>
+							<p class = 'paragraph'>
 								Interceptor Simulation Stack Request
 							</p>
 						</div>
@@ -148,14 +148,14 @@ export function FetchSimulationStack() {
 									? <></>
 									: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 										<div class = 'image is-64x64'>
-											<img src = { changeRequest.value.website.icon }/>
+											<img src = { changeRequest.value.website.icon } width = '64' height = '64'/>
 										</div>
 									</figure>
 							}
 						</article>
 						<div class = 'media-content' style = 'padding-bottom: 10px'>
 							<div class = 'content'>
-								<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+								<p class = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
 									<b>	{ changeRequest.value.website.websiteOrigin } </b>
 									would like to retrieve your Simulation Stack
 								</p>
@@ -165,7 +165,7 @@ export function FetchSimulationStack() {
 										<div class = 'sub-importance-box'>
 											{ addressReferences.value.length === 0 ? <p class = 'paragraph'> No address references</p> : <></> }
 											<div style = { { display: 'flex', flexDirection: 'column', width: 'max-content', } } >
-												{ addressReferences.value.map((addressBookEntry) => <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/> ) }
+												{ addressReferences.value.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/> ) }
 											</div>
 										</div>
 									</div>
@@ -190,13 +190,13 @@ export function FetchSimulationStack() {
 						</div>
 						<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 							<button
-								className = { 'button is-danger' }
+								class = { 'button is-danger' }
 								style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 								onClick = { reject } >
 								Don't allow
 							</button>
 							<button
-								className = { 'button is-primary' }
+								class = { 'button is-primary' }
 								disabled = { false }
 								style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 								onClick = { approve }>
