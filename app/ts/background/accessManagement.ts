@@ -194,7 +194,7 @@ function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, w
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
-async function updateTabConnections(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+async function updateTabConnections(ethereum: EthereumClientService | undefined, tokenPriceService: TokenPriceService | undefined, resetSimulationServices: ResetSimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
@@ -210,8 +210,9 @@ async function updateTabConnections(ethereum: EthereumClientService, tokenPriceS
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
+			if (ethereum === undefined || tokenPriceService === undefined || resetSimulationServices === undefined) throw new Error('Cannot prompt for access without simulation services')
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
 	for (const { tabId, websiteOrigin } of iconRefreshTargets.values()) {
@@ -310,10 +311,10 @@ export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections
 	return false
 }
 
-export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): void
-export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): void
-export function updateWebsiteApprovalAccesses(
-	ethereum: EthereumClientService,
+export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService | undefined, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): Promise<void>
+export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): Promise<void>
+export async function updateWebsiteApprovalAccesses(
+	ethereum: EthereumClientService | undefined,
 	tokenPriceServiceOrWebsiteTabConnections: TokenPriceService | WebsiteTabConnections,
 	resetSimulationServicesOrSettings: ResetSimulationServices | Settings,
 	websiteTabConnectionsOrPrompt?: WebsiteTabConnections | boolean,
@@ -321,17 +322,18 @@ export function updateWebsiteApprovalAccesses(
 	promptForAccessesIfNeeded = true
 ) {
 	const usingLegacySignature = tokenPriceServiceOrWebsiteTabConnections instanceof Map
-	const tokenPriceService = usingLegacySignature ? undefined as never : tokenPriceServiceOrWebsiteTabConnections
-	const resetSimulationServices = usingLegacySignature ? undefined as never : resetSimulationServicesOrSettings as ResetSimulationServices
-	const websiteTabConnections = usingLegacySignature ? tokenPriceServiceOrWebsiteTabConnections : websiteTabConnectionsOrPrompt as WebsiteTabConnections
-	const settings = usingLegacySignature ? resetSimulationServicesOrSettings as Settings : settingsOrPrompt as Settings
-	const promptForAccesses = typeof (usingLegacySignature ? websiteTabConnectionsOrPrompt : promptForAccessesIfNeeded) === 'boolean'
-		? usingLegacySignature ? websiteTabConnectionsOrPrompt as boolean : promptForAccessesIfNeeded
-		: promptForAccessesIfNeeded
+	const tokenPriceService = usingLegacySignature ? undefined : tokenPriceServiceOrWebsiteTabConnections
+	const resetSimulationServices = typeof resetSimulationServicesOrSettings === 'function' ? resetSimulationServicesOrSettings : undefined
+	const websiteTabConnections = usingLegacySignature ? tokenPriceServiceOrWebsiteTabConnections : websiteTabConnectionsOrPrompt
+	const settings = usingLegacySignature ? resetSimulationServicesOrSettings : settingsOrPrompt
+	if (!(websiteTabConnections instanceof Map)) throw new Error('Website tab connections missing')
+	if (settings === undefined || typeof settings === 'boolean' || typeof settings === 'function') throw new Error('Settings missing')
+	const requestedPromptForAccesses = usingLegacySignature ? websiteTabConnectionsOrPrompt : promptForAccessesIfNeeded
+	const promptForAccesses = typeof requestedPromptForAccesses === 'boolean' ? requestedPromptForAccesses : promptForAccessesIfNeeded
 
-	updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	// update port connections and disconnect from ports that should not have access anymore
-	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
-		updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings)
-	}
+	await Promise.all(Array.from(websiteTabConnections.values()).map(async (tabConnection) =>
+		await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings)
+	))
 }

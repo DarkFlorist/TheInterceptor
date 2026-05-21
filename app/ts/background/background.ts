@@ -310,7 +310,7 @@ export async function changeActiveAddressAndChain(
 
 	const updatedSettings = await getSettings()
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings)
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
@@ -327,7 +327,7 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
 

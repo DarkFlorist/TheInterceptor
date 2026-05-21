@@ -10,12 +10,22 @@ type MockTab = {
 	title?: string
 	favIconUrl?: string
 }
+type DeclarativeRuleUpdate = {
+	removeRuleIds: readonly number[]
+	addRules?: readonly unknown[]
+}
 
 function installBrowserMock(tabs: readonly MockTab[]) {
 	const storageState: BrowserStorageState = {}
 	const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
 	const setIconCalls: browser.action._SetIconDetails[] = []
 	const setTitleCalls: browser.action._SetTitleDetails[] = []
+	const dynamicRuleUpdates: DeclarativeRuleUpdate[] = []
+	const sessionRuleUpdates: DeclarativeRuleUpdate[] = []
+	const recordRuleUpdate = async (updates: DeclarativeRuleUpdate[], update: DeclarativeRuleUpdate) => {
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		updates.push(update)
+	}
 
 	globalThis.browser = {
 		runtime: {
@@ -79,8 +89,8 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules() { return undefined },
-			async updateSessionRules() { return undefined },
+			async updateDynamicRules(update: DeclarativeRuleUpdate) { await recordRuleUpdate(dynamicRuleUpdates, update) },
+			async updateSessionRules(update: DeclarativeRuleUpdate) { await recordRuleUpdate(sessionRuleUpdates, update) },
 		},
 		webRequest: {
 			onBeforeRequest: {
@@ -91,7 +101,7 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 	} as typeof globalThis.browser
 	globalThis.chrome = { runtime: { id: 'test-extension' } }
 
-	return { setIconCalls, setTitleCalls }
+	return { setIconCalls, setTitleCalls, dynamicRuleUpdates, sessionRuleUpdates }
 }
 
 async function loadModules() {
@@ -111,12 +121,6 @@ function createPort(tabId: number) {
 		sender: { tab: { id: tabId } },
 		postMessage: () => undefined,
 	} as browser.runtime.Port
-}
-
-async function flushAsyncWork() {
-	await Promise.resolve()
-	await Promise.resolve()
-	await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 describe('extension icon deduping', () => {
@@ -203,11 +207,26 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		updateWebsiteApprovalAccesses({} as never, websiteTabConnections, await getSettings())
-		await flushAsyncWork()
+		await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getSettings())
 
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
+	})
+
+	test('access refresh waits for declarative net request updates', async () => {
+		const { dynamicRuleUpdates, sessionRuleUpdates } = installBrowserMock([{ id: 1, url: 'https://blocked.test', status: 'complete' }])
+		const { getSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses } = await loadModules()
+		await updateWebsiteAccess(() => [{
+			website: { websiteOrigin: 'blocked.test', icon: undefined, title: undefined },
+			access: true,
+			addressAccess: undefined,
+			declarativeNetRequestBlockMode: 'block-all',
+		}])
+
+		await updateWebsiteApprovalAccesses(undefined, new Map(), await getSettings())
+
+		assert.equal(dynamicRuleUpdates.length, 1)
+		assert.equal(sessionRuleUpdates.length, 1)
 	})
 
 	test('last-port disconnect removes the tab entry', async () => {
