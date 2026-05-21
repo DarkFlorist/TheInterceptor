@@ -1,6 +1,5 @@
 import type { Abi } from 'viem'
-import { namehash } from 'viem/ens'
-import { keccak256, stringToBytes } from 'viem/utils'
+import { stringToBytes, namehash, keccak256 } from './viem.js'
 import { CHAIN_NAMES } from './chainNames.js'
 
 // common contract addresses

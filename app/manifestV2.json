@@ -31,5 +31,5 @@
 		"webRequestBlocking"
 	],
 	"web_accessible_resources": ["vendor/*", "js/*", "inpage/*"],
-	"content_security_policy": "object-src 'self'; script-src 'self' 'sha256-/zrE0q5LVv6xiG2PBDGxcwFFL9ae54BsXjNOBkrbq4E='"
+	"content_security_policy": "object-src 'self'; script-src 'self'"
 }

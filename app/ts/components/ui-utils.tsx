@@ -1,4 +1,4 @@
-import { getAddress } from 'viem/utils'
+import { getAddress } from '../utils/viem.js'
 import { useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'

@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.12-alpine@sha256:26d8996560ca94eab9ce48afc0c7443825553c9a851f40ae574d47d20906826d AS builder
+FROM oven/bun:1.3.13-alpine@sha256:4de475389889577f346c636f956b42a5c31501b654664e9ae5726f94d7bb5349 AS builder
 
 RUN apk --no-cache add zip
 
@@ -21,7 +21,7 @@ COPY app/ts/ /workspace/app/ts/
 COPY app/img/ /workspace/app/img/
 COPY app/inpage/ /workspace/app/inpage/
 COPY app/fonts/ /workspace/app/fonts/
-COPY build/tsconfig.json build/vendor.mts build/bundler.mts /workspace/build/
+COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts /workspace/build/
 
 COPY tsconfig-test.json /workspace/
 COPY test/ /workspace/test/
