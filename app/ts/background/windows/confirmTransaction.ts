@@ -9,7 +9,7 @@ import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreate
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import {
@@ -102,19 +102,22 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating))
 		const settings = getSettings()
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
+		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber: await currentBlockNumberPromise,
+			rpcConnectionStatus: await rpcConnectionStatusPromise,
 			visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : createPassthroughCompleteVisualizedSimulation(),
 		} }
-			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-				data: {
-					pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
-					currentBlockNumber: await currentBlockNumberPromise,
-				}
+		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+			data: {
+				pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
+				currentBlockNumber: await currentBlockNumberPromise,
+				rpcConnectionStatus: await rpcConnectionStatusPromise,
 			}
+		}
 		await Promise.all([
 			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
 			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
