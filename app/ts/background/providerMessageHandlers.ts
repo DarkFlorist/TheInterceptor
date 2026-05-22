@@ -36,6 +36,8 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			}
 		}))
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+		const socket = getSocketFromPort(port)
+		if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
 		return returnValue
 	}
 	const signerAccounts = signerAccountsReply.accounts
