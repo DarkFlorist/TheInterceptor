@@ -225,8 +225,8 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
-	if (exportedSetings.version === '1.2') {
-		await setUseTabsInsteadOfPopup(exportedSetings.settings.metamaskCompatibilityMode)
+	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
+		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
 	if (exportedSetings.version === '1.4') {
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
