@@ -184,6 +184,7 @@ describe('ConfirmTransaction', () => {
 				data: {
 					pendingTransactionAndSignableMessages: [olderPendingTransaction],
 					currentBlockNumber: 123n,
+					rpcConnectionStatus: undefined,
 				},
 				}),
 			})
@@ -198,6 +199,7 @@ describe('ConfirmTransaction', () => {
 				data: {
 					pendingTransactionAndSignableMessages: [newerPendingTransaction],
 					currentBlockNumber: 123n,
+					rpcConnectionStatus: undefined,
 				},
 				}),
 			})
@@ -333,6 +335,7 @@ describe('ConfirmTransaction', () => {
 					data: {
 						pendingTransactionAndSignableMessages: [refreshedPendingTransaction],
 						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
 					},
 				}),
 			})

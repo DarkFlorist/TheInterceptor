@@ -30,25 +30,25 @@ describe('bundler import rewriting', () => {
 
 	test('rewrites nested vendored package imports using the vendored dependency tree', () => {
 		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'ox', '_esm', 'core', 'Hash.js')
-		const source = "import { keccak_256 as noble_keccak256 } from '@noble/hashes/sha3';"
+		const source = 'import { keccak_256 as noble_keccak256 } from \'@noble/hashes/sha3\';'
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, "import { keccak_256 as noble_keccak256 } from '../../__dependencies__/@noble/hashes/esm/sha3.js';")
+		assert.equal(rewritten, 'import { keccak_256 as noble_keccak256 } from \'../../__dependencies__/@noble/hashes/esm/sha3.js\';')
 	})
 
 	test('rewrites vendored relative node_modules imports away from node_modules paths', () => {
 		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')
-		const source = "import { keccak_256 } from '../../../node_modules/@noble/hashes/esm/sha3.js';"
+		const source = 'import { keccak_256 } from \'../../../node_modules/@noble/hashes/esm/sha3.js\';'
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, "import { keccak_256 } from '../../../__dependencies__/@noble/hashes/esm/sha3.js';")
+		assert.equal(rewritten, 'import { keccak_256 } from \'../../../__dependencies__/@noble/hashes/esm/sha3.js\';')
 	})
 
 	test('does not rewrite comment examples that are not real imports', () => {
 		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')
-		const source = "// import { keccak_256 } from '@noble/hashes/sha3';\nexport const ok = true;"
+		const source = '// import { keccak_256 } from \'@noble/hashes/sha3\';\nexport const ok = true;'
 
 		const rewritten = replaceImport(filePath, source)
 
@@ -70,7 +70,7 @@ describe('bundler import rewriting', () => {
 		const appJsDirectoryPath = path.join(repositoryRoot, 'app', 'js')
 		const staleFilePath = path.join(repositoryRoot, 'app', 'js', 'stale-build-output.js')
 		fs.mkdirSync(appJsDirectoryPath, { recursive: true })
-		fs.writeFileSync(staleFilePath, "import '../vendor/does-not-exist/index.js';\n")
+		fs.writeFileSync(staleFilePath, 'import \'../vendor/does-not-exist/index.js\';\n')
 
 		try {
 			const missingImports = findMissingRuntimeImportsInRuntimeFiles()

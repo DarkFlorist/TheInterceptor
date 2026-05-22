@@ -44,127 +44,127 @@ const extraPackageRoots = [
 const vendorTypeShims = [
 	{
 		pathParts: ['viem', '_esm', 'utils', 'index.d.ts'],
-		contents: "export * from 'viem/utils'\n",
+		contents: 'export * from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'ens', 'index.d.ts'],
-		contents: "export * from 'viem/ens'\n",
+		contents: 'export * from \'viem/ens\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'accounts', 'index.d.ts'],
-		contents: "export * from 'viem/accounts'\n",
+		contents: 'export * from \'viem/accounts\'\n',
 	},
 	{
 		pathParts: ['@noble', 'hashes', 'esm', 'sha3.d.ts'],
-		contents: "export * from '@noble/hashes/sha3'\n",
+		contents: 'export * from \'@noble/hashes/sha3\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeAbiParameters.d.ts'],
-		contents: "export { decodeAbiParameters } from 'viem/utils'\n",
+		contents: 'export { decodeAbiParameters } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeEventLog.d.ts'],
-		contents: "export { decodeEventLog } from 'viem/utils'\n",
+		contents: 'export { decodeEventLog } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeFunctionData.d.ts'],
-		contents: "export { decodeFunctionData } from 'viem/utils'\n",
+		contents: 'export { decodeFunctionData } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'abi', 'encodeAbiParameters.d.ts'],
-		contents: "export { encodeAbiParameters } from 'viem/utils'\n",
+		contents: 'export { encodeAbiParameters } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'abi', 'encodePacked.d.ts'],
-		contents: "export { encodePacked } from 'viem/utils'\n",
+		contents: 'export { encodePacked } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'abi', 'formatAbiItem.d.ts'],
-		contents: "export { formatAbiItem } from 'viem/utils'\n",
+		contents: 'export { formatAbiItem } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'address', 'getAddress.d.ts'],
-		contents: "export { getAddress } from 'viem/utils'\n",
+		contents: 'export { getAddress } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'address', 'getContractAddress.d.ts'],
-		contents: "export { getCreate2Address } from 'viem/utils'\n",
+		contents: 'export { getCreate2Address } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'address', 'isAddress.d.ts'],
-		contents: "export { isAddress } from 'viem/utils'\n",
+		contents: 'export { isAddress } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'data', 'concat.d.ts'],
-		contents: "export { concat } from 'viem/utils'\n",
+		contents: 'export { concat } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toHex.d.ts'],
-		contents: "export { bytesToHex } from 'viem/utils'\n",
+		contents: 'export { bytesToHex } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toBytes.d.ts'],
-		contents: "export { stringToBytes } from 'viem/utils'\n",
+		contents: 'export { stringToBytes } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toRlp.d.ts'],
-		contents: "export { toRlp } from 'viem/utils'\n",
+		contents: 'export { toRlp } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'ens', 'namehash.d.ts'],
-		contents: "export { namehash } from 'viem/ens'\n",
+		contents: 'export { namehash } from \'viem/ens\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'hash', 'keccak256.d.ts'],
-		contents: "export { keccak256 } from 'viem/utils'\n",
+		contents: 'export { keccak256 } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'hash', 'toEventSelector.d.ts'],
-		contents: "export { toEventSelector } from 'viem/utils'\n",
+		contents: 'export { toEventSelector } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'hash', 'toFunctionSelector.d.ts'],
-		contents: "export { toFunctionSelector } from 'viem/utils'\n",
+		contents: 'export { toFunctionSelector } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'signature', 'recoverAddress.d.ts'],
-		contents: "export { recoverAddress } from 'viem/utils'\n",
+		contents: 'export { recoverAddress } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'signature', 'hashMessage.d.ts'],
-		contents: "export { hashMessage } from 'viem/utils'\n",
+		contents: 'export { hashMessage } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'signature', 'hashTypedData.d.ts'],
-		contents: "export { hashStruct, hashTypedData } from 'viem/utils'\n",
+		contents: 'export { hashStruct, hashTypedData } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'transaction', 'parseTransaction.d.ts'],
-		contents: "export { parseTransaction } from 'viem/utils'\n",
+		contents: 'export { parseTransaction } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'transaction', 'serializeTransaction.d.ts'],
-		contents: "export { serializeTransaction } from 'viem/utils'\n",
+		contents: 'export { serializeTransaction } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'utils', 'unit', 'formatUnits.d.ts'],
-		contents: "export { formatUnits } from 'viem/utils'\n",
+		contents: 'export { formatUnits } from \'viem/utils\'\n',
 	},
 	{
 		pathParts: ['viem', '_esm', 'accounts', 'privateKeyToAccount.d.ts'],
-		contents: "export { privateKeyToAccount } from 'viem/accounts'\n",
+		contents: 'export { privateKeyToAccount } from \'viem/accounts\'\n',
 	},
 	{
 		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiItem.d.ts'],
-		contents: "export { parseAbiItem } from 'abitype'\n",
+		contents: 'export { parseAbiItem } from \'abitype\'\n',
 	},
 	{
 		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiParameters.d.ts'],
-		contents: "export { parseAbiParameters } from 'abitype'\n",
+		contents: 'export { parseAbiParameters } from \'abitype\'\n',
 	},
 	{
 		pathParts: ['@adraffy', 'ens-normalize', 'dist', 'index.d.ts'],
-		contents: "export { ens_normalize } from '@adraffy/ens-normalize'\n",
+		contents: 'export { ens_normalize } from \'@adraffy/ens-normalize\'\n',
 	},
 ] as const
 

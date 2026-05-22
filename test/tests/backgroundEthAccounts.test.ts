@@ -1,8 +1,14 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 
 type Listener = () => void
-type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown }
+type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
@@ -94,6 +100,31 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }) {
 	} as const
 }
 
+const testRpcEntry: RpcEntry = {
+	name: 'Test Mainnet',
+	chainId: 1n,
+	httpsRpc: 'https://example.test/rpc',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	primary: true,
+	minimized: true,
+}
+
+function createBackgroundTestServices() {
+	const ethereum = new EthereumClientService(
+		new EthereumJSONRpcRequestHandler(testRpcEntry.httpsRpc),
+		async () => undefined,
+		async () => undefined,
+		testRpcEntry,
+	)
+	const resetSimulationServices: ResetSimulationServices = () => undefined
+	return {
+		ethereum,
+		tokenPriceService: new TokenPriceService(ethereum, 1000),
+		resetSimulationServices,
+	}
+}
+
 describe('background eth_accounts', () => {
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {
 		installBrowserMock()
@@ -176,5 +207,70 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 7)
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
+	})
+
+	test('resolves approved eth_requestAccounts when signer rejects the account request', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			sendInternalWindowMessage,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const connectionKey = websiteSocketToString(socket)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createBackgroundTestServices()
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {} }]])
+		const { port, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{
+					type: 'error',
+					requestAccounts: true,
+					error: {
+						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+						message: 'User rejected the request.',
+					},
+				}],
+			}, websiteTabConnections)
+		})
+		websiteTabConnections.set(socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 11, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+		const requestFinished: Promise<'resolved'> = requestPromise.then(() => 'resolved')
+		const requestTimeout: Promise<'timed-out'> = new Promise((resolve) => setTimeout(() => resolve('timed-out'), 100))
+		const outcome = await Promise.race([
+			requestFinished,
+			requestTimeout,
+		])
+		if (outcome === 'timed-out') {
+			sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+			await requestPromise
+			assert.fail('eth_requestAccounts remained pending after the signer returned an account error')
+		}
+
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
+		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 11)
+		assert.equal(requestAccountsReplies.at(-1)?.error?.code, METAMASK_ERROR_NOT_AUTHORIZED)
 	})
 })

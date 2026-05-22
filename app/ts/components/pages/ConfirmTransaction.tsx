@@ -441,6 +441,7 @@ export function ConfirmTransaction() {
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
 		completeVisualizedSimulation.value = message.data.visualizedSimulatorState
 		currentBlockNumber.value = message.data.currentBlockNumber
+		rpcConnectionStatus.value = message.data.rpcConnectionStatus
 	}
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -486,6 +487,7 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
+				rpcConnectionStatus.value = updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus
 				pendingTransactionsAndSignableMessages.value = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
