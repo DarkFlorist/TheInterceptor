@@ -502,7 +502,6 @@ if (import.meta.main) {
 		await replaceImportsInJSFiles()
 	} catch (error) {
 		console.error(error)
-		debugger
 		process.exit(1)
 	}
 }
