@@ -27,8 +27,8 @@ import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
-let simulationServices: SimulationServices | undefined = undefined
-let resetActiveRpcNetwork: ResetSimulationServices | undefined = undefined
+let simulationServices: SimulationServices | undefined
+let resetActiveRpcNetwork: ResetSimulationServices | undefined
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')

@@ -287,6 +287,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
+	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const promises = await getPendingTransactionsAndMessages()
 	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService))
 	const first = promises[0]
@@ -300,6 +301,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				data: {
 					visualizedSimulatorState: await visualizedSimulatorStatePromise,
 					currentBlockNumber: await currentBlockNumberPromise,
+					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
@@ -311,6 +313,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 						transactionOrMessageCreationStatus: 'Simulated' as const
 					}, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: await currentBlockNumberPromise,
+					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
 			await Promise.all([
@@ -336,6 +339,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 								})
 							, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: await currentBlockNumberPromise,
+						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
 				}
 				const message: UpdateConfirmTransactionDialog = {
@@ -343,6 +347,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					data: {
 						visualizedSimulatorState: await visualizedSimulatorStatePromise,
 						currentBlockNumber: await currentBlockNumberPromise,
+						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
 				}
 				await Promise.all([
@@ -466,7 +471,7 @@ export async function refreshHomeData(ethereum: EthereumClientService, tokenPric
 		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
 		const settings = await getSettings()
-		if (settings.activeRpcNetwork.httpsRpc !== undefined) makeSureInterceptorIsNotSleeping(ethereum)
+		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum)
 		const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'fresh' })
 		await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 	} finally {
@@ -639,15 +644,14 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 		return
 	}
 	try {
-		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
+		await browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
 		checkAndThrowRuntimeLastError()
+		return
 	} catch (error) {
 		console.warn('Failed to update tab with new webpage')
 		console.warn({ error })
 	}
-	finally {
-		await browser.tabs.create({ url: parsedRequest.data.url, active: true })
-	}
+	await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 }
 
 // reload all connected tabs of the same origin and the current webpage
