@@ -9,7 +9,7 @@
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
-		"build-firefox": "bun run firefox",
+		"build-firefox": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run firefox",
 		"build-chrome": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run chrome",
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
