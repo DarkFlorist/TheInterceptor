@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>The Interceptor Chrome communication smoke test</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				--bg: #0f1115;
+				--panel: #171a21;
+				--text: #ecf1ff;
+				--muted: #9aa6bf;
+				--accent: #66d9ef;
+			}
+
+			html,
+			body {
+				margin: 0;
+				min-height: 100%;
+				background: radial-gradient(circle at top, #182133 0%, var(--bg) 58%);
+				color: var(--text);
+				font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			}
+
+			body {
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+			}
+
+			main {
+				width: min(42rem, calc(100vw - 2rem));
+				padding: 1.5rem 1.75rem;
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				border-radius: 1rem;
+				background: color-mix(in srgb, var(--panel) 90%, transparent);
+				box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.35);
+			}
+
+			h1 {
+				margin: 0 0 0.5rem;
+				font-size: 1.25rem;
+			}
+
+			p {
+				margin: 0.25rem 0 0;
+				line-height: 1.5;
+			}
+
+			#status {
+				margin-top: 1rem;
+				padding: 0.75rem 0.9rem;
+				border-radius: 0.75rem;
+				background: rgba(255, 255, 255, 0.05);
+				color: var(--accent);
+				font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+				word-break: break-word;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Chrome communication smoke test</h1>
+			<p>This page waits for Interceptor injection, requests account access once, and records the result so the Chrome CDP harness can verify the provider bridge end to end.</p>
+			<p id="status">Waiting for provider injection...</p>
+		</main>
+		<script>
+			(() => {
+				const state = globalThis.__interceptorChromeCommunicationState = {
+					phase: 'loading',
+					accounts: undefined,
+					error: undefined,
+				}
+				const statusElement = document.getElementById('status')
+
+				const updateState = (phase, extra = {}) => {
+					state.phase = phase
+					state.accounts = Array.isArray(extra.accounts) ? extra.accounts : undefined
+					state.error = extra.error
+					if (statusElement !== null) {
+						statusElement.textContent = phase === 'error'
+							? `error: ${ extra.error ?? 'unknown error' }`
+							: phase === 'access-granted'
+								? `access-granted: ${ Array.isArray(extra.accounts) ? extra.accounts.join(', ') : '' }`
+								: phase
+					}
+				}
+
+				const waitForEthereum = async () => {
+					while (true) {
+						if (globalThis.ethereum !== undefined && typeof globalThis.ethereum.request === 'function') return globalThis.ethereum
+						await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+					}
+				}
+
+				;(async () => {
+					try {
+						const ethereum = await waitForEthereum()
+						updateState('provider-ready')
+						updateState('requesting-access')
+						const accounts = await ethereum.request({
+							method: 'eth_requestAccounts',
+						})
+						updateState('access-granted', { accounts: Array.isArray(accounts) ? accounts : [] })
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error)
+						updateState('error', { error: message })
+					}
+				})()
+			})()
+		</script>
+	</body>
+</html>

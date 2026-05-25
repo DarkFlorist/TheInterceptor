@@ -57,7 +57,19 @@ class EthereumJsonRpcError extends Error {
 type MessageMethodAndParams = {
 	readonly method: string,
 	readonly params?: readonly unknown[]
+	readonly internal?: true
 }
+
+const INTERNAL_BACKGROUND_METHODS = [
+	'connected_to_signer',
+	'eth_accounts_reply',
+	'InterceptorError',
+	'signer_chainChanged',
+	'signer_reply',
+	'wallet_switchEthereumChain_reply',
+] as const
+
+const isInternalBackgroundMethod = (method: string) => INTERNAL_BACKGROUND_METHODS.some((internalMethod) => internalMethod === method)
 
 type InterceptedRequestBase = {
 	readonly interceptorApproved: true,
@@ -84,6 +96,86 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
+
+const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
+const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+
+type InterceptorApprovedMessageCandidate = {
+	readonly interceptorApproved?: unknown
+	readonly method?: unknown
+	readonly type?: unknown
+	readonly requestId?: unknown
+	readonly params?: unknown
+	readonly subscription?: unknown
+	readonly replyWithSignersReply?: unknown
+	readonly result?: unknown
+	readonly error?: unknown
+}
+
+type InterceptorErrorCandidate = {
+	readonly code?: unknown
+	readonly message?: unknown
+	readonly data?: unknown
+}
+
+type BridgeRequest = {
+	readonly type: typeof INTERCEPTOR_BRIDGE_REQUEST_MESSAGE
+	readonly method: string
+	readonly params?: readonly unknown[]
+	readonly usingInterceptorWithoutSigner: boolean
+	readonly requestId: number
+	readonly internal?: true
+}
+
+const isMessageCandidate = (value: unknown): value is InterceptorApprovedMessageCandidate => typeof value === 'object' && value !== null
+const isErrorCandidate = (value: unknown): value is InterceptorErrorCandidate => typeof value === 'object' && value !== null
+
+function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForward | undefined {
+	if (!isMessageCandidate(data)) return undefined
+	if (data.interceptorApproved !== true) return undefined
+	const method = data.method
+	if (typeof method !== 'string') return undefined
+	const type = data.type
+	if (type !== 'result' && type !== 'forwardToSigner') return undefined
+	const requestId = data.requestId
+	const params = data.params
+	const subscription = data.subscription
+	const base = {
+		interceptorApproved: true as const,
+		method,
+		...(typeof requestId === 'number' ? { requestId } : {}),
+		...(Array.isArray(params) ? { params } : {}),
+		...(typeof subscription === 'string' ? { subscription } : {}),
+	}
+	if (type === 'forwardToSigner') return {
+		...base,
+		type: 'forwardToSigner',
+		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+	}
+	const hasResult = 'result' in data
+	const maybeError = data.error
+	if (hasResult && maybeError !== undefined) return undefined
+	if (isErrorCandidate(maybeError)) {
+		const { code, message } = maybeError
+		if (typeof code !== 'number' || typeof message !== 'string') return undefined
+		const errorData = maybeError.data
+		return {
+			...base,
+			type: 'result',
+			error: {
+				code,
+				message,
+				...(errorData !== undefined && typeof errorData === 'object' && errorData !== null ? { data: errorData } : {}),
+			},
+		}
+	}
+	if (!hasResult) return undefined
+	return {
+		...base,
+		type: 'result',
+		result: data.result,
+	}
+}
 
 interface ProviderConnectInfo {
 	readonly chainId: string
@@ -254,6 +346,7 @@ class InterceptorMessageListener {
 	private requestId = 0
 	private metamaskCompatibilityMode = false
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
+	private extensionMessagePort: MessagePort | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
 
@@ -271,11 +364,19 @@ class InterceptorMessageListener {
 	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
 
 	public constructor() {
+		this.connectToContentScript()
 		this.injectEthereumIntoWindow()
 		this.onPageLoad()
 	}
 
 	private readonly WindowEthereumIsConnected = () => this.connected
+
+	private readonly connectToContentScript = () => {
+		const channel = new MessageChannel()
+		this.extensionMessagePort = channel.port1
+		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
+		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
+	}
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
 		this.requestId++
@@ -283,28 +384,38 @@ class InterceptorMessageListener {
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, future)
 		try {
-			window.postMessage({
-				interceptorRequest: true,
+			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
+			const message: BridgeRequest = {
+				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
 				params: messageMethodAndParams.params,
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
-			}, '*')
+				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
+			}
+			this.extensionMessagePort.postMessage(message)
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
 		}
 	}
 
+	private readonly sendInternalMessageToBackgroundPage = async (messageMethodAndParams: Omit<MessageMethodAndParams, 'internal'>) => {
+		return await this.sendMessageToBackgroundPage({ ...messageMethodAndParams, internal: true })
+	}
+
 	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
-			window.postMessage({
-				interceptorRequest: true,
+			if (this.extensionMessagePort === undefined) return
+			const message: BridgeRequest = {
+				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: 'InterceptorError',
 				params: [diagnostics],
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: -1,
-			}, '*')
+				internal: true,
+			}
+			this.extensionMessagePort.postMessage(message)
 		} catch(reportingError: unknown) {
 			console.error('Failed to report InterceptorError diagnostics')
 			console.error(reportingError)
@@ -314,6 +425,7 @@ class InterceptorMessageListener {
 	// sends a message to interceptors background script
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
 		try {
+			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
@@ -445,12 +557,12 @@ class InterceptorMessageListener {
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
+			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
 			return
 		} catch (error: unknown) {
-			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error }] })
-			if (error instanceof Error) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
-			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
+			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error }] })
+			if (error instanceof Error) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
+			return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
 		}
 	}
 
@@ -463,7 +575,7 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 		if (this.pendingSignerAddressRequest !== undefined) {
 			const pendingReply = await this.pendingSignerAddressRequest
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [pendingReply] })
+			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [pendingReply] })
 			return
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
@@ -474,7 +586,7 @@ class InterceptorMessageListener {
 			this.signerAccounts = reply
 			const signerReply = { type: 'success', accounts: this.signerAccounts, requestAccounts: true } as const
 			this.pendingSignerAddressRequest.resolve(signerReply)
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
+			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 			return
 		} catch (error: unknown) {
 			const signerReply = InterceptorMessageListener.getErrorCodeAndMessage(error)
@@ -483,7 +595,7 @@ class InterceptorMessageListener {
 					? { type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } } as const
 					: { type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } } as const
 			this.pendingSignerAddressRequest.resolve(signerReply)
-			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
+			return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 		} finally {
 			this.pendingSignerAddressRequest = undefined
 		}
@@ -494,11 +606,11 @@ class InterceptorMessageListener {
 		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
 			if (typeof reply !== 'string') return
-			return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
+			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
 		} catch(e) {
 			console.error('failed to get chain Id from signer')
 			console.error(e)
-			return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ '0x1' ] })
+			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ '0x1' ] })
 		}
 	}
 
@@ -523,10 +635,10 @@ class InterceptorMessageListener {
 		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
 			if (reply !== null) return
-			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
+			await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error: unknown) {
 			if (InterceptorMessageListener.getErrorCodeAndMessage(error) && (error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
-				await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId, error } ] })
+				await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId, error } ] })
 			}
 			throw error
 		}
@@ -630,21 +742,23 @@ class InterceptorMessageListener {
 		return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', maybeErrorObject )
 	}
 
-	public readonly onMessage = async (messageEvent: unknown) => {
+	public readonly onWindowMessage = (messageEvent: unknown) => {
 		this.checkIfCoinbaseInjectionMessageAndInject(messageEvent)
+	}
+
+	public readonly onMessage = async (messageEvent: unknown) => {
 		if (
 			typeof messageEvent !== 'object'
 			|| messageEvent === null
 			|| !('data' in messageEvent)
 			|| typeof messageEvent.data !== 'object'
 			|| messageEvent.data === null
-			|| !('interceptorApproved' in messageEvent.data)
 		) return
 		try {
 			if (!('ethereum' in inpageWindow) || !inpageWindow.ethereum) throw new Error('window.ethereum missing')
-			if (!('method' in messageEvent.data)) throw new Error('missing method field')
+			const forwardRequest = parseInterceptorApprovedMessage(messageEvent.data)
+			if (forwardRequest === undefined) throw new Error('Malformed message from content script')
 			if (!('type' in messageEvent)) throw new Error('missing type field')
-			const forwardRequest = messageEvent.data as InterceptedRequestForward //use 'as' here as we don't want to inject funtypes here
 			if (forwardRequest.type === 'result' && 'error' in forwardRequest) {
 				if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 				const pending = this.outstandingRequests.get(forwardRequest.requestId)
@@ -653,7 +767,7 @@ class InterceptorMessageListener {
 			}
 			if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
 				if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
-					switch (messageEvent.data.method) {
+					switch (forwardRequest.method) {
 						case 'eth_requestAccounts':
 						case 'eth_accounts': {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
@@ -707,7 +821,7 @@ class InterceptorMessageListener {
 					}
 					return pendingRequest.reject(this.parseRpcError(signerReply.error))
 				}
-				await this.sendMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
+				await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
 			} catch(error: unknown) {
 				if (error instanceof Error) return pendingRequest.reject(error)
 				return pendingRequest.reject(this.parseRpcError(error))
@@ -741,7 +855,7 @@ class InterceptorMessageListener {
 	private readonly connectToSigner = async (signerName: Signer) => {
 		this.currentSigner = signerName
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean, activeAddress: string  }> => {
-			const connectSignerReply = await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
+			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean'
@@ -823,18 +937,18 @@ class InterceptorMessageListener {
 
 		// subscribe for signers events
 		inpageWindow.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
+			this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
 		})
 		inpageWindow.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 			this.connectToSigner(this.currentSigner)
 		})
 		inpageWindow.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, this.currentSigner] })
+			this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, this.currentSigner] })
 		})
 		inpageWindow.ethereum.on('chainChanged', (chainId: string) => {
 			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
 			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
-			this.WindowEthereumRequest({ method: 'signer_chainChanged', params })
+			this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 		})
 
 		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
@@ -875,7 +989,7 @@ class InterceptorMessageListener {
 
 function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
-	window.addEventListener('message', interceptorMessageListener.onMessage)
+	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 	window.dispatchEvent(new Event('ethereum#initialized'))
 
 	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor

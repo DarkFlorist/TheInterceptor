@@ -25,6 +25,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	if (port.sender?.tab?.id === undefined) return returnValue
 
 	const [signerAccountsReply] = EthereumAccountsReply.parse(request.params)
+	const socket = getSocketFromPort(port)
 	if (signerAccountsReply.type === 'error') {
 		const stringifiedData = signerAccountsReply.error.data ? JSON.stringify(signerAccountsReply.error.data) : undefined
 		const error = signerAccountsReply.error
@@ -35,16 +36,15 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				...(stringifiedData !== undefined ? { data: stringifiedData } : {}),
 			}
 		}))
-		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-		const socket = getSocketFromPort(port)
+		// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
 		if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		return returnValue
 	}
 	const signerAccounts = signerAccountsReply.accounts
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { ...signerAccounts.length > 0 ? { signerAccountError: undefined } : {}, signerAccounts, activeSigningAddress }))
 	sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId: port.sender.tab.id, activeSigningAddress } })
-	const socket = getSocketFromPort(port)
 	if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
 	// update active address if we are using signers address
 	const settings = await getSettings()

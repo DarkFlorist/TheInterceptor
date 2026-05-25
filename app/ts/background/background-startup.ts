@@ -150,6 +150,7 @@ async function onContentScriptConnected(getCurrentSimulationServices: () => Simu
 						interceptorRequest: rawMessage.interceptorRequest,
 						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
 					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
 				})
