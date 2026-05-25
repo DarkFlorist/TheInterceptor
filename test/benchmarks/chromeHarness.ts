@@ -405,6 +405,42 @@ export async function waitForPerformanceMarks(connection: CdpConnection, markNam
 	}, timeoutMs, `performance marks ${ markNames.join(', ') }`)
 }
 
+export async function waitForRegisteredContentScripts(connection: CdpConnection, expectedIds: readonly string[], timeoutMs = 30_000) {
+	type RegisteredContentScript = { readonly id?: string }
+	await waitForCondition(async () => {
+		const scripts = await connection.evaluate<readonly RegisteredContentScript[] | undefined>('(async () => await browser.scripting.getRegisteredContentScripts())()').catch(() => undefined)
+		if (scripts === undefined) return false
+		return expectedIds.every((expectedId) => scripts.some((script) => script.id === expectedId))
+	}, timeoutMs, `registered content scripts ${ expectedIds.join(', ') }`)
+}
+
+export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation'): Promise<T | undefined> {
+	return await connection.evaluate<T | undefined>(`(async () => {
+		const key = ${ JSON.stringify(key) }
+		if (typeof indexedDB !== 'undefined') {
+			const indexedDbValue = await new Promise((resolve, reject) => {
+				const request = indexedDB.open('interceptorLargeState', 1)
+				request.onerror = () => reject(request.error ?? new Error('Failed to open large state IndexedDB database'))
+				request.onupgradeneeded = () => {
+					const db = request.result
+					if (!db.objectStoreNames.contains('largeState')) db.createObjectStore('largeState')
+				}
+				request.onsuccess = () => {
+					const db = request.result
+					const transaction = db.transaction('largeState', 'readonly')
+					const store = transaction.objectStore('largeState')
+					const getRequest = store.get(key)
+					getRequest.onerror = () => reject(getRequest.error ?? new Error('Failed to read large state value'))
+					getRequest.onsuccess = () => resolve(getRequest.result)
+				}
+			}).catch(() => undefined)
+			if (indexedDbValue !== undefined) return indexedDbValue
+		}
+		const legacyLocalValue = await browser.storage.local.get(key)
+		return Object.prototype.hasOwnProperty.call(legacyLocalValue, key) ? legacyLocalValue[key] : undefined
+	})()`)
+}
+
 export async function getPerformanceSnapshot(connection: CdpConnection): Promise<PerformanceMarkSnapshot> {
 	return await snapshotPerformance(connection)
 }

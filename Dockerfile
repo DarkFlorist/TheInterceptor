@@ -25,6 +25,7 @@ COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mt
 
 COPY tsconfig-test.json /workspace/
 COPY test/ /workspace/test/
+COPY scripts/ /workspace/scripts/
 
 WORKDIR /workspace
 RUN bun run setup-firefox

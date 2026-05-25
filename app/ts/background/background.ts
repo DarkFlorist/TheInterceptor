@@ -34,6 +34,17 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 
 const simulationAbortController = new AbortController()
+const JSON_RPC_METHOD_NOT_FOUND = -32601
+const INTERNAL_PROVIDER_METHODS = [
+	'connected_to_signer',
+	'eth_accounts_reply',
+	'InterceptorError',
+	'signer_chainChanged',
+	'signer_reply',
+	'wallet_switchEthereumChain_reply',
+] as const
+
+const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
 
 export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
 	try {
@@ -358,10 +369,23 @@ function getRequestWithDefinedParams(request: InterceptedRequest) {
 	return 'params' in request && request.params !== undefined ? { ...request, params: request.params } : request
 }
 
+function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	return replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result',
+		method: request.method,
+		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+		error: {
+			code: JSON_RPC_METHOD_NOT_FOUND,
+			message: `Method not found: ${ request.method }`,
+		},
+	})
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections): Promise<unknown> => {
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, settings)
+	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method

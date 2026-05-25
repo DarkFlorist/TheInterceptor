@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks'
 import { BENCHMARK_RPC_REQUESTS_GLOBAL } from '../../app/ts/utils/benchmarking.js'
 import { POPUP_PERFORMANCE_MARKS } from '../../app/ts/utils/popupPerformance.js'
-import { launchChromeSession, waitForAnyExtensionServiceWorker, waitForServiceWorker, createTargetPage, connectTarget, closeTarget, waitForPerformanceMark, waitForPerformanceMarks, getPerformanceSnapshot, roundToTwoDecimals, absoluteTime, waitForPopupTarget, waitForTargetByUrl, waitForTargetGone, waitForBrowserTargets } from './chromeHarness.js'
+import { launchChromeSession, waitForAnyExtensionServiceWorker, waitForServiceWorker, createTargetPage, connectTarget, closeTarget, waitForPerformanceMark, waitForPerformanceMarks, waitForRegisteredContentScripts, readExtensionLargeStateValue, getPerformanceSnapshot, roundToTwoDecimals, absoluteTime, waitForPopupTarget, waitForTargetByUrl, waitForTargetGone, waitForBrowserTargets } from './chromeHarness.js'
 import { startTransactionStackPageServer } from './transactionStackPageServer.js'
 import type { CdpConnection, ChromeSession, PerformanceMarkSnapshot } from './chromeHarness.js'
 import type { BenchmarkRpcRequestSample } from '../../app/ts/utils/benchmarking.js'
@@ -282,6 +282,7 @@ async function prepareBenchmarkContext(): Promise<BenchmarkContext> {
 		const workerConnection = await connectTarget(chrome.browserDebugPort, initialWorkerTarget.id)
 		try {
 			await waitForPerformanceMarks(workerConnection, ['interceptor:background:loaded'], 30_000)
+			await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
 			await clearWorkerPerformanceMarks(workerConnection)
 		} finally {
 			workerConnection.close()
@@ -403,10 +404,7 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 			const pageSnapshot = await getPerformanceSnapshot(pageConnection)
 			const workerSnapshot = await getPerformanceSnapshot(workerConnection)
 			const setupRpcRequests = (await workerConnection.evaluate<readonly BenchmarkRpcRequestSample[] | undefined>(rpcRequestCollectorExpression())) ?? []
-			const stackLength = (await workerConnection.evaluate<number | undefined>(`(async () => {
-				const stack = await browser.storage.local.get('interceptorTransactionStack')
-				return stack.interceptorTransactionStack?.operations?.length ?? 0
-			})()`)) ?? 0
+			const stackLength = ((await readExtensionLargeStateValue<{ readonly operations?: readonly unknown[] }>(workerConnection, 'interceptorTransactionStack'))?.operations?.length) ?? 0
 			if (stackLength < 1) throw new Error('Transaction stack was not appended')
 			return {
 				stackLength,

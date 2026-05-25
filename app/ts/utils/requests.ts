@@ -27,6 +27,9 @@ export const RawInterceptedRequest = funtypes.Intersect(
 		interceptorRequest: funtypes.Boolean,
 		usingInterceptorWithoutSigner: funtypes.Boolean,
 		requestId: funtypes.Number,
+	}),
+	funtypes.ReadonlyPartial({
+		interceptorInternalRequest: funtypes.Literal(true),
 	})
 )
 
@@ -43,6 +46,9 @@ export const InterceptedRequest = funtypes.Intersect(
 		interceptorRequest: funtypes.Boolean,
 		usingInterceptorWithoutSigner: funtypes.Boolean,
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
+	}),
+	funtypes.ReadonlyPartial({
+		interceptorInternalRequest: funtypes.Literal(true),
 	})
 )
 export type ProviderMessage = InterceptedRequest
