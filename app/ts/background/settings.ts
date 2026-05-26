@@ -3,7 +3,7 @@ import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSet
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
@@ -12,6 +12,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookT
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -126,7 +127,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('websiteAccess', []))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', true))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
 	return {
@@ -168,11 +169,46 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 	})
 }
 
-export const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.websiteAccess ?? []
 const websiteAccessSemaphore = new Semaphore(1)
+async function getNormalizedWebsiteAccessFromStorage() {
+	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
+	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
+	return { rawWebsiteAccess, sanitizedWebsiteAccess }
+}
+
+async function persistWebsiteAccessIfChanged(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
+	if (nextWebsiteAccess === previousWebsiteAccess) return
+	await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+}
+
+export async function getWebsiteAccess() {
+	return await websiteAccessSemaphore.execute(async () => {
+		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
+		await persistWebsiteAccessIfChanged(rawWebsiteAccess, sanitizedWebsiteAccess)
+		return sanitizedWebsiteAccess
+	})
+}
+
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ websiteAccess: updateFunc(await getWebsiteAccess()) })
+		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
+		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
+		if (nextWebsiteAccess === sanitizedWebsiteAccess) return await persistWebsiteAccessIfChanged(rawWebsiteAccess, sanitizedWebsiteAccess)
+		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+	})
+}
+
+export async function updateKnownWebsiteMetadata(website: Website) {
+	await updateWebsiteAccess((previousWebsiteAccess) => {
+		let changed = false
+		const nextWebsiteAccess = previousWebsiteAccess.map((entry) => {
+			if (entry.website.websiteOrigin !== website.websiteOrigin) return entry
+			const mergedWebsite = mergeStoredWebsiteMetadata(entry.website, website)
+			if (mergedWebsite === entry.website) return entry
+			changed = true
+			return { ...entry, website: mergedWebsite }
+		})
+		return changed ? nextWebsiteAccess : previousWebsiteAccess
 	})
 }
 

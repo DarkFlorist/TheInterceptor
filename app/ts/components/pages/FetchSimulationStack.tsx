@@ -15,6 +15,7 @@ import type { SimulationMetadata } from '../../types/interceptor-reply-messages.
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
+import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -114,6 +115,7 @@ export function FetchSimulationStack() {
 	const addressMetaData = useComputed(() => simulationMetadata.value?.addressBookEntries ?? [])
 
 	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
+	const websiteIcon = sanitizeStoredWebsiteIcon(changeRequest.value.website.icon)
 	return (
 		<main>
 			<Hint>
@@ -144,11 +146,11 @@ export function FetchSimulationStack() {
 					<div class = 'card-content'>
 						<article class = 'media'>
 							{
-								changeRequest.value.website.icon === undefined
+								websiteIcon === undefined
 									? <></>
 									: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 										<div class = 'image is-64x64'>
-											<img src = { changeRequest.value.website.icon } width = '64' height = '64'/>
+											<img src = { websiteIcon } width = '64' height = '64'/>
 										</div>
 									</figure>
 							}

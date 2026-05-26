@@ -196,6 +196,27 @@ describe('startup storage recovery', () => {
 		assert.equal(storageState.simulationMode, false)
 	})
 
+	test('sanitizes remote website access icons so extension pages do not re-request them', async () => {
+		const storageState = installBrowserMock()
+		const { getSettings, getWebsiteAccess } = await loadModules()
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
+			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
+		]
+
+		const settings = await withSilencedConsole(async () => await getSettings())
+		const websiteAccess = await withSilencedConsole(async () => await getWebsiteAccess())
+
+		assert.equal(settings.websiteAccess[0]?.website.icon, undefined)
+		assert.equal(settings.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+		assert.equal(websiteAccess[0]?.website.icon, undefined)
+		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+		assert.equal(Array.isArray(storageState.websiteAccess), true)
+		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
+		assert.equal(storageState.websiteAccess[0]?.website.icon, undefined)
+		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+	})
+
 	test('recovers corrupt openedPageV2 without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
 		const { getSettings } = await loadModules()

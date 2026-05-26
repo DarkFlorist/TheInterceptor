@@ -1,18 +1,31 @@
-import { getPrettySignerName } from '../components/subcomponents/signers.js'
 import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
-import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { TabIcon, type TabState, type WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getSettings } from './settings.js'
+import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
+import { getPrettySignerName } from '../utils/signerMetadata.js'
+import { imageToUri } from '../utils/imageToUri.js'
+import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
+
+async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
+	const storedWebsiteAccess = await getWebsiteAccess()
+	const storedWebsite = storedWebsiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+	if (storedWebsite === undefined) return { cachedIcon: undefined, hasStoredWebsiteAccess: false as const }
+	const currentWebsite = (await getTabState(tabId)).website
+	if (currentWebsite?.websiteOrigin === websiteOrigin) {
+		const currentIcon = sanitizeStoredWebsiteIcon(currentWebsite.icon)
+		if (currentIcon !== undefined) return { cachedIcon: currentIcon, hasStoredWebsiteAccess: true as const }
+	}
+	return { cachedIcon: sanitizeStoredWebsiteIcon(storedWebsite.website.icon), hasStoredWebsiteAccess: true as const }
+}
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
@@ -73,7 +86,7 @@ export async function updateExtensionBadge() {
 	return await setExtensionBadgeText( { text: '' } )
 }
 
-export async function retrieveWebsiteDetails(tabId: number) {
+export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: string) {
 	const waitForLoadedFuture = new Future<void>
 
 	// wait for the tab to be fully loaded
@@ -101,6 +114,13 @@ export async function retrieveWebsiteDetails(tabId: number) {
 	} finally {
 		browser.tabs.onUpdated.removeListener(listener)
 		checkAndPrintRuntimeLastError()
+	}
+
+	const loadedTab = await safeGetTab(tabId)
+	if (websiteOrigin !== undefined) {
+		const { cachedIcon, hasStoredWebsiteAccess } = await getCachedWebsiteIcon(tabId, websiteOrigin)
+		if (cachedIcon !== undefined) return { title: loadedTab?.title, icon: cachedIcon }
+		if (!hasStoredWebsiteAccess) return { title: loadedTab?.title, icon: undefined }
 	}
 
 	// if the tab is not ready yet try to wait for a while for it to be ready, if not, we just have no icon to show on firefox
@@ -133,11 +153,23 @@ export async function retrieveWebsiteDetails(tabId: number) {
 	if (!ALLOWED_FAVICON_PROTOCOLS.has(parsedFaviconUrl.protocol)) {
 		return failToLoadFavicon(`unsupported URL scheme ${ parsedFaviconUrl.protocol }`)
 	}
-
+	if (parsedFaviconUrl.protocol === 'data:') {
+		const icon = sanitizeStoredWebsiteIcon(parsedFaviconUrl.toString())
+		if (icon === undefined) return failToLoadFavicon('favicon data URL was not an image or exceeded the size limit')
+		return {
+			title: tab?.title,
+			icon,
+		}
+	}
+	if (tab?.url === undefined) return failToLoadFavicon('page URL was unavailable for favicon validation')
+	const pageOrigin = new URL(tab.url).origin
+	if (parsedFaviconUrl.origin !== pageOrigin) {
+		return failToLoadFavicon(`favicon origin ${ parsedFaviconUrl.origin } did not match page origin ${ pageOrigin }`)
+	}
 	const faviconResult = await imageToUri(parsedFaviconUrl.toString())
-	if (faviconResult.failureReason !== undefined) return failToLoadFavicon(faviconResult.failureReason)
+	if (faviconResult.failureReason !== undefined || faviconResult.data === undefined) return failToLoadFavicon(faviconResult.failureReason ?? 'favicon conversion failed')
 	return {
 		title: tab?.title,
-		icon: faviconResult.data
+		icon: faviconResult.data,
 	}
 }

@@ -10,9 +10,9 @@ type MockTab = {
 }
 
 type Listener = (tabId: number, info: browser.tabs._OnUpdatedChangeInfo) => void
-type FetchImplementation = (url: string) => Promise<Response>
 
 const originalFetch = globalThis.fetch
+const originalFileReader = globalThis.FileReader
 const originalWarn = console.warn
 
 const storageState: Record<string, unknown> = {}
@@ -21,7 +21,21 @@ const onUpdatedListeners: Listener[] = []
 const fetchCalls: string[] = []
 const warnings: string[] = []
 
-let fetchImplementation: FetchImplementation = async () => new Response(new Blob(['icon'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+function installSuccessfulFileReader(result: string) {
+	function SuccessfulFileReader(this: { result: string | undefined, onabort?: () => void, onerror?: () => void, onloadend?: () => void, readAsDataURL: (_blob: Blob) => void }) {
+		this.result = undefined
+		this.readAsDataURL = () => {
+			this.result = result
+			this.onloadend?.()
+		}
+	}
+
+	Object.defineProperty(globalThis, 'FileReader', {
+		configurable: true,
+		writable: true,
+		value: SuccessfulFileReader,
+	})
+}
 
 function installBrowserMock() {
 	Reflect.set(globalThis, 'browser', {
@@ -93,7 +107,7 @@ Object.defineProperty(globalThis, 'fetch', {
 	value: async (input: RequestInfo | URL) => {
 		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
 		fetchCalls.push(url)
-		return await fetchImplementation(url)
+		return new Response(new Blob(['icon'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
 	},
 })
 console.warn = (...args: unknown[]) => {
@@ -105,7 +119,12 @@ afterEach(() => {
 	onUpdatedListeners.splice(0, onUpdatedListeners.length)
 	fetchCalls.splice(0, fetchCalls.length)
 	warnings.splice(0, warnings.length)
-	fetchImplementation = async () => new Response(new Blob(['icon'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+	for (const key of Object.keys(storageState)) delete storageState[key]
+	Object.defineProperty(globalThis, 'FileReader', {
+		configurable: true,
+		writable: true,
+		value: originalFileReader,
+	})
 })
 
 afterAll(() => {
@@ -113,6 +132,11 @@ afterAll(() => {
 		configurable: true,
 		writable: true,
 		value: originalFetch,
+	})
+	Object.defineProperty(globalThis, 'FileReader', {
+		configurable: true,
+		writable: true,
+		value: originalFileReader,
 	})
 	console.warn = originalWarn
 })
@@ -164,32 +188,106 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 		])
 	})
 
-	test('returns the title and warns on fetch failures', async () => {
-		tabsById.set(4, { id: 4, status: 'complete', title: 'Fetch failed favicon', url: 'https://fail.test', favIconUrl: 'https://fail.test/favicon.png' })
-		fetchImplementation = async () => { throw new TypeError('Failed to fetch') }
+	test('fetches same-origin favicon urls once for stored websites that are missing an icon', async () => {
+		installSuccessfulFileReader('data:image/png;base64,b2s=')
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'same-origin.test', icon: undefined, title: 'Same origin favicon' },
+			access: true,
+		}]
+		tabsById.set(4, { id: 4, status: 'complete', title: 'Same origin favicon', url: 'https://same-origin.test/page', favIconUrl: '/favicon.png' })
 
-		const result = await retrieveWebsiteDetails(4)
+		const result = await retrieveWebsiteDetails(4, 'same-origin.test')
 
-		assert.deepEqual(result, { title: 'Fetch failed favicon', icon: undefined })
-		assert.deepEqual(fetchCalls, ['https://fail.test/favicon.png'])
+		assert.deepEqual(result, { title: 'Same origin favicon', icon: 'data:image/png;base64,b2s=' })
+		assert.deepEqual(fetchCalls, ['https://same-origin.test/favicon.png'])
+		assert.equal(warnings.length, 0)
+	})
+
+	test('does not fetch same-origin favicon urls for websites without stored access', async () => {
+		installSuccessfulFileReader('data:image/png;base64,b2s=')
+		tabsById.set(11, { id: 11, status: 'complete', title: 'Untracked favicon', url: 'https://untracked.test/page', favIconUrl: '/favicon.png' })
+
+		const result = await retrieveWebsiteDetails(11, 'untracked.test')
+
+		assert.deepEqual(result, { title: 'Untracked favicon', icon: undefined })
+		assert.equal(fetchCalls.length, 0)
+		assert.equal(warnings.length, 0)
+	})
+
+	test('reuses cached favicon data urls without refetching them', async () => {
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'cached.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached favicon' },
+			access: true,
+		}]
+		tabsById.set(8, { id: 8, status: 'complete', title: 'Cached favicon', url: 'https://cached.test/page', favIconUrl: '/favicon.png' })
+
+		const result = await retrieveWebsiteDetails(8, 'cached.test')
+
+		assert.deepEqual(result, { title: 'Cached favicon', icon: 'data:image/png;base64,Y2FjaGVk' })
+		assert.equal(fetchCalls.length, 0)
+		assert.equal(warnings.length, 0)
+	})
+
+	test('allows image data url favicons for stored websites without fetching them in the background', async () => {
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'data-icon.test', icon: undefined, title: 'Data favicon' },
+			access: true,
+		}]
+		tabsById.set(7, { id: 7, status: 'complete', title: 'Data favicon', url: 'https://data-icon.test/page', favIconUrl: 'data:image/png;base64,Zm9v' })
+
+		const result = await retrieveWebsiteDetails(7, 'data-icon.test')
+
+		assert.deepEqual(result, { title: 'Data favicon', icon: 'data:image/png;base64,Zm9v' })
+		assert.equal(fetchCalls.length, 0)
+		assert.equal(warnings.length, 0)
+	})
+
+	test('does not store data url favicons for websites without stored access', async () => {
+		tabsById.set(12, { id: 12, status: 'complete', title: 'Untracked data favicon', url: 'https://untracked-data.test/page', favIconUrl: 'data:image/png;base64,Zm9v' })
+
+		const result = await retrieveWebsiteDetails(12, 'untracked-data.test')
+
+		assert.deepEqual(result, { title: 'Untracked data favicon', icon: undefined })
+		assert.equal(fetchCalls.length, 0)
+		assert.equal(warnings.length, 0)
+	})
+
+	test('rejects non-image data url favicons', async () => {
+		tabsById.set(9, { id: 9, status: 'complete', title: 'HTML favicon', url: 'https://html-icon.test/page', favIconUrl: 'data:text/html;base64,Zm9v' })
+
+		const result = await retrieveWebsiteDetails(9)
+
+		assert.deepEqual(result, { title: 'HTML favicon', icon: undefined })
+		assert.equal(fetchCalls.length, 0)
 		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 4 (https://fail.test): fetch failed (Failed to fetch)'
+			'Failed to load favicon for tab 9 (https://html-icon.test/page): favicon data URL was not an image or exceeded the size limit'
 		])
 	})
 
-	test('logs repeated warnings for repeated failures', async () => {
-		tabsById.set(5, { id: 5, status: 'complete', title: 'Duplicate favicon', url: 'https://duplicate.test', favIconUrl: 'https://duplicate.test/favicon.png' })
-		fetchImplementation = async () => { throw new TypeError('Failed to fetch') }
+	test('rejects oversized data url favicons', async () => {
+		tabsById.set(10, { id: 10, status: 'complete', title: 'Oversized favicon', url: 'https://oversized-icon.test/page', favIconUrl: `data:image/png;base64,${ 'a'.repeat(1_048_576) }` })
+
+		const result = await retrieveWebsiteDetails(10)
+
+		assert.deepEqual(result, { title: 'Oversized favicon', icon: undefined })
+		assert.equal(fetchCalls.length, 0)
+		assert.deepEqual(warnings, [
+			'Failed to load favicon for tab 10 (https://oversized-icon.test/page): favicon data URL was not an image or exceeded the size limit'
+		])
+	})
+
+	test('rejects cross-origin favicon urls without fetching them in the background', async () => {
+		tabsById.set(5, { id: 5, status: 'complete', title: 'Cross origin favicon', url: 'https://page.test/app', favIconUrl: 'https://cdn.test/favicon.png' })
 
 		const firstResult = await retrieveWebsiteDetails(5)
 		const secondResult = await retrieveWebsiteDetails(5)
 
-		assert.deepEqual(firstResult, { title: 'Duplicate favicon', icon: undefined })
-		assert.deepEqual(secondResult, { title: 'Duplicate favicon', icon: undefined })
-		assert.equal(fetchCalls.length, 2)
+		assert.deepEqual(firstResult, { title: 'Cross origin favicon', icon: undefined })
+		assert.deepEqual(secondResult, { title: 'Cross origin favicon', icon: undefined })
+		assert.equal(fetchCalls.length, 0)
 		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 5 (https://duplicate.test): fetch failed (Failed to fetch)',
-			'Failed to load favicon for tab 5 (https://duplicate.test): fetch failed (Failed to fetch)'
+			'Failed to load favicon for tab 5 (https://page.test/app): favicon origin https://cdn.test did not match page origin https://page.test',
+			'Failed to load favicon for tab 5 (https://page.test/app): favicon origin https://cdn.test did not match page origin https://page.test'
 		])
 	})
 })

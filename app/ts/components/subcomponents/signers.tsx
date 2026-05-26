@@ -1,22 +1,8 @@
-import { BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO } from '../../utils/constants.js'
 import type { SignerName } from '../../types/signerTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import { getPrettySignerName, getSignerLogo } from '../../utils/signerMetadata.js'
 
-const signerLogos = {
-	MetaMask: METAMASK_LOGO,
-	Brave: BRAVE_LOGO,
-	CoinbaseWallet: COINBASEWALLET_LOGO,
-}
-
-export function getPrettySignerName(signerName: SignerName) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return 'Unknown signer'
-	return signerName
-}
-
-export function getSignerLogo(signerName: SignerName) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return undefined
-	return signerLogos[signerName]
-}
+export { getPrettySignerName, getSignerLogo } from '../../utils/signerMetadata.js'
 
 export function SignerLogoText(param: { signerName: SignalOrValue<SignerName>, text: SignalOrValue<string> }) {
 	const signerLogo = getSignerLogo(resolveSignal(param.signerName))

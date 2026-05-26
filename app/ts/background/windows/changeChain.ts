@@ -1,4 +1,3 @@
-import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../types/interceptor-messages.js'
@@ -14,6 +13,7 @@ import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined 
