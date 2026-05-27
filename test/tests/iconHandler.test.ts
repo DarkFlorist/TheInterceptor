@@ -212,6 +212,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 		assert.deepEqual(result, { title: 'Untracked favicon', icon: undefined })
 		assert.equal(fetchCalls.length, 0)
 		assert.equal(warnings.length, 0)
+		assert.equal(onUpdatedListeners.length, 0)
 	})
 
 	test('reuses cached favicon data urls without refetching them', async () => {
@@ -226,6 +227,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 		assert.deepEqual(result, { title: 'Cached favicon', icon: 'data:image/png;base64,Y2FjaGVk' })
 		assert.equal(fetchCalls.length, 0)
 		assert.equal(warnings.length, 0)
+		assert.equal(onUpdatedListeners.length, 0)
 	})
 
 	test('allows image data url favicons for stored websites without fetching them in the background', async () => {

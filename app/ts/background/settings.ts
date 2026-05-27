@@ -176,24 +176,15 @@ async function getNormalizedWebsiteAccessFromStorage() {
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
 
-async function persistWebsiteAccessIfChanged(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	if (nextWebsiteAccess === previousWebsiteAccess) return
-	await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
-}
-
 export async function getWebsiteAccess() {
-	return await websiteAccessSemaphore.execute(async () => {
-		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		await persistWebsiteAccessIfChanged(rawWebsiteAccess, sanitizedWebsiteAccess)
-		return sanitizedWebsiteAccess
-	})
+	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess) return await persistWebsiteAccessIfChanged(rawWebsiteAccess, sanitizedWebsiteAccess)
+		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
 		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 	})
 }

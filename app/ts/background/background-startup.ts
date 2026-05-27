@@ -23,6 +23,7 @@ import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
+import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -203,6 +204,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 
 async function startup() {
 	await migrateAddressBook()
+	await migrateWebsiteAccess()
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork

@@ -48,6 +48,36 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	}
 }
 
+async function waitForLoadedTab(tabId: number) {
+	const waitForLoadedFuture = new Future<void>
+
+	// wait for the tab to be fully loaded
+	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
+		try {
+			if (info.status === 'complete' && tabId === tabIdUpdated) return waitForLoadedFuture.resolve()
+		} finally {
+			checkAndPrintRuntimeLastError()
+		}
+	}
+
+	try {
+		browser.tabs.onUpdated.addListener(listener)
+		const tab = await safeGetTab(tabId)
+		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
+			await waitForLoadedFuture
+		} finally {
+			if (timeout !== undefined) clearTimeout(timeout)
+		}
+		return await safeGetTab(tabId)
+	} finally {
+		browser.tabs.onUpdated.removeListener(listener)
+		checkAndPrintRuntimeLastError()
+	}
+}
+
 export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
 	if (!(await doesTabExist(tabId))) {
 		await removeTabState(tabId)
@@ -87,36 +117,13 @@ export async function updateExtensionBadge() {
 }
 
 export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: string) {
-	const waitForLoadedFuture = new Future<void>
-
-	// wait for the tab to be fully loaded
-	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-		try {
-			if (info.status === 'complete' && tabId === tabIdUpdated) return waitForLoadedFuture.resolve()
-		} finally {
-			checkAndPrintRuntimeLastError()
-		}
-	}
-
+	let loadedTab
 	try {
-		browser.tabs.onUpdated.addListener(listener)
-		const tab = await safeGetTab(tabId)
-		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
-		let timeout 
-		try {
-			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
-			await waitForLoadedFuture
-		} finally {
-			clearTimeout(timeout)
-		}
-	} catch(error) {
+		loadedTab = await waitForLoadedTab(tabId)
+	} catch {
 		return { title: undefined, icon: undefined }
-	} finally {
-		browser.tabs.onUpdated.removeListener(listener)
-		checkAndPrintRuntimeLastError()
 	}
 
-	const loadedTab = await safeGetTab(tabId)
 	if (websiteOrigin !== undefined) {
 		const { cachedIcon, hasStoredWebsiteAccess } = await getCachedWebsiteIcon(tabId, websiteOrigin)
 		if (cachedIcon !== undefined) return { title: loadedTab?.title, icon: cachedIcon }

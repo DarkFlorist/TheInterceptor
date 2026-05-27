@@ -196,7 +196,7 @@ describe('startup storage recovery', () => {
 		assert.equal(storageState.simulationMode, false)
 	})
 
-	test('sanitizes remote website access icons so extension pages do not re-request them', async () => {
+	test('sanitizes remote website access icons in returned settings without mutating storage', async () => {
 		const storageState = installBrowserMock()
 		const { getSettings, getWebsiteAccess } = await loadModules()
 		storageState.websiteAccess = [
@@ -213,7 +213,7 @@ describe('startup storage recovery', () => {
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 		assert.equal(Array.isArray(storageState.websiteAccess), true)
 		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
-		assert.equal(storageState.websiteAccess[0]?.website.icon, undefined)
+		assert.equal(storageState.websiteAccess[0]?.website.icon, 'https://remote.example/favicon.png')
 		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 
