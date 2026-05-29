@@ -204,12 +204,16 @@ describe('background startup lifecycle', () => {
 		`
 
 		const result = Bun.spawnSync({
-			cmd: ['bun', '--eval', script],
+			cmd: [process.execPath, '--eval', script],
 			cwd: new URL('../../', import.meta.url).pathname,
 			stdout: 'pipe',
 			stderr: 'pipe',
 		})
 
-		assert.equal(result.exitCode, 0, `child process failed:\n${ result.stderr.toString() }`)
+		assert.equal(
+			result.exitCode,
+			0,
+			`child process failed:\nstdout:\n${ result.stdout.toString() }\nstderr:\n${ result.stderr.toString() }`,
+		)
 	})
 })
