@@ -1,4 +1,3 @@
-import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
@@ -18,6 +17,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab

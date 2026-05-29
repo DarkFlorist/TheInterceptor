@@ -12,8 +12,8 @@ import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
 import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
-import { getCurrentTimestampString } from '../../components/ui-utils.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
+import { getCurrentTimestampString } from '../../utils/time.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)

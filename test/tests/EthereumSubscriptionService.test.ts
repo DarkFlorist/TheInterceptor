@@ -381,4 +381,45 @@ const blockNumber = 8443561n
 
 			assert.deepEqual(emittedBlockNumbers, [blockNumber])
 		})
+
+		test('newHeads reuses one simulated state computation across multiple live subscribers', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock } = await loadModules()
+			const ethereum = createEthereum()
+			const sockets = [
+				{ tabId: 1, connectionName: 1n } as const,
+				{ tabId: 2, connectionName: 2n } as const,
+			]
+			const postedMessages: InterceptorMessageToInpage[] = []
+			const websiteTabConnections = new Map(sockets.map((socket) => [socket.tabId, {
+				connections: {
+					[`${ socket.tabId }-0x${ socket.connectionName.toString(16) }`]: {
+						port: {
+							postMessage(message: unknown) {
+								postedMessages.push(InterceptorMessageToInpage.parse(message))
+							},
+						} as unknown as browser.runtime.Port,
+						socket,
+						websiteOrigin: 'test',
+						approved: true,
+						wantsToConnect: false,
+					},
+				},
+			}]))
+			for (const socket of sockets) {
+				await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
+			}
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			let simulationStateRequests = 0
+
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => {
+				simulationStateRequests++
+				return toResolvedExecutionSimulationState(simulationState)
+			})
+
+			assert.equal(simulationStateRequests, 1)
+			const emittedMessages = postedMessages.filter((message) => message.type === 'result' && 'method' in message && message.method === 'newHeads')
+			assert.equal(emittedMessages.length, 4)
+		})
 	})

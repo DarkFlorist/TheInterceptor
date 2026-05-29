@@ -18,12 +18,14 @@ import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
+	const websiteIcon = sanitizeStoredWebsiteIcon(icon)
 	return <span style = 'font-weight: 900; line-height: 48px'>
-		{ icon === undefined
+		{ websiteIcon === undefined
 			? <></>
-			: <img src = { icon } width = '48' height = '48' style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
+			: <img src = { websiteIcon } width = '48' height = '48' style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
 		}
 		{ title }
 	</span>

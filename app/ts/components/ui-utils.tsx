@@ -1,16 +1,15 @@
-import { getAddress } from '../utils/viem.js'
 import { useEffect } from 'preact/hooks'
-import { getUseTabsInsteadOfPopup } from '../background/settings.js'
-import { assertNever } from '../utils/typescript.js'
 import type { ComponentChildren, RefObject } from 'preact'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { addressString, bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
-import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import type { ChainEntry, RpcEntries } from '../types/rpc.js'
 import { CHAIN_NAMES } from '../utils/chainNames.js'
+export type { PopupOrTab } from '../utils/popupOrTab.js'
+export { getIssueWithAddressString } from '../utils/addressValidation.js'
+export { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
+export { getCurrentTimestampString } from '../utils/time.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -33,25 +32,6 @@ export function clickOutsideAlerter(ref: RefObject<HTMLDivElement>, callback: ()
 			document.removeEventListener('mousedown', handleClickOutside);
 		}
 	}, [ref, callback]);
-}
-
-export function getIssueWithAddressString(address: string): string | undefined {
-	if (address.length > 42) return 'Address is too long.'
-	if (address.length > 2 && address.substring(0, 2) !== '0x') { return 'Address does not contain 0x prefix.' }
-	if (address.length < 42) return 'Address is too short.'
-
-    if (address.match(/^(0x)?[0-9a-fA-F]{40}$/)) {
-        const checkSummedAddress = getAddress(address.toLowerCase());
-
-        // It is a checksummed address with a bad checksum
-        if (checkSummedAddress !== address && address.toLowerCase() !== address) {
-            return `Bad address checksum, did you mean ${ checkSummedAddress } ?`;
-        }
-    } else {
-        return 'Address contains invalid characters.'
-    }
-
-    return undefined
 }
 
 export function upperCaseFirstCharacter(text: string) {
@@ -81,86 +61,6 @@ export const humanReadableDate = (date: Date) => date.toISOString()
 
 export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
 	return humanReadableDate(bigintSecondsToDate(timeInSeconds))
-}
-
-export type PopupOrTab = {
-	window: browser.windows.Window,
-	type: 'popup'
-	id: number
-} | {
-	tab: browser.tabs.Tab,
-	type: 'tab'
-	id: number
-}
-
-export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }) : Promise<PopupOrTab | undefined> {
-	if (await getUseTabsInsteadOfPopup()) {
-		const tab = await browser.tabs.create({ url: createData.url })
-		if (tab === undefined || tab === null || tab.id === undefined) return undefined
-		return { type: 'tab', id: tab.id, tab }
-	}
-	const window = await browser.windows.create(createData)
-	if (window === undefined || window === null || window.id === undefined) return undefined
-	return { type: 'popup', id: window.id, window }
-}
-
-export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<PopupOrTab | undefined> {
-	switch (popupOrTabId.type) {
-		case 'tab': {
-			const tab = await safeGetTab(popupOrTabId.id)
-			if (tab === undefined || tab.id === undefined) return undefined
-			return { type: 'tab', id: tab.id, tab }
-		}
-		case 'popup': {
-			const window = await safeGetWindow(popupOrTabId.id)
-			if (window === undefined || window === null || window.id === undefined) return undefined
-			return { type: 'popup', id: window.id, window }
-		}
-		default: assertNever(popupOrTabId.type)
-	}
-}
-
-export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
-	try {
-		switch (popupOrTabId.type) {
-			case 'tab': {
-				const tab = await safeGetTab(popupOrTabId.id)
-				if (tab !== undefined) await browser.tabs.remove(popupOrTabId.id)
-				break
-			}
-			case 'popup': {
-				const window = await safeGetWindow(popupOrTabId.id)
-				if (window !== undefined) await browser.windows.remove(popupOrTabId.id)
-				break
-			}
-			default: assertNever(popupOrTabId.type)
-		}
-		checkAndThrowRuntimeLastError()
-	} catch(error) {
-		if (error instanceof Error && error.message.startsWith('No tab with id')) return
-		throw error
-	}
-}
-
-export function addWindowTabListeners(onCloseWindow: (id: number) => void, onCloseTab: (id: number) => void) {
-	browser.windows.onRemoved.addListener(onCloseWindow)
-	browser.tabs.onRemoved.addListener(onCloseTab)
-}
-
-export function removeWindowTabListeners(onCloseWindow: (id: number) => void, onCloseTab: (id: number) => void) {
-	browser.windows.onRemoved.removeListener(onCloseWindow)
-	browser.tabs.onRemoved.removeListener(onCloseTab)
-}
-
-export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
-	if (popupOrTab.type === 'tab') {
-		// highlight the window the tab is in
-		const tab = await browser.tabs.get(popupOrTab.id)
-		if (tab !== undefined && tab.windowId !== undefined) await browser.windows.update(tab.windowId, { drawAttention: true, focused: true })
-		// highlight the tab itself
-		return await updateTabIfExists(popupOrTab.id, { active: true, highlighted: true })
-	}
-	return await updateWindowIfExists(popupOrTab.id, { drawAttention: true, focused: true })
 }
 
 export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: boolean }) => {
@@ -203,12 +103,4 @@ export const addressEditEntry = (entry: AddressBookEntry) => {
 			address: checksummedAddress(entry.address),
 		}
 	}
-}
-
-export function getCurrentTimestampString(): string {
-	const currentDate = new Date()
-	const hours = currentDate.getHours().toString().padStart(2, '0')
-	const minutes = currentDate.getMinutes().toString().padStart(2, '0')
-	const seconds = currentDate.getSeconds().toString().padStart(2, '0')
-	return `[${ hours }:${ minutes }:${ seconds }]`
 }
