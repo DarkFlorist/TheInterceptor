@@ -5,6 +5,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
@@ -143,7 +144,8 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 export function WebsiteOriginText({ website }: { website: SignalOrValue<Website | undefined> }) {
 	const currentWebsite = resolveSignal(website)
 	if (currentWebsite === undefined) return <></>
-	const { icon, websiteOrigin, title } = currentWebsite
+	const icon = sanitizeStoredWebsiteIcon(currentWebsite.icon)
+	const { websiteOrigin, title } = currentWebsite
 	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' style = 'width: 24px; height: 24px;' /> }

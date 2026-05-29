@@ -89,7 +89,7 @@ const buildVersion12Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 	},
 })
 
-const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibilityMode: boolean): ExportedSettings => ({
+const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibilityMode: boolean, websiteAccess: ExportedSettings['settings']['websiteAccess'] = []): ExportedSettings => ({
 	name: 'InterceptorSettingsAndAddressBook',
 	version: '1.4',
 	exportedDate: '2026-05-21',
@@ -98,7 +98,7 @@ const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 		rpcNetwork: testRpcNetwork,
 		openedPage: { page: 'Home' },
 		useSignersAddressAsActiveAddress: false,
-		websiteAccess: [],
+		websiteAccess,
 		simulationMode: true,
 		addressBookEntries: [],
 		useTabsInsteadOfPopup,
@@ -131,5 +131,23 @@ describe('settings import', () => {
 
 		assert.equal(await getUseTabsInsteadOfPopup(), false)
 		assert.equal(await getMetamaskCompatibilityMode(), true)
+	})
+
+	test('sanitizes imported website access icons before persisting them', async () => {
+		const { getWebsiteAccess, importSettingsAndAddressBook } = await settingsModulePromise
+		await importSettingsAndAddressBook(buildVersion14Import(false, false, [
+			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
+			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
+		]))
+
+		const storedWebsiteAccess = (await browser.storage.local.get('websiteAccess')).websiteAccess
+		assert.equal(Array.isArray(storedWebsiteAccess), true)
+		if (!Array.isArray(storedWebsiteAccess)) throw new Error('Expected imported websiteAccess to be stored as an array')
+		assert.equal(storedWebsiteAccess[0]?.website.icon, undefined)
+		assert.equal(storedWebsiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+
+		const websiteAccess = await getWebsiteAccess()
+		assert.equal(websiteAccess[0]?.website.icon, undefined)
+		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 })

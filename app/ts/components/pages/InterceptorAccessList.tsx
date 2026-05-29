@@ -8,6 +8,7 @@ import type { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '..
 import { modifyObject } from '../../utils/typescript.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
+import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -233,7 +234,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 									<div class = 'card-header'>
 										<div class = 'card-header-icon unset-cursor' >
 											<p class = 'image is-24x24'>
-												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon } width = '24' height = '24'/>
+												<img src = { sanitizeStoredWebsiteIcon(access.websiteAccess.website.icon) ?? '../../img/question-mark-sign.svg' } width = '24' height = '24'/>
 											</p>
 										</div>
 										<div class = 'card-header-title' style = 'width: 13em'>
