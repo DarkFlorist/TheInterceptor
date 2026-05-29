@@ -24,6 +24,7 @@ import { createSimulationServices, resetSimulationServices, type ResetSimulation
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
+import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -32,14 +33,6 @@ let resetActiveRpcNetwork: ResetSimulationServices | undefined
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
 	return simulationServices
-}
-
-function isIgnorablePortLifecycleError(error: Error) {
-	return error.message.includes('the message channel is closed')
-		|| error.message.includes('The message port closed before a response was received')
-		|| error.message.includes('Could not establish connection. Receiving end does not exist')
-		|| error.message.includes('Attempting to use a disconnected port object')
-		|| error.message.includes('Extension context invalidated')
 }
 
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
@@ -92,22 +85,19 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 
-	try {
-		port.onDisconnect.addListener(() => {
+	const listenersRegistered = tryRegisterContentScriptPortListeners(
+		port,
+		() => {
 			catchAllErrorsAndCall(async () => {
 				removeWebsiteTabConnection(websiteTabConnections, socket)
 			})
-			try {
-				checkAndThrowRuntimeLastError()
-			} catch (error) {
-				if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
-				throw error
-			}
-		})
-
-		port.onMessage.addListener((payload) => {
+		},
+		(payload) => {
 			catchAllErrorsAndCall(async () => {
 				if (!(
+					typeof payload === 'object'
+					&& payload !== null
+					&&
 					'data' in payload
 					&& typeof payload.data === 'object'
 					&& payload.data !== null
@@ -127,11 +117,10 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
 				})
 			})
-		})
-	} catch (error) {
-		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
-		throw error
-	}
+		},
+		checkAndThrowRuntimeLastError,
+	)
+	if (!listenersRegistered) return
 
 	if (tabConnection === undefined) {
 		websiteTabConnections.set(socket.tabId, {
