@@ -204,12 +204,8 @@ async function vendorDependencies() {
 async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
 	const sourceDirectoryPath = path.join(packageDirectoryPath, 'lib', 'images')
 	const destinationDirectoryPath = path.join(packageDirectoryPath, 'images')
-	try {
-		const sourceStats = await fs.stat(sourceDirectoryPath)
-		if (!sourceStats.isDirectory()) return
-	} catch {
-		return
-	}
+	const sourceStats = await fs.stat(sourceDirectoryPath)
+	if (!sourceStats.isDirectory()) return
 	await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath)
 }
 
