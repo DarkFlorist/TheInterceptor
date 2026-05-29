@@ -136,7 +136,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, false)
+			await refreshHomeData(ethereum, tokenPriceService, new Map(), false)
 		} finally {
 			ethereum.cleanup()
 		}

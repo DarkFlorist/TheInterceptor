@@ -459,12 +459,12 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 	if (tab === undefined) await openInNewTab()
 }
 
-export async function requestNewHomeData(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
-	const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'cached' })
+export async function requestNewHomeData(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, requestAbortController: AbortController | undefined) {
+	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, { requestAbortController, richDataSource: 'cached' })
 	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 }
 
-export async function refreshHomeData(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
+export async function refreshHomeData(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
 		const currentSettings = await getSettings()
@@ -472,7 +472,7 @@ export async function refreshHomeData(ethereum: EthereumClientService, tokenPric
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum)
-		const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'fresh' })
+		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, { requestAbortController, richDataSource: 'fresh' })
 		await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
@@ -503,7 +503,7 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 export async function changeSettings(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await requestNewHomeData(ethereum, tokenPriceService, requestAbortController)
+	return await requestNewHomeData(ethereum, tokenPriceService, new Map(), requestAbortController)
 }
 
 export async function importSettings(settingsData: ImportSettings) {
@@ -862,6 +862,7 @@ async function getCachedRichData() {
 
 async function buildHomePageUpdate(
 	ethereum: EthereumClientService,
+	websiteTabConnections: WebsiteTabConnections,
 	{
 		requestAbortController,
 		richDataSource,
@@ -885,7 +886,19 @@ async function buildHomePageUpdate(
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
 	const settings = await settingsPromise
-	const tabState = await tabStatePromise
+	let tabState = await tabStatePromise
+	if (
+		tabId !== undefined
+		&& tabState.signerAccounts.length === 0
+		&& tabState.signerName !== 'NoSigner'
+		&& tabState.signerName !== 'NoSignerDetected'
+	) {
+		const tabConnections = websiteTabConnections.get(tabId)
+		if (tabConnections !== undefined) {
+			sendMessageToApprovedWebsitePorts(new Map([[tabId, tabConnections]]), { method: 'request_signer_to_eth_accounts', result: [] })
+			tabState = await getTabState(tabId)
+		}
+	}
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const richData = await richDataPromise
