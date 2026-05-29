@@ -15,6 +15,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -124,11 +125,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
 		return previousWebsiteAccess.map((prevAccess) => {
 			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = {
-					...website,
-					icon: prevAccess.website.icon ?? website.icon,
-					title: prevAccess.website.title ?? website.title,
-				}
+				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
 				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
 				const addressAccess = { address, access }
 				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
@@ -184,7 +181,7 @@ async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientServic
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }
+	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
 	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 

@@ -1,8 +1,8 @@
 import 'webextension-polyfill'
-import { defaultRpcs, getSettings } from './settings.js'
+import { defaultRpcs, getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -14,17 +14,16 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { type OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
+import { addWindowTabListeners } from '../utils/popupOrTab.js'
+import { migrateAddressBook } from './addressBookMigration.js'
+import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -66,39 +65,6 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 	clearTabStates()
 }
 
-async function migrateAddressInfoAndContactsFromV1ToV2() {
-	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries'])).userAddressBookEntries
-	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry | OldActiveAddressEntry): AddressBookEntry => {
-		if (entry.type !== 'activeAddress') return entry
-		return { ...entry, type: 'contact', useAsActiveAddress: true }
-	}
-	if (userAddressBookEntries === undefined) return
-	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
-	if (updated.length > 0) {
-		await updateUserAddressBookEntriesV2Old((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address']))
-		await browserStorageLocalRemove(['userAddressBookEntries'])
-	}
-}
-async function migrateAddressInfoAndContactsFromV2ToV3() {
-	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntriesV2'])).userAddressBookEntriesV2
-	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry): AddressBookEntry => {
-		if (entry.chainId !== undefined) return entry
-		if (entry.useAsActiveAddress === true && entry.type === 'contact') return { ...entry, chainId: 'AllChains' }
-		return { ...entry, chainId: 1n }
-	}
-	if (userAddressBookEntries === undefined) return
-	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
-	if (updated.length > 0) {
-		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address', 'chainId']))
-		await browserStorageLocalRemove(['userAddressBookEntriesV2'])
-	}
-}
-async function migrateAddressBook() {
-	await migrateAddressInfoAndContactsFromV1ToV2()
-	await migrateAddressInfoAndContactsFromV2ToV3()
-}
-migrateAddressBook()
-
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
 async function onContentScriptConnected(getCurrentSimulationServices: () => SimulationServices, resetActiveRpcNetwork: ResetSimulationServices, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
@@ -109,7 +75,11 @@ async function onContentScriptConnected(getCurrentSimulationServices: () => Simu
 	}
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
-	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
+	const websitePromise = (async () => {
+		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+		await updateKnownWebsiteMetadata(website)
+		return website
+	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
@@ -233,6 +203,8 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 }
 
 async function startup() {
+	await migrateAddressBook()
+	await migrateWebsiteAccess()
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
@@ -269,7 +241,8 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	if (changeInfo.status !== 'complete') return
 	if (tab.url === undefined) return
 	const websiteOrigin = getHostWithPort(tab.url)
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
+	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId, websiteOrigin) }
+	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)

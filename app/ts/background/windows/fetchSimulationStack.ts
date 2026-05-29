@@ -1,4 +1,3 @@
-import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
@@ -15,6 +14,7 @@ import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/Simul
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getCurrentSimulationInput } from '../simulationUpdating.js'
+import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
 let pendForUserReply: Future<FetchSimulationStackRequestConfirmation> | undefined 
 
