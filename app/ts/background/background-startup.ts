@@ -35,6 +35,14 @@ function getSimulationServices() {
 	return simulationServices
 }
 
+function isIgnorablePortLifecycleError(error: Error) {
+	return error.message.includes('the message channel is closed')
+		|| error.message.includes('The message port closed before a response was received')
+		|| error.message.includes('Could not establish connection. Receiving end does not exist')
+		|| error.message.includes('Attempting to use a disconnected port object')
+		|| error.message.includes('Extension context invalidated')
+}
+
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	try {
 		const reply = await func()
@@ -48,8 +56,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 				// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
 				return
 			}
-			if (error.message.includes('The message port closed before a response was received')) return
-			if (error.message.includes('Could not establish connection. Receiving end does not exist')) return
+			if (isIgnorablePortLifecycleError(error)) return
 			if (error.message.includes('Failed to fetch')) return
 			if (isNewBlockAbort(error)) return
 		}
@@ -101,7 +108,7 @@ migrateAddressBook()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
-async function onContentScriptConnected(getCurrentSimulationServices: () => SimulationServices, resetActiveRpcNetwork: ResetSimulationServices, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+async function onContentScriptConnected(waitForStartup: () => Promise<{ resetActiveRpcNetwork: ResetSimulationServices, simulationServices: SimulationServices }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
@@ -115,47 +122,46 @@ async function onContentScriptConnected(getCurrentSimulationServices: () => Simu
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 
-	port.onDisconnect.addListener(() => {
-		catchAllErrorsAndCall(async () => {
-			removeWebsiteTabConnection(websiteTabConnections, socket)
-		})
-		try {
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			if (error instanceof Error) {
-				if (error.message?.includes('the message channel is closed')) {
-					// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
-					// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
-					return
-				}
+	try {
+		port.onDisconnect.addListener(() => {
+			catchAllErrorsAndCall(async () => {
+				removeWebsiteTabConnection(websiteTabConnections, socket)
+			})
+			try {
+				checkAndThrowRuntimeLastError()
+			} catch (error) {
+				if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
+				throw error
 			}
-			throw error
-		}
-	})
+		})
 
-	port.onMessage.addListener((payload) => {
-		catchAllErrorsAndCall(async () => {
-			if (!(
-				'data' in payload
-				&& typeof payload.data === 'object'
-				&& payload.data !== null
-				&& 'interceptorRequest' in payload.data
-			)) return
+		port.onMessage.addListener((payload) => {
+			catchAllErrorsAndCall(async () => {
+				if (!(
+					'data' in payload
+					&& typeof payload.data === 'object'
+					&& payload.data !== null
+					&& 'interceptorRequest' in payload.data
+				)) return
 				await pendingRequestLimiter.execute(async () => {
 					const rawMessage = RawInterceptedRequest.parse(payload.data)
-					const { ethereum, tokenPriceService } = getCurrentSimulationServices()
+					const { resetActiveRpcNetwork, simulationServices } = await waitForStartup()
 					const request = {
 						method: rawMessage.method,
-					...'params' in rawMessage ? { params: rawMessage.params } : {},
+						...'params' in rawMessage ? { params: rawMessage.params } : {},
 						interceptorRequest: rawMessage.interceptorRequest,
 						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
+					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
 				})
 			})
 		})
+	} catch (error) {
+		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
+		throw error
+	}
 
 	if (tabConnection === undefined) {
 		websiteTabConnections.set(socket.tabId, {
@@ -288,8 +294,7 @@ const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () =>
 // MV3 service worker event listeners must be registered synchronously at module load.
 browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
-	const { resetActiveRpcNetwork } = await waitForBackgroundStartup()
-	return await onContentScriptConnected(getSimulationServices, resetActiveRpcNetwork, port, websiteTabConnections)
+	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServices, resetActiveRpcNetwork } = await waitForBackgroundStartup()
