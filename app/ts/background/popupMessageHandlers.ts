@@ -475,7 +475,6 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 
 export async function requestNewHomeData(
 	ethereum: EthereumClientService,
-	_tokenPriceService: TokenPriceService,
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
 	requestAbortController: AbortController | undefined,
@@ -520,10 +519,10 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function changeSettings(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await requestNewHomeData(ethereum, tokenPriceService, new Map(), false, requestAbortController)
+	return await requestNewHomeData(ethereum, new Map(), false, requestAbortController)
 }
 
 export async function importSettings(settingsData: ImportSettings) {
