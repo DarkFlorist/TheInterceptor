@@ -4,13 +4,13 @@ import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCu
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type SetRpcList, UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
-import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
+import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
-import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
@@ -57,6 +57,20 @@ const getErrorMessage = (error: unknown) => error instanceof Error ? error.messa
 
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
 const importSimulationStackFailure = (message: string): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: false, message })
+
+async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: WebsiteTabConnections, tabId: number | undefined, tabState: TabState, shouldRefreshSignerAccounts: boolean) {
+	if (!shouldRefreshSignerAccounts || tabId === undefined) return tabState
+	if (tabState.signerAccounts.length !== 0) return tabState
+	if (tabState.signerName === 'NoSigner' || tabState.signerName === 'NoSignerDetected') return tabState
+
+	const tabConnections = websiteTabConnections.get(tabId)
+	if (tabConnections === undefined) return tabState
+	const approvedConnection = Object.values(tabConnections.connections).find((connection) => connection.approved)
+	if (approvedConnection === undefined) return tabState
+
+	await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, approvedConnection.socket, false)
+	return await getTabState(tabId)
+}
 
 export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation)
@@ -459,12 +473,17 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 	if (tab === undefined) await openInNewTab()
 }
 
-export async function requestNewHomeData(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
-	const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'cached' })
+export async function requestNewHomeData(
+	ethereum: EthereumClientService,
+	websiteTabConnections: WebsiteTabConnections,
+	shouldRefreshSignerAccounts: boolean,
+	requestAbortController: AbortController | undefined,
+) {
+	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts })
 	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 }
 
-export async function refreshHomeData(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
+export async function refreshHomeData(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, shouldRefreshSignerAccounts: boolean, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
 		const currentSettings = await getSettings()
@@ -472,7 +491,7 @@ export async function refreshHomeData(ethereum: EthereumClientService, tokenPric
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum)
-		const updatedPage = await buildHomePageUpdate(ethereum, { requestAbortController, richDataSource: 'fresh' })
+		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts })
 		await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
@@ -500,10 +519,10 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function changeSettings(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await requestNewHomeData(ethereum, tokenPriceService, requestAbortController)
+	return await requestNewHomeData(ethereum, new Map(), false, requestAbortController)
 }
 
 export async function importSettings(settingsData: ImportSettings) {
@@ -862,12 +881,15 @@ async function getCachedRichData() {
 
 async function buildHomePageUpdate(
 	ethereum: EthereumClientService,
+	websiteTabConnections: WebsiteTabConnections,
 	{
 		requestAbortController,
 		richDataSource,
+		shouldRefreshSignerAccounts,
 	}: {
 		requestAbortController?: AbortController
 		richDataSource: 'cached' | 'fresh'
+		shouldRefreshSignerAccounts: boolean
 	}
 ): Promise<UpdateHomePage> {
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
@@ -885,7 +907,8 @@ async function buildHomePageUpdate(
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
 	const settings = await settingsPromise
-	const tabState = await tabStatePromise
+	let tabState = await tabStatePromise
+	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const richData = await richDataPromise
