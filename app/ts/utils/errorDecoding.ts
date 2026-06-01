@@ -127,7 +127,8 @@ const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 			signature: 'Error(string)',
 		})
 		} catch (decodeError) {
-			return unknownErrorResult({ reason: decodeError instanceof Error ? decodeError.message : 'Unknown error returned', data: error.data })
+			if (decodeError instanceof Error) console.warn('Failed to decode Error(string) revert payload', decodeError)
+			return unknownErrorResult({ reason: 'Unknown error returned', data: error.data })
 		}
 	}
 
@@ -150,7 +151,8 @@ const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 			signature: 'Panic(uint256)',
 		})
 		} catch (decodeError) {
-			return unknownErrorResult({ reason: decodeError instanceof Error ? decodeError.message : 'Unknown panic error', data: error.data })
+			if (decodeError instanceof Error) console.warn('Failed to decode Panic(uint256) revert payload', decodeError)
+			return unknownErrorResult({ reason: 'Unknown panic error', data: error.data })
 		}
 	}
 

@@ -1,3 +1,5 @@
+import { tryOrUndefined } from './try.js'
+
 const IPV4_HOST_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/
 
 type ParsedWebsiteOrigin = {
@@ -5,17 +7,16 @@ type ParsedWebsiteOrigin = {
 	readonly port: string
 }
 
+// Stored websiteOrigin values are host[:port] fragments, so we attach a
+// temporary scheme to reuse URL parsing instead of treating them as full URLs.
 function parseWebsiteOrigin(origin: string): ParsedWebsiteOrigin | undefined {
-	try {
+	return tryOrUndefined(() => {
 		const url = new URL(`https://${ origin }`)
 		return {
 			hostname: url.hostname,
 			port: url.port,
 		}
-	} catch (error) {
-		if (error instanceof TypeError) return undefined
-		throw error
-	}
+	}, (error) => error instanceof TypeError)
 }
 
 export function getHostnameForWebsiteOrigin(origin: string) {

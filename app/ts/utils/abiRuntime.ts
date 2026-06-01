@@ -26,6 +26,7 @@ import {
 	toEventSelector,
 	toFunctionSelector,
 } from './viem.js'
+import { tryOrFalse } from './try.js'
 
 export type AbiLike = string | readonly (string | AbiItem)[]
 
@@ -203,15 +204,7 @@ export const normalizeAbi = (abiLike: AbiLike): Abi => {
 	return normalizeAbiArray(abiLike)
 }
 
-export const isValidAbiString = (abi: string) => {
-	try {
-		normalizeAbi(abi)
-		return true
-	} catch (error) {
-		if (error instanceof Error) return false
-		return false
-	}
-}
+export const isValidAbiString = (abi: string) => tryOrFalse(() => normalizeAbi(abi), (error) => error instanceof Error)
 
 export const hasFunction = <const TAbi extends Abi>(abi: TAbi, functionName: ContractFunctionName<TAbi>) => {
 	return abi.some((item) => item.type === 'function' && item.name === functionName)
