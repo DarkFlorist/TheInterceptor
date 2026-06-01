@@ -28,7 +28,7 @@ jobs:
     if: github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/zoltu/ci-docker-agent:v1@sha256:4cef29948b8dddb15712c8ca1be150c362b7751f75781a6f98eaf0b8a71713a3
+      image: ghcr.io/zoltu/ci-docker-agent:v3@sha256:3a2d571b7c1fefec817dbd1ed4434ad2b399adb6d7b845e17852b6a20620225a 
       options: --user root
     steps:
       # Intentionally checks out the base branch; PR diff is fetched via GitHub API
