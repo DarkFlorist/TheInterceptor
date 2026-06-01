@@ -1,6 +1,11 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getNextRpcRetryAt, getRpcWarningState, noNewBlockForOverTwoMins, shouldShowRpcWarningCountdown } from '../../app/ts/utils/rpcConnectionUi.js'
+import {
+	getNextRpcRetryAt,
+	getRpcWarningState,
+	noNewBlockForOverTwoMins,
+	shouldShowRpcWarningCountdown,
+} from '../../app/ts/utils/rpcConnectionUi.js'
 
 const rpcNetwork = {
 	name: 'Test Chain',
@@ -58,7 +63,13 @@ describe('rpcConnectionUi', () => {
 		assert.equal(warningState.kind, 'disconnected')
 		assert.equal(warningState.retryState, 'active')
 		assert.equal(nextRetryAt?.toISOString(), '2024-01-01T00:00:12.000Z')
-		assert.equal(shouldShowRpcWarningCountdown(warningState, new Date('2024-01-01T00:00:01.000Z')), true)
+		assert.equal(
+			shouldShowRpcWarningCountdown(
+				warningState,
+				new Date('2024-01-01T00:00:01.000Z'),
+			),
+			true,
+		)
 	})
 
 	test('treats a paused disconnect as an immediate warning without a countdown', () => {
@@ -74,7 +85,13 @@ describe('rpcConnectionUi', () => {
 
 		assert.equal(warningState.kind, 'disconnected')
 		assert.equal(warningState.retryState, 'paused')
-		assert.equal(shouldShowRpcWarningCountdown(warningState, new Date('2024-01-01T00:00:01.000Z')), false)
+		assert.equal(
+			shouldShowRpcWarningCountdown(
+				warningState,
+				new Date('2024-01-01T00:00:01.000Z'),
+			),
+			false,
+		)
 	})
 
 	test('treats a stalled connection with an upcoming retry as unhealthy and countdown-capable', () => {
@@ -91,7 +108,13 @@ describe('rpcConnectionUi', () => {
 		assert.equal(noNewBlockForOverTwoMins(status), true)
 		assert.equal(warningState.kind, 'stalled')
 		assert.equal(warningState.retryState, 'active')
-		assert.equal(shouldShowRpcWarningCountdown(warningState, new Date('2024-01-01T00:02:31.000Z')), true)
+		assert.equal(
+			shouldShowRpcWarningCountdown(
+				warningState,
+				new Date('2024-01-01T00:02:31.000Z'),
+			),
+			true,
+		)
 	})
 
 	test('keeps a stalled connection unhealthy after the retry deadline passes', () => {
@@ -106,7 +129,13 @@ describe('rpcConnectionUi', () => {
 		const warningState = getRpcWarningState(status)
 
 		assert.equal(warningState.kind, 'stalled')
-		assert.equal(shouldShowRpcWarningCountdown(warningState, new Date('2024-01-01T00:02:43.000Z')), false)
+		assert.equal(
+			shouldShowRpcWarningCountdown(
+				warningState,
+				new Date('2024-01-01T00:02:43.000Z'),
+			),
+			false,
+		)
 	})
 
 	test('returns no warning for a healthy connected state', () => {

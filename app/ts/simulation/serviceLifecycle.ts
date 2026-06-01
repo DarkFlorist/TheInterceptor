@@ -4,8 +4,15 @@ import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
 
-export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
-export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
+export type NewBlockAttemptCallback = (
+	blockHeader: EthereumBlockHeader,
+	ethereumClientService: EthereumClientService,
+	isNewBlock: boolean,
+) => Promise<void>
+export type OnErrorBlockCallback = (
+	ethereumClientService: EthereumClientService,
+	error: unknown,
+) => Promise<void>
 export type ResetSimulationServices = (rpcNetwork: RpcEntry) => void
 
 export type SimulationServices = {

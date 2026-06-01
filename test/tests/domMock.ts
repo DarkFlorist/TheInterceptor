@@ -62,7 +62,8 @@ class TestNode {
 	}
 
 	set textContent(value: string) {
-		this.childNodes = value === '' ? [] : [new TestTextNode(this.ownerDocument, value)]
+		this.childNodes =
+			value === '' ? [] : [new TestTextNode(this.ownerDocument, value)]
 		for (const node of this.childNodes) node.parentNode = this
 	}
 
@@ -124,13 +125,27 @@ class TestElement extends TestNode {
 		delete this.attributes[name]
 	}
 
-	addEventListener() { return undefined }
-	removeEventListener() { return undefined }
-	focus() { return undefined }
-	blur() { return undefined }
-	showPopover() { return undefined }
-	hidePopover() { return undefined }
-	togglePopover() { return undefined }
+	addEventListener() {
+		return undefined
+	}
+	removeEventListener() {
+		return undefined
+	}
+	focus() {
+		return undefined
+	}
+	blur() {
+		return undefined
+	}
+	showPopover() {
+		return undefined
+	}
+	hidePopover() {
+		return undefined
+	}
+	togglePopover() {
+		return undefined
+	}
 
 	getAttribute(name: string) {
 		return this.attributes[name] ?? null
@@ -152,8 +167,12 @@ class TestDocument {
 		this.body = new TestElement(this, 'body')
 	}
 
-	addEventListener() { return undefined }
-	removeEventListener() { return undefined }
+	addEventListener() {
+		return undefined
+	}
+	removeEventListener() {
+		return undefined
+	}
 
 	createElement(tagName: string) {
 		return new TestElement(this, tagName)
@@ -177,14 +196,26 @@ export function installDomMock() {
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
 
-	Object.defineProperty(globalThis, 'document', { value: document, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'window', { value: { document }, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'setInterval', { value: () => 1, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'document', {
+		value: document,
+		configurable: true,
+		writable: true,
+	})
+	Object.defineProperty(globalThis, 'window', {
+		value: { document },
+		configurable: true,
+		writable: true,
+	})
+	Object.defineProperty(globalThis, 'setInterval', {
+		value: () => 1,
+		configurable: true,
+		writable: true,
+	})
 	globalThis.clearInterval = () => undefined
-	globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+	globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
 		callback(0)
 		return 1
-	})
+	}
 	globalThis.cancelAnimationFrame = () => undefined
 
 	return {
@@ -217,7 +248,11 @@ export function installDateMock(initialNow: Date | string | number) {
 		static UTC = RealDate.UTC
 	}
 
-	Object.defineProperty(globalThis, 'Date', { value: MockDate, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'Date', {
+		value: MockDate,
+		configurable: true,
+		writable: true,
+	})
 
 	return {
 		setNow(nextNow: Date | string | number) {

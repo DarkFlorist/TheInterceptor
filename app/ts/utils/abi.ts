@@ -15,7 +15,10 @@ export const Erc20ABI = [
 		type: 'function',
 		name: 'approve',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'guy', type: 'address' }, { name: 'wad', type: 'uint256' }],
+		inputs: [
+			{ name: 'guy', type: 'address' },
+			{ name: 'wad', type: 'uint256' },
+		],
 		outputs: [{ name: '', type: 'bool' }],
 	},
 	{
@@ -29,7 +32,11 @@ export const Erc20ABI = [
 		type: 'function',
 		name: 'transferFrom',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'src', type: 'address' }, { name: 'dst', type: 'address' }, { name: 'wad', type: 'uint256' }],
+		inputs: [
+			{ name: 'src', type: 'address' },
+			{ name: 'dst', type: 'address' },
+			{ name: 'wad', type: 'uint256' },
+		],
 		outputs: [{ name: '', type: 'bool' }],
 	},
 	{
@@ -64,7 +71,10 @@ export const Erc20ABI = [
 		type: 'function',
 		name: 'transfer',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'dst', type: 'address' }, { name: 'wad', type: 'uint256' }],
+		inputs: [
+			{ name: 'dst', type: 'address' },
+			{ name: 'wad', type: 'uint256' },
+		],
 		outputs: [{ name: '', type: 'bool' }],
 	},
 	{
@@ -78,7 +88,10 @@ export const Erc20ABI = [
 		type: 'function',
 		name: 'allowance',
 		stateMutability: 'view',
-		inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+		inputs: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'spender', type: 'address' },
+		],
 		outputs: [{ name: '', type: 'uint256' }],
 	},
 	{
@@ -163,7 +176,10 @@ export const Erc721ABI = [
 		type: 'function',
 		name: 'approve',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'to', type: 'address' }, { name: 'tokenId', type: 'uint256' }],
+		inputs: [
+			{ name: 'to', type: 'address' },
+			{ name: 'tokenId', type: 'uint256' },
+		],
 		outputs: [],
 	},
 	{
@@ -184,7 +200,10 @@ export const Erc721ABI = [
 		type: 'function',
 		name: 'isApprovedForAll',
 		stateMutability: 'view',
-		inputs: [{ name: 'owner', type: 'address' }, { name: 'operator', type: 'address' }],
+		inputs: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'operator', type: 'address' },
+		],
 		outputs: [{ name: '', type: 'bool' }],
 	},
 	{
@@ -228,7 +247,10 @@ export const Erc721ABI = [
 		type: 'function',
 		name: 'setApprovalForAll',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'operator', type: 'address' }, { name: '_approved', type: 'bool' }],
+		inputs: [
+			{ name: 'operator', type: 'address' },
+			{ name: '_approved', type: 'bool' },
+		],
 		outputs: [],
 	},
 	...Erc165ABI,
@@ -250,7 +272,10 @@ export const Erc721ABI = [
 		type: 'function',
 		name: 'tokenOfOwnerByIndex',
 		stateMutability: 'view',
-		inputs: [{ name: 'owner', type: 'address' }, { name: 'index', type: 'uint256' }],
+		inputs: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'index', type: 'uint256' },
+		],
 		outputs: [{ name: 'tokenId', type: 'uint256' }],
 	},
 	{
@@ -358,28 +383,40 @@ export const Erc1155ABI = [
 		type: 'function',
 		name: 'balanceOf',
 		stateMutability: 'view',
-		inputs: [{ name: '_owner', type: 'address' }, { name: '_id', type: 'uint256' }],
+		inputs: [
+			{ name: '_owner', type: 'address' },
+			{ name: '_id', type: 'uint256' },
+		],
 		outputs: [{ type: 'uint256' }],
 	},
 	{
 		type: 'function',
 		name: 'balanceOfBatch',
 		stateMutability: 'view',
-		inputs: [{ name: '_owners', type: 'address[]' }, { name: '_ids', type: 'uint256[]' }],
+		inputs: [
+			{ name: '_owners', type: 'address[]' },
+			{ name: '_ids', type: 'uint256[]' },
+		],
 		outputs: [{ type: 'uint256[]' }],
 	},
 	{
 		type: 'function',
 		name: 'setApprovalForAll',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: '_operator', type: 'address' }, { name: '_approved', type: 'bool' }],
+		inputs: [
+			{ name: '_operator', type: 'address' },
+			{ name: '_approved', type: 'bool' },
+		],
 		outputs: [],
 	},
 	{
 		type: 'function',
 		name: 'isApprovedForAll',
 		stateMutability: 'view',
-		inputs: [{ name: '_owner', type: 'address' }, { name: '_operator', type: 'address' }],
+		inputs: [
+			{ name: '_owner', type: 'address' },
+			{ name: '_operator', type: 'address' },
+		],
 		outputs: [{ type: 'bool' }],
 	},
 ] as const satisfies Abi
@@ -408,14 +445,20 @@ export const CompoundGovernanceAbi = [
 		type: 'function',
 		name: 'submitVote',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'bool' }],
+		inputs: [
+			{ name: 'proposalId', type: 'uint256' },
+			{ name: 'support', type: 'bool' },
+		],
 		outputs: [],
 	},
 	{
 		type: 'function',
 		name: 'castVote',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }],
+		inputs: [
+			{ name: 'proposalId', type: 'uint256' },
+			{ name: 'support', type: 'uint8' },
+		],
 		outputs: [],
 	},
 	{
@@ -507,4 +550,5 @@ export const extractFunctionArgumentTypes = (signature: string) => {
 	return args === undefined || args.length === 0 ? [] : args.split(',')
 }
 
-export const removeTextBetweenBrackets = (inputString: string) => inputString.replace(/\[.*?\]/g, '')
+export const removeTextBetweenBrackets = (inputString: string) =>
+	inputString.replace(/\[.*?\]/g, '')

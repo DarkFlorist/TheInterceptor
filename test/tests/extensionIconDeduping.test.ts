@@ -1,6 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import {
+	ICON_NOT_ACTIVE,
+	ICON_SIMULATING,
+} from '../../app/ts/utils/constants.js'
 
 type BrowserStorageState = Record<string, unknown>
 type MockTab = {
@@ -24,39 +27,71 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+			onMessage: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onConnect: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		storage: {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					if (Array.isArray(keys))
+						return Object.fromEntries(
+							keys
+								.filter((key) => key in storageState)
+								.map((key) => [key, storageState[key]]),
+						)
+					if (typeof keys === 'string')
+						return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(
+						Object.entries(keys).map(([key, defaultValue]) => [
+							key,
+							key in storageState ? storageState[key] : defaultValue,
+						]),
+					)
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys])
+						delete storageState[key]
 				},
 			},
 		},
 		tabs: {
-			async query() { return [] },
+			async query() {
+				return []
+			},
 			async get(tabId: number) {
 				const tab = tabsById.get(tabId)
-				if (tab === undefined) throw new Error(`No tab with id ${ tabId }`)
+				if (tab === undefined) throw new Error(`No tab with id ${tabId}`)
 				return tab
 			},
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			async update() {
+				return undefined
+			},
+			onUpdated: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onRemoved: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
 		},
 		action: {
 			async setIcon(details: browser.action._SetIconDetails) {
@@ -67,20 +102,40 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 				setTitleCalls.push(details)
 				return undefined
 			},
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		declarativeNetRequest: {
-			async getDynamicRules() { return [] },
-			async getSessionRules() { return [] },
-			async updateDynamicRules() { return undefined },
-			async updateSessionRules() { return undefined },
+			async getDynamicRules() {
+				return []
+			},
+			async getSessionRules() {
+				return []
+			},
+			async updateDynamicRules() {
+				return undefined
+			},
+			async updateSessionRules() {
+				return undefined
+			},
 		},
 		webRequest: {
 			onBeforeRequest: {
@@ -96,12 +151,12 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/accessManagement.js'),
-		...await import('../../app/ts/background/backgroundUtils.js'),
-		...await import('../../app/ts/background/iconHandler.js'),
-		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/storageVariables.js'),
-		...await import('../../app/ts/background/websiteTabConnections.js'),
+		...(await import('../../app/ts/background/accessManagement.js')),
+		...(await import('../../app/ts/background/backgroundUtils.js')),
+		...(await import('../../app/ts/background/iconHandler.js')),
+		...(await import('../../app/ts/background/settings.js')),
+		...(await import('../../app/ts/background/storageVariables.js')),
+		...(await import('../../app/ts/background/websiteTabConnections.js')),
 	}
 }
 
@@ -121,10 +176,16 @@ async function flushAsyncWork() {
 
 describe('extension icon deduping', () => {
 	test('setIcon runs on the first state change and not on an identical follow-up update', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, updateExtensionIcon, updateTabState } = await loadModules()
+		const { setIconCalls, setTitleCalls } = installBrowserMock([
+			{ id: 1, url: 'https://example.test', status: 'complete' },
+		])
+		const { changeSimulationMode, updateExtensionIcon, updateTabState } =
+			await loadModules()
 
-		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
+		await changeSimulationMode({
+			simulationMode: false,
+			activeSigningAddress: undefined,
+		})
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			tabIconDetails: {
@@ -143,10 +204,16 @@ describe('extension icon deduping', () => {
 	})
 
 	test('title-only icon updates skip setIcon', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, updateExtensionIcon, updateTabState } = await loadModules()
+		const { setIconCalls, setTitleCalls } = installBrowserMock([
+			{ id: 1, url: 'https://example.test', status: 'complete' },
+		])
+		const { changeSimulationMode, updateExtensionIcon, updateTabState } =
+			await loadModules()
 
-		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
+		await changeSimulationMode({
+			simulationMode: false,
+			activeSigningAddress: undefined,
+		})
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			tabIconDetails: {
@@ -162,10 +229,16 @@ describe('extension icon deduping', () => {
 	})
 
 	test('icon-only updates skip setTitle', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, updateExtensionIcon, updateTabState } = await loadModules()
+		const { setIconCalls, setTitleCalls } = installBrowserMock([
+			{ id: 1, url: 'https://example.test', status: 'complete' },
+		])
+		const { changeSimulationMode, updateExtensionIcon, updateTabState } =
+			await loadModules()
 
-		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
+		await changeSimulationMode({
+			simulationMode: false,
+			activeSigningAddress: undefined,
+		})
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			tabIconDetails: {
@@ -181,10 +254,20 @@ describe('extension icon deduping', () => {
 	})
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { setIconCalls, setTitleCalls } = installBrowserMock([
+			{ id: 1, url: 'https://example.test', status: 'complete' },
+		])
+		const {
+			changeSimulationMode,
+			getSettings,
+			updateTabState,
+			updateWebsiteApprovalAccesses,
+		} = await loadModules()
 
-		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
+		await changeSimulationMode({
+			simulationMode: false,
+			activeSigningAddress: undefined,
+		})
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			tabIconDetails: {
@@ -195,15 +278,34 @@ describe('extension icon deduping', () => {
 
 		const port = createPort(1)
 		const websiteTabConnections = new Map([
-			[1, {
-				connections: {
-					first: { port, socket: { tabId: 1, connectionName: 0n }, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
-					second: { port, socket: { tabId: 1, connectionName: 1n }, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
+			[
+				1,
+				{
+					connections: {
+						first: {
+							port,
+							socket: { tabId: 1, connectionName: 0n },
+							websiteOrigin: 'example.test',
+							approved: false,
+							wantsToConnect: false,
+						},
+						second: {
+							port,
+							socket: { tabId: 1, connectionName: 1n },
+							websiteOrigin: 'example.test',
+							approved: false,
+							wantsToConnect: false,
+						},
+					},
 				},
-			}],
+			],
 		])
 
-			await updateWebsiteApprovalAccesses({} as never, websiteTabConnections, await getSettings())
+		await updateWebsiteApprovalAccesses(
+			{} as never,
+			websiteTabConnections,
+			await getSettings(),
+		)
 		await flushAsyncWork()
 
 		assert.equal(setIconCalls.length, 1)
@@ -211,17 +313,29 @@ describe('extension icon deduping', () => {
 	})
 
 	test('last-port disconnect removes the tab entry', async () => {
-		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { removeWebsiteTabConnection, websiteSocketToString } = await loadModules()
+		installBrowserMock([
+			{ id: 1, url: 'https://example.test', status: 'complete' },
+		])
+		const { removeWebsiteTabConnection, websiteSocketToString } =
+			await loadModules()
 
 		const socket = { tabId: 1, connectionName: 0n }
 		const port = createPort(1)
 		const websiteTabConnections = new Map([
-			[1, {
-				connections: {
-					[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
+			[
+				1,
+				{
+					connections: {
+						[websiteSocketToString(socket)]: {
+							port,
+							socket,
+							websiteOrigin: 'example.test',
+							approved: false,
+							wantsToConnect: false,
+						},
+					},
 				},
-			}],
+			],
 		])
 
 		removeWebsiteTabConnection(websiteTabConnections, socket)

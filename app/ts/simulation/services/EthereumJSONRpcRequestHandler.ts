@@ -1,4 +1,8 @@
-import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
+import {
+	EthereumJsonRpcRequest,
+	JsonRpcErrorResponse,
+	JsonRpcResponse,
+} from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { stringToBytes, keccak256 } from '../../utils/viem.js'
@@ -15,7 +19,9 @@ import {
 	JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE,
 } from '../../utils/constants.js'
 
-type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
+type ResolvedResponse =
+	| { responseState: 'failed'; status: number; response: unknown }
+	| { responseState: 'success'; response: unknown }
 
 const TRANSIENT_HTTP_STATUS_CODES = new Set([
 	HTTP_STATUS_REQUEST_TIMEOUT,
@@ -30,7 +36,10 @@ const TRANSIENT_JSON_RPC_ERROR_CODES = new Set([
 ])
 
 function isNonCacheableHttpStatus(status: number) {
-	return status >= HTTP_STATUS_SERVER_ERROR_RANGE_START || TRANSIENT_HTTP_STATUS_CODES.has(status)
+	return (
+		status >= HTTP_STATUS_SERVER_ERROR_RANGE_START ||
+		TRANSIENT_HTTP_STATUS_CODES.has(status)
+	)
 }
 
 function isNonCacheableJsonRpcError(response: unknown) {
@@ -47,7 +56,10 @@ function shouldCacheResponse(response: ResolvedResponse) {
 	return !isNonCacheableJsonRpcError(response.response)
 }
 
-export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
+export type IEthereumJSONRpcRequestHandler = Pick<
+	EthereumJSONRpcRequestHandler,
+	keyof EthereumJSONRpcRequestHandler
+>
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId = 1
 	private caching: boolean
@@ -62,10 +74,15 @@ export class EthereumJSONRpcRequestHandler {
 		this.pendingCache = new Map()
 	}
 
-	public readonly clearCache = () => { this.cache = new Map() }
+	public readonly clearCache = () => {
+		this.cache = new Map()
+	}
 
-	private readonly resolveResponse = async (response: Response): Promise<ResolvedResponse> => {
-		if (response.ok) return { responseState: 'success', response: await response.json() }
+	private readonly resolveResponse = async (
+		response: Response,
+	): Promise<ResolvedResponse> => {
+		if (response.ok)
+			return { responseState: 'success', response: await response.json() }
 		return {
 			responseState: 'failed',
 			status: response.status,
@@ -73,17 +90,28 @@ export class EthereumJSONRpcRequestHandler {
 		}
 	}
 
-	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) => {
+	private queryCached = async (
+		request: EthereumJsonRpcRequest,
+		requestId: number,
+		bypassCache: boolean,
+		timeoutMs: number,
+		requestAbortController: AbortController | undefined = undefined,
+	) => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		const payload = {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ jsonrpc: '2.0', id: requestId, ...serialized })
+			body: JSON.stringify({ jsonrpc: '2.0', id: requestId, ...serialized }),
 		}
 		if (!this.caching) {
 			const startedAt = performance.now()
 			try {
-				const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
+				const response = await fetchWithTimeout(
+					this.rpcUrl,
+					payload,
+					timeoutMs,
+					requestAbortController,
+				)
 				return await this.resolveResponse(response)
 			} finally {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
@@ -101,15 +129,20 @@ export class EthereumJSONRpcRequestHandler {
 		this.pendingCache.set(hash, future)
 		const startedAt = performance.now()
 		try {
-			const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
+			const response = await fetchWithTimeout(
+				this.rpcUrl,
+				payload,
+				timeoutMs,
+				requestAbortController,
+			)
 			const responseObject = await this.resolveResponse(response)
-			if (shouldCacheResponse(responseObject)) this.cache.set(hash, responseObject)
+			if (shouldCacheResponse(responseObject))
+				this.cache.set(hash, responseObject)
 			future.resolve(responseObject)
-		} catch(error: unknown) {
+		} catch (error: unknown) {
 			if (requestAbortController?.signal.aborted) {
 				future.reject(new Error(requestAbortController.signal.reason))
-			}
-			else if (error instanceof Error) {
+			} else if (error instanceof Error) {
 				future.reject(error)
 			} else {
 				future.reject(new ErrorWithData('Unknown error', error))
@@ -126,17 +159,34 @@ export class EthereumJSONRpcRequestHandler {
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, requestAbortController: AbortController | undefined = undefined, bypassCache = false, timeoutMs = 60000) => {
+	public readonly jsonRpcRequest = async (
+		rpcRequest: EthereumJsonRpcRequest,
+		requestAbortController: AbortController | undefined = undefined,
+		bypassCache = false,
+		timeoutMs = 60000,
+	) => {
 		const requestId = ++this.nextRequestId
-		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs, requestAbortController)
+		const responseObject = await this.queryCached(
+			rpcRequest,
+			requestId,
+			bypassCache,
+			timeoutMs,
+			requestAbortController,
+		)
 		if (responseObject.responseState === 'failed') {
 			console.warn({ rpcRequest, response: responseObject.response })
-			const errorResponse = JsonRpcErrorResponse.safeParse(responseObject.response)
-			if (errorResponse.success) throw new JsonRpcResponseError(errorResponse.value)
-			throw new Error(`Query to RPC server ${ this.rpcUrl } failed with error code: ${ responseObject.status } while quering for ${ rpcRequest.method }.`)
+			const errorResponse = JsonRpcErrorResponse.safeParse(
+				responseObject.response,
+			)
+			if (errorResponse.success)
+				throw new JsonRpcResponseError(errorResponse.value)
+			throw new Error(
+				`Query to RPC server ${this.rpcUrl} failed with error code: ${responseObject.status} while quering for ${rpcRequest.method}.`,
+			)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
-		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
+		if ('error' in jsonRpcResponse)
+			throw new JsonRpcResponseError(jsonRpcResponse)
 		return jsonRpcResponse.result
 	}
 }

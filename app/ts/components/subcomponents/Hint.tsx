@@ -15,10 +15,12 @@ export default function Container(props: Props) {
 	const toolTipAttribute = props.attribute || 'data-tooltip'
 
 	const content = useSignal('')
-	const clickPosition = useSignal<{ x: number, y: number } | null>(null)
+	const clickPosition = useSignal<{ x: number; y: number } | null>(null)
 
 	const containerElementRef = useRef<HTMLDivElement | null>(null)
-	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(
+		null,
+	)
 	const toolTipTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	useEffect(() => {
@@ -26,7 +28,11 @@ export default function Container(props: Props) {
 		if (!containerElement) return
 
 		const hide = (event: Event) => {
-			if (!(event.target instanceof Element) || !event.target.hasAttribute(toolTipAttribute)) return
+			if (
+				!(event.target instanceof Element) ||
+				!event.target.hasAttribute(toolTipAttribute)
+			)
+				return
 
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 
@@ -37,7 +43,12 @@ export default function Container(props: Props) {
 		}
 
 		const click = (event: MouseEvent) => {
-			if (!(event.target instanceof Element) || !event.target.hasAttribute(copyAttribute) || !event.target.hasAttribute(timerAttribute)) return
+			if (
+				!(event.target instanceof Element) ||
+				!event.target.hasAttribute(copyAttribute) ||
+				!event.target.hasAttribute(timerAttribute)
+			)
+				return
 
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 
@@ -58,7 +69,12 @@ export default function Container(props: Props) {
 		}
 
 		const mouseover = (event: MouseEvent) => {
-			if (!(event.target instanceof Element) || (!event.target.hasAttribute(toolTipAttribute) && !event.target.hasAttribute(timerAttribute))) return
+			if (
+				!(event.target instanceof Element) ||
+				(!event.target.hasAttribute(toolTipAttribute) &&
+					!event.target.hasAttribute(timerAttribute))
+			)
+				return
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 			const tooltipContent = event.target.getAttribute(toolTipAttribute) || ''
 			toolTipTimeoutIdRef.current = setTimeout(() => {
@@ -81,15 +97,18 @@ export default function Container(props: Props) {
 	}, [copyAttribute, toolTipAttribute])
 
 	return (
-		<div ref = { containerElementRef } style = 'position: relative; overflow-x: hidden;'>
-			{ content.value && clickPosition.value && (
+		<div
+			ref={containerElementRef}
+			style="position: relative; overflow-x: hidden;"
+		>
+			{content.value && clickPosition.value && (
 				<Hint
-					content = { content }
-					template = { props.template }
-					clickPosition = { clickPosition }
+					content={content}
+					template={props.template}
+					clickPosition={clickPosition}
 				/>
-			) }
-			{ props.children }
+			)}
+			{props.children}
 		</div>
 	)
 }
@@ -97,16 +116,25 @@ export default function Container(props: Props) {
 interface HintProps {
 	content: Signal<string>
 	template?: (content: string) => ComponentChildren
-	clickPosition: Signal<{ x: number, y: number } | null>
+	clickPosition: Signal<{ x: number; y: number } | null>
 }
 
-function calculatePosition(clickPositionX: number, clickPositionY: number, hintWidth: number) {
+function calculatePosition(
+	clickPositionX: number,
+	clickPositionY: number,
+	hintWidth: number,
+) {
 	const positionX = clickPositionX - hintWidth / 2
 	const positionY = clickPositionY + 10
 	const borderPadding = 30
 
 	return {
-		left: positionX + hintWidth > globalThis.innerWidth - borderPadding ? globalThis.innerWidth - borderPadding - hintWidth : (positionX < borderPadding ? borderPadding : positionX),
+		left:
+			positionX + hintWidth > globalThis.innerWidth - borderPadding
+				? globalThis.innerWidth - borderPadding - hintWidth
+				: positionX < borderPadding
+					? borderPadding
+					: positionX,
 		top: positionY,
 	}
 }
@@ -119,13 +147,19 @@ function Hint(props: HintProps) {
 		if (hintElementRef.current === null) return
 		if (props.clickPosition.value === null) return
 		const measuredWidth = hintElementRef.current.getBoundingClientRect().width
-		dialogPosition.value = calculatePosition(props.clickPosition.value.x, props.clickPosition.value.y, measuredWidth)
+		dialogPosition.value = calculatePosition(
+			props.clickPosition.value.x,
+			props.clickPosition.value.y,
+			measuredWidth,
+		)
 	})
 
 	return (
-		<div class = 'preact-hint' style = { dialogPosition.value }>
-			<span class = 'preact-hint__content' ref = { hintElementRef }>
-				{ props.template ? props.template(props.content.value) : props.content.value }
+		<div class="preact-hint" style={dialogPosition.value}>
+			<span class="preact-hint__content" ref={hintElementRef}>
+				{props.template
+					? props.template(props.content.value)
+					: props.content.value}
 			</span>
 		</div>
 	)

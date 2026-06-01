@@ -1,8 +1,26 @@
 import type { Abi } from 'viem'
 import { namehash } from './viem.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { addressStringWithout0x, bytes32String, stringToUint8Array } from './bigint.js'
-import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_RESOLVER, CANNOT_SET_TTL, CANNOT_TRANSFER, CANNOT_UNWRAP, CAN_DO_EVERYTHING, CAN_EXTEND_EXPIRY, ENS_TOKEN_WRAPPER, IS_DOT_ETH, MOCK_ADDRESS, PARENT_CANNOT_CONTROL } from './constants.js'
+import {
+	addressStringWithout0x,
+	bytes32String,
+	stringToUint8Array,
+} from './bigint.js'
+import {
+	CANNOT_APPROVE,
+	CANNOT_BURN_FUSES,
+	CANNOT_CREATE_SUBDOMAIN,
+	CANNOT_SET_RESOLVER,
+	CANNOT_SET_TTL,
+	CANNOT_TRANSFER,
+	CANNOT_UNWRAP,
+	CAN_DO_EVERYTHING,
+	CAN_EXTEND_EXPIRY,
+	ENS_TOKEN_WRAPPER,
+	IS_DOT_ETH,
+	MOCK_ADDRESS,
+	PARENT_CANNOT_CONTROL,
+} from './constants.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
 import { normalizeEnsNameOrUndefined } from './ens.js'
@@ -15,7 +33,10 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 		const byteCount = parseInt(data.slice(currentIndex, currentIndex + 2), 16)
 		currentIndex += 2
 		if (currentIndex + byteCount * 2 <= data.length) {
-			const encodedChunk = data.slice(currentIndex, currentIndex + byteCount * 2)
+			const encodedChunk = data.slice(
+				currentIndex,
+				currentIndex + byteCount * 2,
+			)
 			encodedData.push(encodedChunk)
 			currentIndex += byteCount * 2
 		} else {
@@ -24,10 +45,16 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 		}
 	}
 	if (encodedData.length === 0) return undefined
-	return encodedData.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${ part }`))).join('.')
+	return encodedData
+		.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${part}`)))
+		.join('.')
 }
 
-export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint) : Promise<string | undefined> => {
+export const getEthereumNameServiceNameFromTokenId = async (
+	ethereumMainnet: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	tokenId: bigint,
+): Promise<string | undefined> => {
 	if (ethereumMainnet.getChainId() !== 1n) return undefined
 	const wrappedEthereumNameService1155TokenAbi = [
 		{
@@ -49,32 +76,42 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 		gas: 42000n,
 		chainId: ethereumMainnet.getChainId(),
 		nonce: 0n,
-		input: stringToUint8Array(encodeFunctionCall(wrappedEthereumNameService1155TokenAbi, 'names', [bytes32String(tokenId)])),
+		input: stringToUint8Array(
+			encodeFunctionCall(wrappedEthereumNameService1155TokenAbi, 'names', [
+				bytes32String(tokenId),
+			]),
+		),
 	}
-	const nameString = decodeFunctionOutput(wrappedEthereumNameService1155TokenAbi, 'names', await ethereumMainnet.call(tx, 'latest', requestAbortController))
+	const nameString = decodeFunctionOutput(
+		wrappedEthereumNameService1155TokenAbi,
+		'names',
+		await ethereumMainnet.call(tx, 'latest', requestAbortController),
+	)
 	const name = encodeEthereumNameServiceString(nameString)
 	if (name === undefined) return undefined
 	const normalizedName = normalizeEnsNameOrUndefined(name)
 	if (normalizedName === undefined) return name
 	if (tokenId !== BigInt(namehash(normalizedName))) {
-		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
+		console.error(
+			`Querying RPC ${ethereumMainnet.getRpcEntry().httpsRpc} returned invalid name for hash: ${tokenId}.`,
+		)
 		return undefined
 	}
 	return name
 }
 
 type EnsFuseName =
-  | 'Cannot Unwrap Name'
-  | 'Cannot Burn Fuses'
-  | 'Cannot Transfer'
-  | 'Cannot Set Resolver'
-  | 'Cannot Set Time To Live'
-  | 'Cannot Create Subdomain'
-  | 'Parent Domain Cannot Control'
-  | 'Cannot Approve'
-  | 'Is .eth domain'
-  | 'Can Extend Expiry'
-  | 'Can Do Everything'
+	| 'Cannot Unwrap Name'
+	| 'Cannot Burn Fuses'
+	| 'Cannot Transfer'
+	| 'Cannot Set Resolver'
+	| 'Cannot Set Time To Live'
+	| 'Cannot Create Subdomain'
+	| 'Parent Domain Cannot Control'
+	| 'Cannot Approve'
+	| 'Is .eth domain'
+	| 'Can Extend Expiry'
+	| 'Can Do Everything'
 
 type EnsFuseFlag = {
 	name: EnsFuseName
@@ -99,7 +136,10 @@ export const extractENSFuses = (uint: bigint): readonly EnsFuseName[] => {
 	if (uint === CAN_DO_EVERYTHING) return ['Can Do Everything']
 	const result: EnsFuseName[] = []
 	for (const flag of flags) {
-		if ((uint & flag.value) === flag.value && flag.value !== CAN_DO_EVERYTHING) {
+		if (
+			(uint & flag.value) === flag.value &&
+			flag.value !== CAN_DO_EVERYTHING
+		) {
 			result.push(flag.name)
 		}
 	}
@@ -107,6 +147,6 @@ export const extractENSFuses = (uint: bigint): readonly EnsFuseName[] => {
 }
 
 export const getEnsReverseNodeHash = (address: EthereumAddress) => {
-	const name = `${ addressStringWithout0x(address) }.addr.reverse`
+	const name = `${addressStringWithout0x(address)}.addr.reverse`
 	return { nameHash: BigInt(namehash(name)), name }
 }

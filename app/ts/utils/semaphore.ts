@@ -42,7 +42,9 @@ export class Semaphore {
 		}
 
 		// If there is no permit available, we return a promise that resolves once the semaphore gets signaled enough times that permits is equal to one.
-		return new Promise<boolean>(resolver => this.promiseResolverQueue.push(resolver))
+		return new Promise<boolean>((resolver) =>
+			this.promiseResolverQueue.push(resolver),
+		)
 	}
 
 	/**
@@ -66,7 +68,9 @@ export class Semaphore {
 
 		// We save the resolver function in the current scope so that we can resolve the promise to false if the time expires.
 		let resolver: (result: boolean) => void
-		const promise = new Promise<boolean>(resolve => { resolver = resolve })
+		const promise = new Promise<boolean>((resolve) => {
+			resolver = resolve
+		})
 
 		// The saved resolver gets added to our list of promise resolvers so that it gets a chance to be resolved as a result of a call to signal().
 		this.promiseResolverQueue.push(resolver!)
@@ -78,7 +82,9 @@ export class Semaphore {
 				this.promiseResolverQueue.splice(index, 1)
 			} else {
 				// This shouldn't happen, not much we can do at this point
-				console.warn(`Semaphore.waitFor couldn't find its promise resolver in the queue`)
+				console.warn(
+					`Semaphore.waitFor couldn't find its promise resolver in the queue`,
+				)
 			}
 
 			// false because the wait was unsuccessful.
@@ -122,7 +128,9 @@ export class Semaphore {
 		this.permits += 1
 
 		if (this.permits > 1 && this.promiseResolverQueue.length > 0) {
-			console.warn('Semaphore.permits should never be > 0 when there is someone waiting.')
+			console.warn(
+				'Semaphore.permits should never be > 0 when there is someone waiting.',
+			)
 		} else if (this.permits === 1 && this.promiseResolverQueue.length > 0) {
 			// If there is someone else waiting, immediately consume the permit that was released  at the beginning of this function and let the waiting function resume.
 			this.permits -= 1

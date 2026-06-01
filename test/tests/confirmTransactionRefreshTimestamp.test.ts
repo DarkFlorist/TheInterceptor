@@ -8,17 +8,31 @@ type RuntimeMessage = {
 	data?: unknown
 }
 
-const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
+const hexToBytes = (hex: string) =>
+	Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
 
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 
-	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
+	const getItems = (
+		keys?: string | string[] | Record<string, unknown> | null,
+	) => {
 		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+		if (Array.isArray(keys))
+			return Object.fromEntries(
+				keys
+					.filter((key) => key in storageState)
+					.map((key) => [key, storageState[key]]),
+			)
+		if (typeof keys === 'string')
+			return keys in storageState ? { [keys]: storageState[keys] } : {}
+		return Object.fromEntries(
+			Object.entries(keys).map(([key, defaultValue]) => [
+				key,
+				key in storageState ? storageState[key] : defaultValue,
+			]),
+		)
 	}
 
 	const removeItems = (keys: string | string[]) => {
@@ -32,47 +46,102 @@ function createBrowserMock() {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+					return {
+						method: 'popup_isMainPopupWindowOpen',
+						data: { isOpen: false },
+					}
 				}
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+			onMessage: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onConnect: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		storage: {
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getItems(keys) },
-				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-				async remove(keys: string | string[]) { removeItems(keys) },
+				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					return getItems(keys)
+				},
+				async set(items: Record<string, unknown>) {
+					Object.assign(storageState, items)
+				},
+				async remove(keys: string | string[]) {
+					removeItems(keys)
+				},
 			},
 		},
 		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			async query() {
+				return []
+			},
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
+			onUpdated: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onRemoved: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
 		},
 		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 	}
-	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'browser', {
+		value: browser,
+		configurable: true,
+		writable: true,
+	})
+	Object.defineProperty(globalThis, 'chrome', {
+		value: { runtime: { id: 'test-extension' } },
+		configurable: true,
+		writable: true,
+	})
 
 	return {
 		sentMessages,
@@ -98,7 +167,9 @@ async function loadModules() {
 		ethSimulateTypes,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
-		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
+		import(
+			'../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+		),
 		import('../../app/ts/utils/constants.js'),
 		import('../../app/ts/background/settings.js'),
 		import('../../app/ts/background/popupMessageHandlers.js'),
@@ -110,12 +181,16 @@ async function loadModules() {
 
 	return {
 		EthereumClientService: ethereumClientService.EthereumClientService,
-		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
+		mockSignTransaction:
+			simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
-		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
-		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
-		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
+		refreshPopupConfirmTransactionSimulation:
+			popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		getPendingTransactionsAndMessages:
+			storageVariables.getPendingTransactionsAndMessages,
+		updateInterceptorTransactionStack:
+			storageVariables.updateInterceptorTransactionStack,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
@@ -153,9 +228,17 @@ function makeFakeBlock() {
 	}
 }
 
-function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], callCount = 1) {
-	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
-	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
+function makeFakeEthSimulateResult(
+	multicallBalance: bigint,
+	multicallAbi: readonly string[],
+	callCount = 1,
+) {
+	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [
+		multicallBalance,
+	])
+	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [
+		[{ success: true, returnData: balanceResult }],
+	])
 	return {
 		number: 123n,
 		hash: 0x9876n,
@@ -189,8 +272,13 @@ const fakeRpcNetwork = {
 const fakeBlock = makeFakeBlock()
 const fakeRequestHandler = {
 	rpcUrl: fakeRpcNetwork.httpsRpc,
-	clearCache() { return undefined },
-	async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+	clearCache() {
+		return undefined
+	},
+	async jsonRpcRequest(rpcRequest: {
+		method: string
+		params?: readonly unknown[]
+	}) {
 		switch (rpcRequest.method) {
 			case 'eth_getBlockByNumber':
 				return modules.serialize(modules.EthereumBlockHeader, fakeBlock)
@@ -207,16 +295,30 @@ const fakeRequestHandler = {
 			case 'eth_simulateV1':
 				return modules.serialize(
 					modules.EthSimulateV1Result,
-					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) =>
-						makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0),
+					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls)
+						? rpcRequest.params[0].blockStateCalls
+						: [{}]
+					).map((blockStateCall) =>
+						makeFakeEthSimulateResult(
+							0n,
+							modules.Multicall3ABI,
+							Array.isArray(blockStateCall.calls)
+								? blockStateCall.calls.length
+								: 0,
+						),
 					),
 				)
 			default:
-				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+				throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
 		}
 	},
 }
-const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+const ethereum = new modules.EthereumClientService(
+	fakeRequestHandler,
+	async () => undefined,
+	async () => undefined,
+	fakeRpcNetwork,
+)
 const simulator = {
 	ethereum,
 	tokenPriceService: {
@@ -226,7 +328,8 @@ const simulator = {
 
 const activeAddress = modules.defaultActiveAddresses[0]?.address
 const recipientAddress = modules.defaultActiveAddresses[1]?.address
-if (activeAddress === undefined || recipientAddress === undefined) throw new Error('missing default addresses')
+if (activeAddress === undefined || recipientAddress === undefined)
+	throw new Error('missing default addresses')
 
 const unsignedTransaction = {
 	type: '1559' as const,
@@ -244,7 +347,10 @@ const unsignedTransaction = {
 const signedTransaction = modules.mockSignTransaction(unsignedTransaction)
 const created = new Date('2024-01-01T00:00:00.000Z')
 const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
-const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+const uniqueRequestIdentifier = {
+	requestId: 1,
+	requestSocket: { tabId: 1, connectionName: 0n },
+}
 const popupVisualisation = {
 	statusCode: 'success' as const,
 	data: {
@@ -253,19 +359,25 @@ const popupVisualisation = {
 		simulationStartedTimestamp: created,
 		uniqueRequestIdentifier,
 		transactionToSimulate: {
-			website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+			website: {
+				websiteOrigin: 'https://example.com',
+				icon: undefined,
+				title: undefined,
+			},
 			created,
 			originalRequestParameters: {
 				method: 'eth_sendTransaction' as const,
-				params: [{
-					from: activeAddress,
-					to: recipientAddress,
-					value: 0n,
-					gas: 21_000n,
-					maxFeePerGas: 1n,
-					maxPriorityFeePerGas: 1n,
-					input: new Uint8Array(),
-				}],
+				params: [
+					{
+						from: activeAddress,
+						to: recipientAddress,
+						value: 0n,
+						gas: 21_000n,
+						maxFeePerGas: 1n,
+						maxPriorityFeePerGas: 1n,
+						input: new Uint8Array(),
+					},
+				],
 			},
 			transactionIdentifier: 1n,
 			success: true as const,
@@ -290,34 +402,54 @@ const popupVisualisation = {
 }
 
 await modules.browserStorageLocalSet2({
-	pendingTransactionsAndMessages: [{
-		type: 'Transaction',
-		popupOrTabId: { type: 'popup', id: 1 },
-		originalRequestParameters: popupVisualisation.data.transactionToSimulate.originalRequestParameters,
-		uniqueRequestIdentifier,
-		simulationMode: true,
-		activeAddress,
-		created,
-		transactionIdentifier: 1n,
-		website: popupVisualisation.data.transactionToSimulate.website,
-		approvalStatus: { status: 'WaitingForUser' },
-		popupVisualisation,
-		transactionOrMessageCreationStatus: 'Simulated',
-		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
-	}],
+	pendingTransactionsAndMessages: [
+		{
+			type: 'Transaction',
+			popupOrTabId: { type: 'popup', id: 1 },
+			originalRequestParameters:
+				popupVisualisation.data.transactionToSimulate.originalRequestParameters,
+			uniqueRequestIdentifier,
+			simulationMode: true,
+			activeAddress,
+			created,
+			transactionIdentifier: 1n,
+			website: popupVisualisation.data.transactionToSimulate.website,
+			approvalStatus: { status: 'WaitingForUser' },
+			popupVisualisation,
+			transactionOrMessageCreationStatus: 'Simulated',
+			transactionToSimulate: popupVisualisation.data.transactionToSimulate,
+		},
+	],
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+	await modules.refreshPopupConfirmTransactionSimulation(
+		simulator.ethereum,
+		simulator.tokenPriceService as never,
+	)
 	const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
-	if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
-	if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
-	const refreshedTimestamp = pendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp
+	if (
+		pendingTransaction === undefined ||
+		pendingTransaction.type !== 'Transaction'
+	)
+		throw new Error('missing refreshed pending transaction')
+	if (pendingTransaction.popupVisualisation.statusCode !== 'success')
+		throw new Error('unexpected popup visualisation state')
+	const refreshedTimestamp =
+		pendingTransaction.popupVisualisation.data.simulationState
+			.simulationConductedTimestamp
 	assert.ok(refreshedTimestamp.getTime() > oldTimestamp.getTime())
-	assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+	assert.equal(
+		browserMock.sentMessages.some(
+			(message) =>
+				message.method ===
+				'popup_update_confirm_transaction_dialog_pending_transactions',
+		),
+		true,
+	)
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

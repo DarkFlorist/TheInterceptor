@@ -31,21 +31,28 @@ describe('EthereumClientService eth_call request shaping', () => {
 			rpcNetwork,
 		)
 
-		await service.call({
-			to: 0x1111111111111111111111111111111111111111n,
-			from: 0x2222222222222222222222222222222222222222n,
-			maxFeePerGas: 15n,
-			maxPriorityFeePerGas: 3n,
-		}, 'latest', undefined)
-
-		assert.deepEqual(capturedRequest, {
-			method: 'eth_call',
-			params: [{
+		await service.call(
+			{
 				to: 0x1111111111111111111111111111111111111111n,
 				from: 0x2222222222222222222222222222222222222222n,
 				maxFeePerGas: 15n,
 				maxPriorityFeePerGas: 3n,
-			}, 'latest']
+			},
+			'latest',
+			undefined,
+		)
+
+		assert.deepEqual(capturedRequest, {
+			method: 'eth_call',
+			params: [
+				{
+					to: 0x1111111111111111111111111111111111111111n,
+					from: 0x2222222222222222222222222222222222222222n,
+					maxFeePerGas: 15n,
+					maxPriorityFeePerGas: 3n,
+				},
+				'latest',
+			],
 		})
 	})
 })

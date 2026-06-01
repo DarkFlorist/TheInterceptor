@@ -10,33 +10,67 @@ type DropDownMenuParams<OptionType> = {
 	buttonClassses: string
 }
 
-export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses }: DropDownMenuParams<OptionType>) => {
+export const DropDownMenu = <OptionType extends string>({
+	selected,
+	dropDownOptions,
+	onChangedCallBack,
+	buttonClassses,
+}: DropDownMenuParams<OptionType>) => {
 	const isOpen = useSignal(false)
 	const ref = useRef<HTMLDivElement>(null)
-	clickOutsideAlerter(ref, () => { isOpen.value = false })
+	clickOutsideAlerter(ref, () => {
+		isOpen.value = false
+	})
 
-	const toggle = () => { isOpen.value = !isOpen.value }
+	const toggle = () => {
+		isOpen.value = !isOpen.value
+	}
 
 	const onChanged = (newValue: OptionType) => {
 		isOpen.value = false
 		onChangedCallBack(newValue)
 	}
 
-	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
-		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button class = { buttonClassses } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
-				<span class = 'truncate' style = { { contain: 'content' } }>{ selected.value }</span>
-				<span class = 'dropdown-chevron'><ChevronIcon /></span>
-			</button>
+	return (
+		<div ref={ref} class={`dropdown ${isOpen.value ? 'is-active' : ''}`}>
+			<div class="dropdown-trigger" style={{ maxWidth: '100%' }}>
+				<button
+					class={buttonClassses}
+					aria-haspopup="true"
+					aria-controls="dropdown-menu"
+					onClick={toggle}
+					title={selected.value}
+					style={{ width: '100%' }}
+				>
+					<span class="truncate" style={{ contain: 'content' }}>
+						{selected.value}
+					</span>
+					<span class="dropdown-chevron">
+						<ChevronIcon />
+					</span>
+				</button>
+			</div>
+			<div
+				class="dropdown-menu"
+				id="dropdown-menu"
+				role="menu"
+				style={{ right: '0' }}
+			>
+				<div class="dropdown-content" style={{ right: '0' }}>
+					{' '}
+					{dropDownOptions.value.map((option) => (
+						<>
+							<button
+								type={buttonClassses}
+								class={`dropdown-item ${option === selected.value ? 'is-active' : ''}`}
+								onClick={() => onChanged(option)}
+							>
+								{option}
+							</button>
+						</>
+					))}{' '}
+				</div>
+			</div>
 		</div>
-		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>
-			<div class = 'dropdown-content' style = { { right: '0' } }> {
-				dropDownOptions.value.map((option) => <>
-					<button type = { buttonClassses } class = { `dropdown-item ${ option === selected.value ? 'is-active' : '' }` } onClick = { () => onChanged(option) } >
-						{ option }
-					</button>
-				</>)
-			} </div>
-		</div>
-	</div>
+	)
 }

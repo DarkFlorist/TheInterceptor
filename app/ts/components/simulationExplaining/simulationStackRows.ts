@@ -1,6 +1,14 @@
-import type { SignedMessageTransaction, SimulationStateInput, VisualizedSimulationState } from '../../types/visualizer-types.js'
+import type {
+	SignedMessageTransaction,
+	SimulationStateInput,
+	VisualizedSimulationState,
+} from '../../types/visualizer-types.js'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
-import type { PreSimulationTransaction, NonSimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
+import type {
+	PreSimulationTransaction,
+	NonSimulatedAndVisualizedTransaction,
+	SimulatedAndVisualizedTransaction,
+} from '../../types/visualizer-types.js'
 
 export type SimulationStackTransactionRow = {
 	type: 'Transaction'
@@ -8,7 +16,10 @@ export type SimulationStackTransactionRow = {
 	transactionIndex: number
 	status: 'pending' | 'simulated' | 'failed'
 	preSimulationTransaction: PreSimulationTransaction
-	simulatedTransaction: SimulatedAndVisualizedTransaction | NonSimulatedAndVisualizedTransaction | undefined
+	simulatedTransaction:
+		| SimulatedAndVisualizedTransaction
+		| NonSimulatedAndVisualizedTransaction
+		| undefined
 }
 
 export type SimulationStackMessageRow = {
@@ -26,20 +37,27 @@ export type SimulationStackBlock = {
 	rows: readonly (SimulationStackTransactionRow | SimulationStackMessageRow)[]
 }
 
-export function normalizeSimulationStackRows(simulationStateInput: SimulationStateInput, visualizedSimulationState: VisualizedSimulationState): readonly SimulationStackBlock[] {
+export function normalizeSimulationStackRows(
+	simulationStateInput: SimulationStateInput,
+	visualizedSimulationState: VisualizedSimulationState,
+): readonly SimulationStackBlock[] {
 	return simulationStateInput.map((inputBlock, blockIndex) => {
-		const visualizedBlock = visualizedSimulationState.visualizedBlocks[blockIndex]
+		const visualizedBlock =
+			visualizedSimulationState.visualizedBlocks[blockIndex]
 		let transactionIndex = 0
 		let messageIndex = 0
-		const rows: (SimulationStackTransactionRow | SimulationStackMessageRow)[] = []
+		const rows: (SimulationStackTransactionRow | SimulationStackMessageRow)[] =
+			[]
 
 		for (const signedMessageTransaction of inputBlock.signedMessages) {
-			const visualizedPersonalSignRequest = visualizedBlock?.visualizedPersonalSignRequests[messageIndex]
+			const visualizedPersonalSignRequest =
+				visualizedBlock?.visualizedPersonalSignRequests[messageIndex]
 			rows.push({
 				type: 'Message',
 				blockIndex,
 				messageIndex,
-				status: visualizedPersonalSignRequest === undefined ? 'pending' : 'simulated',
+				status:
+					visualizedPersonalSignRequest === undefined ? 'pending' : 'simulated',
 				signedMessageTransaction,
 				visualizedPersonalSignRequest,
 			})
@@ -47,12 +65,18 @@ export function normalizeSimulationStackRows(simulationStateInput: SimulationSta
 		}
 
 		for (const preSimulationTransaction of inputBlock.transactions) {
-			const simulatedTransaction = visualizedBlock?.simulatedAndVisualizedTransactions[transactionIndex]
+			const simulatedTransaction =
+				visualizedBlock?.simulatedAndVisualizedTransactions[transactionIndex]
 			rows.push({
 				type: 'Transaction',
 				blockIndex,
 				transactionIndex,
-				status: simulatedTransaction === undefined ? 'pending' : simulatedTransaction.transactionStatus === 'Failed To Simulate' ? 'failed' : 'simulated',
+				status:
+					simulatedTransaction === undefined
+						? 'pending'
+						: simulatedTransaction.transactionStatus === 'Failed To Simulate'
+							? 'failed'
+							: 'simulated',
 				preSimulationTransaction,
 				simulatedTransaction,
 			})

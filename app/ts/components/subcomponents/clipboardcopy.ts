@@ -1,11 +1,11 @@
 /*! clipboard-copy. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
 /* global DOMException */
 
-function makeError () {
+function makeError() {
 	return new DOMException('The request is not allowed', 'NotAllowedError')
 }
 
-async function copyClipboardApi (text: string) {
+async function copyClipboardApi(text: string) {
 	// Use the Async Clipboard API when available. Requires a secure browsing
 	// context (i.e. HTTPS)
 	if (!navigator.clipboard) {
@@ -14,7 +14,7 @@ async function copyClipboardApi (text: string) {
 	return navigator.clipboard.writeText(text)
 }
 
-async function copyExecCommand (text: string) {
+async function copyExecCommand(text: string) {
 	// Put the text to copy into a <span>
 	const span = document.createElement('span')
 	span.textContent = text
@@ -47,7 +47,7 @@ async function copyExecCommand (text: string) {
 	}
 }
 
-export async function clipboardCopy (text: string) {
+export async function clipboardCopy(text: string) {
 	try {
 		await copyClipboardApi(text)
 	} catch (err) {
@@ -55,7 +55,7 @@ export async function clipboardCopy (text: string) {
 		try {
 			await copyExecCommand(text)
 		} catch (err2) {
-			throw (err2 || err || makeError())
+			throw err2 || err || makeError()
 		}
 	}
 }

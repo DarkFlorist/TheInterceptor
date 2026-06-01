@@ -3,7 +3,12 @@ import { describe, test } from 'bun:test'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 
-const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+const defineGlobal = (name: PropertyKey, value: unknown) =>
+	Object.defineProperty(globalThis, name, {
+		value,
+		configurable: true,
+		writable: true,
+	})
 
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
@@ -14,47 +19,94 @@ function installBrowserMock() {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+			onMessage: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onConnect: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		storage: {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
+					if (Array.isArray(keys))
+						return Object.fromEntries(
+							keys.map((key) => [key, storageState[key]]),
+						)
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					return Object.fromEntries(
+						Object.entries(keys).map(([key, defaultValue]) => [
+							key,
+							key in storageState ? storageState[key] : defaultValue,
+						]),
+					)
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys])
+						delete storageState[key]
 				},
 			},
 		},
 		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			async query() {
+				return []
+			},
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
+			onUpdated: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onRemoved: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
 		},
 		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 	})
 	defineGlobal('chrome', { runtime: { id: 'test-extension' } })
@@ -63,13 +115,15 @@ function installBrowserMock() {
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
-		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/storageVariables.js'),
+		...(await import('../../app/ts/background/popupMessageHandlers.js')),
+		...(await import('../../app/ts/background/settings.js')),
+		...(await import('../../app/ts/background/storageVariables.js')),
 	}
 }
 
-async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
+async function withSilencedConsole<T>(
+	runWithConsoleSilenced: () => Promise<T>,
+) {
 	const originalConsole = {
 		error: console.error,
 		trace: console.trace,
@@ -90,12 +144,25 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 describe('requestMakeMeRichList resilience', () => {
 	test('falls back per address and preserves the underlying error message', async () => {
 		const storageState = installBrowserMock()
-		const { requestMakeMeRichList, setFixedMakeMeRichList, setMakeCurrentAddressRich, getLatestUnexpectedError } = await loadModules()
+		const {
+			requestMakeMeRichList,
+			setFixedMakeMeRichList,
+			setMakeCurrentAddressRich,
+			getLatestUnexpectedError,
+		} = await loadModules()
 		const failingAddress = 0x1000000000000000000000000000000000000001n
 
 		await setFixedMakeMeRichList([
-			{ address: ETHEREUM_LOGS_LOGGER_ADDRESS, makingRich: true, type: 'UserAdded' },
-			{ address: failingAddress, makingRich: false, type: 'PreviousActiveAddress' },
+			{
+				address: ETHEREUM_LOGS_LOGGER_ADDRESS,
+				makingRich: true,
+				type: 'UserAdded',
+			},
+			{
+				address: failingAddress,
+				makingRich: false,
+				type: 'PreviousActiveAddress',
+			},
 		])
 		await setMakeCurrentAddressRich(true)
 
@@ -108,25 +175,40 @@ describe('requestMakeMeRichList resilience', () => {
 			getChainId: () => 1n,
 		}
 
-		const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined))
+		const reply = await withSilencedConsole(
+			async () => await requestMakeMeRichList(ethereumClientService, undefined),
+		)
 		assert.equal(reply.method, 'popup_requestMakeMeRichData')
 		assert.equal(reply.makeCurrentAddressRich, true)
 		assert.equal(reply.richList.length, 2)
-		assert.equal(reply.richList[0]?.addressBookEntry.address, ETHEREUM_LOGS_LOGGER_ADDRESS)
+		assert.equal(
+			reply.richList[0]?.addressBookEntry.address,
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+		)
 		assert.equal(reply.richList[1]?.addressBookEntry.type, 'contact')
-		assert.equal(reply.richList[1]?.addressBookEntry.name, checksummedAddress(failingAddress))
+		assert.equal(
+			reply.richList[1]?.addressBookEntry.name,
+			checksummedAddress(failingAddress),
+		)
 		assert.equal(reply.richList[1]?.makingRich, false)
 		assert.equal(reply.richList[1]?.type, 'PreviousActiveAddress')
-		assert.equal((await getLatestUnexpectedError())?.data.message, `Failed to identify rich list address ${ checksummedAddress(failingAddress) }: boom`)
+		assert.equal(
+			(await getLatestUnexpectedError())?.data.message,
+			`Failed to identify rich list address ${checksummedAddress(failingAddress)}: boom`,
+		)
 		assert.equal(typeof storageState.latestUnexpectedError, 'object')
 	})
 
 	test('recovers from corrupt fixed rich list storage by resetting it to an empty list', async () => {
 		const storageState = installBrowserMock()
 		const { getFixedAddressRichList } = await loadModules()
-		storageState.fixedAddressRichList = [{ address: null, makingRich: true, type: 'UserAdded' }]
+		storageState.fixedAddressRichList = [
+			{ address: null, makingRich: true, type: 'UserAdded' },
+		]
 
-		const richList = await withSilencedConsole(async () => await getFixedAddressRichList())
+		const richList = await withSilencedConsole(
+			async () => await getFixedAddressRichList(),
+		)
 		assert.deepEqual(richList, [])
 		assert.deepEqual(storageState.fixedAddressRichList, [])
 	})
@@ -136,7 +218,9 @@ describe('requestMakeMeRichList resilience', () => {
 		const { requestMakeMeRichList } = await loadModules()
 		storageState.makeCurrentAddressRich = null
 
-		const reply = await withSilencedConsole(async () => await requestMakeMeRichList({}, undefined))
+		const reply = await withSilencedConsole(
+			async () => await requestMakeMeRichList({}, undefined),
+		)
 
 		assert.equal(reply.method, 'popup_requestMakeMeRichData')
 		assert.equal(reply.makeCurrentAddressRich, false)
@@ -147,10 +231,16 @@ describe('requestMakeMeRichList resilience', () => {
 describe('startup storage recovery', () => {
 	test('recovers active addresses from corrupt user address book storage', async () => {
 		const storageState = installBrowserMock()
-		const { requestActiveAddresses, defaultActiveAddresses, getUserAddressBookEntries } = await loadModules()
+		const {
+			requestActiveAddresses,
+			defaultActiveAddresses,
+			getUserAddressBookEntries,
+		} = await loadModules()
 		storageState.userAddressBookEntriesV3 = null
 
-		const reply = await withSilencedConsole(async () => await requestActiveAddresses())
+		const reply = await withSilencedConsole(
+			async () => await requestActiveAddresses(),
+		)
 
 		assert.equal(reply.method, 'popup_requestActiveAddresses')
 		assert.deepEqual(reply.activeAddresses, defaultActiveAddresses)
@@ -163,7 +253,9 @@ describe('startup storage recovery', () => {
 		const { requestLatestUnexpectedError } = await loadModules()
 		storageState.latestUnexpectedError = null
 
-		const reply = await withSilencedConsole(async () => await requestLatestUnexpectedError())
+		const reply = await withSilencedConsole(
+			async () => await requestLatestUnexpectedError(),
+		)
 
 		assert.equal(reply.method, 'popup_requestLatestUnexpectedError')
 		assert.equal(reply.latestUnexpectedError, undefined)
@@ -175,7 +267,9 @@ describe('startup storage recovery', () => {
 		const { requestSimulationMode } = await loadModules()
 		storageState.simulationMode = 'invalid'
 
-		const reply = await withSilencedConsole(async () => await requestSimulationMode())
+		const reply = await withSilencedConsole(
+			async () => await requestSimulationMode(),
+		)
 
 		assert.equal(reply.method, 'popup_requestSimulationMode')
 		assert.equal(reply.simulationMode, true)
@@ -200,21 +294,50 @@ describe('startup storage recovery', () => {
 		const storageState = installBrowserMock()
 		const { getSettings, getWebsiteAccess } = await loadModules()
 		storageState.websiteAccess = [
-			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
-			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
+			{
+				website: {
+					websiteOrigin: 'remote.example',
+					icon: 'https://remote.example/favicon.png',
+					title: 'Remote',
+				},
+				access: true,
+			},
+			{
+				website: {
+					websiteOrigin: 'cached.example',
+					icon: 'data:image/png;base64,Y2FjaGVk',
+					title: 'Cached',
+				},
+				access: true,
+			},
 		]
 
 		const settings = await withSilencedConsole(async () => await getSettings())
-		const websiteAccess = await withSilencedConsole(async () => await getWebsiteAccess())
+		const websiteAccess = await withSilencedConsole(
+			async () => await getWebsiteAccess(),
+		)
 
 		assert.equal(settings.websiteAccess[0]?.website.icon, undefined)
-		assert.equal(settings.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+		assert.equal(
+			settings.websiteAccess[1]?.website.icon,
+			'data:image/png;base64,Y2FjaGVk',
+		)
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
-		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+		assert.equal(
+			websiteAccess[1]?.website.icon,
+			'data:image/png;base64,Y2FjaGVk',
+		)
 		assert.equal(Array.isArray(storageState.websiteAccess), true)
-		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
-		assert.equal(storageState.websiteAccess[0]?.website.icon, 'https://remote.example/favicon.png')
-		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+		if (!Array.isArray(storageState.websiteAccess))
+			throw new Error('Expected websiteAccess to remain an array')
+		assert.equal(
+			storageState.websiteAccess[0]?.website.icon,
+			'https://remote.example/favicon.png',
+		)
+		assert.equal(
+			storageState.websiteAccess[1]?.website.icon,
+			'data:image/png;base64,Y2FjaGVk',
+		)
 	})
 
 	test('recovers corrupt openedPageV2 without resetting valid settings keys', async () => {

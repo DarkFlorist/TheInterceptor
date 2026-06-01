@@ -33,5 +33,5 @@ import type { JSX } from 'preact/jsx-runtime'
  * @returns A checkbox input element with switch role.
  */
 export const Switch = (props: JSX.IntrinsicElements['input']) => {
-	return <input { ...props } type = 'checkbox' role = 'switch' />
+	return <input {...props} type="checkbox" role="switch" />
 }

@@ -19,13 +19,23 @@ function installBrowserMock() {
 				lastError: null,
 				async sendMessage(message: unknown) {
 					sentMessages.push(message)
-					if (typeof message === 'object' && message !== null && 'method' in message) {
+					if (
+						typeof message === 'object' &&
+						message !== null &&
+						'method' in message
+					) {
 						const typedMessage = message as { method?: string }
 						if (typedMessage.method === 'popup_isMainPopupWindowOpen') {
-							return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+							return {
+								method: 'popup_isMainPopupWindowOpen',
+								data: { isOpen: false },
+							}
 						}
 						if (typedMessage.method === 'popup_readyAndListening') {
-							return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+							return {
+								method: 'popup_readyAndListening',
+								data: { popupOrTabId: { type: 'popup', id: 1 } },
+							}
 						}
 					}
 					return undefined
@@ -40,52 +50,107 @@ function installBrowserMock() {
 						if (index >= 0) listeners.splice(index, 1)
 					},
 				},
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
+				onConnect: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
 			},
 			storage: {
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+						if (Array.isArray(keys))
+							return Object.fromEntries(
+								keys
+									.filter((key) => key in storageState)
+									.map((key) => [key, storageState[key]]),
+							)
+						if (typeof keys === 'string')
+							return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(
+							Object.entries(keys).map(([key, defaultValue]) => [
+								key,
+								key in storageState ? storageState[key] : defaultValue,
+							]),
+						)
 					},
 					async set(items: Record<string, unknown>) {
 						Object.assign(storageState, items)
 					},
 					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+						for (const key of Array.isArray(keys) ? keys : [keys])
+							delete storageState[key]
 					},
 				},
 			},
 			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+				async query() {
+					return []
+				},
+				async get() {
+					return undefined
+				},
+				async update() {
+					return undefined
+				},
+				onUpdated: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
+				onRemoved: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
 			},
 			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
+				async get() {
+					return undefined
+				},
+				async update() {
+					return undefined
+				},
 			},
 			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
+				async setIcon() {
+					return undefined
+				},
+				async setTitle() {
+					return undefined
+				},
+				async setBadgeText() {
+					return undefined
+				},
+				async setBadgeBackgroundColor() {
+					return undefined
+				},
 			},
 			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
+				async setIcon() {
+					return undefined
+				},
+				async setTitle() {
+					return undefined
+				},
+				async setBadgeText() {
+					return undefined
+				},
+				async setBadgeBackgroundColor() {
+					return undefined
+				},
 			},
 			declarativeNetRequest: {
-				async getDynamicRules() { return [] },
-				async getSessionRules() { return [] },
-				async updateDynamicRules() { return undefined },
-				async updateSessionRules() { return undefined },
+				async getDynamicRules() {
+					return []
+				},
+				async getSessionRules() {
+					return []
+				},
+				async updateDynamicRules() {
+					return undefined
+				},
+				async updateSessionRules() {
+					return undefined
+				},
 			},
 		},
 	})
@@ -108,18 +173,24 @@ function makePendingTransaction() {
 	const recipientAddress = 0x2222222222222222222222222222222222222222n
 	const transactionIdentifier = 1n
 	const created = new Date('2024-01-01T00:00:00.000Z')
-	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+	const website = {
+		websiteOrigin: 'https://example.com',
+		icon: undefined,
+		title: undefined,
+	}
 	const originalRequestParameters = {
 		method: 'eth_sendTransaction' as const,
-		params: [{
-			from: activeAddress,
-			to: recipientAddress,
-			value: 0n,
-			gas: 21_000n,
-			maxFeePerGas: 1n,
-			maxPriorityFeePerGas: 1n,
-			input: new Uint8Array(),
-		}],
+		params: [
+			{
+				from: activeAddress,
+				to: recipientAddress,
+				value: 0n,
+				gas: 21_000n,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+				input: new Uint8Array(),
+			},
+		],
 	}
 	const transactionToSimulate = {
 		website,
@@ -138,7 +209,10 @@ function makePendingTransaction() {
 		transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
 		popupOrTabId: { type: 'popup' as const, id: 1 },
 		originalRequestParameters,
-		uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+		uniqueRequestIdentifier: {
+			requestId: 1,
+			requestSocket: { tabId: 1, connectionName: 0n },
+		},
 		simulationMode: false,
 		activeAddress,
 		created,
@@ -152,7 +226,10 @@ function makePendingTransaction() {
 				activeAddress,
 				simulationMode: false,
 				simulationStartedTimestamp: created,
-				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+				uniqueRequestIdentifier: {
+					requestId: 1,
+					requestSocket: { tabId: 1, connectionName: 0n },
+				},
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
 				error: {
@@ -217,34 +294,47 @@ describe('confirm transaction rpc status bootstrap', () => {
 			retrying: false,
 		})
 
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() { /* noop test stub */ },
-			async jsonRpcRequest(rpcRequest: { method: string }) {
-				if (rpcRequest.method === 'eth_blockNumber') return '0x7b'
-				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+		const ethereum = new EthereumClientService(
+			{
+				rpcUrl: rpcNetwork.httpsRpc,
+				clearCache() {
+					/* noop test stub */
+				},
+				async jsonRpcRequest(rpcRequest: { method: string }) {
+					if (rpcRequest.method === 'eth_blockNumber') return '0x7b'
+					throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+				},
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+			async () => undefined,
+			async () => undefined,
+			rpcNetwork,
+		)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 
-		const initialMessage = browser.sentMessages.find((message) =>
-			typeof message === 'object'
-			&& message !== null
-			&& 'method' in message
-			&& message.method === 'popup_update_confirm_transaction_dialog'
+		const initialMessage = browser.sentMessages.find(
+			(message) =>
+				typeof message === 'object' &&
+				message !== null &&
+				'method' in message &&
+				message.method === 'popup_update_confirm_transaction_dialog',
 		)
-		if (initialMessage === undefined || typeof initialMessage !== 'object' || initialMessage === null || !('data' in initialMessage)) {
+		if (
+			initialMessage === undefined ||
+			typeof initialMessage !== 'object' ||
+			initialMessage === null ||
+			!('data' in initialMessage)
+		) {
 			throw new Error('missing initial confirm transaction dialog message')
 		}
 
 		assert.equal(
-			typeof initialMessage.data === 'object'
-				&& initialMessage.data !== null
-				&& 'rpcConnectionStatus' in initialMessage.data
-				&& initialMessage.data.rpcConnectionStatus !== undefined
-				&& initialMessage.data.rpcConnectionStatus.retrying === false,
+			typeof initialMessage.data === 'object' &&
+				initialMessage.data !== null &&
+				'rpcConnectionStatus' in initialMessage.data &&
+				initialMessage.data.rpcConnectionStatus !== undefined &&
+				initialMessage.data.rpcConnectionStatus.retrying === false,
 			true,
 		)
 
@@ -256,7 +346,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 			browser.dispatch(initialMessage)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes('Retrying resumes when the extension becomes active.'), true)
+		assert.equal(
+			dom.document.body.textContent?.includes(
+				'Retrying resumes when the extension becomes active.',
+			),
+			true,
+		)
 		dom.restore()
 	})
 })

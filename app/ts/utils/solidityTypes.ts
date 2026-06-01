@@ -1,13 +1,23 @@
 import { assertNever } from './typescript.js'
-import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '../types/wire-types.js'
+import {
+	EthereumAddress,
+	EthereumData,
+	EthereumQuantity,
+	NonHexBigInt,
+} from '../types/wire-types.js'
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { type EnrichedGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, type SolidityType } from '../types/solidityType.js'
+import {
+	type EnrichedGroupedSolidityType,
+	type PureGroupedSolidityType,
+	SignedBigInt,
+	type SolidityType,
+} from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
 
 function getSolidityTypeCategory(type: SolidityType) {
-	switch(type) {
+	switch (type) {
 		case 'uint8':
 		case 'uint16':
 		case 'uint24':
@@ -39,7 +49,8 @@ function getSolidityTypeCategory(type: SolidityType) {
 		case 'uint232':
 		case 'uint240':
 		case 'uint248':
-		case 'uint256': return 'unsignedInteger'
+		case 'uint256':
+			return 'unsignedInteger'
 		case 'int8':
 		case 'int16':
 		case 'int24':
@@ -71,7 +82,8 @@ function getSolidityTypeCategory(type: SolidityType) {
 		case 'int232':
 		case 'int240':
 		case 'int248':
-		case 'int256': return 'signedInteger'
+		case 'int256':
+			return 'signedInteger'
 		case 'bytes1':
 		case 'bytes2':
 		case 'bytes3':
@@ -103,54 +115,151 @@ function getSolidityTypeCategory(type: SolidityType) {
 		case 'bytes29':
 		case 'bytes30':
 		case 'bytes31':
-		case 'bytes32': return 'fixedBytes'
-		case 'bool': return 'bool'
-		case 'address': return 'address'
-		case 'string': return 'string'
-		case 'bytes': return 'bytes'
-		default: assertNever(type)
+		case 'bytes32':
+			return 'fixedBytes'
+		case 'bool':
+			return 'bool'
+		case 'address':
+			return 'address'
+		case 'string':
+			return 'string'
+		case 'bytes':
+			return 'bytes'
+		default:
+			assertNever(type)
 	}
 }
 
-export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {
+export async function parseSolidityValueByTypeEnriched(
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	type: SolidityType,
+	value: unknown,
+	isArray: boolean,
+	useLocalStorage = true,
+): Promise<EnrichedGroupedSolidityType> {
 	const categorized = getSolidityTypeCategory(type)
 	if (categorized === 'address') {
-		if (isArray) return { type: 'address[]', value: await promiseAllMapAbortSafe(funtypes.ReadonlyArray(EthereumAddress).parse(value), (value) => identifyAddress(ethereumClientService, requestAbortController, value, useLocalStorage)) }
-		return { type: 'address', value: await identifyAddress(ethereumClientService, requestAbortController, EthereumAddress.parse(value), useLocalStorage) }
+		if (isArray)
+			return {
+				type: 'address[]',
+				value: await promiseAllMapAbortSafe(
+					funtypes.ReadonlyArray(EthereumAddress).parse(value),
+					(value) =>
+						identifyAddress(
+							ethereumClientService,
+							requestAbortController,
+							value,
+							useLocalStorage,
+						),
+				),
+			}
+		return {
+			type: 'address',
+			value: await identifyAddress(
+				ethereumClientService,
+				requestAbortController,
+				EthereumAddress.parse(value),
+				useLocalStorage,
+			),
+		}
 	}
 	const parsed = parseSolidityValueByTypePure(type, value, isArray)
-	if (parsed.type === 'address' || parsed.type === 'address[]') throw new Error('parsed to address or address array')
+	if (parsed.type === 'address' || parsed.type === 'address[]')
+		throw new Error('parsed to address or address array')
 	return parsed
 }
 
-const SignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, SignedBigInt)
-const UnsignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, EthereumQuantity).withConstraint((number) => BigInt(number) >= 0n)
+const SignedIntegerType = funtypes.Union(
+	NonHexBigInt,
+	funtypes.Number,
+	funtypes.BigInt,
+	SignedBigInt,
+)
+const UnsignedIntegerType = funtypes
+	.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, EthereumQuantity)
+	.withConstraint((number) => BigInt(number) >= 0n)
 
-export function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArray: boolean): PureGroupedSolidityType {
+export function parseSolidityValueByTypePure(
+	type: SolidityType,
+	value: unknown,
+	isArray: boolean,
+): PureGroupedSolidityType {
 	const categorized = getSolidityTypeCategory(type)
 	if (isArray) {
 		switch (categorized) {
-			case 'address': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumAddress).parse(value) }
-			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Boolean)).parse(value).map((a) => a === 1n || a === true) }
-			case 'bytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
-			case 'fixedBytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
-			case 'signedInteger': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(SignedIntegerType).parse(value).map((x) => BigInt(x)) }
-			case 'unsignedInteger': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(UnsignedIntegerType).parse(value).map((x) => BigInt(x)) }
-			case 'string': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.String).parse(value) }
-			default: assertNever(categorized)
+			case 'address':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes.ReadonlyArray(EthereumAddress).parse(value),
+				}
+			case 'bool':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes
+						.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Boolean))
+						.parse(value)
+						.map((a) => a === 1n || a === true),
+				}
+			case 'bytes':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes.ReadonlyArray(EthereumData).parse(value),
+				}
+			case 'fixedBytes':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes.ReadonlyArray(EthereumData).parse(value),
+				}
+			case 'signedInteger':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes
+						.ReadonlyArray(SignedIntegerType)
+						.parse(value)
+						.map((x) => BigInt(x)),
+				}
+			case 'unsignedInteger':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes
+						.ReadonlyArray(UnsignedIntegerType)
+						.parse(value)
+						.map((x) => BigInt(x)),
+				}
+			case 'string':
+				return {
+					type: `${categorized}[]`,
+					value: funtypes.ReadonlyArray(funtypes.String).parse(value),
+				}
+			default:
+				assertNever(categorized)
 		}
 	}
 	switch (categorized) {
-		case 'address': return { type: categorized, value: EthereumAddress.parse(value) }
+		case 'address':
+			return { type: categorized, value: EthereumAddress.parse(value) }
 		case 'bool': {
 			const parsed = funtypes.Union(NonHexBigInt, funtypes.Boolean).parse(value)
 			return { type: categorized, value: parsed === 1n || parsed === true }
 		}
-		case 'bytes': return { type: categorized, value: EthereumData.parse(value) }
-		case 'fixedBytes': return { type: categorized, value: EthereumData.parse(value) }
-		case 'signedInteger': return { type: categorized, value: BigInt(SignedIntegerType.parse(value)) }
-		case 'unsignedInteger': return { type: categorized, value: BigInt(UnsignedIntegerType.parse(value)) }
-		case 'string': return { type: categorized, value: funtypes.String.parse(value) }
-		default: assertNever(categorized)
+		case 'bytes':
+			return { type: categorized, value: EthereumData.parse(value) }
+		case 'fixedBytes':
+			return { type: categorized, value: EthereumData.parse(value) }
+		case 'signedInteger':
+			return {
+				type: categorized,
+				value: BigInt(SignedIntegerType.parse(value)),
+			}
+		case 'unsignedInteger':
+			return {
+				type: categorized,
+				value: BigInt(UnsignedIntegerType.parse(value)),
+			}
+		case 'string':
+			return { type: categorized, value: funtypes.String.parse(value) }
+		default:
+			assertNever(categorized)
 	}
 }

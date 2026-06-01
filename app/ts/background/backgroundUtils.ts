@@ -1,20 +1,43 @@
-import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
+import {
+	MessageToPopup,
+	type MessageToPopupPayload,
+	PopupMessage,
+	type PopupReadyAndListeningPage,
+	type Settings,
+	WindowMessage,
+} from '../types/interceptor-messages.js'
+import {
+	type WebsiteSocket,
+	checkAndThrowRuntimeLastError,
+} from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import {
+	PopupMessageReplyRequests,
+	type PopupRequests,
+	PopupRequestsReplies,
+	type PopupRequestsReplyReturn,
+} from '../types/interceptor-reply-messages.js'
 
 function isIgnorableClosedMessageChannelError(error: Error) {
-	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
-		|| error.message?.includes('The message port closed before a response was received')
+	return (
+		error.message?.includes(
+			'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received',
+		) ||
+		error.message?.includes(
+			'The message port closed before a response was received',
+		)
+	)
 }
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
+		return settings.activeSimulationAddress !== undefined
+			? await getActiveAddressEntry(settings.activeSimulationAddress)
+			: undefined
 	}
 	const signingAddr = (await getTabState(tabId)).activeSigningAddress
 	if (signingAddr === undefined) return undefined
@@ -24,15 +47,34 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 export async function getActiveAddressesForAllTabs(settings: Settings) {
 	const tabStates = await getAllTabStates()
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		const addressEntry = settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
-		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: addressEntry }))
+		const addressEntry =
+			settings.activeSimulationAddress !== undefined
+				? await getActiveAddressEntry(settings.activeSimulationAddress)
+				: undefined
+		return tabStates.map((state) => ({
+			tabId: state.tabId,
+			activeAddress: addressEntry,
+		}))
 	}
-	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
+	return Promise.all(
+		tabStates.map(async (state) => ({
+			tabId: state.tabId,
+			activeAddress:
+				state.activeSigningAddress === undefined
+					? undefined
+					: await getActiveAddressEntry(state.activeSigningAddress),
+		})),
+	)
 }
 
-export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+export async function sendPopupMessageToOpenWindows(
+	message: MessageToPopupPayload,
+	role: MessageToPopup['role'] = 'all',
+) {
 	try {
-		await browser.runtime.sendMessage(serialize(MessageToPopup, { role, ...message }))
+		await browser.runtime.sendMessage(
+			serialize(MessageToPopup, { role, ...message }),
+		)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		if (error instanceof Error) {
@@ -59,19 +101,36 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	}
 }
 
-function parsePopupReply<Request extends PopupRequests>(message: Request, reply: unknown): PopupRequestsReplyReturn<Request> {
+function parsePopupReply<Request extends PopupRequests>(
+	message: Request,
+	reply: unknown,
+): PopupRequestsReplyReturn<Request> {
 	const replyParser = PopupRequestsReplies[message.method]
-	if (replyParser === undefined) return undefined as PopupRequestsReplyReturn<Request>
+	if (replyParser === undefined)
+		return undefined as PopupRequestsReplyReturn<Request>
 	return replyParser.parse(reply) as PopupRequestsReplyReturn<Request>
 }
 
-export async function sendPopupMessageWithReply<Request extends PopupRequests>(message: Request): Promise<PopupRequestsReplyReturn<Request> | undefined> {
+export async function sendPopupMessageWithReply<Request extends PopupRequests>(
+	message: Request,
+): Promise<PopupRequestsReplyReturn<Request> | undefined> {
 	try {
-		const response = await browser.runtime.sendMessage(PopupMessageReplyRequests.serialize(message))
+		const response = await browser.runtime.sendMessage(
+			PopupMessageReplyRequests.serialize(message),
+		)
 		if (response === null || response === undefined) return undefined
-		if (typeof response === 'object' && response !== null && 'error' in response) {
+		if (
+			typeof response === 'object' &&
+			response !== null &&
+			'error' in response
+		) {
 			const responseError = response.error
-			if (typeof responseError === 'object' && responseError !== null && 'message' in responseError && typeof responseError.message === 'string') {
+			if (
+				typeof responseError === 'object' &&
+				responseError !== null &&
+				'message' in responseError &&
+				typeof responseError.message === 'string'
+			) {
 				throw new Error(responseError.message)
 			}
 		}
@@ -79,102 +138,171 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isIgnorableClosedMessageChannelError(error)) return undefined
-			if (error.message?.includes('Could not establish connection.')) return undefined
+			if (error.message?.includes('Could not establish connection.'))
+				return undefined
 		}
 		await handleUnexpectedError(error)
 		return undefined
 	}
 }
 
-type PopupRequestByMethod<Method extends PopupRequests['method']> = Extract<PopupRequests, { method: Method }>
+type PopupRequestByMethod<Method extends PopupRequests['method']> = Extract<
+	PopupRequests,
+	{ method: Method }
+>
 
 export async function requestPopupMakeMeRichData() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestMakeMeRichData' })
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestMakeMeRichData',
+	})
 	return reply?.method === 'popup_requestMakeMeRichData' ? reply : undefined
 }
 
 export async function requestPopupActiveAddresses() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestActiveAddresses' })
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestActiveAddresses',
+	})
 	return reply?.method === 'popup_requestActiveAddresses' ? reply : undefined
 }
 
 export async function requestPopupSimulationMode() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestSimulationMode',
+	})
 	return reply?.method === 'popup_requestSimulationMode' ? reply : undefined
 }
 
 export async function requestPopupLatestUnexpectedError() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestLatestUnexpectedError' })
-	return reply?.method === 'popup_requestLatestUnexpectedError' ? reply : undefined
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestLatestUnexpectedError',
+	})
+	return reply?.method === 'popup_requestLatestUnexpectedError'
+		? reply
+		: undefined
 }
 
 export async function requestPopupInterceptorSimulationInput() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestInterceptorSimulationInput' })
-	return reply?.method === 'popup_requestInterceptorSimulationInput' ? reply : undefined
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestInterceptorSimulationInput',
+	})
+	return reply?.method === 'popup_requestInterceptorSimulationInput'
+		? reply
+		: undefined
 }
 
 export async function requestPopupCompleteVisualizedSimulation() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestCompleteVisualizedSimulation' })
-	return reply?.method === 'popup_requestCompleteVisualizedSimulation' ? reply : undefined
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestCompleteVisualizedSimulation',
+	})
+	return reply?.method === 'popup_requestCompleteVisualizedSimulation'
+		? reply
+		: undefined
 }
 
 export async function requestPopupSimulationMetadata() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMetadata' })
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestSimulationMetadata',
+	})
 	return reply?.method === 'popup_requestSimulationMetadata' ? reply : undefined
 }
 
-export async function requestPopupAbiAndNameFromBlockExplorer(data: PopupRequestByMethod<'popup_requestAbiAndNameFromBlockExplorer'>['data']) {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data })
-	return reply?.method === 'popup_requestAbiAndNameFromBlockExplorer' ? reply : undefined
+export async function requestPopupAbiAndNameFromBlockExplorer(
+	data: PopupRequestByMethod<'popup_requestAbiAndNameFromBlockExplorer'>['data'],
+) {
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestAbiAndNameFromBlockExplorer',
+		data,
+	})
+	return reply?.method === 'popup_requestAbiAndNameFromBlockExplorer'
+		? reply
+		: undefined
 }
 
-export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'popup_requestIdentifyAddress'>['data']) {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_requestIdentifyAddress', data })
+export async function requestPopupIdentifyAddress(
+	data: PopupRequestByMethod<'popup_requestIdentifyAddress'>['data'],
+) {
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_requestIdentifyAddress',
+		data,
+	})
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
 export async function requestIsMainPopupWindowOpen() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_isMainPopupWindowOpen',
+	})
 	return reply?.method === 'popup_isMainPopupWindowOpen' ? reply : undefined
 }
 
-export async function sendPopupReadyAndListening(page: PopupReadyAndListeningPage): Promise<PopupOrTabId | undefined> {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page } })
-	return reply?.method === 'popup_readyAndListening' ? reply.data.popupOrTabId : undefined
+export async function sendPopupReadyAndListening(
+	page: PopupReadyAndListeningPage,
+): Promise<PopupOrTabId | undefined> {
+	const reply = await sendPopupMessageWithReply({
+		method: 'popup_readyAndListening',
+		data: { page },
+	})
+	return reply?.method === 'popup_readyAndListening'
+		? reply.data.popupOrTabId
+		: undefined
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'
 
 export function sendInternalWindowMessage(message: WindowMessage) {
-	new BroadcastChannel(INTERNAL_CHANNEL_NAME).postMessage(serialize(WindowMessage, message))
+	new BroadcastChannel(INTERNAL_CHANNEL_NAME).postMessage(
+		serialize(WindowMessage, message),
+	)
 }
 
-export function createInternalMessageListener(handler: (message: WindowMessage) => void) {
+export function createInternalMessageListener(
+	handler: (message: WindowMessage) => void,
+) {
 	return (message: MessageEvent) => {
 		if (message.origin !== globalThis.location.origin) return
 		handler(WindowMessage.parse(message.data))
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack'
+type HTMLFile =
+	| 'popup'
+	| 'addressBook'
+	| 'changeChain'
+	| 'confirmTransaction'
+	| 'interceptorAccess'
+	| 'personalSign'
+	| 'settingsView'
+	| 'websiteAccess'
+	| 'fetchSimulationStack'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
-	if (manifest.manifest_version === 2) return `/html/${ file }.html`
-	return `/html3/${ file }V3.html`
+	if (manifest.manifest_version === 2) return `/html/${file}.html`
+	return `/html3/${file}V3.html`
 }
 
-export async function setExtensionIcon(details: browser.action._SetIconDetails) {
+export async function setExtensionIcon(
+	details: browser.action._SetIconDetails,
+) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) {
 		await browser.browserAction.setIcon(details)
 	} else {
 		// see https://issues.chromium.org/issues/337214677
-		await (browser.action.setIcon as unknown as ((details: browser.action._SetIconDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
+		await (
+			browser.action.setIcon as unknown as (
+				details: browser.action._SetIconDetails,
+				callback: () => void,
+			) => Promise<void>
+		)(details, () => {
+			browser.runtime.lastError
+		})
 	}
 	checkAndThrowRuntimeLastError()
 }
 
-export async function setExtensionTitle(details: browser.action._SetTitleDetails) {
+export async function setExtensionTitle(
+	details: browser.action._SetTitleDetails,
+) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) {
 		await browser.browserAction.setTitle(details)
@@ -184,41 +312,63 @@ export async function setExtensionTitle(details: browser.action._SetTitleDetails
 	checkAndThrowRuntimeLastError()
 }
 
-export async function setExtensionBadgeText(details: browser.browserAction._SetBadgeTextDetails) {
+export async function setExtensionBadgeText(
+	details: browser.browserAction._SetBadgeTextDetails,
+) {
 	try {
 		const manifest = browser.runtime.getManifest()
 		if (manifest.manifest_version === 2) {
 			await browser.browserAction.setBadgeText(details)
 		} else {
 			// see https://issues.chromium.org/issues/337214677
-			await (browser.action.setBadgeText as unknown as ((details: browser.browserAction._SetBadgeTextDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
+			await (
+				browser.action.setBadgeText as unknown as (
+					details: browser.browserAction._SetBadgeTextDetails,
+					callback: () => void,
+				) => Promise<void>
+			)(details, () => {
+				browser.runtime.lastError
+			})
 		}
 		checkAndThrowRuntimeLastError()
-		} catch (error) {
-			console.warn('failed to set extension badge text', error)
-			console.warn(details)
-		}
+	} catch (error) {
+		console.warn('failed to set extension badge text', error)
+		console.warn(details)
+	}
 }
 
-export async function setExtensionBadgeBackgroundColor(details: browser.action._SetBadgeBackgroundColorDetails) {
+export async function setExtensionBadgeBackgroundColor(
+	details: browser.action._SetBadgeBackgroundColorDetails,
+) {
 	try {
 		const manifest = browser.runtime.getManifest()
 		if (manifest.manifest_version === 2) {
 			await browser.browserAction.setBadgeBackgroundColor(details)
 		} else {
 			// see https://issues.chromium.org/issues/337214677
-			await (browser.action.setBadgeBackgroundColor as unknown as ((details: browser.action._SetBadgeBackgroundColorDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
+			await (
+				browser.action.setBadgeBackgroundColor as unknown as (
+					details: browser.action._SetBadgeBackgroundColorDetails,
+					callback: () => void,
+				) => Promise<void>
+			)(details, () => {
+				browser.runtime.lastError
+			})
 		}
 		checkAndThrowRuntimeLastError()
-		} catch (error) {
-			console.warn('failed to set extension badge background color', error)
-			console.warn(details)
-		}
+	} catch (error) {
+		console.warn('failed to set extension badge background color', error)
+		console.warn(details)
+	}
 }
 
-export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
+export const websiteSocketToString = (socket: WebsiteSocket) =>
+	`${socket.tabId}-${serialize(EthereumQuantity, socket.connectionName)}`
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined
-	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }
+	return {
+		tabId: port.sender?.tab?.id,
+		connectionName: EthereumQuantity.parse(port.name),
+	}
 }

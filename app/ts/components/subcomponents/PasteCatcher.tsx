@@ -1,8 +1,8 @@
 import { useEffect } from 'preact/hooks'
 
 interface PasteProps {
-	onPaste: (text: string) => void,
-	enabled: boolean,
+	onPaste: (text: string) => void
+	enabled: boolean
 }
 
 // catches paste events if enabled === true and callbacks OnPaste
@@ -15,7 +15,9 @@ export function PasteCatcher(props: PasteProps) {
 	}
 	useEffect(() => {
 		window.addEventListener('paste', catcher)
-		return () => { window.removeEventListener('paste', catcher) }
+		return () => {
+			window.removeEventListener('paste', catcher)
+		}
 	}, [props.enabled, props.onPaste])
 	return <></>
 }

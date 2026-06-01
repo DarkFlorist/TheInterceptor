@@ -16,38 +16,82 @@ function installBrowserMock() {
 					return undefined
 				},
 				getManifest: () => ({ manifest_version: 3 }),
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
+				onMessage: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
+				onConnect: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
 			},
 			storage: {
 				local: {
-					async get() { return {} },
-					async set() { return undefined },
-					async remove() { return undefined },
+					async get() {
+						return {}
+					},
+					async set() {
+						return undefined
+					},
+					async remove() {
+						return undefined
+					},
 				},
 			},
 			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+				async query() {
+					return []
+				},
+				async get() {
+					return undefined
+				},
+				async update() {
+					return undefined
+				},
+				onUpdated: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
+				onRemoved: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
 			},
 			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
+				async get() {
+					return undefined
+				},
+				async update() {
+					return undefined
+				},
 			},
 			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
+				async setIcon() {
+					return undefined
+				},
+				async setTitle() {
+					return undefined
+				},
+				async setBadgeText() {
+					return undefined
+				},
+				async setBadgeBackgroundColor() {
+					return undefined
+				},
 			},
 			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
+				async setIcon() {
+					return undefined
+				},
+				async setTitle() {
+					return undefined
+				},
+				async setBadgeText() {
+					return undefined
+				},
+				async setBadgeBackgroundColor() {
+					return undefined
+				},
 			},
 		},
 	})
@@ -76,18 +120,26 @@ describe('NetworkErrors', () => {
 		const { NetworkErrors } = await import('../../app/ts/components/App.js')
 
 		await act(() => {
-			render(h(NetworkErrors, {
-				rpcConnectionStatus: new Signal({
-					isConnected: false,
-					lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
-					latestBlock: undefined,
-					rpcNetwork,
-					retrying: false,
+			render(
+				h(NetworkErrors, {
+					rpcConnectionStatus: new Signal({
+						isConnected: false,
+						lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
+						latestBlock: undefined,
+						rpcNetwork,
+						retrying: false,
+					}),
 				}),
-			}), dom.document.body)
+				dom.document.body,
+			)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes('Retrying resumes when the extension becomes active.'), true)
+		assert.equal(
+			dom.document.body.textContent?.includes(
+				'Retrying resumes when the extension becomes active.',
+			),
+			true,
+		)
 		dom.restore()
 	})
 
@@ -98,18 +150,24 @@ describe('NetworkErrors', () => {
 		const { NetworkErrors } = await import('../../app/ts/components/App.js')
 
 		await act(() => {
-			render(h(NetworkErrors, {
-				rpcConnectionStatus: new Signal({
-					isConnected: false,
-					lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
-					latestBlock: undefined,
-					rpcNetwork,
-					retrying: true,
+			render(
+				h(NetworkErrors, {
+					rpcConnectionStatus: new Signal({
+						isConnected: false,
+						lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
+						latestBlock: undefined,
+						rpcNetwork,
+						retrying: true,
+					}),
 				}),
-			}), dom.document.body)
+				dom.document.body,
+			)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes('Retrying in 12s.'), true)
+		assert.equal(
+			dom.document.body.textContent?.includes('Retrying in 12s.'),
+			true,
+		)
 		clock.restore()
 		dom.restore()
 	})

@@ -16,19 +16,25 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 		for (let i = 0; i < seed.length; i++) {
 			const r = randseed[i % 4]
 			if (r === undefined) throw new Error('Buffer overflow')
-			randseed[i % 4] = ((r << 5) - r) + seed.charCodeAt(i)
+			randseed[i % 4] = (r << 5) - r + seed.charCodeAt(i)
 		}
 	}
 
 	function rand() {
 		// based on Java's String.hashCode(), expanded to 4 32bit values
-		if (randseed[0] === undefined || randseed[1] === undefined || randseed[2] === undefined || randseed[3] === undefined) throw new Error('Buffer overflow')
+		if (
+			randseed[0] === undefined ||
+			randseed[1] === undefined ||
+			randseed[2] === undefined ||
+			randseed[3] === undefined
+		)
+			throw new Error('Buffer overflow')
 		const t = randseed[0] ^ (randseed[0] << 11)
 
 		randseed[0] = randseed[1]
 		randseed[1] = randseed[2]
 		randseed[2] = randseed[3]
-		randseed[3] = (randseed[3] ^ (randseed[3] >> 19) ^ t ^ (t >> 8))
+		randseed[3] = randseed[3] ^ (randseed[3] >> 19) ^ t ^ (t >> 8)
 
 		return (randseed[3] >>> 0) / ((1 << 31) >>> 0)
 	}
@@ -37,9 +43,9 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 		// saturation is the whole color spectrum
 		const h = Math.floor(rand() * 360)
 		// saturation goes from 40 to 100, it avoids greyish colors
-		const s = ((rand() * 60) + 40) + '%'
+		const s = rand() * 60 + 40 + '%'
 		// lightness can be anything from 0 to 100, but probabilities are a bell curve around 50%
-		const l = ((rand() + rand() + rand() + rand()) * 25) + '%'
+		const l = (rand() + rand() + rand() + rand()) * 25 + '%'
 
 		const color = 'hsl(' + h + ',' + s + ',' + l + ')'
 		return color
@@ -94,15 +100,34 @@ type SVGBlockieProps = {
 // SVGBlockie component can be resized through CSS font size
 export function Blockie({ address, style }: SVGBlockieProps) {
 	const pixelDensity = 8
-	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ address, size: pixelDensity }), [address])
+	const { imageData, color, spotcolor, bgcolor } = useMemo(
+		() => generateIdenticon({ address, size: pixelDensity }),
+		[address],
+	)
 	return (
-		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg' { ...( style ? { style } : {}) }>
-			{ imageData.map((data, index) => {
+		<svg
+			width="1em"
+			height="1em"
+			viewBox="0 0 64 64"
+			xmlns="http://www.w3.org/2000/svg"
+			{...(style ? { style } : {})}
+		>
+			{imageData.map((data, index) => {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity
 
-				return <rect key = { index } width = { pixelSize } height = { pixelSize } x = { ((index % pixelDensity) * 64) / pixelDensity } y = { Math.floor(index / pixelDensity) * pixelSize } fill = { fill } shape-rendering = 'crispEdges' />
-			}) }
+				return (
+					<rect
+						key={index}
+						width={pixelSize}
+						height={pixelSize}
+						x={((index % pixelDensity) * 64) / pixelDensity}
+						y={Math.floor(index / pixelDensity) * pixelSize}
+						fill={fill}
+						shape-rendering="crispEdges"
+					/>
+				)
+			})}
 		</svg>
 	)
 }

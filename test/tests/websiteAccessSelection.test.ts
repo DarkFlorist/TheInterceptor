@@ -42,51 +42,106 @@ function createBrowserMock() {
 					if (index >= 0) listeners.splice(index, 1)
 				},
 			},
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+			onConnect: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		storage: {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					if (Array.isArray(keys))
+						return Object.fromEntries(
+							keys
+								.filter((key) => key in storageState)
+								.map((key) => [key, storageState[key]]),
+						)
+					if (typeof keys === 'string')
+						return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(
+						Object.entries(keys).map(([key, defaultValue]) => [
+							key,
+							key in storageState ? storageState[key] : defaultValue,
+						]),
+					)
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys])
+						delete storageState[key]
 				},
 			},
 		},
 		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			async query() {
+				return []
+			},
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
+			onUpdated: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onRemoved: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
 		},
 		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 	}
 
-	Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'browser', {
+		value: browserMock,
+		configurable: true,
+		writable: true,
+	})
+	Object.defineProperty(globalThis, 'chrome', {
+		value: { runtime: { id: 'test-extension' } },
+		configurable: true,
+		writable: true,
+	})
 
 	return {
 		dispatch(message: RuntimeMessage) {
@@ -112,7 +167,7 @@ function installWindowHashMock(initialHash: string) {
 	const location = {
 		pathname: '/websiteAccess.html',
 		get href() {
-			return `${ this.pathname }${ currentHash }`
+			return `${this.pathname}${currentHash}`
 		},
 		set href(value: string) {
 			const hashIndex = value.indexOf('#')
@@ -123,7 +178,10 @@ function installWindowHashMock(initialHash: string) {
 			return currentHash
 		},
 		set hash(nextHash: string) {
-			currentHash = nextHash.length === 0 || nextHash.startsWith('#') ? nextHash : `#${ nextHash }`
+			currentHash =
+				nextHash.length === 0 || nextHash.startsWith('#')
+					? nextHash
+					: `#${nextHash}`
 			dispatchHashChange()
 		},
 	}
@@ -134,7 +192,11 @@ function installWindowHashMock(initialHash: string) {
 	globalThis.window.removeEventListener = (type, listener) => {
 		if (type === 'hashchange') hashChangeListeners.delete(listener)
 	}
-	Object.defineProperty(globalThis.window, 'location', { value: location, configurable: true, writable: true })
+	Object.defineProperty(globalThis.window, 'location', {
+		value: location,
+		configurable: true,
+		writable: true,
+	})
 
 	return {
 		document: dom.document,
@@ -147,16 +209,24 @@ function installWindowHashMock(initialHash: string) {
 	}
 }
 
-function collectElements(node: DomElement, tagName: string, results: DomElement[] = []) {
+function collectElements(
+	node: DomElement,
+	tagName: string,
+	results: DomElement[] = [],
+) {
 	if (node.tagName === tagName.toUpperCase()) results.push(node)
-	for (const child of node.childNodes ?? []) collectElements(child, tagName, results)
+	for (const child of node.childNodes ?? [])
+		collectElements(child, tagName, results)
 	return results
 }
 
 function findRadioByValue(root: DomElement, value: string) {
-	return collectElements(root, 'input').find((element) =>
-		(element.type === 'radio' || element.attributes?.type === 'radio')
-		&& (element.value === value || element.attributes?.value === value || element.attributes?.id === value)
+	return collectElements(root, 'input').find(
+		(element) =>
+			(element.type === 'radio' || element.attributes?.type === 'radio') &&
+			(element.value === value ||
+				element.attributes?.value === value ||
+				element.attributes?.id === value),
 	)
 }
 
@@ -172,7 +242,11 @@ async function unmountView(root: RenderContainer) {
 
 const websiteAccessEntries: readonly WebsiteAccess[] = [
 	{
-		website: { websiteOrigin: 'alpha.example', icon: 'alpha.png', title: 'Alpha' },
+		website: {
+			websiteOrigin: 'alpha.example',
+			icon: 'alpha.png',
+			title: 'Alpha',
+		},
 		addressAccess: undefined,
 		access: true,
 	},
@@ -205,7 +279,9 @@ describe('WebsiteAccessView selection', () => {
 				},
 			})
 		})
-		await act(async () => { await Promise.resolve() })
+		await act(async () => {
+			await Promise.resolve()
+		})
 
 		const alphaRadio = findRadioByValue(dom.document.body, 'alpha.example')
 		const betaRadio = findRadioByValue(dom.document.body, 'beta.example')
@@ -230,12 +306,20 @@ describe('WebsiteAccessView selection', () => {
 		const { WebsiteAccessView } = await modulesPromise
 		const localhostEntries: readonly WebsiteAccess[] = [
 			{
-				website: { websiteOrigin: 'localhost:3000', icon: 'alpha.png', title: 'Local App A' },
+				website: {
+					websiteOrigin: 'localhost:3000',
+					icon: 'alpha.png',
+					title: 'Local App A',
+				},
 				addressAccess: undefined,
 				access: true,
 			},
 			{
-				website: { websiteOrigin: 'localhost:5173', icon: 'beta.png', title: 'Local App B' },
+				website: {
+					websiteOrigin: 'localhost:5173',
+					icon: 'beta.png',
+					title: 'Local App B',
+				},
 				addressAccess: undefined,
 				access: true,
 			},
@@ -255,11 +339,25 @@ describe('WebsiteAccessView selection', () => {
 				},
 			})
 		})
-		await act(async () => { await Promise.resolve() })
+		await act(async () => {
+			await Promise.resolve()
+		})
 
-		assert.ok(dom.document.body.textContent.includes('These settings apply to all sites on localhost.'))
-		assert.ok(dom.document.body.textContent.includes('Affected sites: localhost:3000, localhost:5173'))
-		assert.ok(dom.document.body.textContent.includes('This includes sibling origin on other port or scheme variants.'))
+		assert.ok(
+			dom.document.body.textContent.includes(
+				'These settings apply to all sites on localhost.',
+			),
+		)
+		assert.ok(
+			dom.document.body.textContent.includes(
+				'Affected sites: localhost:3000, localhost:5173',
+			),
+		)
+		assert.ok(
+			dom.document.body.textContent.includes(
+				'This includes sibling origin on other port or scheme variants.',
+			),
+		)
 		assert.ok(dom.document.body.textContent.includes('Remove Host Access'))
 		await unmountView(dom.document.body)
 		dom.restore()
@@ -278,19 +376,32 @@ describe('WebsiteAccessView selection', () => {
 				role: 'all',
 				method: 'popup_retrieveWebsiteAccessReply',
 				data: {
-					websiteAccess: [{
-						website: { websiteOrigin: 'solo.example', icon: 'solo.png', title: 'Solo' },
-						addressAccess: undefined,
-						access: true,
-					}],
+					websiteAccess: [
+						{
+							website: {
+								websiteOrigin: 'solo.example',
+								icon: 'solo.png',
+								title: 'Solo',
+							},
+							addressAccess: undefined,
+							access: true,
+						},
+					],
 					addressAccessMetadata: [],
 				},
 			})
 		})
-		await act(async () => { await Promise.resolve() })
+		await act(async () => {
+			await Promise.resolve()
+		})
 
-		assert.ok(dom.document.body.textContent.includes('Affected site: solo.example'))
-		assert.equal(dom.document.body.textContent.includes('This includes sibling origin'), false)
+		assert.ok(
+			dom.document.body.textContent.includes('Affected site: solo.example'),
+		)
+		assert.equal(
+			dom.document.body.textContent.includes('This includes sibling origin'),
+			false,
+		)
 		await unmountView(dom.document.body)
 		dom.restore()
 	})
@@ -299,21 +410,42 @@ describe('WebsiteAccessView selection', () => {
 		const { deriveWebsiteAccessViewState } = await modulesPromise
 		const allWebsiteAccess: readonly WebsiteAccess[] = [
 			{
-				website: { websiteOrigin: 'localhost:3000', icon: 'alpha.png', title: 'Local App A' },
+				website: {
+					websiteOrigin: 'localhost:3000',
+					icon: 'alpha.png',
+					title: 'Local App A',
+				},
 				addressAccess: undefined,
 				access: true,
 			},
 			{
-				website: { websiteOrigin: 'localhost:5173', icon: 'beta.png', title: 'Local App B' },
+				website: {
+					websiteOrigin: 'localhost:5173',
+					icon: 'beta.png',
+					title: 'Local App B',
+				},
 				addressAccess: undefined,
 				access: true,
 			},
 		]
-		const viewState = deriveWebsiteAccessViewState(allWebsiteAccess, '3000', 'localhost:5173')
+		const viewState = deriveWebsiteAccessViewState(
+			allWebsiteAccess,
+			'3000',
+			'localhost:5173',
+		)
 
-		assert.deepEqual(viewState.websiteAccessList.map((entry) => entry.website.websiteOrigin), ['localhost:3000'])
-		assert.equal(viewState.selectedWebsiteAccess?.website.websiteOrigin, 'localhost:5173')
-		assert.deepEqual(viewState.hostScopeDetails?.affectedOrigins, ['localhost:3000', 'localhost:5173'])
+		assert.deepEqual(
+			viewState.websiteAccessList.map((entry) => entry.website.websiteOrigin),
+			['localhost:3000'],
+		)
+		assert.equal(
+			viewState.selectedWebsiteAccess?.website.websiteOrigin,
+			'localhost:5173',
+		)
+		assert.deepEqual(viewState.hostScopeDetails?.affectedOrigins, [
+			'localhost:3000',
+			'localhost:5173',
+		])
 	})
 
 	test('loaded empty website access clears stale hash-backed selection', async () => {
@@ -334,7 +466,9 @@ describe('WebsiteAccessView selection', () => {
 				},
 			})
 		})
-		await act(async () => { await Promise.resolve() })
+		await act(async () => {
+			await Promise.resolve()
+		})
 
 		assert.equal(globalThis.window.location.hash, '')
 		await unmountView(dom.document.body)

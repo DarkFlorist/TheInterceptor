@@ -1361,5 +1361,5 @@ export const CHAIN_NAMES = new Map<string, string>([
 	['383414847825', 'Zeniq'],
 	['666301171999', 'PDC Mainnet'],
 	['6022140761023', 'Molereum Network'],
-	['868455272153094', 'Godwoken Testnet (V1)']
+	['868455272153094', 'Godwoken Testnet (V1)'],
 ])

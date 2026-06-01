@@ -25,12 +25,13 @@
 		"knip:fix": "bunx knip@5.1.6 --fix",
 		"cleanup:dryrun": "bunx knip@5.1.6",
 		"biome": "bunx --bun @biomejs/biome@2.3.11",
-		"biome:check": "bun run biome lint .",
-		"biome:fix": "bun run biome lint --write --unsafe .",
+		"biome:check": "bunx --bun @biomejs/biome@2.3.11 check .",
+		"biome:fix": "bunx --bun @biomejs/biome@2.3.11 check --write --unsafe .",
+		"biome:format": "bunx --bun @biomejs/biome@2.3.11 format --write .",
 		"lint:catches": "bun ./scripts/check-comment-only-catches.mts",
 		"lint:quotes": "bun ./scripts/check-single-quotes.mts",
 		"lint:quotes:fix": "bun ./scripts/check-single-quotes.mts --write",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes"
+		"lint": "bun run biome:check && bun run lint:catches"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",

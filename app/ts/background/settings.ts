@@ -1,18 +1,42 @@
-import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import {
+	ETHEREUM_COIN_ICON,
+	MOCK_PRIVATE_KEYS_ADDRESS,
+} from '../utils/constants.js'
+import type {
+	ActiveAddress,
+	ExportedSettings,
+	Page,
+} from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
-import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type {
+	Website,
+	WebsiteAccessArray,
+} from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import {
+	type RichListElement,
+	browserStorageLocalGet,
+	browserStorageLocalSafeParseGet,
+	browserStorageLocalSet,
+} from '../utils/storageUtils.js'
+import {
+	getUserAddressBookEntries,
+	updateUserAddressBookEntries,
+} from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type {
+	AddressBookEntries,
+	AddressBookEntry,
+} from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import {
+	mergeStoredWebsiteMetadata,
+	sanitizeWebsiteAccess,
+} from '../utils/websiteIcons.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -32,16 +56,24 @@ export const defaultActiveAddresses: AddressBookEntries = [
 		askForAddressAccess: false,
 		useAsActiveAddress: true,
 		chainId: 'AllChains',
-	}
+	},
 ]
 
 export const networkPriceSources = {
 	uniswapV2Like: [
-		{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2
+		{
+			factory: 0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6fn,
+			initCodeHash:
+				'0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f',
+		}, // Uniswap V2
 	],
 	uniswapV3Like: [
-		{ factory: 0x1F98431c8aD98523631AE4a59f267346ea31F984n, initCodeHash: '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54' } // Uniswap V3
-	]
+		{
+			factory: 0x1f98431c8ad98523631ae4a59f267346ea31f984n,
+			initCodeHash:
+				'0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54',
+		}, // Uniswap V3
+	],
 } as const
 
 export const defaultRpcs = [
@@ -95,9 +127,13 @@ const wethForChainId = new Map<string, EthereumAddress>([
 	['42161', 0x82af49447d8a07e3bd95bd0d56f35241523fbab1n], // Arbitrum
 ])
 
-export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://api.etherscan.io/v2/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
+export const getDefaultBlockExplorer = (): BlockExplorer => ({
+	apiUrl: 'https://api.etherscan.io/v2/api',
+	apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8',
+})
 
-export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
+export const getWethForChainId = (chainId: bigint) =>
+	wethForChainId.get(chainId.toString())
 
 type StartupStorageDefaults = {
 	activeSimulationAddress: Settings['activeSimulationAddress']
@@ -110,30 +146,53 @@ type StartupStorageDefaults = {
 	fixedAddressRichList: readonly RichListElement[]
 }
 
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+async function getParsedStorageValueOrDefault<
+	Key extends keyof StartupStorageDefaults,
+>(
+	key: Key,
+	defaultValue: StartupStorageDefaults[Key],
+): Promise<StartupStorageDefaults[Key]> {
 	const rawValue = (await browser.storage.local.get(key))[key]
 	const parsedValue = await browserStorageLocalSafeParseGet(key)
-	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
+	if (parsedValue !== undefined && key in parsedValue)
+		return parsedValue[key] as StartupStorageDefaults[Key]
 	if (rawValue === undefined) return defaultValue
-	console.warn(`${ key } was corrupt:`)
+	console.warn(`${key} was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<
+		typeof browserStorageLocalSet
+	>[0])
 	return defaultValue
 }
 
-export async function getSettings() : Promise<Settings> {
-	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
+export async function getSettings(): Promise<Settings> {
+	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined)
+		throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(
+		getParsedStorageValueOrDefault(
+			'activeSimulationAddress',
+			defaultActiveAddresses[0].address,
+		),
+	)
+	const openedPagePromise = silenceChromeUnCaughtPromise(
+		getParsedStorageValueOrDefault('openedPageV2', defaultPage),
+	)
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(
+		getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false),
+	)
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', true))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
+	const simulationModePromise = silenceChromeUnCaughtPromise(
+		getParsedStorageValueOrDefault('simulationMode', true),
+	)
+	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(
+		getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]),
+	)
 	return {
 		activeSimulationAddress: await activeSimulationAddressPromise,
 		openedPage: await openedPagePromise,
-		useSignersAddressAsActiveAddress: await useSignersAddressAsActiveAddressPromise,
+		useSignersAddressAsActiveAddress:
+			await useSignersAddressAsActiveAddressPromise,
 		websiteAccess: await websiteAccessPromise,
 		activeRpcNetwork: await activeRpcNetworkPromise,
 		simulationMode: await simulationModePromise,
@@ -141,37 +200,67 @@ export async function getSettings() : Promise<Settings> {
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
-	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
+	return settings.websiteAccess
+		.filter((site) => site.interceptorDisabled === true)
+		.map((site) => site.website.websiteOrigin)
 }
 
-export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
-export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
+export const setPage = async (openedPageV2: Page) =>
+	await browserStorageLocalSet({ openedPageV2 })
+export const getPage = async () =>
+	(await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? {
+		page: 'Home',
+	}
 
-export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
-export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
+export const setMakeCurrentAddressRich = async (
+	makeCurrentAddressRich: boolean,
+) => await browserStorageLocalSet({ makeCurrentAddressRich })
+export const getMakeCurrentAddressRich = async () =>
+	await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
 
-export const setFixedMakeMeRichList = async (fixedAdressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList: fixedAdressRichList })
-export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
+export const setFixedMakeMeRichList = async (
+	fixedAdressRichList: readonly RichListElement[],
+) => await browserStorageLocalSet({ fixedAddressRichList: fixedAdressRichList })
+export async function getFixedAddressRichList() {
+	return await getParsedStorageValueOrDefault('fixedAddressRichList', [])
+}
 
-export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
+export async function setUseSignersAddressAsActiveAddress(
+	useSignersAddressAsActiveAddress: boolean,
+	currentSignerAddress: bigint | undefined = undefined,
+) {
 	return await browserStorageLocalSet({
 		useSignersAddressAsActiveAddress,
-		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
+		...(useSignersAddressAsActiveAddress === true
+			? { activeSigningAddress: currentSignerAddress }
+			: {}),
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress }) {
+export async function changeSimulationMode(changes: {
+	simulationMode: boolean
+	rpcNetwork?: RpcNetwork
+	activeSimulationAddress?: EthereumAddress
+	activeSigningAddress?: EthereumAddress
+}) {
 	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
-		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress }: {},
-		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
+		...(changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork } : {}),
+		...('activeSimulationAddress' in changes
+			? { activeSimulationAddress: changes.activeSimulationAddress }
+			: {}),
+		...('activeSigningAddress' in changes
+			? { activeSigningAddress: changes.activeSigningAddress }
+			: {}),
 	})
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
 async function getNormalizedWebsiteAccessFromStorage() {
-	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
+	const rawWebsiteAccess = await getParsedStorageValueOrDefault(
+		'websiteAccess',
+		[],
+	)
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
@@ -180,11 +269,20 @@ export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+export async function updateWebsiteAccess(
+	updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray,
+) {
 	await websiteAccessSemaphore.execute(async () => {
-		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
+		const { rawWebsiteAccess, sanitizedWebsiteAccess } =
+			await getNormalizedWebsiteAccessFromStorage()
+		const nextWebsiteAccess = sanitizeWebsiteAccess(
+			updateFunc(sanitizedWebsiteAccess),
+		)
+		if (
+			nextWebsiteAccess === sanitizedWebsiteAccess &&
+			rawWebsiteAccess === sanitizedWebsiteAccess
+		)
+			return
 		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 	})
 }
@@ -203,15 +301,24 @@ export async function updateKnownWebsiteMetadata(website: Website) {
 	})
 }
 
-export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.useTabsInsteadOfPopup ?? false
-export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
+export const getUseTabsInsteadOfPopup = async () =>
+	(await browserStorageLocalGet('useTabsInsteadOfPopup'))
+		?.useTabsInsteadOfPopup ?? false
+export const setUseTabsInsteadOfPopup = async (
+	useTabsInsteadOfPopup: boolean,
+) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
-export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
-export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
+export const getMetamaskCompatibilityMode = async () =>
+	(await browserStorageLocalGet('metamaskCompatibilityMode'))
+		?.metamaskCompatibilityMode ?? false
+export const setMetamaskCompatibilityMode = async (
+	metamaskCompatibilityMode: boolean,
+) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
-	const exportDate = (new Date).toISOString().split('T')[0]
-	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
+	const exportDate = new Date().toISOString().split('T')[0]
+	if (exportDate === undefined)
+		throw new Error('Datestring did not contain Date')
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
@@ -220,18 +327,21 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
 			openedPage: settings.openedPage,
-			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
+			useSignersAddressAsActiveAddress:
+				settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
 			rpcNetwork: settings.activeRpcNetwork,
 			simulationMode: settings.simulationMode,
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-		}
+		},
 	}
 }
 
-export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+export async function importSettingsAndAddressBook(
+	exportedSetings: ExportedSettings,
+) {
 	if (exportedSetings.version === '1.3') {
 		await setPage(exportedSetings.settings.openedPage)
 	} else if (exportedSetings.version === '1.0') {
@@ -249,21 +359,47 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			activeSigningAddress: undefined,
 		})
 	}
-	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
+	await setUseSignersAddressAsActiveAddress(
+		exportedSetings.settings.useSignersAddressAsActiveAddress,
+	)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
-		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
+		await setMetamaskCompatibilityMode(
+			exportedSetings.settings.metamaskCompatibilityMode,
+		)
 	}
 	if (exportedSetings.version === '1.4') {
-		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
+		await updateUserAddressBookEntries(
+			() => exportedSetings.settings.addressBookEntries,
+		)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {
-			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
+			const convertActiveAddressToAddressBookEntry = (
+				info: ActiveAddress,
+			): AddressBookEntry => ({
+				...info,
+				type: 'contact' as const,
+				useAsActiveAddress: true,
+				entrySource: 'User' as const,
+			})
+			return getUniqueItemsByProperties(
+				previousEntries
+					.concat(
+						exportedSetings.settings.addressInfos.map((x) =>
+							convertActiveAddressToAddressBookEntry(x),
+						),
+					)
+					.concat(exportedSetings.settings.contacts ?? []),
+				['address'],
+			)
 		})
 	}
 }
 
-export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
-export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
+export const setPreSimulationBlockTimeManipulation = async (
+	preSimulationBlockTimeManipulation: BlockTimeManipulation,
+) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
+export const getPreSimulationBlockTimeManipulation = async () =>
+	(await browserStorageLocalGet('preSimulationBlockTimeManipulation'))
+		?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION

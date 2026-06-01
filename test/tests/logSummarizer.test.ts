@@ -1,9 +1,25 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { summarizeLogs, summarizeLogsForAddress, type SummaryOutcome } from '../../app/ts/simulation/services/LogSummarizer.js'
-import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
-import type { TokenEvent, TokenVisualizerResultWithMetadata } from '../../app/ts/types/EnrichedEthereumData.js'
-import type { NamedTokenId, SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../app/ts/types/visualizer-types.js'
+import {
+	summarizeLogs,
+	summarizeLogsForAddress,
+	type SummaryOutcome,
+} from '../../app/ts/simulation/services/LogSummarizer.js'
+import type {
+	AddressBookEntry,
+	Erc1155Entry,
+	Erc20TokenEntry,
+	Erc721Entry,
+} from '../../app/ts/types/addressBookTypes.js'
+import type {
+	TokenEvent,
+	TokenVisualizerResultWithMetadata,
+} from '../../app/ts/types/EnrichedEthereumData.js'
+import type {
+	NamedTokenId,
+	SimulatedAndVisualizedTransaction,
+	TokenPriceEstimate,
+} from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
@@ -19,7 +35,11 @@ function createContactEntry(address: bigint, name: string): AddressBookEntry {
 	}
 }
 
-function createErc20Entry(address: bigint, name: string, symbol: string): Erc20TokenEntry {
+function createErc20Entry(
+	address: bigint,
+	name: string,
+	symbol: string,
+): Erc20TokenEntry {
 	return {
 		type: 'ERC20',
 		address,
@@ -30,7 +50,11 @@ function createErc20Entry(address: bigint, name: string, symbol: string): Erc20T
 	}
 }
 
-function createErc721Entry(address: bigint, name: string, symbol: string): Erc721Entry {
+function createErc721Entry(
+	address: bigint,
+	name: string,
+	symbol: string,
+): Erc721Entry {
 	return {
 		type: 'ERC721',
 		address,
@@ -40,7 +64,11 @@ function createErc721Entry(address: bigint, name: string, symbol: string): Erc72
 	}
 }
 
-function createErc1155Entry(address: bigint, name: string, symbol: string): Erc1155Entry {
+function createErc1155Entry(
+	address: bigint,
+	name: string,
+	symbol: string,
+): Erc1155Entry {
 	return {
 		type: 'ERC1155',
 		address,
@@ -51,14 +79,21 @@ function createErc1155Entry(address: bigint, name: string, symbol: string): Erc1
 	}
 }
 
-function createTokenEvent(logInformation: TokenVisualizerResultWithMetadata): TokenEvent {
+function createTokenEvent(
+	logInformation: TokenVisualizerResultWithMetadata,
+): TokenEvent {
 	return {
 		type: 'TokenEvent',
 		logInformation,
 	} as unknown as TokenEvent
 }
 
-function createSimulatedTransaction(params: { transactionFrom: AddressBookEntry, tokenEvents: readonly TokenVisualizerResultWithMetadata[], gasSpent?: bigint, realizedGasPrice?: bigint }): SimulatedAndVisualizedTransaction {
+function createSimulatedTransaction(params: {
+	transactionFrom: AddressBookEntry
+	tokenEvents: readonly TokenVisualizerResultWithMetadata[]
+	gasSpent?: bigint
+	realizedGasPrice?: bigint
+}): SimulatedAndVisualizedTransaction {
 	return {
 		events: params.tokenEvents.map(createTokenEvent),
 		gasSpent: params.gasSpent ?? 0n,
@@ -70,7 +105,9 @@ function createSimulatedTransaction(params: { transactionFrom: AddressBookEntry,
 }
 
 function createAddressMetadataMap(entries: readonly AddressBookEntry[]) {
-	return new Map(entries.map((entry) => [addressString(entry.address), entry] as const))
+	return new Map(
+		entries.map((entry) => [addressString(entry.address), entry] as const),
+	)
 }
 
 function getSummary(summary: SummaryOutcome[], address: bigint) {
@@ -87,68 +124,105 @@ describe('summarizeLogs', () => {
 		const alice = createContactEntry(0x11n, 'Alice')
 		const bob = createContactEntry(0x12n, 'Bob')
 		const token = createErc20Entry(0x101n, 'Mock Token', 'MOCK')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const transaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'ERC20',
-				from: alice,
-				to: bob,
-				token,
-				amount: 10n,
-				isApproval: false,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'ERC20',
+					from: alice,
+					to: bob,
+					token,
+					amount: 10n,
+					isApproval: false,
+				},
+			],
 			gasSpent: 2n,
 			realizedGasPrice: 3n,
 		})
 
-		const summary = summarizeLogs([transaction], createAddressMetadataMap([alice, bob, token, nativeToken]), emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const summary = summarizeLogs(
+			[transaction],
+			createAddressMetadataMap([alice, bob, token, nativeToken]),
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 		const aliceSummary = getSummary(summary, alice.address)
 		const bobSummary = getSummary(summary, bob.address)
 
 		assert.notEqual(aliceSummary, undefined)
 		assert.notEqual(bobSummary, undefined)
-		assert.deepEqual(aliceSummary?.erc20TokenBalanceChanges.map(({ address, changeAmount }) => ({ address, changeAmount })), [
-			{ address: token.address, changeAmount: -10n },
-			{ address: nativeToken.address, changeAmount: -6n },
-		])
-		assert.deepEqual(bobSummary?.erc20TokenBalanceChanges.map(({ address, changeAmount }) => ({ address, changeAmount })), [
-			{ address: token.address, changeAmount: 10n },
-		])
+		assert.deepEqual(
+			aliceSummary?.erc20TokenBalanceChanges.map(
+				({ address, changeAmount }) => ({ address, changeAmount }),
+			),
+			[
+				{ address: token.address, changeAmount: -10n },
+				{ address: nativeToken.address, changeAmount: -6n },
+			],
+		)
+		assert.deepEqual(
+			bobSummary?.erc20TokenBalanceChanges.map(({ address, changeAmount }) => ({
+				address,
+				changeAmount,
+			})),
+			[{ address: token.address, changeAmount: 10n }],
+		)
 	})
 
 	test('surfaces ERC20 approvals with approved address metadata', () => {
 		const alice = createContactEntry(0x21n, 'Alice')
 		const spender = createContactEntry(0x22n, 'Spender')
 		const token = createErc20Entry(0x201n, 'Mock Token', 'MOCK')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const transaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'ERC20',
-				from: alice,
-				to: spender,
-				token,
-				amount: 123n,
-				isApproval: true,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'ERC20',
+					from: alice,
+					to: spender,
+					token,
+					amount: 123n,
+					isApproval: true,
+				},
+			],
 		})
 
-		const summary = summarizeLogs([transaction], createAddressMetadataMap([alice, spender, token, nativeToken]), emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const summary = summarizeLogs(
+			[transaction],
+			createAddressMetadataMap([alice, spender, token, nativeToken]),
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 		const aliceSummary = getSummary(summary, alice.address)
 
 		assert.notEqual(aliceSummary, undefined)
-		assert.deepEqual(aliceSummary?.erc20TokenApprovalChanges.map((approvalChange) => ({
-			tokenAddress: approvalChange.address,
-			approvals: approvalChange.approvals.map(({ address, change }) => ({ address, change })),
-		})), [
-			{
-				tokenAddress: token.address,
-				approvals: [{ address: spender.address, change: 123n }],
-			}
-		])
+		assert.deepEqual(
+			aliceSummary?.erc20TokenApprovalChanges.map((approvalChange) => ({
+				tokenAddress: approvalChange.address,
+				approvals: approvalChange.approvals.map(({ address, change }) => ({
+					address,
+					change,
+				})),
+			})),
+			[
+				{
+					tokenAddress: token.address,
+					approvals: [{ address: spender.address, change: 123n }],
+				},
+			],
+		)
 	})
 
 	test('clears ERC721 token approvals when the token is transferred', () => {
@@ -156,7 +230,11 @@ describe('summarizeLogs', () => {
 		const bob = createContactEntry(0x32n, 'Bob')
 		const spender = createContactEntry(0x33n, 'Spender')
 		const nft = createErc721Entry(0x301n, 'Collectible', 'NFT')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const transaction = createSimulatedTransaction({
 			transactionFrom: alice,
 			tokenEvents: [
@@ -181,56 +259,80 @@ describe('summarizeLogs', () => {
 			],
 		})
 
-		const summary = summarizeLogs([transaction], createAddressMetadataMap([alice, bob, spender, nft, nativeToken]), emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const summary = summarizeLogs(
+			[transaction],
+			createAddressMetadataMap([alice, bob, spender, nft, nativeToken]),
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 		const aliceSummary = getSummary(summary, alice.address)
 		const bobSummary = getSummary(summary, bob.address)
 
 		assert.notEqual(aliceSummary, undefined)
 		assert.notEqual(bobSummary, undefined)
 		assert.deepEqual(aliceSummary?.erc721TokenIdApprovalChanges, [])
-		assert.deepEqual(aliceSummary?.erc721TokenBalanceChanges.map(({ address, tokenId, received }) => ({ address, tokenId, received })), [
-			{ address: nft.address, tokenId: 1n, received: false },
-		])
-		assert.deepEqual(bobSummary?.erc721TokenBalanceChanges.map(({ address, tokenId, received }) => ({ address, tokenId, received })), [
-			{ address: nft.address, tokenId: 1n, received: true },
-		])
+		assert.deepEqual(
+			aliceSummary?.erc721TokenBalanceChanges.map(
+				({ address, tokenId, received }) => ({ address, tokenId, received }),
+			),
+			[{ address: nft.address, tokenId: 1n, received: false }],
+		)
+		assert.deepEqual(
+			bobSummary?.erc721TokenBalanceChanges.map(
+				({ address, tokenId, received }) => ({ address, tokenId, received }),
+			),
+			[{ address: nft.address, tokenId: 1n, received: true }],
+		)
 	})
 
 	test('prunes addresses after ERC1155 balance changes net to zero', () => {
 		const alice = createContactEntry(0x41n, 'Alice')
 		const bob = createContactEntry(0x42n, 'Bob')
 		const token = createErc1155Entry(0x401n, 'Game Items', 'ITEM')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const firstTransaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'ERC1155',
-				from: alice,
-				to: bob,
-				token,
-				tokenId: 7n,
-				tokenIdName: undefined,
-				amount: 5n,
-				isApproval: false,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'ERC1155',
+					from: alice,
+					to: bob,
+					token,
+					tokenId: 7n,
+					tokenIdName: undefined,
+					amount: 5n,
+					isApproval: false,
+				},
+			],
 		})
 		const secondTransaction = createSimulatedTransaction({
 			transactionFrom: bob,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'ERC1155',
-				from: bob,
-				to: alice,
-				token,
-				tokenId: 7n,
-				tokenIdName: undefined,
-				amount: 5n,
-				isApproval: false,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'ERC1155',
+					from: bob,
+					to: alice,
+					token,
+					tokenId: 7n,
+					tokenIdName: undefined,
+					amount: 5n,
+					isApproval: false,
+				},
+			],
 		})
 
-		const summary = summarizeLogs([firstTransaction, undefined, secondTransaction], createAddressMetadataMap([alice, bob, token, nativeToken]), emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const summary = summarizeLogs(
+			[firstTransaction, undefined, secondTransaction],
+			createAddressMetadataMap([alice, bob, token, nativeToken]),
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 
 		assert.deepEqual(summary, [])
 	})
@@ -239,77 +341,134 @@ describe('summarizeLogs', () => {
 		const alice = createContactEntry(0x51n, 'Alice')
 		const operator = createContactEntry(0x52n, 'Operator')
 		const nft = createErc721Entry(0x501n, 'Collectible', 'NFT')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const addApprovalTransaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'NFT All approval',
-				from: alice,
-				to: operator,
-				token: nft,
-				allApprovalAdded: true,
-				isApproval: true,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'NFT All approval',
+					from: alice,
+					to: operator,
+					token: nft,
+					allApprovalAdded: true,
+					isApproval: true,
+				},
+			],
 		})
 		const revokeApprovalTransaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'NFT All approval',
-				from: alice,
-				to: operator,
-				token: nft,
-				allApprovalAdded: false,
-				isApproval: true,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'NFT All approval',
+					from: alice,
+					to: operator,
+					token: nft,
+					allApprovalAdded: false,
+					isApproval: true,
+				},
+			],
 		})
-		const addressMetadata = createAddressMetadataMap([alice, operator, nft, nativeToken])
-
-		const addSummary = summarizeLogs([addApprovalTransaction], addressMetadata, emptyTokenPriceEstimates, emptyNamedTokenIds)
-		const revokeSummary = summarizeLogs([revokeApprovalTransaction], addressMetadata, emptyTokenPriceEstimates, emptyNamedTokenIds)
-
-		assert.deepEqual(getSummary(addSummary, alice.address)?.erc721and1155OperatorChanges.map(({ address, operator: approvedOperator }) => ({
-			address,
-			operator: approvedOperator?.address,
-		})), [
-			{ address: nft.address, operator: operator.address },
+		const addressMetadata = createAddressMetadataMap([
+			alice,
+			operator,
+			nft,
+			nativeToken,
 		])
-		assert.deepEqual(getSummary(revokeSummary, alice.address)?.erc721and1155OperatorChanges.map(({ address, operator: approvedOperator }) => ({
-			address,
-			operator: approvedOperator?.address,
-		})), [
-			{ address: nft.address, operator: undefined },
-		])
+
+		const addSummary = summarizeLogs(
+			[addApprovalTransaction],
+			addressMetadata,
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
+		const revokeSummary = summarizeLogs(
+			[revokeApprovalTransaction],
+			addressMetadata,
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
+
+		assert.deepEqual(
+			getSummary(addSummary, alice.address)?.erc721and1155OperatorChanges.map(
+				({ address, operator: approvedOperator }) => ({
+					address,
+					operator: approvedOperator?.address,
+				}),
+			),
+			[{ address: nft.address, operator: operator.address }],
+		)
+		assert.deepEqual(
+			getSummary(
+				revokeSummary,
+				alice.address,
+			)?.erc721and1155OperatorChanges.map(
+				({ address, operator: approvedOperator }) => ({
+					address,
+					operator: approvedOperator?.address,
+				}),
+			),
+			[{ address: nft.address, operator: undefined }],
+		)
 	})
 
 	test('matches direct address summaries with the corresponding full summary entry', () => {
 		const alice = createContactEntry(0x61n, 'Alice')
 		const bob = createContactEntry(0x62n, 'Bob')
 		const token = createErc20Entry(0x601n, 'Mock Token', 'MOCK')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const transaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'ERC20',
-				from: alice,
-				to: bob,
-				token,
-				amount: 99n,
-				isApproval: false,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'ERC20',
+					from: alice,
+					to: bob,
+					token,
+					amount: 99n,
+					isApproval: false,
+				},
+			],
 			gasSpent: 1n,
 			realizedGasPrice: 2n,
 		})
-		const addressMetadata = createAddressMetadataMap([alice, bob, token, nativeToken])
+		const addressMetadata = createAddressMetadataMap([
+			alice,
+			bob,
+			token,
+			nativeToken,
+		])
 
-		const summary = summarizeLogs([transaction], addressMetadata, emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const summary = summarizeLogs(
+			[transaction],
+			addressMetadata,
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 		const aliceSummary = getSummary(summary, alice.address)
-		const directSummary = summarizeLogsForAddress([transaction], addressString(alice.address), addressMetadata, emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const directSummary = summarizeLogsForAddress(
+			[transaction],
+			addressString(alice.address),
+			addressMetadata,
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 
 		assert.notEqual(aliceSummary, undefined)
-		assert.deepEqual(directSummary, aliceSummary === undefined ? undefined : omitSummaryFor(aliceSummary))
+		assert.deepEqual(
+			directSummary,
+			aliceSummary === undefined ? undefined : omitSummaryFor(aliceSummary),
+		)
 	})
 
 	test('returns undefined for addresses without changes', () => {
@@ -317,21 +476,33 @@ describe('summarizeLogs', () => {
 		const bob = createContactEntry(0x72n, 'Bob')
 		const carol = createContactEntry(0x73n, 'Carol')
 		const token = createErc20Entry(0x701n, 'Mock Token', 'MOCK')
-		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const nativeToken = createErc20Entry(
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+			'Ether',
+			'ETH',
+		)
 		const transaction = createSimulatedTransaction({
 			transactionFrom: alice,
-			tokenEvents: [{
-				logObject: undefined,
-				type: 'ERC20',
-				from: alice,
-				to: bob,
-				token,
-				amount: 1n,
-				isApproval: false,
-			}],
+			tokenEvents: [
+				{
+					logObject: undefined,
+					type: 'ERC20',
+					from: alice,
+					to: bob,
+					token,
+					amount: 1n,
+					isApproval: false,
+				},
+			],
 		})
 
-		const directSummary = summarizeLogsForAddress([transaction], addressString(carol.address), createAddressMetadataMap([alice, bob, carol, token, nativeToken]), emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const directSummary = summarizeLogsForAddress(
+			[transaction],
+			addressString(carol.address),
+			createAddressMetadataMap([alice, bob, carol, token, nativeToken]),
+			emptyTokenPriceEstimates,
+			emptyNamedTokenIds,
+		)
 
 		assert.equal(directSummary, undefined)
 	})

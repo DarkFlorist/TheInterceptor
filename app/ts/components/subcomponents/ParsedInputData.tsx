@@ -7,17 +7,45 @@ import { ViewSelector } from './ViewSelector.js'
 import { SmallAddress } from './address.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
-function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
+function NoParsedAvailable({
+	to,
+	renameAddressCallBack,
+}: {
+	to: AddressBookEntry | undefined
+	renameAddressCallBack: RenameAddressCallBack
+}) {
 	if (to?.abi === undefined) {
-		if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
-		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;
-			<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
-		</p>
+		if (to === undefined)
+			return (
+				<p class="paragraph" style="color: var(--subtitle-text-color)">
+					No ABI available
+				</p>
+			)
+		return (
+			<p class="paragraph" style="color: var(--subtitle-text-color)">
+				No ABI available for&nbsp;
+				<SmallAddress
+					addressBookEntry={to}
+					renameAddressCallBack={renameAddressCallBack}
+				/>
+			</p>
+		)
 	} // We don't have support for parsing struct atm: https://github.com/DarkFlorist/TheInterceptor/issues/737
-	if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data (it probably contains a struct)</p>
-	return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data (it probably contains a struct) for&nbsp;
-		<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
-	</p>
+	if (to === undefined)
+		return (
+			<p class="paragraph" style="color: var(--subtitle-text-color)">
+				Unable to parse input data (it probably contains a struct)
+			</p>
+		)
+	return (
+		<p class="paragraph" style="color: var(--subtitle-text-color)">
+			Unable to parse input data (it probably contains a struct) for&nbsp;
+			<SmallAddress
+				addressBookEntry={to}
+				renameAddressCallBack={renameAddressCallBack}
+			/>
+		</p>
+	)
 }
 
 type TransactionInputParams = {
@@ -27,31 +55,58 @@ type TransactionInputParams = {
 	to: AddressBookEntry | undefined
 	renameAddressCallBack: RenameAddressCallBack
 }
-export function TransactionInput({ parsedInputData, input, to, addressMetaData, renameAddressCallBack }: TransactionInputParams) {
+export function TransactionInput({
+	parsedInputData,
+	input,
+	to,
+	addressMetaData,
+	renameAddressCallBack,
+}: TransactionInputParams) {
 	const resolvedAddressMetaData = resolveSignal(addressMetaData)
-	return <ViewSelector id = 'transaction_input'>
-		{ parsedInputData?.type === 'Parsed' ? ( <>
-			<ViewSelector.List>
-				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { true }>
-					<ParsedInputData inputData = { parsedInputData } addressMetaData = { resolvedAddressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
-				</ViewSelector.View>
-				<ViewSelector.View title = 'View Raw' value = 'raw' isActive = { false }>
-					<pre>{ dataStringWith0xStart(input) }</pre>
-				</ViewSelector.View>
-			</ViewSelector.List>
-			<ViewSelector.Triggers />
-		</> ) : <>
-			<ViewSelector.List>
-				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { false }>
-					<div style = 'display: flex;'>
-						<NoParsedAvailable to = { to } renameAddressCallBack = { renameAddressCallBack } />
-					</div>
-				</ViewSelector.View>
-				<ViewSelector.View title = 'View Raw' value = 'raw' isActive = { true }>
-					<pre>{ dataStringWith0xStart(input) }</pre>
-				</ViewSelector.View>
-			</ViewSelector.List>
-			<ViewSelector.Triggers />
-		</> }
-	</ViewSelector>
+	return (
+		<ViewSelector id="transaction_input">
+			{parsedInputData?.type === 'Parsed' ? (
+				<>
+					<ViewSelector.List>
+						<ViewSelector.View
+							title="View Parsed"
+							value="parsed"
+							isActive={true}
+						>
+							<ParsedInputData
+								inputData={parsedInputData}
+								addressMetaData={resolvedAddressMetaData}
+								renameAddressCallBack={renameAddressCallBack}
+							/>
+						</ViewSelector.View>
+						<ViewSelector.View title="View Raw" value="raw" isActive={false}>
+							<pre>{dataStringWith0xStart(input)}</pre>
+						</ViewSelector.View>
+					</ViewSelector.List>
+					<ViewSelector.Triggers />
+				</>
+			) : (
+				<>
+					<ViewSelector.List>
+						<ViewSelector.View
+							title="View Parsed"
+							value="parsed"
+							isActive={false}
+						>
+							<div style="display: flex;">
+								<NoParsedAvailable
+									to={to}
+									renameAddressCallBack={renameAddressCallBack}
+								/>
+							</div>
+						</ViewSelector.View>
+						<ViewSelector.View title="View Raw" value="raw" isActive={true}>
+							<pre>{dataStringWith0xStart(input)}</pre>
+						</ViewSelector.View>
+					</ViewSelector.List>
+					<ViewSelector.Triggers />
+				</>
+			)}
+		</ViewSelector>
+	)
 }

@@ -3,7 +3,11 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Signal } from '@preact/signals'
 import { describe, test } from 'bun:test'
-import { SimulatedInBlockNumber, getSimulationDisplayBlockNumber, getSimulationFreshnessColor } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
+import {
+	SimulatedInBlockNumber,
+	getSimulationDisplayBlockNumber,
+	getSimulationFreshnessColor,
+} from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { installDateMock, installDomMock } from './domMock.js'
 
 describe('SimulatedInBlockNumber', () => {
@@ -14,10 +18,22 @@ describe('SimulatedInBlockNumber', () => {
 	})
 
 	test('treats the next block simulation as fresh', () => {
-		assert.equal(getSimulationFreshnessColor(124n, 123n, undefined), 'var(--positive-color)')
-		assert.equal(getSimulationFreshnessColor(124n, 124n, undefined), 'var(--positive-color)')
-		assert.equal(getSimulationFreshnessColor(124n, 125n, undefined), 'var(--warning-color)')
-		assert.equal(getSimulationFreshnessColor(124n, 126n, undefined), 'var(--negative-color)')
+		assert.equal(
+			getSimulationFreshnessColor(124n, 123n, undefined),
+			'var(--positive-color)',
+		)
+		assert.equal(
+			getSimulationFreshnessColor(124n, 124n, undefined),
+			'var(--positive-color)',
+		)
+		assert.equal(
+			getSimulationFreshnessColor(124n, 125n, undefined),
+			'var(--warning-color)',
+		)
+		assert.equal(
+			getSimulationFreshnessColor(124n, 126n, undefined),
+			'var(--negative-color)',
+		)
 	})
 
 	test('updates the rendered age when the simulation timestamp changes', async () => {
@@ -29,14 +45,36 @@ describe('SimulatedInBlockNumber', () => {
 		const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
 
 		await act(() => {
-			render(h(SimulatedInBlockNumber, { simulationBlockNumber: 123n, currentBlockNumber, simulationConductedTimestamp: olderTimestamp, rpcConnectionStatus }), dom.document.body)
+			render(
+				h(SimulatedInBlockNumber, {
+					simulationBlockNumber: 123n,
+					currentBlockNumber,
+					simulationConductedTimestamp: olderTimestamp,
+					rpcConnectionStatus,
+				}),
+				dom.document.body,
+			)
 		})
-		assert.equal(dom.document.body.textContent?.includes('Simulated 5s ago'), true)
+		assert.equal(
+			dom.document.body.textContent?.includes('Simulated 5s ago'),
+			true,
+		)
 
 		await act(() => {
-			render(h(SimulatedInBlockNumber, { simulationBlockNumber: 123n, currentBlockNumber, simulationConductedTimestamp: newerTimestamp, rpcConnectionStatus }), dom.document.body)
+			render(
+				h(SimulatedInBlockNumber, {
+					simulationBlockNumber: 123n,
+					currentBlockNumber,
+					simulationConductedTimestamp: newerTimestamp,
+					rpcConnectionStatus,
+				}),
+				dom.document.body,
+			)
 		})
-		assert.equal(dom.document.body.textContent?.includes('Simulated 1s ago'), true)
+		assert.equal(
+			dom.document.body.textContent?.includes('Simulated 1s ago'),
+			true,
+		)
 
 		clock.restore()
 		dom.restore()

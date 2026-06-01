@@ -9,7 +9,15 @@ type LinkParam = {
 export function Link({ url, text, websiteSocket }: LinkParam) {
 	const click = async (event: Event) => {
 		event.preventDefault()
-		await sendPopupMessageToBackgroundPage({ method: 'popup_openWebPage', data: { url, websiteSocket } })
+		await sendPopupMessageToBackgroundPage({
+			method: 'popup_openWebPage',
+			data: { url, websiteSocket },
+		})
 	}
-	return <a onClick = { click } href = { url }> { text }</a>
+	return (
+		<a onClick={click} href={url}>
+			{' '}
+			{text}
+		</a>
+	)
 }

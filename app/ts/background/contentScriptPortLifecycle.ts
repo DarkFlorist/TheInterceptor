@@ -1,9 +1,15 @@
 export function isIgnorablePortLifecycleError(error: Error) {
-	return error.message.includes('the message channel is closed')
-		|| error.message.includes('The message port closed before a response was received')
-		|| error.message.includes('Could not establish connection. Receiving end does not exist')
-		|| error.message.includes('Attempting to use a disconnected port object')
-		|| error.message.includes('Extension context invalidated')
+	return (
+		error.message.includes('the message channel is closed') ||
+		error.message.includes(
+			'The message port closed before a response was received',
+		) ||
+		error.message.includes(
+			'Could not establish connection. Receiving end does not exist',
+		) ||
+		error.message.includes('Attempting to use a disconnected port object') ||
+		error.message.includes('Extension context invalidated')
+	)
 }
 
 export function tryRegisterContentScriptPortListeners(
@@ -18,7 +24,8 @@ export function tryRegisterContentScriptPortListeners(
 			try {
 				checkRuntimeLastError()
 			} catch (error) {
-				if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
+				if (error instanceof Error && isIgnorablePortLifecycleError(error))
+					return
 				throw error
 			}
 		})
@@ -26,7 +33,8 @@ export function tryRegisterContentScriptPortListeners(
 		port.onMessage.addListener(onMessage)
 		return true
 	} catch (error) {
-		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return false
+		if (error instanceof Error && isIgnorablePortLifecycleError(error))
+			return false
 		throw error
 	}
 }

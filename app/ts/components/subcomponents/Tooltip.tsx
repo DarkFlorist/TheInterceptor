@@ -8,7 +8,11 @@ export type TooltipConfig = {
 	duration?: number
 }
 
-export function Tooltip({ config }: { config: Signal<TooltipConfig | undefined> }) {
+export function Tooltip({
+	config,
+}: {
+	config: Signal<TooltipConfig | undefined>
+}) {
 	const popoverRef = useRef<HTMLDivElement>(null)
 
 	useSignalEffect(() => {
@@ -18,12 +22,19 @@ export function Tooltip({ config }: { config: Signal<TooltipConfig | undefined> 
 		}
 
 		popoverRef.current?.showPopover()
-		setTimeout(() => { config.value = undefined }, config.value.duration || 1500)
+		setTimeout(() => {
+			config.value = undefined
+		}, config.value.duration || 1500)
 	})
 
 	return (
-		<div ref = { popoverRef } class='tooltip' popover style = { { left: config.value?.x || 0, top: config.value?.y || 0 } }>
-			{ config.value?.message || '' }
+		<div
+			ref={popoverRef}
+			class="tooltip"
+			popover
+			style={{ left: config.value?.x || 0, top: config.value?.y || 0 }}
+		>
+			{config.value?.message || ''}
 		</div>
 	)
 }

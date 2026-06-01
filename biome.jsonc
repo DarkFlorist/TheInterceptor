@@ -6,11 +6,18 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["app/**/*.ts", "app/**/*.tsx", "test/**/*.ts", "build/**/*.mts"],
+		"includes": [
+			"app/**/*.ts",
+			"app/**/*.tsx",
+			"test/**/*.ts",
+			"build/**/*.mts"
+		],
 		"ignoreUnknown": true
 	},
 	"formatter": {
-		"enabled": false
+		"enabled": true,
+		"indentStyle": "tab",
+		"useEditorconfig": true
 	},
 	"assist": {
 		"enabled": false
@@ -59,6 +66,13 @@
 				"noReactSpecificProps": "error",
 				"useIterableCallbackReturn": "error"
 			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"jsxQuoteStyle": "double",
+			"semicolons": "asNeeded"
 		}
 	}
 }

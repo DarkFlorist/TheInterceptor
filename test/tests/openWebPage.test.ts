@@ -30,7 +30,10 @@ function createOpenWebPageRequest(tabId: number, url: string): OpenWebPage {
 	}
 }
 
-function installBrowserMock(tabs: readonly TabRecord[], updateShouldFail = false) {
+function installBrowserMock(
+	tabs: readonly TabRecord[],
+	updateShouldFail = false,
+) {
 	const createdTabs: TabCreateDetails[] = []
 	const updatedTabs: TabUpdateDetails[] = []
 	Object.defineProperty(globalThis, 'browser', {
@@ -63,7 +66,8 @@ function installBrowserMock(tabs: readonly TabRecord[], updateShouldFail = false
 }
 
 async function loadOpenWebPage() {
-	return (await import('../../app/ts/background/popupMessageHandlers.js')).openWebPage
+	return (await import('../../app/ts/background/popupMessageHandlers.js'))
+		.openWebPage
 }
 
 describe('openWebPage', () => {
@@ -73,7 +77,9 @@ describe('openWebPage', () => {
 
 		await openWebPage(createOpenWebPageRequest(42, 'https://example.test/next'))
 
-		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { url: 'https://example.test/next', active: true } }])
+		assert.deepEqual(updatedTabs, [
+			{ tabId: 42, update: { url: 'https://example.test/next', active: true } },
+		])
 		assert.deepEqual(createdTabs, [])
 	})
 
@@ -84,7 +90,9 @@ describe('openWebPage', () => {
 		await openWebPage(createOpenWebPageRequest(42, 'https://example.test/next'))
 
 		assert.deepEqual(updatedTabs, [])
-		assert.deepEqual(createdTabs, [{ url: 'https://example.test/next', active: true }])
+		assert.deepEqual(createdTabs, [
+			{ url: 'https://example.test/next', active: true },
+		])
 	})
 
 	test('creates a fallback tab when updating the original tab fails', async () => {
@@ -94,12 +102,16 @@ describe('openWebPage', () => {
 		console.warn = () => undefined
 
 		try {
-			await openWebPage(createOpenWebPageRequest(42, 'https://example.test/next'))
+			await openWebPage(
+				createOpenWebPageRequest(42, 'https://example.test/next'),
+			)
 		} finally {
 			console.warn = originalWarn
 		}
 
 		assert.deepEqual(updatedTabs, [])
-		assert.deepEqual(createdTabs, [{ url: 'https://example.test/next', active: true }])
+		assert.deepEqual(createdTabs, [
+			{ url: 'https://example.test/next', active: true },
+		])
 	})
 })

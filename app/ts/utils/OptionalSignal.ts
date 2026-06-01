@@ -1,11 +1,28 @@
-import { type ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
+import {
+	type ReadonlySignal,
+	Signal,
+	batch,
+	useSignalEffect,
+} from '@preact/signals'
 import { useMemo } from 'preact/hooks'
 
-export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements ReadonlySignal<Signal<T> | undefined> {
+export class OptionalSignal<T>
+	extends Signal<Signal<T> | undefined>
+	implements ReadonlySignal<Signal<T> | undefined>
+{
 	private inner: Signal<T> | undefined
 
-	public constructor(value: Signal<T> | T | undefined, startUndefined?: boolean) {
-		super(value === undefined || startUndefined === true ? undefined : value instanceof Signal ? value : new Signal(value))
+	public constructor(
+		value: Signal<T> | T | undefined,
+		startUndefined?: boolean,
+	) {
+		super(
+			value === undefined || startUndefined === true
+				? undefined
+				: value instanceof Signal
+					? value
+					: new Signal(value),
+		)
 		this.set = this.set.bind(this)
 		if (this.value instanceof Signal) this.inner = this.value
 	}
@@ -34,18 +51,27 @@ export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements 
 		return inner.peek()
 	}
 
-	public readonly clear = () => { this.value = undefined }
+	public readonly clear = () => {
+		this.value = undefined
+	}
 
 	// convenience function for when you want pass a setter to a function; note that this is `this` bound in the constructor
-	public set(newValue: T | undefined) { this.deepValue = newValue }
+	public set(newValue: T | undefined) {
+		this.deepValue = newValue
+	}
 }
 
-export function useOptionalSignal<T>(value: Signal<T> | T | undefined, startUndefined?: boolean) {
+export function useOptionalSignal<T>(
+	value: Signal<T> | T | undefined,
+	startUndefined?: boolean,
+) {
 	return useMemo(() => new OptionalSignal<T>(value, startUndefined), [])
 }
 
 export const useOptionalComputed = <T>(computeFn: () => T | undefined) => {
 	const resultSignal = useOptionalSignal<T>(undefined)
-	useSignalEffect(() => { resultSignal.deepValue = computeFn() })
+	useSignalEffect(() => {
+		resultSignal.deepValue = computeFn()
+	})
 	return resultSignal
 }

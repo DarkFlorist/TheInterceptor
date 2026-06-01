@@ -7,7 +7,8 @@ export class DataURLCache {
 	public set = (image: string, key: string) => {
 		if (this.dataURLs.size > CACHE_SIZE) {
 			const nextValue = this.dataURLs.keys().next().value
-			if (nextValue === undefined) throw new Error('Next value was undefined in data cache.')
+			if (nextValue === undefined)
+				throw new Error('Next value was undefined in data cache.')
 			this.dataURLs.delete(nextValue)
 		}
 		this.dataURLs.set(key, image)

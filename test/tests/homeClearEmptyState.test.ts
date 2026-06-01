@@ -9,9 +9,17 @@ import { ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import type { RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
+import type {
+	RpcConnectionStatus,
+	TabState,
+} from '../../app/ts/types/user-interface-types.js'
 import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
-import type { BlockTimeManipulation, ResolvedSimulationResults, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type {
+	BlockTimeManipulation,
+	ResolvedSimulationResults,
+	SimulationAndVisualisationResults,
+	SimulatedAndVisualizedTransaction,
+} from '../../app/ts/types/visualizer-types.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -42,14 +50,32 @@ const rpcNetwork: RpcEntry = {
 	minimized: false,
 }
 
-const ZERO_BLOCK_TIME_MANIPULATION: BlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }
+const ZERO_BLOCK_TIME_MANIPULATION: BlockTimeManipulation = {
+	type: 'AddToTimestamp',
+	deltaToAdd: 0n,
+	deltaUnit: 'Seconds',
+}
 
 const makeSimulatedTransaction = (): SimulatedAndVisualizedTransaction => ({
-	website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+	website: {
+		websiteOrigin: 'https://example.com',
+		icon: undefined,
+		title: 'Example',
+	},
 	created: new Date('2024-01-01T00:00:00.000Z'),
 	parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
 	transactionIdentifier: 1n,
-	originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: ACTIVE_ADDRESS, to: RECIPIENT_ADDRESS, value: 0n, input: new Uint8Array() }] },
+	originalRequestParameters: {
+		method: 'eth_sendTransaction',
+		params: [
+			{
+				from: ACTIVE_ADDRESS,
+				to: RECIPIENT_ADDRESS,
+				value: 0n,
+				input: new Uint8Array(),
+			},
+		],
+	},
 	tokenBalancesAfter: [],
 	tokenPriceEstimates: [],
 	tokenPriceQuoteToken: undefined,
@@ -81,11 +107,13 @@ const createSimulationResults = (): SimulationAndVisualisationResults => ({
 	addressBookEntries: [activeAddressEntry, recipientEntry],
 	visualizedSimulationState: {
 		success: true,
-		visualizedBlocks: [{
-			simulatedAndVisualizedTransactions: [makeSimulatedTransaction()],
-			visualizedPersonalSignRequests: [],
-			blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
-		}],
+		visualizedBlocks: [
+			{
+				simulatedAndVisualizedTransactions: [makeSimulatedTransaction()],
+				visualizedPersonalSignRequests: [],
+				blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+			},
+		],
 	},
 	rpcNetwork,
 	tokenPriceEstimates: [],
@@ -96,57 +124,95 @@ const createEmptySimulationResults = (): SimulationAndVisualisationResults => ({
 	...createSimulationResults(),
 	visualizedSimulationState: {
 		success: true,
-		visualizedBlocks: [{
-			simulatedAndVisualizedTransactions: [],
-			visualizedPersonalSignRequests: [],
-			blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
-		}],
+		visualizedBlocks: [
+			{
+				simulatedAndVisualizedTransactions: [],
+				visualizedPersonalSignRequests: [],
+				blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+			},
+		],
 	},
 })
 
 describe('Home popup clear empty state', () => {
 	test('rerenders to the empty-state dino when simulation results are cleared', async () => {
 		const dom = installDomMock()
-		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults()))
+		const simVisResults = new Signal<ResolvedSimulationResults>(
+			toResolvedSimulationResults(createSimulationResults()),
+		)
 		try {
 			await act(() => {
-				render(h(Home, {
-					changeActiveAddress: () => undefined,
-					makeCurrentAddressRich: new Signal(false),
-					activeAddresses: new Signal([activeAddressEntry]),
-					tabState: new Signal<TabState | undefined>(undefined),
-					activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
-					useSignersAddressAsActiveAddress: new Signal(false),
-					simVisResults,
-					rpcNetwork: new Signal(rpcNetwork),
-					setActiveRpcAndInformAboutIt: () => undefined,
-					simulationMode: new Signal(true),
-					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
-					currentBlockNumber: new Signal<bigint | undefined>(101n),
-					renameAddressCallBack: () => undefined,
-					editEnsNamedHashCallBack: () => undefined,
-					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
-					rpcEntries: new Signal([rpcNetwork]),
-					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
-					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
-					interceptorDisabled: new Signal(false),
-					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
-					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
-					openImportSimulation: () => undefined,
-				}), dom.document.body)
+				render(
+					h(Home, {
+						changeActiveAddress: () => undefined,
+						makeCurrentAddressRich: new Signal(false),
+						activeAddresses: new Signal([activeAddressEntry]),
+						tabState: new Signal<TabState | undefined>(undefined),
+						activeSimulationAddress: new Signal<bigint | undefined>(
+							ACTIVE_ADDRESS,
+						),
+						activeSigningAddress: new Signal<bigint | undefined>(undefined),
+						useSignersAddressAsActiveAddress: new Signal(false),
+						simVisResults,
+						rpcNetwork: new Signal(rpcNetwork),
+						setActiveRpcAndInformAboutIt: () => undefined,
+						simulationMode: new Signal(true),
+						tabIconDetails: new Signal({
+							icon: ICON_SIMULATING,
+							iconReason: 'Simulating transactions.',
+						}),
+						currentBlockNumber: new Signal<bigint | undefined>(101n),
+						renameAddressCallBack: () => undefined,
+						editEnsNamedHashCallBack: () => undefined,
+						rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
+						rpcEntries: new Signal([rpcNetwork]),
+						simulationUpdatingState: new Signal<
+							'done' | 'updating' | 'failed' | undefined
+						>('done'),
+						simulationResultState: new Signal<
+							'done' | 'invalid' | 'corrupted' | undefined
+						>('done'),
+						interceptorDisabled: new Signal(false),
+						preSimulationBlockTimeManipulation: new Signal<
+							BlockTimeManipulation | undefined
+						>(undefined),
+						fixedAddressRichList: new Signal<
+							readonly EnrichedRichListElement[]
+						>([]),
+						openImportSimulation: () => undefined,
+					}),
+					dom.document.body,
+				)
 			})
 
-			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
-			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+			assert.equal(
+				dom.document.body.textContent?.includes('Simulation Outcome'),
+				true,
+			)
+			assert.equal(
+				dom.document.body.textContent?.includes(
+					'Give me some transactions to munch on!',
+				),
+				false,
+			)
 
 			await act(() => {
-				simVisResults.value = toResolvedSimulationResults(createEmptySimulationResults())
+				simVisResults.value = toResolvedSimulationResults(
+					createEmptySimulationResults(),
+				)
 			})
 
 			assert.equal(simVisResults.value.kind, 'simulated')
-			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
-			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), false)
+			assert.equal(
+				dom.document.body.textContent?.includes(
+					'Give me some transactions to munch on!',
+				),
+				true,
+			)
+			assert.equal(
+				dom.document.body.textContent?.includes('Simulation Outcome'),
+				false,
+			)
 		} finally {
 			dom.restore()
 		}
@@ -154,48 +220,76 @@ describe('Home popup clear empty state', () => {
 
 	test('treats a known signer account as connected even if the signerConnected flag is stale', async () => {
 		const dom = installDomMock()
-		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
+		const simVisResults = new Signal<ResolvedSimulationResults>(
+			toResolvedSimulationResults(createEmptySimulationResults()),
+		)
 		try {
 			await act(() => {
-				render(h(Home, {
-					changeActiveAddress: () => undefined,
-					makeCurrentAddressRich: new Signal(false),
-					activeAddresses: new Signal([activeAddressEntry]),
-					tabState: new Signal<TabState | undefined>({
-						tabId: 1,
-						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
-						signerConnected: false,
-						signerName: 'MetaMask',
-						signerAccounts: [ACTIVE_ADDRESS],
-						signerAccountError: undefined,
-						signerChain: 1n,
-						tabIconDetails: { icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' },
-						activeSigningAddress: ACTIVE_ADDRESS,
+				render(
+					h(Home, {
+						changeActiveAddress: () => undefined,
+						makeCurrentAddressRich: new Signal(false),
+						activeAddresses: new Signal([activeAddressEntry]),
+						tabState: new Signal<TabState | undefined>({
+							tabId: 1,
+							website: {
+								websiteOrigin: 'https://example.com',
+								icon: undefined,
+								title: 'Example',
+							},
+							signerConnected: false,
+							signerName: 'MetaMask',
+							signerAccounts: [ACTIVE_ADDRESS],
+							signerAccountError: undefined,
+							signerChain: 1n,
+							tabIconDetails: {
+								icon: ICON_SIMULATING,
+								iconReason: 'Connected through MetaMask.',
+							},
+							activeSigningAddress: ACTIVE_ADDRESS,
+						}),
+						activeSimulationAddress: new Signal<bigint | undefined>(undefined),
+						activeSigningAddress: new Signal<bigint | undefined>(
+							ACTIVE_ADDRESS,
+						),
+						useSignersAddressAsActiveAddress: new Signal(true),
+						simVisResults,
+						rpcNetwork: new Signal(rpcNetwork),
+						setActiveRpcAndInformAboutIt: () => undefined,
+						simulationMode: new Signal(false),
+						tabIconDetails: new Signal({
+							icon: ICON_SIMULATING,
+							iconReason: 'Connected through MetaMask.',
+						}),
+						currentBlockNumber: new Signal<bigint | undefined>(101n),
+						renameAddressCallBack: () => undefined,
+						editEnsNamedHashCallBack: () => undefined,
+						rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
+						rpcEntries: new Signal([rpcNetwork]),
+						simulationUpdatingState: new Signal<
+							'done' | 'updating' | 'failed' | undefined
+						>('done'),
+						simulationResultState: new Signal<
+							'done' | 'invalid' | 'corrupted' | undefined
+						>('done'),
+						interceptorDisabled: new Signal(false),
+						preSimulationBlockTimeManipulation: new Signal<
+							BlockTimeManipulation | undefined
+						>(undefined),
+						fixedAddressRichList: new Signal<
+							readonly EnrichedRichListElement[]
+						>([]),
+						openImportSimulation: () => undefined,
 					}),
-					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-					useSignersAddressAsActiveAddress: new Signal(true),
-					simVisResults,
-					rpcNetwork: new Signal(rpcNetwork),
-					setActiveRpcAndInformAboutIt: () => undefined,
-					simulationMode: new Signal(false),
-					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' }),
-					currentBlockNumber: new Signal<bigint | undefined>(101n),
-					renameAddressCallBack: () => undefined,
-					editEnsNamedHashCallBack: () => undefined,
-					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
-					rpcEntries: new Signal([rpcNetwork]),
-					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
-					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
-					interceptorDisabled: new Signal(false),
-					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
-					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
-					openImportSimulation: () => undefined,
-				}), dom.document.body)
+					dom.document.body,
+				)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('CONNECTED'), true)
-			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
+			assert.equal(
+				dom.document.body.textContent?.includes('NOT CONNECTED'),
+				false,
+			)
 		} finally {
 			dom.restore()
 		}

@@ -13,7 +13,9 @@ export function anySignal(signals: readonly AbortSignal[]): AbortSignal {
 		}
 		// Listening for signals and removing the listeners
 		// when at least one symbol is aborted.
-		signal.addEventListener('abort', () => controller.abort(signal.reason), { signal: controller.signal })
+		signal.addEventListener('abort', () => controller.abort(signal.reason), {
+			signal: controller.signal,
+		})
 	}
 	return controller.signal
 }

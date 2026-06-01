@@ -1,6 +1,8 @@
-
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
+import {
+	MessageToPopup,
+	type ImportSettingsReply,
+} from '../../types/interceptor-messages.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -23,13 +25,24 @@ type CheckBoxSettingParam = {
 
 function CheckBoxSetting(param: CheckBoxSettingParam) {
 	return (
-		<div class = 'container'>
-			<label class = 'form-control' style = { 'color: var(--text-color); font-size: 1em;' }>
-				<input type = 'checkbox'
-					checked = { param.checked }
-					onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { param.onInput(e.target.checked) } } }
+		<div class="container">
+			<label
+				class="form-control"
+				style={'color: var(--text-color); font-size: 1em;'}
+			>
+				<input
+					type="checkbox"
+					checked={param.checked}
+					onInput={(e) => {
+						if (e.target instanceof HTMLInputElement && e.target !== null) {
+							param.onInput(e.target.checked)
+						}
+					}}
 				/>
-				<p class = 'paragraph checkbox-text' style = { 'color: var(--text-color);' }> { param.text } </p>
+				<p class="paragraph checkbox-text" style={'color: var(--text-color);'}>
+					{' '}
+					{param.text}{' '}
+				</p>
 			</label>
 		</div>
 	)
@@ -38,7 +51,11 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 function ImportExport() {
 	const settingsReply = useSignal<ImportSettingsReply | undefined>(undefined)
 	const dismissedNotification = useSignal<boolean>(false)
-	const errorText = useComputed(() => settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined)
+	const errorText = useComputed(() =>
+		settingsReply.value?.data.success === false
+			? settingsReply.value.data.errorMessage
+			: undefined,
+	)
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -51,7 +68,10 @@ function ImportExport() {
 				return false
 			}
 			if (parsed.method !== 'popup_initiate_export_settings') return false
-			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
+			downloadFile(
+				'interceptorSettingsAndAddressbook.json',
+				parsed.data.fileContents,
+			)
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
@@ -61,7 +81,9 @@ function ImportExport() {
 
 	const downloadFile = (filename: string, fileContents: string) => {
 		window.URL = window.webkitURL || window.URL
-		const blobData = new Blob([fileContents], { type: 'text/json; charset = utf-8' })
+		const blobData = new Blob([fileContents], {
+			type: 'text/json; charset = utf-8',
+		})
 		const a = document.createElement('a')
 		a.href = window.URL.createObjectURL(blobData)
 		a.download = filename
@@ -71,47 +93,80 @@ function ImportExport() {
 		document.body.removeChild(a)
 	}
 
-	const importSettings = async (inputElement: { target: EventTarget | EventTarget & { files: FileList } | null }) => {
+	const importSettings = async (inputElement: {
+		target: EventTarget | (EventTarget & { files: FileList }) | null
+	}) => {
 		if (inputElement.target === null) return
-		if (!('files' in inputElement.target)) throw new Error('Did not select one file.')
-		if (inputElement.target.files.length !== 1) throw new Error('Did not select one file.')
+		if (!('files' in inputElement.target))
+			throw new Error('Did not select one file.')
+		if (inputElement.target.files.length !== 1)
+			throw new Error('Did not select one file.')
 		const reader = new FileReader()
 		const firstFile = inputElement.target.files[0]
 		if (firstFile === undefined) throw new Error('File was undefined')
 		reader.readAsText(firstFile)
 		reader.onloadend = async () => {
 			if (reader.result === null) throw new Error('failed to load file')
-			await sendPopupMessageToBackgroundPage({ method: 'popup_import_settings', data: { fileContents: reader.result as string } })
+			await sendPopupMessageToBackgroundPage({
+				method: 'popup_import_settings',
+				data: { fileContents: reader.result as string },
+			})
 		}
 		reader.onerror = () => {
 			console.error(reader.error)
 			throw new Error('error on importing settings')
 		}
 	}
-	const exportSettings = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_get_export_settings' })
+	const exportSettings = async () =>
+		await sendPopupMessageToBackgroundPage({
+			method: 'popup_get_export_settings',
+		})
 
-	return <>
-		{ settingsReply.value !== undefined && settingsReply.value.data.success === false ?
-			<ErrorComponent warning = { true } text = { errorText } />
-			: <></> }
-		{ settingsReply.value !== undefined && settingsReply.value.data.success === true && dismissedNotification.value === false ?
-			<DinoSaysNotification
-				text = { 'Settings and address book loaded!' }
-				close = { () => { dismissedNotification.value = true } }
-			/>
-			: <></> }
-		<div class = 'popup-button-row'>
-			<div style = 'display: flex; flex-direction: row;'>
-				<label class = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
-					Import settings
-					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
-				</label>
-				<button class = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
-					Export settings
-				</button>
+	return (
+		<>
+			{settingsReply.value !== undefined &&
+			settingsReply.value.data.success === false ? (
+				<ErrorComponent warning={true} text={errorText} />
+			) : (
+				<></>
+			)}
+			{settingsReply.value !== undefined &&
+			settingsReply.value.data.success === true &&
+			dismissedNotification.value === false ? (
+				<DinoSaysNotification
+					text={'Settings and address book loaded!'}
+					close={() => {
+						dismissedNotification.value = true
+					}}
+				/>
+			) : (
+				<></>
+			)}
+			<div class="popup-button-row">
+				<div style="display: flex; flex-direction: row;">
+					<label
+						class="button is-primary is-danger"
+						style="flex-grow: 1; margin-left: 5px; margin-right: 5px;"
+					>
+						Import settings
+						<input
+							type="file"
+							accept=".json"
+							onInput={importSettings}
+							style="position: absolute; width: 100%; height: 100%; opacity: 0;"
+						/>
+					</label>
+					<button
+						class="button is-primary"
+						style="flex-grow: 1; margin-left: 5px; margin-right: 5px;"
+						onClick={exportSettings}
+					>
+						Export settings
+					</button>
+				</div>
 			</div>
-		</div>
-	</>
+		</>
+	)
 }
 
 export function SettingsView() {
@@ -136,96 +191,130 @@ export function SettingsView() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
+	useEffect(() => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+	}, [])
 
 	async function requestToUseTabsInsteadOfPopup(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
-			data: { useTabsInsteadOfPopup: checked }
+			data: { useTabsInsteadOfPopup: checked },
 		})
 	}
 	async function requestToMetamaskCompatibilityMode(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
-			data: { metamaskCompatibilityMode: checked }
+			data: { metamaskCompatibilityMode: checked },
 		})
 	}
 
-	return <main style = 'padding: 10px'>
-		<div class = 'card' style = 'height: 100%;'>
-			<header class = 'card-head card-header window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
-						<img src = '../img/settings.svg' width = '24' height = '24' />
-					</span>
-				</div>
-				<div class = 'card-header-title'>
-					<p class = 'paragraph'>
-						Settings
-					</p>
-				</div>
-			</header>
-			<section class = 'card-body' style = 'padding-bottom: 10px'>
-				<ul>
-					<li>
-						<p class = 'paragraph'>Misc</p>
-						<CheckBoxSetting
-							text = { 'Open popups as tabs (experimental)' }
-							checked = { useTabsInsteadOfPopup.value }
-							onInput = { requestToUseTabsInsteadOfPopup }
-						/>
-						<CheckBoxSetting
-							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
-							checked = { metamaskCompatibilityMode.value }
-							onInput = { requestToMetamaskCompatibilityMode }
-						/>
-					</li>
-					<li>
-						<p class = 'paragraph'>Export & Import</p>
-						<ImportExport/>
-					</li>
-					<li>
-						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
-							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>
-								<RpcListings />
-								<ConfigureRpcConnection />
-							</div>
-						</Collapsible>
-					</li>
-				</ul>
-			</section>
-		</div>
-	</main>
+	return (
+		<main style="padding: 10px">
+			<div class="card" style="height: 100%;">
+				<header class="card-head card-header window-header">
+					<div class="card-header-icon unset-cursor">
+						<span class="icon">
+							<img src="../img/settings.svg" width="24" height="24" />
+						</span>
+					</div>
+					<div class="card-header-title">
+						<p class="paragraph">Settings</p>
+					</div>
+				</header>
+				<section class="card-body" style="padding-bottom: 10px">
+					<ul>
+						<li>
+							<p class="paragraph">Misc</p>
+							<CheckBoxSetting
+								text={'Open popups as tabs (experimental)'}
+								checked={useTabsInsteadOfPopup.value}
+								onInput={requestToUseTabsInsteadOfPopup}
+							/>
+							<CheckBoxSetting
+								text={
+									"Metamask compatibility mode (mimics Metamask's behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site"
+								}
+								checked={metamaskCompatibilityMode.value}
+								onInput={requestToMetamaskCompatibilityMode}
+							/>
+						</li>
+						<li>
+							<p class="paragraph">Export & Import</p>
+							<ImportExport />
+						</li>
+						<li>
+							<Collapsible summary="RPC Connections" defaultOpen={true}>
+								<div class="grid" style="--gap-y: 0.5rem; padding: 0.5rem 0">
+									<RpcListings />
+									<ConfigureRpcConnection />
+								</div>
+							</Collapsible>
+						</li>
+					</ul>
+				</section>
+			</div>
+		</main>
+	)
 }
 
 const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
 	const latestEntry = useComputed(() => rpcEntries.value[0])
 
-	const loadDefaultRpcs = () => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs })
+	const loadDefaultRpcs = () =>
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_set_rpc_list',
+			data: defaultRpcs,
+		})
 
 	if (rpcEntries.value.length < 2 && latestEntry.value !== undefined) {
 		return (
 			<>
-				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
-					<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
-					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load the default RPC list</button>
+				<aside
+					class="report"
+					style={{
+						display: 'grid',
+						height: '9rem',
+						textAlign: 'center',
+						rowGap: '0.5rem',
+					}}
+				>
+					<p style={{ color: 'var(--disabled-text-color)' }}>
+						Interceptor requires at least 1 active RPC connection to work, do
+						you want to reset to the default list instead?
+					</p>
+					<button
+						class="btn btn--outline"
+						style="font-weight: 600"
+						onClick={loadDefaultRpcs}
+					>
+						Yes, load the default RPC list
+					</button>
 				</aside>
-				<ul class = 'grid' style = '--gap-y: 0.5rem'>
-						<RpcSummary info = { latestEntry } />
+				<ul class="grid" style="--gap-y: 0.5rem">
+					<RpcSummary info={latestEntry} />
 				</ul>
 			</>
 		)
 	}
 
 	return (
-		<ul class = 'grid' style = '--gap-y: 0.5rem'>
-			{ rpcEntries.value.map((entry) => <RpcSummary key = { JSON.stringify(serialize(RpcEntry, entry)) } info = { entry } />) }
+		<ul class="grid" style="--gap-y: 0.5rem">
+			{rpcEntries.value.map((entry) => (
+				<RpcSummary
+					key={JSON.stringify(serialize(RpcEntry, entry))}
+					info={entry}
+				/>
+			))}
 		</ul>
 	)
 }
 
-const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => {
+const RpcSummary = ({
+	info,
+}: {
+	info: SignalOrValue<RpcEntry | undefined>
+}) => {
 	const currentInfo = resolveSignal(info)
 	if (currentInfo === undefined) return <></>
 	const networkName = getChainName(currentInfo.chainId)
@@ -234,14 +323,19 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 	const infoKey = JSON.stringify(serialize(RpcEntry, currentInfo))
 
 	return (
-		<li class = 'grid brief'>
-			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>
-				<div style = '--area: 1 / 1'><strong>{ currentInfo.name }</strong></div>
-				<div style = '--area: span 2 / 2'>{ networkName }</div>
-				<div>{ currentInfo.httpsRpc }</div>
+		<li class="grid brief">
+			<div
+				class="grid"
+				style="--grid-cols: 1fr max-content; --text-color: gray"
+			>
+				<div style="--area: 1 / 1">
+					<strong>{currentInfo.name}</strong>
+				</div>
+				<div style="--area: span 2 / 2">{networkName}</div>
+				<div>{currentInfo.httpsRpc}</div>
 			</div>
-			<div class = 'actions'>
-				<ConfigureRpcConnection key = { infoKey } rpcInfo = { currentInfo } />
+			<div class="actions">
+				<ConfigureRpcConnection key={infoKey} rpcInfo={currentInfo} />
 			</div>
 		</li>
 	)
@@ -253,11 +347,15 @@ export function useRpcConnectionsList() {
 	const trackRpcListChanges = (message: unknown): false => {
 		const parsedMessage = MessageToPopup.safeParse(message)
 		if (parsedMessage.success === false) return false
-		if (parsedMessage.value.method === 'popup_update_rpc_list') { entries.value = parsedMessage.value.data }
+		if (parsedMessage.value.method === 'popup_update_rpc_list') {
+			entries.value = parsedMessage.value.data
+		}
 		return false
 	}
 
-	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }
+	const initiallyLoadEntriesFromStorage = async () => {
+		entries.value = await getRpcList()
+	}
 
 	useEffect(() => {
 		initiallyLoadEntriesFromStorage()

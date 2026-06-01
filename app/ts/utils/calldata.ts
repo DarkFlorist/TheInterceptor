@@ -9,28 +9,41 @@ const erc20andErc721FunctionSignatures = [
 		type: 'function',
 		name: 'transfer',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }],
+		inputs: [
+			{ name: 'to', type: 'address' },
+			{ name: 'value', type: 'uint256' },
+		],
 		outputs: [{ name: 'success', type: 'bool' }],
 	},
 	{
 		type: 'function',
 		name: 'transferFrom',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }],
+		inputs: [
+			{ name: 'from', type: 'address' },
+			{ name: 'to', type: 'address' },
+			{ name: 'value', type: 'uint256' },
+		],
 		outputs: [{ name: 'success', type: 'bool' }],
 	},
 	{
 		type: 'function',
 		name: 'approve',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }],
+		inputs: [
+			{ name: 'spender', type: 'address' },
+			{ name: 'value', type: 'uint256' },
+		],
 		outputs: [{ name: 'success', type: 'bool' }],
 	},
 	{
 		type: 'function',
 		name: 'setApprovalForAll',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'operator', type: 'address' }, { name: 'approved', type: 'bool' }],
+		inputs: [
+			{ name: 'operator', type: 'address' },
+			{ name: 'approved', type: 'bool' },
+		],
 		outputs: [],
 	},
 ] as const satisfies Abi
@@ -42,7 +55,7 @@ const CallDataType = funtypes.Union(
 		arguments: funtypes.ReadonlyObject({
 			to: EthereumAddress,
 			value: EthereumQuantity,
-		})
+		}),
 	}),
 	funtypes.ReadonlyObject({
 		name: funtypes.Literal('transferFrom'),
@@ -50,35 +63,50 @@ const CallDataType = funtypes.Union(
 			from: EthereumAddress,
 			to: EthereumAddress,
 			value: EthereumQuantity,
-		})
+		}),
 	}),
 	funtypes.ReadonlyObject({
 		name: funtypes.Literal('approve'),
 		arguments: funtypes.ReadonlyObject({
 			spender: EthereumAddress,
 			value: EthereumQuantity,
-		})
+		}),
 	}),
 	funtypes.ReadonlyObject({
 		name: funtypes.Literal('setApprovalForAll'),
 		arguments: funtypes.ReadonlyObject({
 			operator: EthereumAddress,
 			approved: funtypes.Boolean,
-		})
+		}),
 	}),
 )
 
-export function parseTransaction(transaction: { input?: Uint8Array, from: bigint }) {
-	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
-	const parsed = decodeCallDataLoose(erc20andErc721FunctionSignatures, dataStringWith0xStart(transaction.input))
+export function parseTransaction(transaction: {
+	input?: Uint8Array
+	from: bigint
+}) {
+	if (
+		!('input' in transaction) ||
+		transaction.input === undefined ||
+		transaction.input.length < 4
+	)
+		return undefined
+	const parsed = decodeCallDataLoose(
+		erc20andErc721FunctionSignatures,
+		dataStringWith0xStart(transaction.input),
+	)
 	if (parsed === undefined) return undefined
 
 	// https://github.com/ForbesLindesay/funtypes/issues/53
 	// a bit hacky as there's no bigint funtype, so we convert bigints to strings and then parse them into bigits
-	return CallDataType.parse(JSON.parse(stringifyJSONWithBigInts({
-		name: parsed.name,
-		arguments: parsed.namedArgs,
-	})))
+	return CallDataType.parse(
+		JSON.parse(
+			stringifyJSONWithBigInts({
+				name: parsed.name,
+				arguments: parsed.namedArgs,
+			}),
+		),
+	)
 }
 
 export function get4Byte(data: Uint8Array) {

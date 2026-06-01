@@ -1,6 +1,14 @@
-import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
+import {
+	type Signal,
+	type ReadonlySignal,
+	useComputed,
+	useSignal,
+} from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
-import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
+import {
+	MessageToPopup,
+	SimulateExecutionReply,
+} from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
@@ -18,73 +26,134 @@ type ShowSuccessOrFailureParams = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGnosisSafeTransaction', data: { gnosisSafeMessage } })
+const requestToSimulate = (
+	gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx,
+) =>
+	sendPopupMessageToBackgroundPage({
+		method: 'popup_simulateGnosisSafeTransaction',
+		data: { gnosisSafeMessage },
+	})
 
-const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
-	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
-	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
+const ShowSuccessOrFailure = ({
+	simulateExecutionReply,
+	activeAddress,
+	renameAddressCallBack,
+	editEnsNamedHashCallBack,
+	gnosisSafeMessage,
+}: ShowSuccessOrFailureParams) => {
+	const errorText = useComputed(() =>
+		simulateExecutionReply.value?.data.success === false
+			? simulateExecutionReply.value.data.errorMessage
+			: undefined,
+	)
+	const rpcErrorText = useComputed(() =>
+		simulateExecutionReply.value?.data.success === true &&
+		simulateExecutionReply.value.data.result.visualizedSimulationState
+			.success === false
+			? JSON.stringify(
+					simulateExecutionReply.value.data.result.visualizedSimulationState
+						.jsonRpcError,
+					undefined,
+					4,
+				)
+			: undefined,
+	)
 	const simTx = useComputed(() => {
 		if (simulateExecutionReply.value?.data.success !== true) return undefined
-		const visualizedBlocks = simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks
+		const visualizedBlocks =
+			simulateExecutionReply.value.data.result.visualizedSimulationState
+				.visualizedBlocks
 		const lastBlock = visualizedBlocks[visualizedBlocks.length - 1]
 		if (lastBlock === undefined) return undefined
-		return lastBlock.simulatedAndVisualizedTransactions[lastBlock.simulatedAndVisualizedTransactions.length - 1]
+		return lastBlock.simulatedAndVisualizedTransactions[
+			lastBlock.simulatedAndVisualizedTransactions.length - 1
+		]
 	})
 	const addressMetaData = useComputed(() => {
-		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		if (
+			simulateExecutionReply.value === undefined ||
+			simulateExecutionReply.value.data.success === false
+		)
+			throw new Error('failed simulation')
 		return simulateExecutionReply.value.data.result.addressBookEntries
 	})
 	const results = useComputed(() => {
-		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		if (
+			simulateExecutionReply.value === undefined ||
+			simulateExecutionReply.value.data.success === false
+		)
+			throw new Error('failed simulation')
 		return {
-			blockNumber: simulateExecutionReply.value.data.result.simulationState.blockNumber,
-			blockTimestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
-			simulationConductedTimestamp: simulateExecutionReply.value.data.result.simulationState.simulationConductedTimestamp,
-			simulationStateInput: simulateExecutionReply.value.data.result.simulationState.simulationStateInput,
-			addressBookEntries: simulateExecutionReply.value.data.result.addressBookEntries,
-			rpcNetwork: simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
-			tokenPriceEstimates: simulateExecutionReply.value.data.result.tokenPriceEstimates,
+			blockNumber:
+				simulateExecutionReply.value.data.result.simulationState.blockNumber,
+			blockTimestamp:
+				simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
+			simulationConductedTimestamp:
+				simulateExecutionReply.value.data.result.simulationState
+					.simulationConductedTimestamp,
+			simulationStateInput:
+				simulateExecutionReply.value.data.result.simulationState
+					.simulationStateInput,
+			addressBookEntries:
+				simulateExecutionReply.value.data.result.addressBookEntries,
+			rpcNetwork:
+				simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
+			tokenPriceEstimates:
+				simulateExecutionReply.value.data.result.tokenPriceEstimates,
 			activeAddress: activeAddress.value!,
-			visualizedSimulationState: simulateExecutionReply.value.data.result.visualizedSimulationState,
+			visualizedSimulationState:
+				simulateExecutionReply.value.data.result.visualizedSimulationState,
 			namedTokenIds: simulateExecutionReply.value.data.result.namedTokenIds,
 		}
 	})
 
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: flex; justify-content: center;'>
-			<button
-				class = { 'button is-primary' }
-				onClick = { () => requestToSimulate(gnosisSafeMessage) }
-				disabled = { false }
-			>
-				Simulate execution
-			</button>
-		</div>
+		return (
+			<div style="display: flex; justify-content: center;">
+				<button
+					class={'button is-primary'}
+					onClick={() => requestToSimulate(gnosisSafeMessage)}
+					disabled={false}
+				>
+					Simulate execution
+				</button>
+			</div>
+		)
 	}
 
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content' >
-			<ErrorComponent text = { errorText }/>
-		</div>
+		return (
+			<div style="display: grid; grid-template-rows: max-content">
+				<ErrorComponent text={errorText} />
+			</div>
+		)
 	}
-	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content' >
-			<ErrorComponent text = { rpcErrorText }/>
-		</div>
+	if (
+		simulateExecutionReply.value.data.result.visualizedSimulationState
+			.success === false
+	) {
+		return (
+			<div style="display: grid; grid-template-rows: max-content">
+				<ErrorComponent text={rpcErrorText} />
+			</div>
+		)
 	}
-	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
+	if (simTx.value === undefined || activeAddress.value === undefined)
+		return <></>
 
-	return <div style = 'display: grid; grid-template-rows: max-content' >
-		<Transaction
-			simTx = { simTx.value }
-			simulationAndVisualisationResults = { results.value }
-			removeTransactionOrSignedMessage = { undefined }
-			activeAddress = { activeAddress }
-			renameAddressCallBack = { renameAddressCallBack }
-			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-			addressMetaData = { addressMetaData }
-		/>
-	</div>
+	return (
+		<div style="display: grid; grid-template-rows: max-content">
+			<Transaction
+				simTx={simTx.value}
+				simulationAndVisualisationResults={results.value}
+				removeTransactionOrSignedMessage={undefined}
+				activeAddress={activeAddress}
+				renameAddressCallBack={renameAddressCallBack}
+				editEnsNamedHashCallBack={editEnsNamedHashCallBack}
+				addressMetaData={addressMetaData}
+			/>
+		</div>
+	)
 }
 
 type GnosisSafeVisualizerParams = {
@@ -95,7 +164,9 @@ type GnosisSafeVisualizerParams = {
 }
 
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
-	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
+	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(
+		undefined,
+	)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
 
 	useEffect(() => {
@@ -107,7 +178,11 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			if (parsed.method !== 'popup_simulateExecutionReply') return false
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return false
+			if (
+				reply.data.transactionOrMessageIdentifier !==
+				param.gnosisSafeMessage.messageIdentifier
+			)
+				return false
 			simulateExecutionReply.value = reply
 			return false
 		}
@@ -121,28 +196,54 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
 	if (activeAddress.value === undefined) return <></>
-	return <>
-		<div class = 'notification transaction-importance-box'>
-			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>
-				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>
-				<div class = 'log-cell'> <SmallAddress addressBookEntry = { param.gnosisSafeMessage.verifyingContract } renameAddressCallBack = { param.renameAddressCallBack } /> </div>
-				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>
-			</span>
-		</div>
-		<div class = 'notification dashed-notification'>
-			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
-			<ShowSuccessOrFailure
-				gnosisSafeMessage = { param.gnosisSafeMessage }
-				simulateExecutionReply = { simulateExecutionReply }
-				renameAddressCallBack = { param.renameAddressCallBack }
-				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-				activeAddress = { activeAddress }
-			/>
-		</div>
-		{ simulateExecutionReply.value === undefined ? <></> :
-			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
-				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
+	return (
+		<>
+			<div class="notification transaction-importance-box">
+				<span
+					class="log-table"
+					style="justify-content: center; grid-template-columns: auto auto auto"
+				>
+					<div class="log-cell">
+						{' '}
+						<p class="paragraph">Approves Gnosis Safe</p>{' '}
+					</div>
+					<div class="log-cell">
+						{' '}
+						<SmallAddress
+							addressBookEntry={param.gnosisSafeMessage.verifyingContract}
+							renameAddressCallBack={param.renameAddressCallBack}
+						/>{' '}
+					</div>
+					<div class="log-cell">
+						{' '}
+						<p class="paragraph">message</p>{' '}
+					</div>
+				</span>
 			</div>
-		}
-	</>
+			<div class="notification dashed-notification">
+				<legend class="paragraph">
+					Outcome of the message, should the multisig approve it
+				</legend>
+				<ShowSuccessOrFailure
+					gnosisSafeMessage={param.gnosisSafeMessage}
+					simulateExecutionReply={simulateExecutionReply}
+					renameAddressCallBack={param.renameAddressCallBack}
+					editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
+					activeAddress={activeAddress}
+				/>
+			</div>
+			{simulateExecutionReply.value === undefined ? (
+				<></>
+			) : (
+				<div class="log-cell" style="justify-content: right; margin-top: 10px;">
+					<button
+						class={'button is-primary is-small'}
+						onClick={() => requestToSimulate(param.gnosisSafeMessage)}
+					>
+						Refresh simulation
+					</button>
+				</div>
+			)}
+		</>
+	)
 }

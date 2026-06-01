@@ -1,19 +1,29 @@
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from './typescript.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from './requests.js'
+import {
+	checkAndThrowRuntimeLastError,
+	safeGetTab,
+	safeGetWindow,
+	updateTabIfExists,
+	updateWindowIfExists,
+} from './requests.js'
 
-export type PopupOrTab = {
-	window: browser.windows.Window
-	type: 'popup'
-	id: number
-} | {
-	tab: browser.tabs.Tab
-	type: 'tab'
-	id: number
-}
+export type PopupOrTab =
+	| {
+			window: browser.windows.Window
+			type: 'popup'
+			id: number
+	  }
+	| {
+			tab: browser.tabs.Tab
+			type: 'tab'
+			id: number
+	  }
 
-export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }): Promise<PopupOrTab | undefined> {
+export async function openPopupOrTab(
+	createData: browser.windows._CreateCreateData & { url: string },
+): Promise<PopupOrTab | undefined> {
 	if (await getUseTabsInsteadOfPopup()) {
 		const tab = await browser.tabs.create({ url: createData.url })
 		if (tab === undefined || tab.id === undefined) return undefined
@@ -24,7 +34,9 @@ export async function openPopupOrTab(createData: browser.windows._CreateCreateDa
 	return { type: 'popup', id: window.id, window }
 }
 
-export async function getPopupOrTabById(popupOrTabId: PopupOrTabId): Promise<PopupOrTab | undefined> {
+export async function getPopupOrTabById(
+	popupOrTabId: PopupOrTabId,
+): Promise<PopupOrTab | undefined> {
 	switch (popupOrTabId.type) {
 		case 'tab': {
 			const tab = await safeGetTab(popupOrTabId.id)
@@ -36,7 +48,8 @@ export async function getPopupOrTabById(popupOrTabId: PopupOrTabId): Promise<Pop
 			if (window === undefined || window.id === undefined) return undefined
 			return { type: 'popup', id: window.id, window }
 		}
-		default: assertNever(popupOrTabId.type)
+		default:
+			assertNever(popupOrTabId.type)
 	}
 }
 
@@ -53,21 +66,29 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 				if (window !== undefined) await browser.windows.remove(popupOrTabId.id)
 				break
 			}
-			default: assertNever(popupOrTabId.type)
+			default:
+				assertNever(popupOrTabId.type)
 		}
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
-		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		if (error instanceof Error && error.message.startsWith('No tab with id'))
+			return
 		throw error
 	}
 }
 
-export function addWindowTabListeners(onCloseWindow: (id: number) => void, onCloseTab: (id: number) => void) {
+export function addWindowTabListeners(
+	onCloseWindow: (id: number) => void,
+	onCloseTab: (id: number) => void,
+) {
 	browser.windows.onRemoved.addListener(onCloseWindow)
 	browser.tabs.onRemoved.addListener(onCloseTab)
 }
 
-export function removeWindowTabListeners(onCloseWindow: (id: number) => void, onCloseTab: (id: number) => void) {
+export function removeWindowTabListeners(
+	onCloseWindow: (id: number) => void,
+	onCloseTab: (id: number) => void,
+) {
 	browser.windows.onRemoved.removeListener(onCloseWindow)
 	browser.tabs.onRemoved.removeListener(onCloseTab)
 }
@@ -75,8 +96,18 @@ export function removeWindowTabListeners(onCloseWindow: (id: number) => void, on
 export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
 	if (popupOrTab.type === 'tab') {
 		const tab = await browser.tabs.get(popupOrTab.id)
-		if (tab !== undefined && tab.windowId !== undefined) await browser.windows.update(tab.windowId, { drawAttention: true, focused: true })
-		return await updateTabIfExists(popupOrTab.id, { active: true, highlighted: true })
+		if (tab !== undefined && tab.windowId !== undefined)
+			await browser.windows.update(tab.windowId, {
+				drawAttention: true,
+				focused: true,
+			})
+		return await updateTabIfExists(popupOrTab.id, {
+			active: true,
+			highlighted: true,
+		})
 	}
-	return await updateWindowIfExists(popupOrTab.id, { drawAttention: true, focused: true })
+	return await updateWindowIfExists(popupOrTab.id, {
+		drawAttention: true,
+		focused: true,
+	})
 }

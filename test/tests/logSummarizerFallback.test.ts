@@ -8,10 +8,23 @@ import { SimulationSummary } from '../../app/ts/components/simulationExplaining/
 import { installDomMock } from './domMock.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
-import type { AddressBookEntry, ContactEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
-import type { TokenEvent, TokenVisualizerNFTAllApprovalEvent } from '../../app/ts/types/EnrichedEthereumData.js'
+import type {
+	AddressBookEntry,
+	ContactEntry,
+	Erc1155Entry,
+	Erc20TokenEntry,
+	Erc721Entry,
+} from '../../app/ts/types/addressBookTypes.js'
+import type {
+	TokenEvent,
+	TokenVisualizerNFTAllApprovalEvent,
+} from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import type { BlockTimeManipulation, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type {
+	BlockTimeManipulation,
+	SimulationAndVisualisationResults,
+	SimulatedAndVisualizedTransaction,
+} from '../../app/ts/types/visualizer-types.js'
 
 const TOKEN_ADDRESS = 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n
 const ERC721_TOKEN_ADDRESS = 0x3000000000000000000000000000000000000003n
@@ -77,7 +90,11 @@ const rpcNetwork: RpcNetwork = {
 	minimized: false,
 }
 
-const ZERO_BLOCK_TIME_MANIPULATION: BlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }
+const ZERO_BLOCK_TIME_MANIPULATION: BlockTimeManipulation = {
+	type: 'AddToTimestamp',
+	deltaToAdd: 0n,
+	deltaUnit: 'Seconds',
+}
 
 const makeTransferEvent = (): TokenEvent => ({
 	type: 'TokenEvent',
@@ -101,11 +118,25 @@ const makeTransferEvent = (): TokenEvent => ({
 })
 
 const makeSimulatedTransaction = (): SimulatedAndVisualizedTransaction => ({
-	website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+	website: {
+		websiteOrigin: 'https://example.com',
+		icon: undefined,
+		title: 'Example',
+	},
 	created: new Date('2024-01-01T00:00:00.000Z'),
 	parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
 	transactionIdentifier: 1n,
-	originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: SENDER_ADDRESS, to: TOKEN_ADDRESS, value: 0n, input: new Uint8Array() }] },
+	originalRequestParameters: {
+		method: 'eth_sendTransaction',
+		params: [
+			{
+				from: SENDER_ADDRESS,
+				to: TOKEN_ADDRESS,
+				value: 0n,
+				input: new Uint8Array(),
+			},
+		],
+	},
 	tokenBalancesAfter: [],
 	tokenPriceEstimates: [],
 	tokenPriceQuoteToken: undefined,
@@ -130,7 +161,10 @@ const makeSimulatedTransaction = (): SimulatedAndVisualizedTransaction => ({
 	events: [makeTransferEvent()],
 })
 
-const createTransactionWithEvent = (event: SimulatedAndVisualizedTransaction['events'][number], to: AddressBookEntry = tokenEntry): SimulatedAndVisualizedTransaction => ({
+const createTransactionWithEvent = (
+	event: SimulatedAndVisualizedTransaction['events'][number],
+	to: AddressBookEntry = tokenEntry,
+): SimulatedAndVisualizedTransaction => ({
 	...makeSimulatedTransaction(),
 	transaction: {
 		...makeSimulatedTransaction().transaction,
@@ -139,20 +173,32 @@ const createTransactionWithEvent = (event: SimulatedAndVisualizedTransaction['ev
 	events: [event],
 })
 
-const getSummaryForTransaction = (simulatedTransaction: SimulatedAndVisualizedTransaction, externalEntries: readonly AddressBookEntry[]) => {
-	const externalMetadata = new Map<string, AddressBookEntry>(externalEntries.map((entry) => [addressString(entry.address), entry]))
+const getSummaryForTransaction = (
+	simulatedTransaction: SimulatedAndVisualizedTransaction,
+	externalEntries: readonly AddressBookEntry[],
+) => {
+	const externalMetadata = new Map<string, AddressBookEntry>(
+		externalEntries.map((entry) => [addressString(entry.address), entry]),
+	)
 	return summarizeLogs([simulatedTransaction], externalMetadata, [], [])
 }
 
-const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
-	render(h(SimulationSummary, {
-		simulationAndVisualisationResults: new Signal(toResolvedSimulationResults(simulationAndVisualisationResults)),
-		currentBlockNumber: new Signal<bigint | undefined>(1n),
-		activeAddress: new Signal<bigint | undefined>(RECIPIENT_ADDRESS),
-		renameAddressCallBack: () => undefined,
-		rpcConnectionStatus: new Signal(undefined),
-	}),
-	dom.document.body)
+const renderSimulationSummary = (
+	dom: ReturnType<typeof installDomMock>,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+) => {
+	render(
+		h(SimulationSummary, {
+			simulationAndVisualisationResults: new Signal(
+				toResolvedSimulationResults(simulationAndVisualisationResults),
+			),
+			currentBlockNumber: new Signal<bigint | undefined>(1n),
+			activeAddress: new Signal<bigint | undefined>(RECIPIENT_ADDRESS),
+			renameAddressCallBack: () => undefined,
+			rpcConnectionStatus: new Signal(undefined),
+		}),
+		dom.document.body,
+	)
 }
 
 describe('LogSummarizer fallback metadata', () => {
@@ -163,8 +209,15 @@ describe('LogSummarizer fallback metadata', () => {
 			[addressString(senderEntry.address), senderEntry],
 		])
 
-		const summary = summarizeLogs([simulatedTransaction], externalMetadata, [], [])
-		const recipientSummary = summary.find((entry) => entry.summaryFor.address === RECIPIENT_ADDRESS)
+		const summary = summarizeLogs(
+			[simulatedTransaction],
+			externalMetadata,
+			[],
+			[],
+		)
+		const recipientSummary = summary.find(
+			(entry) => entry.summaryFor.address === RECIPIENT_ADDRESS,
+		)
 
 		assert.notEqual(recipientSummary, undefined)
 		assert.equal(recipientSummary?.summaryFor.name, recipientEntry.name)
@@ -192,34 +245,49 @@ describe('LogSummarizer fallback metadata', () => {
 			},
 		})
 
-		const summary = getSummaryForTransaction(simulatedTransaction, [tokenEntry, senderEntry])
-		assert.equal(summary[0]?.erc20TokenApprovalChanges[0]?.approvals[0]?.name, operatorEntry.name)
+		const summary = getSummaryForTransaction(simulatedTransaction, [
+			tokenEntry,
+			senderEntry,
+		])
+		assert.equal(
+			summary[0]?.erc20TokenApprovalChanges[0]?.approvals[0]?.name,
+			operatorEntry.name,
+		)
 	})
 
 	test('uses enriched approved address metadata when ERC721 approval address is missing from the external map', () => {
-		const simulatedTransaction = createTransactionWithEvent({
-			type: 'TokenEvent',
-			isParsed: 'Parsed',
-			name: 'Approval',
-			signature: 'Approval(address,address,uint256)',
-			args: [],
-			address: ERC721_TOKEN_ADDRESS,
-			loggersAddressBookEntry: erc721TokenEntry,
-			data: new Uint8Array(),
-			topics: [],
-			logInformation: {
-				type: 'ERC721',
-				logObject: undefined,
-				from: senderEntry,
-				to: operatorEntry,
-				token: erc721TokenEntry,
-				tokenId: 1n,
-				isApproval: true,
+		const simulatedTransaction = createTransactionWithEvent(
+			{
+				type: 'TokenEvent',
+				isParsed: 'Parsed',
+				name: 'Approval',
+				signature: 'Approval(address,address,uint256)',
+				args: [],
+				address: ERC721_TOKEN_ADDRESS,
+				loggersAddressBookEntry: erc721TokenEntry,
+				data: new Uint8Array(),
+				topics: [],
+				logInformation: {
+					type: 'ERC721',
+					logObject: undefined,
+					from: senderEntry,
+					to: operatorEntry,
+					token: erc721TokenEntry,
+					tokenId: 1n,
+					isApproval: true,
+				},
 			},
-		}, erc721TokenEntry)
+			erc721TokenEntry,
+		)
 
-		const summary = getSummaryForTransaction(simulatedTransaction, [erc721TokenEntry, senderEntry])
-		assert.equal(summary[0]?.erc721TokenIdApprovalChanges[0]?.approvedEntry.name, operatorEntry.name)
+		const summary = getSummaryForTransaction(simulatedTransaction, [
+			erc721TokenEntry,
+			senderEntry,
+		])
+		assert.equal(
+			summary[0]?.erc721TokenIdApprovalChanges[0]?.approvedEntry.name,
+			operatorEntry.name,
+		)
 	})
 
 	test('uses enriched operator metadata when ApprovalForAll operator is missing from the external map', () => {
@@ -232,50 +300,67 @@ describe('LogSummarizer fallback metadata', () => {
 			allApprovalAdded: true,
 			isApproval: true,
 		}
-		const simulatedTransaction = createTransactionWithEvent({
-			type: 'TokenEvent',
-			isParsed: 'Parsed',
-			name: 'ApprovalForAll',
-			signature: 'ApprovalForAll(address,address,bool)',
-			args: [],
-			address: ERC1155_TOKEN_ADDRESS,
-			loggersAddressBookEntry: erc1155TokenEntry,
-			data: new Uint8Array(),
-			topics: [],
-			logInformation: approvalForAllLogInformation,
-		}, erc1155TokenEntry)
+		const simulatedTransaction = createTransactionWithEvent(
+			{
+				type: 'TokenEvent',
+				isParsed: 'Parsed',
+				name: 'ApprovalForAll',
+				signature: 'ApprovalForAll(address,address,bool)',
+				args: [],
+				address: ERC1155_TOKEN_ADDRESS,
+				loggersAddressBookEntry: erc1155TokenEntry,
+				data: new Uint8Array(),
+				topics: [],
+				logInformation: approvalForAllLogInformation,
+			},
+			erc1155TokenEntry,
+		)
 
-		const summary = getSummaryForTransaction(simulatedTransaction, [erc1155TokenEntry, senderEntry])
-		assert.equal(summary[0]?.erc721and1155OperatorChanges[0]?.operator?.name, operatorEntry.name)
+		const summary = getSummaryForTransaction(simulatedTransaction, [
+			erc1155TokenEntry,
+			senderEntry,
+		])
+		assert.equal(
+			summary[0]?.erc721and1155OperatorChanges[0]?.operator?.name,
+			operatorEntry.name,
+		)
 	})
 
 	test('renders SimulationSummary with the fallback account name instead of crashing', async () => {
 		const dom = installDomMock()
 		const simulatedTransaction = makeSimulatedTransaction()
-		const simulationAndVisualisationResultsData: SimulationAndVisualisationResults = {
-			blockNumber: 1n,
-			blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
-			simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
-			addressBookEntries: [tokenEntry, senderEntry],
-			rpcNetwork,
-			tokenPriceEstimates: [],
-			visualizedSimulationState: {
-				success: true,
-				visualizedBlocks: [{
-					simulatedAndVisualizedTransactions: [simulatedTransaction],
-					visualizedPersonalSignRequests: [],
-					blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
-				}],
-			},
-			namedTokenIds: [],
-		}
-		const simulationAndVisualisationResults = new Signal(simulationAndVisualisationResultsData)
+		const simulationAndVisualisationResultsData: SimulationAndVisualisationResults =
+			{
+				blockNumber: 1n,
+				blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+				simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+				addressBookEntries: [tokenEntry, senderEntry],
+				rpcNetwork,
+				tokenPriceEstimates: [],
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [
+						{
+							simulatedAndVisualizedTransactions: [simulatedTransaction],
+							visualizedPersonalSignRequests: [],
+							blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+						},
+					],
+				},
+				namedTokenIds: [],
+			}
+		const simulationAndVisualisationResults = new Signal(
+			simulationAndVisualisationResultsData,
+		)
 
 		await act(() => {
 			renderSimulationSummary(dom, simulationAndVisualisationResults.value)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes(recipientEntry.name), true)
+		assert.equal(
+			dom.document.body.textContent?.includes(recipientEntry.name),
+			true,
+		)
 		dom.restore()
 	})
 })

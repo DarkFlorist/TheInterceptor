@@ -5,5 +5,5 @@ export const GENERATED_INTERNAL_PROVIDER_METHODS = [
 	'InterceptorError',
 	'signer_chainChanged',
 	'signer_reply',
-	'wallet_switchEthereumChain_reply'
+	'wallet_switchEthereumChain_reply',
 ] as const

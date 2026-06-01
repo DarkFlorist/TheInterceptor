@@ -1,137 +1,408 @@
 import { addressString } from '../utils/bigint.js'
-import type { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
-import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
+import type {
+	NamedTokenId,
+	ProtectorResults,
+	SimulatedAndVisualizedTransaction,
+	SimulatedTransaction,
+	TokenPriceEstimate,
+} from '../types/visualizer-types.js'
+import type {
+	AddressBookEntry,
+	Erc20TokenEntry,
+} from '../types/addressBookTypes.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import type { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'
-import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, ParsedEnsEvent } from '../types/EnrichedEthereumData.js'
+import type {
+	EnrichedEthereumEventWithMetadata,
+	EnrichedEthereumEvents,
+	EnrichedEthereumInputData,
+	ParsedEnsEvent,
+} from '../types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../types/rpc.js'
 
-const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, addressMetaData: Map<string, AddressBookEntry>) => {
-	const getNameHash = (node: bigint) => ens.ensNameHashes.find((nameHash) => nameHash.nameHash === node) ?? { nameHash: node, name: undefined }
-	const getLabelHash = (labelHash: bigint) => ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === labelHash) ?? { labelHash: labelHash, label: undefined }
+const enrichEnsEvent = (
+	event: ParsedEnsEvent,
+	ens: {
+		ensNameHashes: MaybeENSNameHashes
+		ensLabelHashes: MaybeENSLabelHashes
+	},
+	addressMetaData: Map<string, AddressBookEntry>,
+) => {
+	const getNameHash = (node: bigint) =>
+		ens.ensNameHashes.find((nameHash) => nameHash.nameHash === node) ?? {
+			nameHash: node,
+			name: undefined,
+		}
+	const getLabelHash = (labelHash: bigint) =>
+		ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === labelHash) ?? {
+			labelHash: labelHash,
+			label: undefined,
+		}
 
 	switch (event.subType) {
 		case 'ENSNameWrapped': {
-			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			const owner = addressMetaData.get(
+				addressString(event.logInformation.owner),
+			)
 			if (owner === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, owner, node: getNameHash(event.logInformation.node) } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					owner,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
 		}
-		case 'ENSFusesSet': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
-		case 'ENSExpiryExtended': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
-		case 'ENSNameChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
-		case 'ENSNewTTL': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSFusesSet':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
+		case 'ENSExpiryExtended':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
+		case 'ENSNameChanged':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
+		case 'ENSNewTTL':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
 		case 'ENSNewResolver': {
-			const address = addressMetaData.get(addressString(event.logInformation.address))
+			const address = addressMetaData.get(
+				addressString(event.logInformation.address),
+			)
 			if (address === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), address } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+					address,
+				},
+			}
 		}
 		case 'ENSReverseClaimed': {
-			const address = addressMetaData.get(addressString(event.logInformation.address))
+			const address = addressMetaData.get(
+				addressString(event.logInformation.address),
+			)
 			if (address === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), address } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+					address,
+				},
+			}
 		}
-		case 'ENSTextChangedKeyValue': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
-		case 'ENSContentHashChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
-		case 'ENSTextChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSTextChangedKeyValue':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
+		case 'ENSContentHashChanged':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
+		case 'ENSTextChanged':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
 		case 'ENSTransfer': {
-			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			const owner = addressMetaData.get(
+				addressString(event.logInformation.owner),
+			)
 			if (owner === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), owner } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+					owner,
+				},
+			}
 		}
 		case 'ENSNewOwner': {
-			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			const owner = addressMetaData.get(
+				addressString(event.logInformation.owner),
+			)
 			if (owner === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), labelHash: getLabelHash(event.logInformation.labelHash), owner } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+					labelHash: getLabelHash(event.logInformation.labelHash),
+					owner,
+				},
+			}
 		}
-		case 'ENSAddressChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSAddressChanged':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
 		case 'ENSNameUnwrapped': {
-			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			const owner = addressMetaData.get(
+				addressString(event.logInformation.owner),
+			)
 			if (owner === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, owner, node: getNameHash(event.logInformation.node) } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					owner,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
 		}
 		case 'ENSAddrChanged': {
 			const to = addressMetaData.get(addressString(event.logInformation.to))
 			if (to === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, to, node: getNameHash(event.logInformation.node) } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					to,
+					node: getNameHash(event.logInformation.node),
+				},
+			}
 		}
 		case 'ENSControllerNameRegistered': {
-			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			const owner = addressMetaData.get(
+				addressString(event.logInformation.owner),
+			)
 			if (owner === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, owner, labelHash: getLabelHash(event.logInformation.labelHash)} }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					owner,
+					labelHash: getLabelHash(event.logInformation.labelHash),
+				},
+			}
 		}
-		case 'ENSControllerNameRenewed': return { ...event, logInformation: { ...event.logInformation, labelHash: getLabelHash(event.logInformation.labelHash) } }
+		case 'ENSControllerNameRenewed':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					labelHash: getLabelHash(event.logInformation.labelHash),
+				},
+			}
 		case 'ENSBaseRegistrarNameRegistered': {
-			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			const owner = addressMetaData.get(
+				addressString(event.logInformation.owner),
+			)
 			if (owner === undefined) throw new Error('missing metadata')
-			return { ...event, logInformation: { ...event.logInformation, owner, labelHash: getLabelHash(event.logInformation.labelHash) } }
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					owner,
+					labelHash: getLabelHash(event.logInformation.labelHash),
+				},
+			}
 		}
-		case 'ENSBaseRegistrarNameRenewed': return { ...event, logInformation: { ...event.logInformation, labelHash: getLabelHash(event.logInformation.labelHash) } }
-		default: assertNever(event)
+		case 'ENSBaseRegistrarNameRenewed':
+			return {
+				...event,
+				logInformation: {
+					...event.logInformation,
+					labelHash: getLabelHash(event.logInformation.labelHash),
+				},
+			}
+		default:
+			assertNever(event)
 	}
 }
 
-export const getFromAndToMetadata = (transaction: { from: bigint, to: bigint | null }, addressBookEntries: readonly AddressBookEntry[]) => {
-	const enrichedFrom = addressBookEntries.find((entry) => addressString(entry.address) === addressString(transaction.from))
+export const getFromAndToMetadata = (
+	transaction: { from: bigint; to: bigint | null },
+	addressBookEntries: readonly AddressBookEntry[],
+) => {
+	const enrichedFrom = addressBookEntries.find(
+		(entry) => addressString(entry.address) === addressString(transaction.from),
+	)
 	if (enrichedFrom === undefined) throw new Error('missing metadata')
 	const to = transaction.to
-	const enrichedTo = to !== null ? addressBookEntries.find((entry) => addressString(entry.address) === addressString(to)) : undefined
-	if (transaction.to !== null && enrichedTo === undefined) throw new Error('missing metadata')
+	const enrichedTo =
+		to !== null
+			? addressBookEntries.find(
+					(entry) => addressString(entry.address) === addressString(to),
+				)
+			: undefined
+	if (transaction.to !== null && enrichedTo === undefined)
+		throw new Error('missing metadata')
 	return { from: enrichedFrom, to: enrichedTo }
 }
 
-export function formSimulatedAndVisualizedTransactions(simulatedTransactions: readonly SimulatedTransaction[], eventsForEachTransaction: readonly EnrichedEthereumEvents[], rpcNetwork: RpcNetwork, parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined): readonly SimulatedAndVisualizedTransaction[] {
-	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
+export function formSimulatedAndVisualizedTransactions(
+	simulatedTransactions: readonly SimulatedTransaction[],
+	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
+	rpcNetwork: RpcNetwork,
+	parsedInputData: readonly EnrichedEthereumInputData[],
+	protectorResults: readonly ProtectorResults[],
+	addressBookEntries: readonly AddressBookEntry[],
+	namedTokenIds: readonly NamedTokenId[],
+	ens: {
+		ensNameHashes: MaybeENSNameHashes
+		ensLabelHashes: MaybeENSLabelHashes
+	},
+	tokenPriceEstimates: readonly TokenPriceEstimate[],
+	tokenPriceQuoteToken: Erc20TokenEntry | undefined,
+): readonly SimulatedAndVisualizedTransaction[] {
+	const addressMetaData = new Map(
+		addressBookEntries.map((x) => [addressString(x.address), x]),
+	)
 	return simulatedTransactions.map((simulatedTx, index) => {
 		const transactionEvents = eventsForEachTransaction[index]
-		if (transactionEvents === undefined) throw new Error('visualizer result was undefined')
+		if (transactionEvents === undefined)
+			throw new Error('visualizer result was undefined')
 		const protectorResult = protectorResults[index]
-		if (protectorResult === undefined) throw new Error('protector result was undefined')
-		const singleParsedInputData	= parsedInputData[index]
-		if (singleParsedInputData === undefined) throw new Error('parsedInputData was undefined')
+		if (protectorResult === undefined)
+			throw new Error('protector result was undefined')
+		const singleParsedInputData = parsedInputData[index]
+		if (singleParsedInputData === undefined)
+			throw new Error('parsedInputData was undefined')
 
 		// if we have identified a token event, but its emitted by non-token contract, do not parse it as token event
-		const modifiedTransactionEvents: EnrichedEthereumEventWithMetadata[] = transactionEvents.map((event): EnrichedEthereumEventWithMetadata => {
-			switch(event.type) {
-				case 'TokenEvent': {
-					const tokenInfo = event.logInformation
-					const fromEntry = addressMetaData.get(addressString(tokenInfo.from))
-					const toEntry = addressMetaData.get(addressString(tokenInfo.to))
-					const tokenEntry = addressMetaData.get(addressString(tokenInfo.tokenAddress))
-					if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
-					if (tokenInfo.type === 'ERC721' && tokenEntry.type === 'ERC721') return { ...event, logInformation: {...tokenInfo, logObject: event, from: fromEntry, to: toEntry, token: tokenEntry } }
-					if (tokenInfo.type === 'ERC20' && tokenEntry.type === 'ERC20') return { ...event, logInformation: {...tokenInfo, logObject: event, from: fromEntry, to: toEntry, token: tokenEntry } }
-					if (tokenInfo.type === 'NFT All approval' && (tokenEntry.type === 'ERC1155' || tokenEntry.type === 'ERC721')) return { ...event, logInformation: {...tokenInfo, logObject: event, from: fromEntry, to: toEntry, token: tokenEntry } }
-					if (tokenInfo.type === 'ERC1155' && tokenEntry.type === 'ERC1155') {
-						return { ...event,
-							logInformation: {
-								...tokenInfo,
-								logObject: event,
-								from: fromEntry,
-								to: toEntry,
-								token: tokenEntry,
-								tokenIdName: namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === tokenInfo.tokenAddress && namedTokenId.tokenId === tokenInfo.tokenId)?.tokenIdName
+		const modifiedTransactionEvents: EnrichedEthereumEventWithMetadata[] =
+			transactionEvents.map((event): EnrichedEthereumEventWithMetadata => {
+				switch (event.type) {
+					case 'TokenEvent': {
+						const tokenInfo = event.logInformation
+						const fromEntry = addressMetaData.get(addressString(tokenInfo.from))
+						const toEntry = addressMetaData.get(addressString(tokenInfo.to))
+						const tokenEntry = addressMetaData.get(
+							addressString(tokenInfo.tokenAddress),
+						)
+						if (
+							fromEntry === undefined ||
+							toEntry === undefined ||
+							tokenEntry === undefined
+						)
+							throw new Error('missing metadata')
+						if (tokenInfo.type === 'ERC721' && tokenEntry.type === 'ERC721')
+							return {
+								...event,
+								logInformation: {
+									...tokenInfo,
+									logObject: event,
+									from: fromEntry,
+									to: toEntry,
+									token: tokenEntry,
+								},
+							}
+						if (tokenInfo.type === 'ERC20' && tokenEntry.type === 'ERC20')
+							return {
+								...event,
+								logInformation: {
+									...tokenInfo,
+									logObject: event,
+									from: fromEntry,
+									to: toEntry,
+									token: tokenEntry,
+								},
+							}
+						if (
+							tokenInfo.type === 'NFT All approval' &&
+							(tokenEntry.type === 'ERC1155' || tokenEntry.type === 'ERC721')
+						)
+							return {
+								...event,
+								logInformation: {
+									...tokenInfo,
+									logObject: event,
+									from: fromEntry,
+									to: toEntry,
+									token: tokenEntry,
+								},
+							}
+						if (tokenInfo.type === 'ERC1155' && tokenEntry.type === 'ERC1155') {
+							return {
+								...event,
+								logInformation: {
+									...tokenInfo,
+									logObject: event,
+									from: fromEntry,
+									to: toEntry,
+									token: tokenEntry,
+									tokenIdName: namedTokenIds.find(
+										(namedTokenId) =>
+											namedTokenId.tokenAddress === tokenInfo.tokenAddress &&
+											namedTokenId.tokenId === tokenInfo.tokenId,
+									)?.tokenIdName,
+								},
 							}
 						}
+						return { ...event, type: 'Parsed' }
 					}
-					return({ ...event, type: 'Parsed' })
+					case 'ENS':
+						return enrichEnsEvent(event, ens, addressMetaData)
+					case 'Parsed':
+						return { ...event, type: 'Parsed' }
+					case 'NonParsed':
+						return { ...event, type: 'NonParsed' }
+					default:
+						return assertNever(event)
 				}
-				case 'ENS': return enrichEnsEvent(event, ens, addressMetaData)
-				case 'Parsed': return({ ...event, type: 'Parsed' })
-				case 'NonParsed': return({ ...event, type: 'NonParsed' })
-				default: return assertNever(event)
-			}
-		})
+			})
 
 		const removeFromAndToFromSignedTransaction = () => {
-			const { from, to, ...otherFields } = simulatedTx.preSimulationTransaction.signedTransaction
+			const { from, to, ...otherFields } =
+				simulatedTx.preSimulationTransaction.signedTransaction
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
 		const availableAbis = addressBookEntries
-			.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ? entry.abi : undefined)
-			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
-		const toFrom = getFromAndToMetadata(simulatedTx.preSimulationTransaction.signedTransaction, addressBookEntries)
+			.map((entry) =>
+				'abi' in entry && entry.abi !== undefined && entry.abi !== ''
+					? entry.abi
+					: undefined,
+			)
+			.filter(
+				(abiOrUndefined): abiOrUndefined is string =>
+					abiOrUndefined !== undefined,
+			)
+		const toFrom = getFromAndToMetadata(
+			simulatedTx.preSimulationTransaction.signedTransaction,
+			addressBookEntries,
+		)
 		return {
 			transaction: { ...toFrom, rpcNetwork, ...otherFields },
 			...(toFrom.to !== undefined ? { to: toFrom.to } : {}),
@@ -145,21 +416,25 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			quarantineReasons: protectorResult.quarantineReasons,
 			...(simulatedTx.ethSimulateV1CallResult.status === 'failure'
 				? {
-					error: {
-						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, simulatedTx.ethSimulateV1CallResult.error).reason,
-					},
-					transactionStatus: 'Transaction Failed',
-				}
+						error: {
+							...simulatedTx.ethSimulateV1CallResult.error,
+							decodedErrorMessage: decodeEthereumError(
+								availableAbis,
+								simulatedTx.ethSimulateV1CallResult.error,
+							).reason,
+						},
+						transactionStatus: 'Transaction Failed',
+					}
 				: {
-					transactionStatus: 'Transaction Succeeded',
-				}
-			),
+						transactionStatus: 'Transaction Succeeded',
+					}),
 			website: simulatedTx.preSimulationTransaction.website,
 			created: simulatedTx.preSimulationTransaction.created,
-			transactionIdentifier: simulatedTx.preSimulationTransaction.transactionIdentifier,
+			transactionIdentifier:
+				simulatedTx.preSimulationTransaction.transactionIdentifier,
 			parsedInputData: singleParsedInputData,
-			originalRequestParameters: simulatedTx.preSimulationTransaction.originalRequestParameters,
+			originalRequestParameters:
+				simulatedTx.preSimulationTransaction.originalRequestParameters,
 		}
 	})
 }

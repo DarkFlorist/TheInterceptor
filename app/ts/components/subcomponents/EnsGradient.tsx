@@ -29,59 +29,68 @@ const clampHue = (h: number) => {
 }
 
 // scale byte in range min and max
-const bScaleRange = (byte: number, min: number, max: number) => bscale(byte, max - min) + min
+const bScaleRange = (byte: number, min: number, max: number) =>
+	bscale(byte, max - min) + min
 
 const lerpHueFn = (optionNum: number, direction: number) => {
 	const option = optionNum % 4
 	const multiplier = direction ? 1 : -1
 	switch (option) {
-		case 0: return (hue: number, pct: number) => {
-			const endHue = hue + multiplier * 10
-			return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
-		}
-		case 1: return (hue: number, pct: number) => {
-			const endHue = hue + multiplier * 30
-			return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
-		}
-		case 2: return (hue: number, pct: number) => {
-			const endHue = hue + multiplier * 50
-			const lerpPercent = cubicInOut(pct)
-			return clampHue(linear(1.0 - lerpPercent) * hue + lerpPercent * endHue)
-		}
+		case 0:
+			return (hue: number, pct: number) => {
+				const endHue = hue + multiplier * 10
+				return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
+			}
+		case 1:
+			return (hue: number, pct: number) => {
+				const endHue = hue + multiplier * 30
+				return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
+			}
+		case 2:
+			return (hue: number, pct: number) => {
+				const endHue = hue + multiplier * 50
+				const lerpPercent = cubicInOut(pct)
+				return clampHue(linear(1.0 - lerpPercent) * hue + lerpPercent * endHue)
+			}
 		case 3:
-		default: return (hue: number, pct: number) => {
-			const endHue = hue + multiplier * 60 * bscale(optionNum, 1.0) + 30
-			const lerpPercent = cubicInOut(pct)
-			return clampHue((1.0 - lerpPercent) * hue + lerpPercent * endHue)
-		}
+		default:
+			return (hue: number, pct: number) => {
+				const endHue = hue + multiplier * 60 * bscale(optionNum, 1.0) + 30
+				const lerpPercent = cubicInOut(pct)
+				return clampHue((1.0 - lerpPercent) * hue + lerpPercent * endHue)
+			}
 	}
 }
 
 const lerpLightnessFn = (optionNum: number) => {
 	switch (optionNum) {
-		case 0: return (start: number, end: number, pct: number) => {
-			const lerpPercent = quintIn(pct)
-			return (1.0 - lerpPercent) * start + lerpPercent * end
-		}
+		case 0:
+			return (start: number, end: number, pct: number) => {
+				const lerpPercent = quintIn(pct)
+				return (1.0 - lerpPercent) * start + lerpPercent * end
+			}
 		case 1:
-		default: return (start: number, end: number, pct: number) => {
-			const lerpPercent = cubicIn(pct)
-			return (1.0 - lerpPercent) * start + lerpPercent * end
-		}
+		default:
+			return (start: number, end: number, pct: number) => {
+				const lerpPercent = cubicIn(pct)
+				return (1.0 - lerpPercent) * start + lerpPercent * end
+			}
 	}
 }
 
 const lerpSaturationFn = (optionNum: number) => {
 	switch (optionNum) {
-		case 0: return (start: number, end: number, pct: number) => {
-			const lerpPercent = quintIn(pct)
-			return (1.0 - lerpPercent) * start + lerpPercent * end
-		}
+		case 0:
+			return (start: number, end: number, pct: number) => {
+				const lerpPercent = quintIn(pct)
+				return (1.0 - lerpPercent) * start + lerpPercent * end
+			}
 		case 1:
-		default: return (start: number, end: number, pct: number) => {
-			const lerpPercent = linear(pct)
-			return (1.0 - lerpPercent) * start + lerpPercent * end
-		}
+		default:
+			return (start: number, end: number, pct: number) => {
+				const lerpPercent = linear(pct)
+				return (1.0 - lerpPercent) * start + lerpPercent * end
+			}
 	}
 }
 
@@ -100,7 +109,10 @@ const gradientForBytes = (data: Uint8Array) => {
 	const startLightness = bScaleRange(bytes_2, 32, 69.5)
 	const endLightness = (97 + bScaleRange(bytes_8, 72, 97)) / 2
 	const startSaturation = bScaleRange(bytes_7, 81, 97)
-	const endSaturation = Math.min(startSaturation - 10, bScaleRange(bytes_10, 70, 92))
+	const endSaturation = Math.min(
+		startSaturation - 10,
+		bScaleRange(bytes_10, 70, 92),
+	)
 
 	const lightnessShiftFn = lerpLightnessFn(bytes_5 % 2)
 	const saturationShiftFn = lerpSaturationFn(bytes_3 % 2)
@@ -132,7 +144,10 @@ const gradientForBytes = (data: Uint8Array) => {
 		},
 	]
 
-	return inputs.map((input: HSL) => `hsl(${ Math.round(input.h) }, ${ Math.round(input.s) }%, ${ Math.round(input.l) }%)`)
+	return inputs.map(
+		(input: HSL) =>
+			`hsl(${Math.round(input.h)}, ${Math.round(input.s)}%, ${Math.round(input.l)}%)`,
+	)
 }
 
 const zorbImageSVG = (bytes: Uint8Array) => {
@@ -142,11 +157,11 @@ const zorbImageSVG = (bytes: Uint8Array) => {
 		<defs>
 			<linearGradient id="gzr" x1="106.975" y1="136.156" x2="-12.9815" y2="13.5347" gradientUnits="userSpaceOnUse">
 				gradientTransform="translate(131.638 129.835) rotate(-141.194) scale(185.582)">
-				<stop offset="0.1562" stop-color="${ gradientInfo[0] }" />
-				<stop offset="0.3958" stop-color="${ gradientInfo[1] }" />
-				<stop offset="0.7292" stop-color="${ gradientInfo[2] }" />
-				<stop offset="0.9063" stop-color="${ gradientInfo[3] }" />
-				<stop offset="1" stop-color="${ gradientInfo[4] }" />
+				<stop offset="0.1562" stop-color="${gradientInfo[0]}" />
+				<stop offset="0.3958" stop-color="${gradientInfo[1]}" />
+				<stop offset="0.7292" stop-color="${gradientInfo[2]}" />
+				<stop offset="0.9063" stop-color="${gradientInfo[3]}" />
+				<stop offset="1" stop-color="${gradientInfo[4]}" />
 			</linearGradient>
 		</defs>
 		<path
@@ -156,5 +171,6 @@ const zorbImageSVG = (bytes: Uint8Array) => {
 	`
 }
 
-const makeBase64Svg = (svg: string) => `data:image/svg+xml;base64,${ btoa(svg) }`
-export const zorbImageDataURI = (input: Uint8Array) => makeBase64Svg(zorbImageSVG(input))
+const makeBase64Svg = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`
+export const zorbImageDataURI = (input: Uint8Array) =>
+	makeBase64Svg(zorbImageSVG(input))

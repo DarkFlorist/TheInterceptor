@@ -1,4 +1,9 @@
-import { type ComponentChildren, createContext, type JSX, type RefObject } from 'preact'
+import {
+	type ComponentChildren,
+	createContext,
+	type JSX,
+	type RefObject,
+} from 'preact'
 import { useContext, useEffect, useRef } from 'preact/hooks'
 
 /**
@@ -27,10 +32,16 @@ import { useContext, useEffect, useRef } from 'preact/hooks'
  */
 export const Modal = ({ children }: { children: ComponentChildren }) => {
 	const dialogRef = useRef<HTMLDialogElement>(null)
-	return <ModalContext.Provider value = { { dialogRef } }>{ children }</ModalContext.Provider>
+	return (
+		<ModalContext.Provider value={{ dialogRef }}>
+			{children}
+		</ModalContext.Provider>
+	)
 }
 
-const ModalContext = createContext<{ dialogRef: RefObject<HTMLDialogElement> } | undefined>(undefined)
+const ModalContext = createContext<
+	{ dialogRef: RefObject<HTMLDialogElement> } | undefined
+>(undefined)
 
 /**
  * Modal.Open Component
@@ -39,14 +50,18 @@ const ModalContext = createContext<{ dialogRef: RefObject<HTMLDialogElement> } |
  *
  * @extends JSX.IntrinsicElements['button']
  */
-const Open = (props: Omit<JSX.IntrinsicElements['button'], 'onClick'> & { onClick?: (event: Event) => void }) => {
+const Open = (
+	props: Omit<JSX.IntrinsicElements['button'], 'onClick'> & {
+		onClick?: (event: Event) => void
+	},
+) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Open must be used within a Modal')
 	const showModal = (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		context.dialogRef.current?.showModal()
 		props.onClick?.(event)
 	}
-	return <button { ...props } type = 'button' onClick = { showModal } />
+	return <button {...props} type="button" onClick={showModal} />
 }
 
 /**
@@ -61,7 +76,11 @@ type ModalDialogProps<T extends string> = JSX.IntrinsicElements['dialog'] & {
 	onModalClose: (returnValue: T) => void
 }
 
-const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDialogProps<T>) => {
+const Dialog = <T extends string>({
+	children,
+	onModalClose,
+	...props
+}: ModalDialogProps<T>) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Dialog must be used within a Modal')
 
@@ -74,12 +93,14 @@ const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDia
 		const dialogElement = context.dialogRef.current
 		if (dialogElement === null) return
 		dialogElement.addEventListener('close', closeEventCallback)
-		return () => { dialogElement.removeEventListener('close', closeEventCallback) }
+		return () => {
+			dialogElement.removeEventListener('close', closeEventCallback)
+		}
 	}, [context.dialogRef.current])
 
 	return (
-		<dialog role = 'dialog' { ...props } ref = { context.dialogRef }>
-			<form method = 'dialog'>{ children }</form>
+		<dialog role="dialog" {...props} ref={context.dialogRef}>
+			<form method="dialog">{children}</form>
 		</dialog>
 	)
 }
@@ -93,11 +114,13 @@ const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDia
  * @extends Omit<JSX.IntrinsicElements['button'], 'value'>
  * @property { string | number | string[] } value - The value to be passed to the onClose callback when the modal is closed.
  */
-type ModalCloseProps = Omit<JSX.IntrinsicElements['button'], 'value'> & { value: string | number | string[] }
+type ModalCloseProps = Omit<JSX.IntrinsicElements['button'], 'value'> & {
+	value: string | number | string[]
+}
 const Close = (props: ModalCloseProps) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Close must be used within a Modal')
-	return <button { ...props } type = 'submit' />
+	return <button {...props} type="submit" />
 }
 
 Modal.Dialog = Dialog

@@ -14,7 +14,11 @@ type MockFileReaderState = {
 const originalFetch = globalThis.fetch
 const originalFileReader = globalThis.FileReader
 
-let fetchImplementation: FetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
+let fetchImplementation: FetchImplementation = async () =>
+	new Response(new Blob(['default']), {
+		status: 200,
+		headers: { 'content-type': 'image/png' },
+	})
 
 function installSuccessfulFileReader(result: string) {
 	function SuccessfulFileReader(this: MockFileReaderState) {
@@ -39,13 +43,22 @@ Object.defineProperty(globalThis, 'fetch', {
 	configurable: true,
 	writable: true,
 	value: async (input: RequestInfo | URL) => {
-		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.toString()
+					: input.url
 		return await fetchImplementation(url)
 	},
 })
 
 afterEach(() => {
-	fetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
+	fetchImplementation = async () =>
+		new Response(new Blob(['default']), {
+			status: 200,
+			headers: { 'content-type': 'image/png' },
+		})
 	Object.defineProperty(globalThis, 'FileReader', {
 		configurable: true,
 		writable: true,
@@ -69,7 +82,11 @@ afterAll(() => {
 describe('imageToUri', () => {
 	test('returns a data uri for a successful image fetch', async () => {
 		installSuccessfulFileReader('data:image/png;base64,b2s=')
-		fetchImplementation = async () => new Response(new Blob(['ok'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+		fetchImplementation = async () =>
+			new Response(new Blob(['ok'], { type: 'image/png' }), {
+				status: 200,
+				headers: { 'content-type': 'image/png' },
+			})
 
 		const result = await imageToUri('https://example.test/success.png')
 
@@ -78,7 +95,9 @@ describe('imageToUri', () => {
 	})
 
 	test('classifies fetch rejections', async () => {
-		fetchImplementation = async () => { throw new TypeError('Failed to fetch') }
+		fetchImplementation = async () => {
+			throw new TypeError('Failed to fetch')
+		}
 
 		const result = await imageToUri('https://example.test/fail.png')
 
@@ -87,7 +106,12 @@ describe('imageToUri', () => {
 	})
 
 	test('classifies non-ok responses', async () => {
-		fetchImplementation = async () => new Response('missing', { status: 404, statusText: 'Not Found', headers: { 'content-type': 'image/png' } })
+		fetchImplementation = async () =>
+			new Response('missing', {
+				status: 404,
+				statusText: 'Not Found',
+				headers: { 'content-type': 'image/png' },
+			})
 
 		const result = await imageToUri('https://example.test/404.png')
 
@@ -96,7 +120,11 @@ describe('imageToUri', () => {
 	})
 
 	test('classifies non-image responses', async () => {
-		fetchImplementation = async () => new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } })
+		fetchImplementation = async () =>
+			new Response('<html></html>', {
+				status: 200,
+				headers: { 'content-type': 'text/html' },
+			})
 
 		const result = await imageToUri('https://example.test/not-image')
 
@@ -106,7 +134,11 @@ describe('imageToUri', () => {
 
 	test('classifies oversized data uris', async () => {
 		installSuccessfulFileReader('data:image/png;base64,dG9vLWJpZw==')
-		fetchImplementation = async () => new Response(new Blob(['too-big'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+		fetchImplementation = async () =>
+			new Response(new Blob(['too-big'], { type: 'image/png' }), {
+				status: 200,
+				headers: { 'content-type': 'image/png' },
+			})
 
 		const result = await imageToUri('https://example.test/too-big.png', 5)
 
@@ -133,12 +165,16 @@ describe('imageToUri', () => {
 			writable: true,
 			value: TrackingFileReader,
 		})
-		fetchImplementation = async () => new Response(new Blob(['too-big'], { type: 'image/png' }), {
-			status: 200,
-			headers: { 'content-type': 'image/png', 'content-length': '7' },
-		})
+		fetchImplementation = async () =>
+			new Response(new Blob(['too-big'], { type: 'image/png' }), {
+				status: 200,
+				headers: { 'content-type': 'image/png', 'content-length': '7' },
+			})
 
-		const result = await imageToUri('https://example.test/stream-too-big.png', 5)
+		const result = await imageToUri(
+			'https://example.test/stream-too-big.png',
+			5,
+		)
 
 		assert.equal(result.data, undefined)
 		assert.equal(result.failureReason, 'image data exceeded 5 bytes')
@@ -159,7 +195,11 @@ describe('imageToUri', () => {
 			writable: true,
 			value: FailingFileReader,
 		})
-		fetchImplementation = async () => new Response(new Blob(['ok'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+		fetchImplementation = async () =>
+			new Response(new Blob(['ok'], { type: 'image/png' }), {
+				status: 200,
+				headers: { 'content-type': 'image/png' },
+			})
 
 		const result = await imageToUri('https://example.test/reader-fail.png')
 

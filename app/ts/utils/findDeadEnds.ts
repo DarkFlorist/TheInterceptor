@@ -1,6 +1,9 @@
-type Edge<T> = { from: bigint, to: bigint, data: T }
+type Edge<T> = { from: bigint; to: bigint; data: T }
 
-export function findDeadEnds<T>(Edges: readonly Edge<T>[], startId: bigint): Map<bigint, Edge<T>[]> {
+export function findDeadEnds<T>(
+	Edges: readonly Edge<T>[],
+	startId: bigint,
+): Map<bigint, Edge<T>[]> {
 	const adjacencyList: Map<bigint, Edge<T>[]> = new Map()
 	const visited: Set<bigint> = new Set()
 	const deadEnds: Map<bigint, Edge<T>[]> = new Map()
@@ -9,7 +12,7 @@ export function findDeadEnds<T>(Edges: readonly Edge<T>[], startId: bigint): Map
 		if (!adjacencyList.has(Edge.from)) adjacencyList.set(Edge.from, [])
 		adjacencyList.get(Edge.from)!.push(Edge)
 	}
-	
+
 	function depthFirstSearch(node: bigint, path: Edge<T>[]) {
 		visited.add(node)
 

@@ -8,11 +8,21 @@ const signerLogos = {
 } as const
 
 export function getPrettySignerName(signerName: SignerName) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return 'Unknown signer'
+	if (
+		signerName === 'NoSigner' ||
+		signerName === 'NotRecognizedSigner' ||
+		signerName === 'NoSignerDetected'
+	)
+		return 'Unknown signer'
 	return signerName
 }
 
 export function getSignerLogo(signerName: SignerName) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return undefined
+	if (
+		signerName === 'NoSigner' ||
+		signerName === 'NotRecognizedSigner' ||
+		signerName === 'NoSignerDetected'
+	)
+		return undefined
 	return signerLogos[signerName]
 }

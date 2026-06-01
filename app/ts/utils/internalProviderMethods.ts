@@ -7,4 +7,5 @@ export const INTERNAL_PROVIDER_METHODS = [
 	'wallet_switchEthereumChain_reply',
 ] as const
 
-export const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
+export const isInternalProviderMethod = (method: string) =>
+	INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)

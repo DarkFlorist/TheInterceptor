@@ -1,11 +1,19 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/services/priceEstimator.js'
-import { abs, bigintToDecimalString, checksummedAddress } from '../../utils/bigint.js'
+import {
+	abs,
+	bigintToDecimalString,
+	checksummedAddress,
+} from '../../utils/bigint.js'
 import type { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import type { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
-import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
+import type {
+	Erc1155Entry,
+	Erc20TokenEntry,
+	Erc721Entry,
+} from '../../types/addressBookTypes.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import type { RpcNetwork } from '../../types/rpc.js'
@@ -25,14 +33,16 @@ type EtherParams = {
 }
 
 export function Ether(param: EtherParams) {
-	return <table class = 'log-table' style = 'width: fit-content'>
-		<div class = 'log-cell' style = 'justify-content: right;'>
-			<EtherAmount { ...param } />
-		</div>
-		<div class = 'log-cell'>
-			<EtherSymbol { ...param } />
-		</div>
-	</table>
+	return (
+		<table class="log-table" style="width: fit-content">
+			<div class="log-cell" style="justify-content: right;">
+				<EtherAmount {...param} />
+			</div>
+			<div class="log-cell">
+				<EtherSymbol {...param} />
+			</div>
+		</table>
+	)
 }
 type EtherAmountParams = {
 	amount: SignalOrValue<bigint>
@@ -43,7 +53,7 @@ type EtherAmountParams = {
 
 export function EtherAmount(param: EtherAmountParams) {
 	const amount = resolveSignal(param.amount)
-	const sign = param.showSign ? (amount >= 0 ? ' + ' : ' - '): ''
+	const sign = param.showSign ? (amount >= 0 ? ' + ' : ' - ') : ''
 	const style: JSX.CSSProperties = {
 		display: 'inline-flex',
 		overflow: 'hidden',
@@ -51,16 +61,25 @@ export function EtherAmount(param: EtherAmountParams) {
 		textOverflow: 'ellipsis',
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize:
+			param.fontSize === 'big'
+				? 'var(--big-font-size)'
+				: 'var(--normal-font-size)',
 	}
 
-	return <>
-		<CopyToClipboard content = { bigintToDecimalString(abs(amount), 18n) } copyMessage = 'Ether amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>
-				{ sign }<AbbreviatedValue amount = { abs(amount) } />
-			</p>
-		</CopyToClipboard>
-	</>
+	return (
+		<>
+			<CopyToClipboard
+				content={bigintToDecimalString(abs(amount), 18n)}
+				copyMessage="Ether amount copied!"
+			>
+				<p class="noselect nopointer" style={style}>
+					{sign}
+					<AbbreviatedValue amount={abs(amount)} />
+				</p>
+			</CopyToClipboard>
+		</>
+	)
 }
 
 type EtherSymbolParams = {
@@ -72,17 +91,19 @@ type EtherSymbolParams = {
 
 export function EtherSymbol(param: EtherSymbolParams) {
 	const rpcNetwork = resolveSignal(param.rpcNetwork)
-	return <TokenSymbol
-		tokenEntry = { getNativeTokenErc20(rpcNetwork) }
-		useFullTokenName = { param.useFullTokenName }
-		style = { param.style }
-		renameAddressCallBack = { () => undefined }
-		fontSize = { param.fontSize }
-	/>
+	return (
+		<TokenSymbol
+			tokenEntry={getNativeTokenErc20(rpcNetwork)}
+			useFullTokenName={param.useFullTokenName}
+			style={param.style}
+			renameAddressCallBack={() => undefined}
+			fontSize={param.fontSize}
+		/>
+	)
 }
 
 type TokenPriceParams = {
-	amount: SignalOrValue<bigint>,
+	amount: SignalOrValue<bigint>
 	quoteTokenEntry: Erc20TokenEntry
 	tokenPriceEstimate: TokenPriceEstimate
 	style?: JSX.CSSProperties
@@ -90,26 +111,32 @@ type TokenPriceParams = {
 }
 
 export function TokenPrice(param: TokenPriceParams) {
-	const value = getTokenAmountsWorth(resolveSignal(param.amount), param.tokenPriceEstimate)
-	const style = (param.style === undefined ? {} : param.style)
-	return <TokenWithAmount
-		amount = { value }
-		tokenEntry = { param.quoteTokenEntry }
-		style = { style }
-		fontSize = 'normal'
-		renameAddressCallBack = { param.renameAddressCallBack }
-		showSign = { false }
-	/>
+	const value = getTokenAmountsWorth(
+		resolveSignal(param.amount),
+		param.tokenPriceEstimate,
+	)
+	const style = param.style === undefined ? {} : param.style
+	return (
+		<TokenWithAmount
+			amount={value}
+			tokenEntry={param.quoteTokenEntry}
+			style={style}
+			fontSize="normal"
+			renameAddressCallBack={param.renameAddressCallBack}
+			showSign={false}
+		/>
+	)
 }
 
 type TokenSymbolParams = (
-	{
-		tokenEntry: Erc1155Entry | Erc721Entry
-		tokenId: bigint | undefined
-		tokenIdName?: string
-	} | {
-		tokenEntry: Erc20TokenEntry
-	}
+	| {
+			tokenEntry: Erc1155Entry | Erc721Entry
+			tokenId: bigint | undefined
+			tokenIdName?: string
+	  }
+	| {
+			tokenEntry: Erc20TokenEntry
+	  }
 ) & {
 	useFullTokenName?: boolean
 	style?: JSX.CSSProperties
@@ -123,47 +150,95 @@ function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
 		display: 'inline-flex',
 		alignItems: 'baseline',
 		...(param.style === undefined ? {} : param.style),
-		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize:
+			param.fontSize === 'big'
+				? 'var(--big-font-size)'
+				: 'var(--normal-font-size)',
 	}
 
 	if (!('tokenId' in param) || param.tokenId === undefined) return <></>
-	if ('tokenIdName' in param && param.tokenIdName !== undefined) return <>
-		<CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token name copied!' >
-			<p class = 'noselect nopointer' style = { style }>
-				{ param.tokenIdName }&nbsp;
+	if ('tokenIdName' in param && param.tokenIdName !== undefined)
+		return (
+			<>
+				<CopyToClipboard
+					content={param.tokenId.toString()}
+					copyMessage="Token name copied!"
+				>
+					<p class="noselect nopointer" style={style}>
+						{param.tokenIdName}&nbsp;
+					</p>
+				</CopyToClipboard>
+			</>
+		)
+	return (
+		<CopyToClipboard
+			content={param.tokenId.toString()}
+			copyMessage="Token identifier copied!"
+		>
+			<p class="noselect nopointer" style={style}>
+				{`#${truncate(param.tokenId.toString(), 9)}`}&nbsp;
 			</p>
 		</CopyToClipboard>
-	</>
-	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token identifier copied!' >
-		<p class = 'noselect nopointer' style = { style }>
-			{ `#${ truncate(param.tokenId.toString(), 9) }` }&nbsp;
-		</p>
-	</CopyToClipboard>
+	)
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
 	const address = useSignal<bigint>(param.tokenEntry.address)
-	useEffect(() => { address.value = param.tokenEntry.address }, [param.tokenEntry.address])
+	useEffect(() => {
+		address.value = param.tokenEntry.address
+	}, [param.tokenEntry.address])
 
-	const warningMessage = param.tokenEntry.entrySource === 'OnChain' ? 'Untrusted address' : undefined
-	const tokenName = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
+	const warningMessage =
+		param.tokenEntry.entrySource === 'OnChain' ? 'Untrusted address' : undefined
+	const tokenName = param.useFullTokenName
+		? param.tokenEntry.name
+		: param.tokenEntry.symbol
 	const tokenAddressString = checksummedAddress(param.tokenEntry.address)
 	const defaultCardStyles: JSX.CSSProperties = {
 		'--min-text-width': '2ch',
-		'--text-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		'--text-size':
+			param.fontSize === 'big'
+				? 'var(--big-font-size)'
+				: 'var(--normal-font-size)',
 	}
 
 	const generateIcon = () => {
-		if (param.tokenEntry.logoUri === undefined) return <Blockie address = { param.tokenEntry.address } />
-		return <img style = { { minWidth: '1em', minHeight: '1em' } } width = '16' height = '16' src = { param.tokenEntry.logoUri } />
+		if (param.tokenEntry.logoUri === undefined)
+			return <Blockie address={param.tokenEntry.address} />
+		return (
+			<img
+				style={{ minWidth: '1em', minHeight: '1em' }}
+				width="16"
+				height="16"
+				src={param.tokenEntry.logoUri}
+			/>
+		)
 	}
 	if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) {
-		return <InlineCard icon = { generateIcon } label = { tokenName } style = { { ...defaultCardStyles, ...param.style } } noCopy = { true } noExpandButtons />
+		return (
+			<InlineCard
+				icon={generateIcon}
+				label={tokenName}
+				style={{ ...defaultCardStyles, ...param.style }}
+				noCopy={true}
+				noExpandButtons
+			/>
+		)
 	}
-	return <>
-		<TokenIdOrNameOrNothing { ...param } />
-		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } warningMessage = { warningMessage } style = { { ...defaultCardStyles, ...param.style } } noExpandButtons />
-	</>
+	return (
+		<>
+			<TokenIdOrNameOrNothing {...param} />
+			<InlineCard
+				icon={generateIcon}
+				copyValue={tokenAddressString}
+				label={tokenName}
+				onEditClicked={() => param.renameAddressCallBack(param.tokenEntry)}
+				warningMessage={warningMessage}
+				style={{ ...defaultCardStyles, ...param.style }}
+				noExpandButtons
+			/>
+		</>
+	)
 }
 
 type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
@@ -172,29 +247,54 @@ type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
 }
 
 export function TokenAmount(param: TokenAmountParams) {
-	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
+	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - ') : ''
 	const style: JSX.CSSProperties = {
 		color: 'var(--text-color)',
 		display: 'inline-flex',
 		alignItems: 'baseline',
 		...(param.style === undefined ? {} : param.style),
-		fontSize: param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		fontSize:
+			param.fontSize === 'big'
+				? 'var(--big-font-size)'
+				: 'var(--normal-font-size)',
 	}
 
-	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
-		return <>
-			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)` } copyMessage = 'Token amount copied!' >
-				<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ abs(param.amount).toString() }` }&nbsp; </p>
+	if (
+		!('decimals' in param.tokenEntry) ||
+		param.tokenEntry.decimals === undefined
+	) {
+		return (
+			<>
+				<CopyToClipboard
+					content={`${abs(param.amount)} (decimals unknown)`}
+					copyMessage="Token amount copied!"
+				>
+					<p class="noselect nopointer" style={style}>
+						{`${sign}${abs(param.amount).toString()}`}&nbsp;{' '}
+					</p>
+				</CopyToClipboard>
+			</>
+		)
+	}
+	return (
+		<>
+			<CopyToClipboard
+				content={bigintToDecimalString(
+					abs(param.amount),
+					param.tokenEntry.decimals,
+				)}
+				copyMessage="Token amount copied!"
+			>
+				<p class="noselect nopointer" style={style}>
+					{sign}
+					<AbbreviatedValue
+						amount={abs(param.amount)}
+						decimals={param.tokenEntry.decimals}
+					/>
+				</p>
 			</CopyToClipboard>
 		</>
-	}
-	return <>
-		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenEntry.decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>
-				{ sign }<AbbreviatedValue amount = { abs(param.amount) } decimals = { param.tokenEntry.decimals } />
-			</p>
-		</CopyToClipboard>
-	</>
+	)
 }
 
 type TokenWithAmountParams = TokenSymbolParams & {
@@ -207,43 +307,46 @@ export function TokenWithAmount(param: TokenWithAmountParams) {
 		display: 'inline-flex',
 		width: 'fit-content',
 		columnGap: '0.25ch',
-		alignItems: 'baseline'
+		alignItems: 'baseline',
 	}
 
 	return (
-		<div style = { containerStyles }>
-			<TokenAmount { ...param } />
-			<TokenSymbol { ...param }/>
+		<div style={containerStyles}>
+			<TokenAmount {...param} />
+			<TokenSymbol {...param} />
 		</div>
 	)
 }
 
-export type TokenOrEtherParams = TokenWithAmountParams | EtherParams | TokenSymbolParams
+export type TokenOrEtherParams =
+	| TokenWithAmountParams
+	| EtherParams
+	| TokenSymbolParams
 
 export function TokenOrEth(param: TokenOrEtherParams) {
-	if (!('tokenEntry' in param)) return <Ether { ...param }/>
+	if (!('tokenEntry' in param)) return <Ether {...param} />
 	if ('amount' in param) {
-		return <TokenWithAmount { ...param }/>
+		return <TokenWithAmount {...param} />
 	}
-	return <TokenSymbol { ...param }/>
+	return <TokenSymbol {...param} />
 }
 
 export function TokenOrEthSymbol(param: TokenSymbolParams | EtherSymbolParams) {
 	if ('tokenEntry' in param) {
-		return <TokenSymbol { ...param }/>
+		return <TokenSymbol {...param} />
 	}
-	return <EtherSymbol { ...param }/>
+	return <EtherSymbol {...param} />
 }
 
 export function TokenOrEthValue(param: TokenAmountParams | EtherAmountParams) {
 	if ('tokenEntry' in param) {
-		return <TokenAmount { ...param }/>
+		return <TokenAmount {...param} />
 	}
-	return <EtherAmount { ...param }/>
+	return <EtherAmount {...param} />
 }
 
-function truncate(str: string, n: number){
-	return (str.length > n) ? `${ str.slice(0, n-1) }…` : str
+function truncate(str: string, n: number) {
+	return str.length > n ? `${str.slice(0, n - 1)}…` : str
 }
 
 type AllApprovalParams = {
@@ -253,12 +356,24 @@ type AllApprovalParams = {
 	fontSize: 'normal' | 'big'
 }
 
-export function AllApproval(param: AllApprovalParams ) {
+export function AllApproval(param: AllApprovalParams) {
 	const style = {
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		'font-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
+		'font-size':
+			param.fontSize === 'big'
+				? 'var(--big-font-size)'
+				: 'var(--normal-font-size)',
 	}
-	if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
-	return <p style = { style }><b>ALL</b></p>
+	if (!param.allApprovalAdded)
+		return (
+			<p style={style}>
+				<b>NONE</b>
+			</p>
+		)
+	return (
+		<p style={style}>
+			<b>ALL</b>
+		</p>
+	)
 }

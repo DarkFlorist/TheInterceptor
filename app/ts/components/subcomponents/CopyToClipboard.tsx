@@ -2,7 +2,9 @@ import type { ComponentChildren, JSX } from 'preact'
 import type { Signal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
 
-type CopySource = { content: string } | { copyFunction: () => Promise<string | undefined> }
+type CopySource =
+	| { content: string }
+	| { copyFunction: () => Promise<string | undefined> }
 
 type CopyToClipboardProps = CopySource & {
 	children: ComponentChildren
@@ -24,13 +26,27 @@ export function CopyToClipboard(props: CopyToClipboardProps) {
 		await clipboardCopy(resolvedText)
 	}
 
-	const tooltipContent = 'content' in props ? (props.contentDisplayOverride ?? props.content) : props.contentDisplayOverride
+	const tooltipContent =
+		'content' in props
+			? (props.contentDisplayOverride ?? props.content)
+			: props.contentDisplayOverride
 
-	return <div onClick = { performCopy } class = { props.classNames } style = { props.style ?? 'display: inherit; overflow: inherit;' }>
-		<div data-hint-clickable-hide-timer-ms = { 1500 } data-hint = { props.copyMessage ?? 'Copied to clipboard!' } data-tooltip = { tooltipContent } style = 'display: inherit; overflow: inherit; width: 100%;'>
-			{ props.children }
+	return (
+		<div
+			onClick={performCopy}
+			class={props.classNames}
+			style={props.style ?? 'display: inherit; overflow: inherit;'}
+		>
+			<div
+				data-hint-clickable-hide-timer-ms={1500}
+				data-hint={props.copyMessage ?? 'Copied to clipboard!'}
+				data-tooltip={tooltipContent}
+				style="display: inherit; overflow: inherit; width: 100%;"
+			>
+				{props.children}
+			</div>
 		</div>
-	</div>
+	)
 }
 
 interface ToolTipParams {
@@ -39,9 +55,14 @@ interface ToolTipParams {
 }
 
 export function ToolTip(props: ToolTipParams) {
-	return <div style = 'display: inherit; overflow: inherit;'>
-		<div data-tooltip = { props.content.value } style = 'display: inherit; overflow: inherit; width: 100%;'>
-			{ props.children }
+	return (
+		<div style="display: inherit; overflow: inherit;">
+			<div
+				data-tooltip={props.content.value}
+				style="display: inherit; overflow: inherit; width: 100%;"
+			>
+				{props.children}
+			</div>
 		</div>
-	</div>
+	)
 }

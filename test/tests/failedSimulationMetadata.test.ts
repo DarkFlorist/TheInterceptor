@@ -6,58 +6,123 @@ function installBrowserMock() {
 	const browser = {
 		runtime: {
 			lastError: null,
-			async sendMessage() { return undefined },
+			async sendMessage() {
+				return undefined
+			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+			onMessage: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onConnect: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		storage: {
 			local: {
 				async get(keys) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
+					if (Array.isArray(keys))
+						return Object.fromEntries(
+							keys.map((key) => [key, storageState[key]]),
+						)
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					return Object.fromEntries(
+						Object.entries(keys).map(([key, defaultValue]) => [
+							key,
+							key in storageState ? storageState[key] : defaultValue,
+						]),
+					)
 				},
-				async set(items) { Object.assign(storageState, items) },
+				async set(items) {
+					Object.assign(storageState, items)
+				},
 				async remove(keys) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys])
+						delete storageState[key]
 				},
 			},
 		},
 		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			async query() {
+				return []
+			},
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
+			onUpdated: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onRemoved: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
 		},
 		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 	}
-	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+	Object.defineProperty(globalThis, 'browser', {
+		value: browser,
+		configurable: true,
+		writable: true,
+	})
+	Object.defineProperty(globalThis, 'chrome', {
+		value: { runtime: { id: 'test-extension' } },
+		configurable: true,
+		writable: true,
+	})
 }
 
 installBrowserMock()
 
-const { ETHEREUM_LOGS_LOGGER_ADDRESS } = await import('../../app/ts/utils/constants.js')
-const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
-const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+const { ETHEREUM_LOGS_LOGGER_ADDRESS } = await import(
+	'../../app/ts/utils/constants.js'
+)
+const { visualizeSimulatorState } = await import(
+	'../../app/ts/background/simulationUpdating.js'
+)
+const { EthereumClientService } = await import(
+	'../../app/ts/simulation/services/EthereumClientService.js'
+)
 
 describe('visualizeSimulatorState failed simulations', () => {
 	test('keeps fetched address metadata instead of returning an empty address book', async () => {
@@ -73,46 +138,79 @@ describe('visualizeSimulatorState failed simulations', () => {
 			minimized: true,
 		}
 
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				throw new Error(`Unexpected RPC method: ${ request.method }`)
+		const ethereum = new EthereumClientService(
+			{
+				rpcUrl: rpcNetwork.httpsRpc,
+				clearCache() {
+					return undefined
+				},
+				async jsonRpcRequest(request) {
+					throw new Error(`Unexpected RPC method: ${request.method}`)
+				},
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+			async () => undefined,
+			async () => undefined,
+			rpcNetwork,
+		)
 
 		const created = new Date('2024-01-01T00:00:00.000Z')
 		const failedSimulationState = {
 			success: false,
-			simulationStateInput: [{
-				stateOverrides: {},
-				transactions: [{
-					signedTransaction: {
-						type: '1559',
-						from: 0n,
-						nonce: 0n,
-						maxFeePerGas: 1n,
-						maxPriorityFeePerGas: 1n,
-						gas: 21_000n,
-						to: ETHEREUM_LOGS_LOGGER_ADDRESS,
-						value: 0n,
-						input: new Uint8Array(),
-						chainId: rpcNetwork.chainId,
-						hash: 1n,
-						v: 1n,
-						r: 1n,
-						s: 1n,
+			simulationStateInput: [
+				{
+					stateOverrides: {},
+					transactions: [
+						{
+							signedTransaction: {
+								type: '1559',
+								from: 0n,
+								nonce: 0n,
+								maxFeePerGas: 1n,
+								maxPriorityFeePerGas: 1n,
+								gas: 21_000n,
+								to: ETHEREUM_LOGS_LOGGER_ADDRESS,
+								value: 0n,
+								input: new Uint8Array(),
+								chainId: rpcNetwork.chainId,
+								hash: 1n,
+								v: 1n,
+								r: 1n,
+								s: 1n,
+							},
+							website: {
+								websiteOrigin: 'https://example.com',
+								icon: undefined,
+								title: 'Example',
+							},
+							created,
+							originalRequestParameters: {
+								method: 'eth_sendTransaction',
+								params: [
+									{
+										from: 0n,
+										to: ETHEREUM_LOGS_LOGGER_ADDRESS,
+										value: 0n,
+										input: new Uint8Array(),
+									},
+								],
+							},
+							transactionIdentifier: 1n,
+						},
+					],
+					signedMessages: [],
+					blockTimeManipulation: {
+						type: 'AddToTimestamp',
+						deltaToAdd: 0n,
+						deltaUnit: 'Seconds',
 					},
-					website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
-					created,
-					originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: 0n, to: ETHEREUM_LOGS_LOGGER_ADDRESS, value: 0n, input: new Uint8Array() }] },
-					transactionIdentifier: 1n,
-				}],
-				signedMessages: [],
-				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
-				simulateWithZeroBaseFee: false,
-			}],
-			jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'simulation failed' } },
+					simulateWithZeroBaseFee: false,
+				},
+			],
+			jsonRpcError: {
+				jsonrpc: '2.0',
+				id: 1,
+				error: { code: -32000, message: 'simulation failed' },
+			},
 			blockNumber: 1n,
 			blockTimestamp: created,
 			baseFeePerGas: 1n,
@@ -120,13 +218,34 @@ describe('visualizeSimulatorState failed simulations', () => {
 			rpcNetwork,
 		}
 
-		const visualized = await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
+		const visualized = await visualizeSimulatorState(
+			failedSimulationState,
+			ethereum,
+			{ estimateEthereumPricesForTokens: async () => [] },
+			undefined,
+		)
 
 		assert.equal(visualized.addressBookEntries.length, 2)
-		assert.equal(visualized.addressBookEntries.some((entry) => entry.address === 0n), true)
-		assert.equal(visualized.addressBookEntries.some((entry) => entry.address === ETHEREUM_LOGS_LOGGER_ADDRESS), true)
+		assert.equal(
+			visualized.addressBookEntries.some((entry) => entry.address === 0n),
+			true,
+		)
+		assert.equal(
+			visualized.addressBookEntries.some(
+				(entry) => entry.address === ETHEREUM_LOGS_LOGGER_ADDRESS,
+			),
+			true,
+		)
 		assert.equal(visualized.visualizedSimulationState.success, false)
-		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.from.address, 0n)
-		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.address, ETHEREUM_LOGS_LOGGER_ADDRESS)
+		assert.equal(
+			visualized.visualizedSimulationState.visualizedBlocks[0]
+				?.simulatedAndVisualizedTransactions[0]?.transaction.from.address,
+			0n,
+		)
+		assert.equal(
+			visualized.visualizedSimulationState.visualizedBlocks[0]
+				?.simulatedAndVisualizedTransactions[0]?.transaction.to?.address,
+			ETHEREUM_LOGS_LOGGER_ADDRESS,
+		)
 	})
 })

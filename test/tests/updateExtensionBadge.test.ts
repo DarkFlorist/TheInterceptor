@@ -19,39 +19,77 @@ function installBrowserMock() {
 					return undefined
 				},
 				getManifest: () => ({ manifest_version: 3 }),
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
+				onMessage: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
+				onConnect: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
 			},
 			storage: {
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+						if (Array.isArray(keys))
+							return Object.fromEntries(
+								keys
+									.filter((key) => key in storageState)
+									.map((key) => [key, storageState[key]]),
+							)
+						if (typeof keys === 'string')
+							return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(
+							Object.entries(keys).map(([key, defaultValue]) => [
+								key,
+								key in storageState ? storageState[key] : defaultValue,
+							]),
+						)
 					},
 					async set(items: Record<string, unknown>) {
 						Object.assign(storageState, items)
 					},
 					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+						for (const key of Array.isArray(keys) ? keys : [keys])
+							delete storageState[key]
 					},
 				},
 			},
 			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+				async query() {
+					return []
+				},
+				async get() {
+					return undefined
+				},
+				async update() {
+					return undefined
+				},
+				onUpdated: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
+				onRemoved: {
+					addListener: () => undefined,
+					removeListener: () => undefined,
+				},
 			},
 			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
+				async get() {
+					return undefined
+				},
+				async update() {
+					return undefined
+				},
 			},
 			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
+				async setIcon() {
+					return undefined
+				},
+				async setTitle() {
+					return undefined
+				},
 				async setBadgeText(details: BadgeTextCall) {
 					badgeTextCalls.push(details)
 					return undefined
@@ -62,8 +100,12 @@ function installBrowserMock() {
 				},
 			},
 			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
+				async setIcon() {
+					return undefined
+				},
+				async setTitle() {
+					return undefined
+				},
 				async setBadgeText(details: BadgeTextCall) {
 					badgeTextCalls.push(details)
 					return undefined
@@ -87,8 +129,12 @@ function installBrowserMock() {
 describe('updateExtensionBadge', () => {
 	test('keeps the warning badge visible for a disconnected overdue retry', async () => {
 		const { badgeTextCalls, badgeColorCalls } = installBrowserMock()
-		const { setRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
-		const { updateExtensionBadge } = await import('../../app/ts/background/iconHandler.js')
+		const { setRpcConnectionStatus } = await import(
+			'../../app/ts/background/storageVariables.js'
+		)
+		const { updateExtensionBadge } = await import(
+			'../../app/ts/background/iconHandler.js'
+		)
 
 		await setRpcConnectionStatus({
 			isConnected: false,

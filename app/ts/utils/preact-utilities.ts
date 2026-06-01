@@ -1,10 +1,14 @@
 import { type Signal, useSignal } from '@preact/signals'
 type Inactive = { state: 'inactive' }
 type Pending = { state: 'pending' }
-type Resolved<T> = { state: 'resolved', value: T }
-type Rejected = { state: 'rejected', error: Error }
+type Resolved<T> = { state: 'resolved'; value: T }
+type Rejected = { state: 'rejected'; error: Error }
 type AsyncProperty<T> = Inactive | Pending | Resolved<T> | Rejected
-type AsyncState<T> = { value: Signal<AsyncProperty<T>>, waitFor: (resolver: () => Promise<T>) => void, reset: () => void }
+type AsyncState<T> = {
+	value: Signal<AsyncProperty<T>>
+	waitFor: (resolver: () => Promise<T>) => void
+	reset: () => void
+}
 export type AsyncStates = AsyncState<unknown>['value']['value']['state']
 
 export function useAsyncState<T>(): AsyncState<T> {
@@ -28,10 +32,20 @@ export function useAsyncState<T>(): AsyncState<T> {
 			const pendingState = { state: 'pending' as const }
 			setCapturedResult(pendingState)
 			const resolvedValue = await resolver()
-			const resolvedState = { state: 'resolved' as const, value: resolvedValue }
+			const resolvedState = {
+				state: 'resolved' as const,
+				value: resolvedValue,
+			}
 			setCapturedResult(resolvedState)
 		} catch (unknownError: unknown) {
-			const error = unknownError instanceof Error ? unknownError : typeof unknownError === 'string' ? new Error(unknownError) : new Error(`Unknown error occurred.\n${ JSON.stringify(unknownError) }`)
+			const error =
+				unknownError instanceof Error
+					? unknownError
+					: typeof unknownError === 'string'
+						? new Error(unknownError)
+						: new Error(
+								`Unknown error occurred.\n${JSON.stringify(unknownError)}`,
+							)
 			const rejectedState = { state: 'rejected' as const, error }
 			setCapturedResult(rejectedState)
 		}
@@ -46,5 +60,5 @@ export function useAsyncState<T>(): AsyncState<T> {
 	const result = useSignal<AsyncProperty<T>>({ state: 'inactive' })
 	const captureContainer = useSignal<{ result?: Signal<AsyncProperty<T>> }>({})
 
-	return { value: result, waitFor: resolver => activate(resolver), reset }
+	return { value: result, waitFor: (resolver) => activate(resolver), reset }
 }

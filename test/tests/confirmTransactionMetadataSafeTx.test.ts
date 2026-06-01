@@ -3,7 +3,10 @@ import { describe, test } from 'bun:test'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { SafeTx as SafeTxRuntype } from '../../app/ts/types/personal-message-definitions.js'
-import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import type {
+	SafeTx,
+	VisualizedPersonalSignRequestSafeTx,
+} from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
@@ -19,12 +22,20 @@ type BrowserMockGlobals = {
 		lastError: { message?: string } | null | undefined
 		sendMessage: (message: RuntimeMessage) => Promise<unknown>
 		getManifest: () => { manifest_version: number }
-		onMessage: { addListener: () => undefined; removeListener: () => undefined }
-		onConnect: { addListener: () => undefined; removeListener: () => undefined }
+		onMessage: {
+			addListener: () => undefined
+			removeListener: () => undefined
+		}
+		onConnect: {
+			addListener: () => undefined
+			removeListener: () => undefined
+		}
 	}
 	storage: {
 		local: {
-			get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>
+			get: (
+				keys?: string | string[] | Record<string, unknown> | null,
+			) => Promise<Record<string, unknown>>
 			set: (items: Record<string, unknown>) => Promise<void>
 			remove: (keys: string | string[]) => Promise<void>
 		}
@@ -33,8 +44,14 @@ type BrowserMockGlobals = {
 		query: () => Promise<unknown[]>
 		get: () => Promise<undefined>
 		update: () => Promise<undefined>
-		onUpdated: { addListener: () => undefined; removeListener: () => undefined }
-		onRemoved: { addListener: () => undefined; removeListener: () => undefined }
+		onUpdated: {
+			addListener: () => undefined
+			removeListener: () => undefined
+		}
+		onRemoved: {
+			addListener: () => undefined
+			removeListener: () => undefined
+		}
 	}
 	windows: {
 		get: () => Promise<undefined>
@@ -63,15 +80,29 @@ function createBrowserMock(): BrowserMock {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 
-	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
+	const getItems = (
+		keys?: string | string[] | Record<string, unknown> | null,
+	) => {
 		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+		if (Array.isArray(keys))
+			return Object.fromEntries(
+				keys
+					.filter((key) => key in storageState)
+					.map((key) => [key, storageState[key]]),
+			)
+		if (typeof keys === 'string')
+			return keys in storageState ? { [keys]: storageState[keys] } : {}
+		return Object.fromEntries(
+			Object.entries(keys).map(([key, defaultValue]) => [
+				key,
+				key in storageState ? storageState[key] : defaultValue,
+			]),
+		)
 	}
 
 	const removeItems = (keys: string | string[]) => {
-		for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+		for (const key of Array.isArray(keys) ? keys : [keys])
+			delete storageState[key]
 	}
 
 	const browserMock = {
@@ -80,49 +111,104 @@ function createBrowserMock(): BrowserMock {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+					return {
+						method: 'popup_isMainPopupWindowOpen',
+						data: { isOpen: false },
+					}
 				}
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
+			onMessage: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onConnect: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		storage: {
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getItems(keys) },
-				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-				async remove(keys: string | string[]) { removeItems(keys) },
+				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					return getItems(keys)
+				},
+				async set(items: Record<string, unknown>) {
+					Object.assign(storageState, items)
+				},
+				async remove(keys: string | string[]) {
+					removeItems(keys)
+				},
 			},
 		},
 		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			async query() {
+				return []
+			},
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
+			onUpdated: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
+			onRemoved: {
+				addListener: () => undefined,
+				removeListener: () => undefined,
+			},
 		},
 		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
+			async get() {
+				return undefined
+			},
+			async update() {
+				return undefined
+			},
 		},
 		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
+			async setIcon() {
+				return undefined
+			},
+			async setTitle() {
+				return undefined
+			},
+			async setBadgeText() {
+				return undefined
+			},
+			async setBadgeBackgroundColor() {
+				return undefined
+			},
 		},
 	} satisfies BrowserMockGlobals
 
 	const installBrowserGlobals = () => {
-		Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+		Object.defineProperty(globalThis, 'browser', {
+			value: browserMock,
+			configurable: true,
+			writable: true,
+		})
+		Object.defineProperty(globalThis, 'chrome', {
+			value: { runtime: { id: 'test-extension' } },
+			configurable: true,
+			writable: true,
+		})
 	}
 
 	installBrowserGlobals()
@@ -141,17 +227,27 @@ function createBrowserMock(): BrowserMock {
 const browserMock = createBrowserMock()
 
 async function loadModules() {
-	const popupMessageHandlers = await import('../../app/ts/background/popupMessageHandlers.js')
-	const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
-	const ethereumClientService = await import('../../app/ts/simulation/services/EthereumClientService.js')
-	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
+	const popupMessageHandlers = await import(
+		'../../app/ts/background/popupMessageHandlers.js'
+	)
+	const confirmTransaction = await import(
+		'../../app/ts/background/windows/confirmTransaction.js'
+	)
+	const ethereumClientService = await import(
+		'../../app/ts/simulation/services/EthereumClientService.js'
+	)
+	const priceEstimator = await import(
+		'../../app/ts/simulation/services/priceEstimator.js'
+	)
 	const settings = await import('../../app/ts/background/settings.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const wireTypes = await import('../../app/ts/types/wire-types.js')
 
 	return {
-		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
-		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
+		refreshPopupConfirmTransactionMetadata:
+			popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
+		updateConfirmTransactionView:
+			confirmTransaction.updateConfirmTransactionView,
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
@@ -166,7 +262,10 @@ async function loadModules() {
 const modulesPromise = loadModules()
 type TestModules = Awaited<ReturnType<typeof loadModules>>
 
-const serializeForRpc = (runtype: { serialize: (value: unknown) => unknown }, value: unknown) => runtype.serialize(value)
+const serializeForRpc = (
+	runtype: { serialize: (value: unknown) => unknown },
+	value: unknown,
+) => runtype.serialize(value)
 
 function makeFakeBlock(number: bigint) {
 	return {
@@ -202,11 +301,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
-	if (typeof value === 'bigint') throw new Error('Found bigint in serialized payload')
-	if (typeof value === 'function') throw new Error('Found function in serialized payload')
-	if (typeof value === 'symbol') throw new Error('Found symbol in serialized payload')
+	if (typeof value === 'bigint')
+		throw new Error('Found bigint in serialized payload')
+	if (typeof value === 'function')
+		throw new Error('Found function in serialized payload')
+	if (typeof value === 'symbol')
+		throw new Error('Found symbol in serialized payload')
 	if (value instanceof Date) throw new Error('Found Date in serialized payload')
-	if (value instanceof Uint8Array) throw new Error('Found Uint8Array in serialized payload')
+	if (value instanceof Uint8Array)
+		throw new Error('Found Uint8Array in serialized payload')
 	if (!isRecord(value) && !Array.isArray(value)) return
 	if (seen.has(value)) return
 	seen.add(value)
@@ -214,13 +317,22 @@ function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
 		for (const entry of value) assertWireSafe(entry, seen)
 		return
 	}
-	for (const nestedValue of Object.values(value)) assertWireSafe(nestedValue, seen)
+	for (const nestedValue of Object.values(value))
+		assertWireSafe(nestedValue, seen)
 }
 
-function getPendingTransactionsUpdateMessage(sentMessages: readonly RuntimeMessage[]) {
-	const message = sentMessages.find((entry) => entry.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-	if (message === undefined) throw new Error('Expected confirm transaction update message')
-	if (!isRecord(message.data)) throw new Error('Expected confirm transaction message data')
+function getPendingTransactionsUpdateMessage(
+	sentMessages: readonly RuntimeMessage[],
+) {
+	const message = sentMessages.find(
+		(entry) =>
+			entry.method ===
+			'popup_update_confirm_transaction_dialog_pending_transactions',
+	)
+	if (message === undefined)
+		throw new Error('Expected confirm transaction update message')
+	if (!isRecord(message.data))
+		throw new Error('Expected confirm transaction message data')
 	assert.equal(message.role, 'confirmTransaction')
 	return message
 }
@@ -228,19 +340,27 @@ function getPendingTransactionsUpdateMessage(sentMessages: readonly RuntimeMessa
 function getPendingTransactionsUpdate(sentMessages: readonly RuntimeMessage[]) {
 	const message = getPendingTransactionsUpdateMessage(sentMessages)
 	const pendingTransactions = message.data.pendingTransactionAndSignableMessages
-	if (!Array.isArray(pendingTransactions)) throw new Error('Expected pendingTransactionAndSignableMessages array')
+	if (!Array.isArray(pendingTransactions))
+		throw new Error('Expected pendingTransactionAndSignableMessages array')
 	return pendingTransactions
 }
 
-function getFirstSignablePendingMessage(sentMessages: readonly RuntimeMessage[]) {
+function getFirstSignablePendingMessage(
+	sentMessages: readonly RuntimeMessage[],
+) {
 	const pendingTransactions = getPendingTransactionsUpdate(sentMessages)
 	const firstPendingMessage = pendingTransactions[0]
-	if (!isRecord(firstPendingMessage)) throw new Error('Expected first pending message object')
+	if (!isRecord(firstPendingMessage))
+		throw new Error('Expected first pending message object')
 	assert.equal(firstPendingMessage.type, 'SignableMessage')
 	return firstPendingMessage
 }
 
-function createSafeTxMessage(rpcNetwork: RpcEntry, activeAddress: AddressBookEntry, recipient: AddressBookEntry): SafeTx {
+function createSafeTxMessage(
+	rpcNetwork: RpcEntry,
+	activeAddress: AddressBookEntry,
+	recipient: AddressBookEntry,
+): SafeTx {
 	return {
 		types: {
 			SafeTx: [
@@ -280,8 +400,16 @@ function createSafeTxMessage(rpcNetwork: RpcEntry, activeAddress: AddressBookEnt
 	}
 }
 
-function createVisualizedSafeTxMessage(rpcNetwork: RpcEntry, activeAddress: AddressBookEntry, recipient: AddressBookEntry): VisualizedPersonalSignRequestSafeTx {
-	const safeTxMessage = createSafeTxMessage(rpcNetwork, activeAddress, recipient)
+function createVisualizedSafeTxMessage(
+	rpcNetwork: RpcEntry,
+	activeAddress: AddressBookEntry,
+	recipient: AddressBookEntry,
+): VisualizedPersonalSignRequestSafeTx {
+	const safeTxMessage = createSafeTxMessage(
+		rpcNetwork,
+		activeAddress,
+		recipient,
+	)
 	const zeroAddressEntry: AddressBookEntry = {
 		address: 0n,
 		name: '0x0 Address',
@@ -298,7 +426,11 @@ function createVisualizedSafeTxMessage(rpcNetwork: RpcEntry, activeAddress: Addr
 		quarantineReasons: [],
 		quarantine: false,
 		account: activeAddress,
-		website: { websiteOrigin: 'https://safe.example', icon: undefined, title: undefined },
+		website: {
+			websiteOrigin: 'https://safe.example',
+			icon: undefined,
+			title: undefined,
+		},
 		created: new Date('2024-01-01T00:00:01.000Z'),
 		rawMessage: stringifyJSONWithBigInts(safeTxMessage),
 		stringifiedMessage: stringifyJSONWithBigInts(safeTxMessage),
@@ -318,15 +450,26 @@ function createVisualizedSafeTxMessage(rpcNetwork: RpcEntry, activeAddress: Addr
 	}
 }
 
-function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry): PendingTransactionOrSignableMessage {
+function createPendingSafeTxMessage(
+	modules: TestModules,
+	rpcNetwork: RpcEntry,
+): PendingTransactionOrSignableMessage {
 	const activeAddress = modules.defaultActiveAddresses[0]
 	const recipient = modules.defaultActiveAddresses[1]
-	if (activeAddress === undefined || recipient === undefined) throw new Error('Missing default active addresses for test')
+	if (activeAddress === undefined || recipient === undefined)
+		throw new Error('Missing default active addresses for test')
 
-	const visualizedPersonalSignRequest = createVisualizedSafeTxMessage(rpcNetwork, activeAddress, recipient)
+	const visualizedPersonalSignRequest = createVisualizedSafeTxMessage(
+		rpcNetwork,
+		activeAddress,
+		recipient,
+	)
 	const originalRequestParameters = {
 		method: 'eth_signTypedData_v4' as const,
-		params: [activeAddress.address, serialize(SafeTxRuntype, visualizedPersonalSignRequest.message)],
+		params: [
+			activeAddress.address,
+			serialize(SafeTxRuntype, visualizedPersonalSignRequest.message),
+		],
 	}
 
 	return {
@@ -334,7 +477,10 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 		popupOrTabId: { type: 'popup', id: 1 },
 		originalRequestParameters,
 		simulationMode: true,
-		uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+		uniqueRequestIdentifier: {
+			requestId: 1,
+			requestSocket: { tabId: 1, connectionName: 0n },
+		},
 		signedMessageTransaction: {
 			website: visualizedPersonalSignRequest.website,
 			created: visualizedPersonalSignRequest.created,
@@ -342,10 +488,16 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 			originalRequestParameters,
 			request: {
 				method: 'eth_signTypedData_v4',
-				params: [{ unsafeBigInt: 123n, unsafeBytes: new Uint8Array([1, 2, 3]) }, new Date('2024-01-01T00:00:02.000Z')],
+				params: [
+					{ unsafeBigInt: 123n, unsafeBytes: new Uint8Array([1, 2, 3]) },
+					new Date('2024-01-01T00:00:02.000Z'),
+				],
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: false,
-				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+				uniqueRequestIdentifier: {
+					requestId: 1,
+					requestSocket: { tabId: 1, connectionName: 0n },
+				},
 			},
 			simulationMode: true,
 			messageIdentifier: visualizedPersonalSignRequest.messageIdentifier,
@@ -359,18 +511,28 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 	}
 }
 
-function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) {
+function assertPopupPendingSafeTxShape(
+	sentMessages: readonly RuntimeMessage[],
+) {
 	assertWireSafe(getPendingTransactionsUpdateMessage(sentMessages))
 	const firstPendingMessage = getFirstSignablePendingMessage(sentMessages)
 	assert.equal('signedMessageTransaction' in firstPendingMessage, false)
-	assert.equal(firstPendingMessage.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(
+		firstPendingMessage.transactionOrMessageCreationStatus,
+		'Simulated',
+	)
 	assert.equal(firstPendingMessage.approvalStatus !== undefined, true)
 	assert.equal(firstPendingMessage.uniqueRequestIdentifier !== undefined, true)
 	assert.equal(firstPendingMessage.website !== undefined, true)
-	assert.equal(firstPendingMessage.originalRequestParameters !== undefined, true)
+	assert.equal(
+		firstPendingMessage.originalRequestParameters !== undefined,
+		true,
+	)
 
-	const visualizedPersonalSignRequest = firstPendingMessage.visualizedPersonalSignRequest
-	if (!isRecord(visualizedPersonalSignRequest)) throw new Error('Expected visualized personal sign request')
+	const visualizedPersonalSignRequest =
+		firstPendingMessage.visualizedPersonalSignRequest
+	if (!isRecord(visualizedPersonalSignRequest))
+		throw new Error('Expected visualized personal sign request')
 	assert.equal('request' in visualizedPersonalSignRequest, false)
 	assert.equal(visualizedPersonalSignRequest.type, 'SafeTx')
 	assert.equal(visualizedPersonalSignRequest.signerName, 'NoSignerDetected')
@@ -405,12 +567,17 @@ describe('SafeTx confirm transaction metadata', () => {
 					case 'eth_blockNumber':
 						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
 					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
 				}
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(
+			fakeRequestHandler,
+			async () => undefined,
+			async () => undefined,
+			fakeRpcNetwork,
+		)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -418,10 +585,16 @@ describe('SafeTx confirm transaction metadata', () => {
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
 		await modules.browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
+			pendingTransactionsAndMessages: [
+				createPendingSafeTxMessage(modules, fakeRpcNetwork),
+			],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(
+			ethereum,
+			tokenPriceService,
+			undefined,
+		)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 	})
@@ -452,12 +625,17 @@ describe('SafeTx confirm transaction metadata', () => {
 					case 'eth_blockNumber':
 						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
 					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
 				}
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(
+			fakeRequestHandler,
+			async () => undefined,
+			async () => undefined,
+			fakeRpcNetwork,
+		)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -465,7 +643,9 @@ describe('SafeTx confirm transaction metadata', () => {
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
 		await modules.browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
+			pendingTransactionsAndMessages: [
+				createPendingSafeTxMessage(modules, fakeRpcNetwork),
+			],
 		})
 
 		await modules.updateConfirmTransactionView(ethereum, tokenPriceService)
