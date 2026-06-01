@@ -5,7 +5,7 @@ export const normalizeEnsNameOrUndefined = (name: string) => {
 		return ens_normalize(name)
 	} catch (error) {
 		if (error instanceof Error) return undefined
-		return undefined
+		throw error
 	}
 }
 

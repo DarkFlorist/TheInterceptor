@@ -14,7 +14,7 @@ function parseWebsiteOrigin(origin: string): ParsedWebsiteOrigin | undefined {
 		}
 	} catch (error) {
 		if (error instanceof TypeError) return undefined
-		return undefined
+		throw error
 	}
 }
 
