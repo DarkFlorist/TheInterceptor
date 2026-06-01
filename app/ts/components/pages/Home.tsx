@@ -43,9 +43,13 @@ type SignerExplanationParams = {
 	tabState: Signal<TabState | undefined>
 }
 
+function isSignerAvailable(tabState: TabState | undefined) {
+	return tabState !== undefined && (tabState.signerConnected || tabState.signerAccounts.length > 0)
+}
+
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
-	if (!param.tabState.value.signerConnected) {
+	if (!isSignerAvailable(param.tabState.value)) {
 		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
 	}
@@ -185,6 +189,7 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
 
 	const timeSelectorOnChange = () => {
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
@@ -229,7 +234,7 @@ function FirstCard(param: FirstCardParams) {
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
-						{ param.tabState.value?.signerConnected ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
+						{ signerAvailable.value ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
 					</p>
 					: <></>
 				}
