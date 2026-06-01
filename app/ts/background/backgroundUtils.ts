@@ -194,10 +194,10 @@ export async function setExtensionBadgeText(details: browser.browserAction._SetB
 			await (browser.action.setBadgeText as unknown as ((details: browser.browserAction._SetBadgeTextDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
 		}
 		checkAndThrowRuntimeLastError()
-	} catch {
-		console.warn('failed to set extension badge text')
-		console.warn(details)
-	}
+		} catch (error) {
+			console.warn('failed to set extension badge text', error)
+			console.warn(details)
+		}
 }
 
 export async function setExtensionBadgeBackgroundColor(details: browser.action._SetBadgeBackgroundColorDetails) {
@@ -210,10 +210,10 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 			await (browser.action.setBadgeBackgroundColor as unknown as ((details: browser.action._SetBadgeBackgroundColorDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
 		}
 		checkAndThrowRuntimeLastError()
-	} catch {
-		console.warn('failed to set extension badge background color')
-		console.warn(details)
-	}
+		} catch (error) {
+			console.warn('failed to set extension badge background color', error)
+			console.warn(details)
+		}
 }
 
 export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`

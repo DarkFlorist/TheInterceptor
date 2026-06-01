@@ -120,7 +120,8 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	let loadedTab
 	try {
 		loadedTab = await waitForLoadedTab(tabId)
-	} catch {
+	} catch (error) {
+		console.warn(`Failed to load tab ${ tabId } before reading website details`, error)
 		return { title: undefined, icon: undefined }
 	}
 
@@ -153,8 +154,9 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	let parsedFaviconUrl: URL
 	try {
 		parsedFaviconUrl = tab?.url === undefined ? new URL(faviconUrl) : new URL(faviconUrl, tab.url)
-	} catch {
-		return failToLoadFavicon(`invalid favicon URL ${ faviconUrl }`)
+	} catch (error) {
+		const reason = error instanceof Error ? `${ error.message }: ${ faviconUrl }` : `invalid favicon URL ${ faviconUrl }`
+		return failToLoadFavicon(reason)
 	}
 
 	if (!ALLOWED_FAVICON_PROTOCOLS.has(parsedFaviconUrl.protocol)) {

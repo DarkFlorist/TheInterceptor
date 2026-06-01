@@ -207,7 +207,8 @@ export const isValidAbiString = (abi: string) => {
 	try {
 		normalizeAbi(abi)
 		return true
-	} catch {
+	} catch (error) {
+		if (error instanceof Error) return false
 		return false
 	}
 }

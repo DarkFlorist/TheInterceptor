@@ -12,7 +12,8 @@ function parseWebsiteOrigin(origin: string): ParsedWebsiteOrigin | undefined {
 			hostname: url.hostname,
 			port: url.port,
 		}
-	} catch {
+	} catch (error) {
+		if (error instanceof TypeError) return undefined
 		return undefined
 	}
 }

@@ -126,10 +126,10 @@ const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 			name: 'Error',
 			signature: 'Error(string)',
 		})
-	} catch {
-		return unknownErrorResult({ reason: 'Unknown error returned', data: error.data })
+		} catch (decodeError) {
+			return unknownErrorResult({ reason: decodeError instanceof Error ? decodeError.message : 'Unknown error returned', data: error.data })
+		}
 	}
-}
 
 const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
@@ -149,10 +149,10 @@ const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 			name: 'Panic',
 			signature: 'Panic(uint256)',
 		})
-	} catch {
-		return unknownErrorResult({ reason: 'Unknown panic error', data: error.data })
+		} catch (decodeError) {
+			return unknownErrorResult({ reason: decodeError instanceof Error ? decodeError.message : 'Unknown panic error', data: error.data })
+		}
 	}
-}
 
 const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData) => {
 	const result: Parameters<typeof customErrorResult>[0] = { data: error.data, reason: error.message }
