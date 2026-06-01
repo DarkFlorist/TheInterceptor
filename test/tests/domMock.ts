@@ -1,7 +1,7 @@
 import type { render } from 'preact'
 
 type AttributeMap = Record<string, string | undefined>
-type RenderContainer = Parameters<typeof render>[1]
+export type RenderContainer = Parameters<typeof render>[1]
 
 class TestNode {
 	readonly nodeType: number = 0

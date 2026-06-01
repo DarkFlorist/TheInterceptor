@@ -8,12 +8,13 @@ import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } f
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
+import { sendWebsiteAccessChangedFromWebsiteAccess } from '../websiteAccessPopup.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import type { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
-import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
-import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
@@ -69,17 +70,12 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 	)
 }
 
-export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
-	const addresses = websiteAccess.flatMap((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address))
-	const addressSet = new Set(addresses)
-	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
-}
-
 async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), promptForAccessesIfNeeded)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	const settings = await getSettings()
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, settings, promptForAccessesIfNeeded)
+	await sendWebsiteAccessChangedFromWebsiteAccess(settings.websiteAccess)
 }
 
 export async function updateInterceptorAccessViewWithPendingRequests() {

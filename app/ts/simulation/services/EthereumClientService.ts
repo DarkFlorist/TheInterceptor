@@ -210,7 +210,8 @@ export class EthereumClientService {
 			...(transaction.from !== undefined ? { from: transaction.from } : {}),
 			...(transaction.input !== undefined ? { data: transaction.input } : {}),
 			...(transaction.value !== undefined ? { value: transaction.value } : {}),
-			...transaction.maxFeePerGas !== undefined && transaction.maxPriorityFeePerGas !== undefined ? { gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas } : {},
+			...(transaction.maxFeePerGas !== undefined ? { maxFeePerGas: transaction.maxFeePerGas } : {}),
+			...(transaction.maxPriorityFeePerGas !== undefined ? { maxPriorityFeePerGas: transaction.maxPriorityFeePerGas } : {}),
 			...(transaction.gasLimit !== undefined ? { gas: transaction.gasLimit } : {}),
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] }, requestAbortController)

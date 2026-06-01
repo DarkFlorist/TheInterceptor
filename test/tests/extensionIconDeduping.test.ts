@@ -203,7 +203,7 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		updateWebsiteApprovalAccesses({} as never, websiteTabConnections, await getSettings())
+			await updateWebsiteApprovalAccesses({} as never, websiteTabConnections, await getSettings())
 		await flushAsyncWork()
 
 		assert.equal(setIconCalls.length, 1)

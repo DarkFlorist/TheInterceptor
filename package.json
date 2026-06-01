@@ -5,7 +5,7 @@
 	"packageManager": "bun@1.3.13",
 	"scripts": {
 		"test": "bun test",
-		"typecheck": "bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
+		"typecheck": "bun ./scripts/generate-inpage-internal-provider-methods.mts && bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
@@ -17,7 +17,7 @@
 		"bundle": "cd build && bun run bundle",
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",
 		"chrome": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV3.json`))'",
-		"inpage": "bun run clean-inpage-output && bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json && bun ./scripts/inline-inpage-document-start.mts",
+		"inpage": "bun ./scripts/generate-inpage-internal-provider-methods.mts && bun run clean-inpage-output && bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json && bun ./scripts/inline-inpage-document-start.mts",
 		"clean-js-output": "bun ./build/cleanOutput.mts app/js",
 		"clean-inpage-output": "bun ./build/cleanOutput.mts app/inpage/js",
 		"knip": "bunx knip@5.1.6",

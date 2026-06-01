@@ -60,16 +60,18 @@ type MessageMethodAndParams = {
 	readonly internal?: true
 }
 
+// GENERATED_INTERNAL_PROVIDER_METHODS_START
 const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
 	'signer_chainChanged',
 	'signer_reply',
-	'wallet_switchEthereumChain_reply',
+	'wallet_switchEthereumChain_reply'
 ] as const
 
 const isInternalBackgroundMethod = (method: string) => INTERNAL_BACKGROUND_METHODS.some((internalMethod) => internalMethod === method)
+// GENERATED_INTERNAL_PROVIDER_METHODS_END
 
 type InterceptedRequestBase = {
 	readonly interceptorApproved: true,

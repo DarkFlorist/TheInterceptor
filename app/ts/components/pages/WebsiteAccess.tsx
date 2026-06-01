@@ -5,7 +5,7 @@ import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess }
 import { Modal } from '../subcomponents/Modal.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
-import { MessageToPopup, type RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
@@ -20,33 +20,61 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { getHostnameForWebsiteOrigin } from '../../utils/websiteOrigins.js'
+import { searchWebsiteAccess } from '../../background/websiteAccessSearch.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
 
+function getSelectedDomainFromHash(hash: string) {
+	const domainInHash = hash.slice(URL_HASH_PREFIX.length)
+	return domainInHash || undefined
+}
+
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
-	websiteAccessList: Signal<WebsiteAccessArray>
+	allWebsiteAccess: Signal<WebsiteAccessArray>
+	viewState: ReadonlySignal<WebsiteAccessViewState>
 	addressAccessMetadata: Signal<AddressBookEntries>
 	selectedDomain: Signal<string | undefined>
+}
+
+type HostScopeDetails = {
+	readonly hostname: string
+	readonly selectedOrigin: string
+	readonly affectedOrigins: readonly string[]
+}
+
+type WebsiteAccessViewState = {
+	readonly websiteAccessList: WebsiteAccessArray
+	readonly selectedWebsiteAccess: WebsiteAccess | undefined
+	readonly hostScopeDetails: HostScopeDetails | undefined
 }
 
 const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
 
 const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
-	const websiteAccessList = useSignal<WebsiteAccessArray>([])
+	const allWebsiteAccess = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
 	const addressAccessMetadata = useSignal<AddressBookEntries>([])
-	const selectedDomain = useSignal<string | undefined>(undefined)
+	const hasLoadedWebsiteAccess = useSignal(false)
+	const selectedDomain = useSignal<string | undefined>(getSelectedDomainFromHash(window.location.hash))
+	const viewState = useComputed(() => deriveWebsiteAccessViewState(allWebsiteAccess.value, searchQuery.value, selectedDomain.value))
 
-	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
-		const data = filter ? filter : { query: '' }
-		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data })
+	const retrieveWebsiteAccess = () => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_retrieveWebsiteAccess', data: { query: '' } })
 	}
 
-	const updateListOnSearch = () => {
-		selectedDomain.value = undefined
-		retrieveWebsiteAccess({ query: searchQuery.value })
+	const clearSelectionWhenRemoved = () => {
+		if (!hasLoadedWebsiteAccess.value || selectedDomain.value === undefined) return
+		const selectedStillExists = allWebsiteAccess.value.some((access) => access.website.websiteOrigin === selectedDomain.value)
+		if (!selectedStillExists) window.location.hash = ''
+	}
+
+	const updateWebsiteAccessState = (websiteAccess: WebsiteAccessArray, metadata: AddressBookEntries) => {
+		allWebsiteAccess.value = websiteAccess
+		addressAccessMetadata.value = metadata
+		hasLoadedWebsiteAccess.value = true
 	}
 
   const listenForPopupMessages = () => {
@@ -54,17 +82,16 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false// not a message we are interested in
 			const parsed = maybeParsed.value
-			switch (parsed.method) {
-				case 'popup_setDisableInterceptorReply':
-				case 'popup_addressBookEntriesChanged':
-				case 'popup_websiteAccess_changed':
-					retrieveWebsiteAccess({ query: selectedDomain.value || '' })
-					break
-				case 'popup_retrieveWebsiteAccessReply':
-					websiteAccessList.value = parsed.data.websiteAccess
-					addressAccessMetadata.value = parsed.data.addressAccessMetadata
-					break
-			}
+				switch (parsed.method) {
+					case 'popup_setDisableInterceptorReply':
+					case 'popup_addressBookEntriesChanged':
+						retrieveWebsiteAccess()
+						break
+					case 'popup_websiteAccess_changed':
+					case 'popup_retrieveWebsiteAccessReply':
+						updateWebsiteAccessState(parsed.data.websiteAccess, parsed.data.addressAccessMetadata)
+						break
+				}
 			return false
 		}
 
@@ -74,9 +101,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	const listenForWindowHashChanges = () => {
 		const handleHashChange = () => {
-			const hash = window.location.hash
-			const domainInHash = hash.slice(URL_HASH_PREFIX.length)
-			selectedDomain.value = domainInHash || undefined
+			selectedDomain.value = getSelectedDomainFromHash(window.location.hash)
 		}
 
 		// initially set selectedDomain when the page loads/reloads
@@ -85,18 +110,58 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		return () => window.removeEventListener('hashchange', handleHashChange)
 	}
 
-	useSignalEffect(updateListOnSearch)
+	useSignalEffect(clearSelectionWhenRemoved)
 	useEffect(listenForPopupMessages, [])
 	useEffect(listenForWindowHashChanges, [])
 	useEffect(retrieveWebsiteAccess, [])
 
-	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, allWebsiteAccess, viewState, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
 	const context = useContext(WebsiteAccessContext)
 	if (!context) throw new Error('useWebsiteAccess can only be used within children components of WebsiteAccessProvider')
 	return context
+}
+
+export function getHostScopeDetails(websiteAccessList: WebsiteAccessArray, websiteOrigin: string): HostScopeDetails {
+	const hostname = getHostnameForWebsiteOrigin(websiteOrigin)
+	const affectedOrigins = Array.from(new Set(
+		websiteAccessList
+			.map((access) => access.website.websiteOrigin)
+			.filter((origin) => getHostnameForWebsiteOrigin(origin) === hostname)
+	))
+	return { hostname, selectedOrigin: websiteOrigin, affectedOrigins }
+}
+
+export function findWebsiteAccessByOrigin(websiteAccessList: WebsiteAccessArray, websiteOrigin: string | undefined) {
+	if (websiteOrigin === undefined) return undefined
+	return websiteAccessList.find((access) => access.website.websiteOrigin === websiteOrigin)
+}
+
+export function deriveWebsiteAccessViewState(allWebsiteAccess: WebsiteAccessArray, searchQuery: string, selectedDomain: string | undefined): WebsiteAccessViewState {
+	const websiteAccessList = searchWebsiteAccess(searchQuery, allWebsiteAccess)
+	const selectedWebsiteAccess = findWebsiteAccessByOrigin(allWebsiteAccess, selectedDomain)
+	const hostScopeDetails = selectedWebsiteAccess === undefined ? undefined : getHostScopeDetails(allWebsiteAccess, selectedWebsiteAccess.website.websiteOrigin)
+	return { websiteAccessList, selectedWebsiteAccess, hostScopeDetails }
+}
+
+const HostScopeSummary = ({ hostScopeDetails }: { hostScopeDetails: HostScopeDetails | undefined }) => {
+	if (hostScopeDetails === undefined) return <></>
+	const siblingOrigins = hostScopeDetails.affectedOrigins.filter((origin) => origin !== hostScopeDetails.selectedOrigin)
+	return (
+		<div style = { { marginTop: '0.75rem', padding: '0.75rem', border: '1px solid var(--line-color)', borderRadius: '0.5rem', backgroundColor: 'var(--card-bg-color)' } }>
+			<p style = { { fontSize: '0.875rem', color: 'var(--text-color)', lineHeight: 1.35 } }>
+				These settings apply to all sites on <b>{ hostScopeDetails.hostname }</b>.
+			</p>
+			<p style = { { fontSize: '0.875rem', color: 'var(--disabled-text-color)', lineHeight: 1.35, marginTop: '0.375rem' } }>
+				Affected site{ hostScopeDetails.affectedOrigins.length === 1 ? '' : 's' }: { hostScopeDetails.affectedOrigins.join(', ') }
+			</p>
+			{ siblingOrigins.length > 0 ? <p style = { { fontSize: '0.875rem', color: 'var(--disabled-text-color)', lineHeight: 1.35, marginTop: '0.375rem' } }>
+				This includes sibling origin{ siblingOrigins.length === 1 ? '' : 's' } on other port{ siblingOrigins.length === 1 ? '' : 's' } or scheme variants.
+			</p> : <></> }
+		</div>
+	)
 }
 
 export const WebsiteAccessView = () => {
@@ -173,15 +238,16 @@ const SearchForm = (props: SearchFormProps) => {
 }
 
 const WebsiteSettingsList = () => {
-	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
+	const { viewState, selectedDomain } = useWebsiteAccess()
+	const websiteAccessList = viewState.value.websiteAccessList
 
 	return (
 		<section style = { { paddingBlock: '1rem' } }>
 			<h4 style = { { color: 'var(--disabled-text-color)' , fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '1fr max-content' } }>Websites</h4>
-			{ websiteAccessList.value.length < 1 ? <EmptyAccessList /> : <>
-				<ul role = 'listbox'>{ websiteAccessList.value.map((access) => <WebsiteAccessOverview key = { access.website.websiteOrigin } websiteAccess = { access } checked = { selectedDomain.value === access.website.websiteOrigin } />) }</ul>
-				<input type = 'submit' style = { { display: 'none' } } />
-			</> }
+			{ websiteAccessList.length < 1 ? <EmptyAccessList /> : <>
+				<ul role = 'listbox'>{ websiteAccessList.map((access) => <WebsiteAccessOverview key = { access.website.websiteOrigin } websiteAccess = { access } checked = { selectedDomain.value === access.website.websiteOrigin } />) }</ul>
+					<input type = 'submit' style = { { display: 'none' } } />
+				</> }
 		</section>
 	)
 }
@@ -254,8 +320,9 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 type Modals = { page: 'noModal' } | { page: 'ModifyAddress', state: Signal<ModifyAddressWindowState> }
 
 const WebsiteSettingsDetail = () => {
-	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
-	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
+	const { viewState } = useWebsiteAccess()
+	const selectedWebsiteAccess = useOptionalComputed(() => viewState.value.selectedWebsiteAccess)
+	const hostScopeDetails = useComputed(() => viewState.value.hostScopeDetails)
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
 	const closeDetails = () => { window.location.hash = '' }
@@ -287,21 +354,21 @@ const WebsiteSettingsDetail = () => {
 
 	if (selectedWebsiteAccess.value === undefined) return <></>
 
-	return (
-		<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
-			<FullFrameWindow>
-				<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
-					<header style = { { paddingBlock: '1rem' } }>
-						<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
-						<DetailsHeader websiteAccess = { selectedWebsiteAccess } />
-					</header>
-					<article>
-						<NoAccessPrompt websiteAccess = { selectedWebsiteAccess } />
-						<AddressAccessList websiteAccess = { selectedWebsiteAccess } renameAddressCallBack = { renameAddressCallBack }/>
-						<AdvancedSettings websiteAccess = { selectedWebsiteAccess } />
-					</article>
-				</form>
-			</FullFrameWindow>
+		return (
+			<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+				<FullFrameWindow>
+					<form method = 'dialog' class = 'layout' onSubmit = { closeDetails }>
+						<header style = { { paddingBlock: '1rem' } }>
+							<button type = 'submit' class = 'btn btn--ghost' style = { { fontSize: '0.875rem', paddingInline: '0.5rem', paddingBlock: '0.125rem' } } autoFocus>&larr; Show website access list</button>
+							<DetailsHeader websiteAccess = { selectedWebsiteAccess } hostScopeDetails = { hostScopeDetails } />
+						</header>
+						<article>
+							<NoAccessPrompt websiteAccess = { selectedWebsiteAccess } hostScopeDetails = { hostScopeDetails } />
+							<AddressAccessList websiteAccess = { selectedWebsiteAccess } renameAddressCallBack = { renameAddressCallBack }/>
+							<AdvancedSettings websiteAccess = { selectedWebsiteAccess } hostScopeDetails = { hostScopeDetails } />
+						</article>
+					</form>
+				</FullFrameWindow>
 			{ modalState.value.page === 'ModifyAddress' ?
 				<AddNewAddress
 					setActiveAddressAndInformAboutIt = { undefined }
@@ -315,7 +382,7 @@ const WebsiteSettingsDetail = () => {
 	)
 }
 
-const DetailsHeader = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+const DetailsHeader = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>, hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	if (websiteAccess.deepValue === undefined) return <></>
 	const websiteIcon = sanitizeStoredWebsiteIcon(websiteAccess.deepValue.website.icon)
 	return (
@@ -324,12 +391,13 @@ const DetailsHeader = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websit
 			<div style = { { flex: 1 } }>
 				<h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.deepValue.website.title }</h2>
 				<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.deepValue.website.websiteOrigin }</span></p>
+				<HostScopeSummary hostScopeDetails = { hostScopeDetails.value } />
 			</div>
 		</div>
 	)
 }
 
-const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+const NoAccessPrompt = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>, hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
@@ -342,19 +410,19 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websi
 		selectedDomain.value = undefined
 	}
 
-	return (
-		<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
-			<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
-				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { website.value } /> for access while this preference is set.</p>
-			<Modal>
-				<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access requests</Modal.Open>
-				<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
-					<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access requests</h2>
-					<p></p>
-						<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { website.value } /> and will prompt you for permission the next time you try to connect.</p>
-					<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
-						<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
-						<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
+		return (
+			<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
+				<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This host was denied access to The Interceptor.</h4>
+					<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { website.value } /> and any other affected site on <b>{ hostScopeDetails.value?.hostname }</b> while this preference is set.</p>
+				<Modal>
+					<Modal.Open class = 'btn btn--outline' style = { { display: 'inline-block' } }>Stop automatically denying access for host</Modal.Open>
+					<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
+						<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Stop automatically denying access for host</h2>
+						<p></p>
+							<p style = { { marginBlock: '0.5rem', lineHeight: 1.5 } }>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { website.value } /> and every affected site on <b>{ hostScopeDetails.value?.hostname }</b>. You will be prompted again the next time one of them tries to connect.</p>
+						<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
+							<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+							<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 					</div>
 				</Modal.Dialog>
 			</Modal>
@@ -430,18 +498,18 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookE
 	)
 }
 
-const AdvancedSettings = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+const AdvancedSettings = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>, hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	if (websiteAccess.deepValue === undefined) return <></>
 	return (
 		<Collapsible summary = 'Advanced Settings' defaultOpen>
-			<BlockRequestSetting websiteAccess = { websiteAccess } />
-			<DisableProtectionSetting websiteAccess = { websiteAccess } />
-			<RemoveWebsiteSetting websiteAccess = { websiteAccess } />
+			<BlockRequestSetting websiteAccess = { websiteAccess } hostScopeDetails = { hostScopeDetails } />
+			<DisableProtectionSetting websiteAccess = { websiteAccess } hostScopeDetails = { hostScopeDetails } />
+			<RemoveWebsiteSetting websiteAccess = { websiteAccess } hostScopeDetails = { hostScopeDetails } />
 		</Collapsible>
 	)
 }
 
-const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+const BlockRequestSetting = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>, hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const setWebsiteExternalRequestBlocking = async (shouldBlock: boolean) => {
 		if (!websiteAccess.deepValue) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_blockOrAllowExternalRequests', data: { website: websiteAccess.deepValue.website, shouldBlock } })
@@ -460,20 +528,20 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 			<figure><i class = 'status-lg status-warn'><RequestBlockedIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
-					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Block External Request</h1>
-					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from this domain, effectively preventing the website from connecting to external domains and services.</p>
+					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Block External Requests For Host</h1>
+					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from every affected site on <b>{ hostScopeDetails.value?.hostname }</b>, preventing that host from connecting to external domains and services.</p>
 				</div>
 				<aside>
 					{ requestBlockMode.value === 'block-all' ? (
-						<button type='button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
+						<button type='button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Host Requests</span></button>
 					) : (
 						<Modal>
-							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
-							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRequestBlocking }>
-								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Blocking External Requests</h2>
-								<p></p>
-								<p style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website.value } /> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
-								<p style = { { marginBlock: '1rem' } }>Are you sure you want to block external requests from this website?</p>
+							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Host Requests</span></Modal.Open>
+								<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRequestBlocking }>
+									<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Blocking External Requests For Host</h2>
+									<p></p>
+									<p style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website.value } /> and every affected site on <b>{ hostScopeDetails.value?.hostname }</b> from requesting resources outside that host, which can lead to erratic behavior or stop those sites from functioning entirely.</p>
+									<p style = { { marginBlock: '1rem' } }>Are you sure you want to block external requests for this host?</p>
 								<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -488,7 +556,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 	)
 }
 
-const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+const DisableProtectionSetting = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>, hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 
 	const disableWebsiteProtection = async (shouldDisable = true) => {
 		if (!websiteAccess.deepValue) return
@@ -508,20 +576,20 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 			<figure><i class = 'status-lg status-danger'><InterceptorDisabledIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
-					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Disable Protection</h1>
-					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>Turn protection and simulation off for this website and forward all requests directly to default wallet.</p>
+					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Disable Protection For Host</h1>
+					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>Turn protection and simulation off for every affected site on <b>{ hostScopeDetails.value?.hostname }</b> and forward all requests directly to the default wallet.</p>
 				</div>
 				<aside>
 					{ isInterceptorDisabled.value ? (
-						<button type='button' class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span></button>
+						<button type='button' class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Host Protection</span></button>
 					) : (
 						<Modal>
-							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>
-							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectDialog }>
-								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Disable Interceptor Protection</h2>
-								<p></p>
-							<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { website.value } />, which could potentially lead to loss of assets. Please exercise caution.</p>
-								<p style = { { marginBlock: '1rem' } }>Are you sure you want to disable protection for this website?</p>
+							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Host Protection</span></Modal.Open>
+								<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectDialog }>
+									<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Disable Interceptor Protection For Host</h2>
+									<p></p>
+								<p style = { { marginBlock: '0.5rem' } }>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { website.value } /> or any other affected site on <b>{ hostScopeDetails.value?.hostname }</b>, which could potentially lead to loss of assets. Please exercise caution.</p>
+									<p style = { { marginBlock: '1rem' } }>Are you sure you want to disable protection for this host?</p>
 								<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
@@ -535,7 +603,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 	)
 }
 
-const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+const RemoveWebsiteSetting = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>, hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
@@ -550,17 +618,17 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal
 			<figure><i class = 'status-lg status-outline' style = { { '--fg-color': 'var(--status-danger-outline-color)', '--outline': '1px solid var(--status-danger-outline-color)' } }><TrashIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
-					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Remove Website Access</h1>
-					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>Revoke all permissions granted to this website including configured access to wallet addresses and network request blocking.</p>
+					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Remove Host Access</h1>
+					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>Revoke all permissions granted to every affected site on <b>{ hostScopeDetails.value?.hostname }</b>, including wallet access and network request blocking.</p>
 				</div>
 				<aside>
 					<Modal>
-						<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Remove Website</span></Modal.Open>
-						<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectUpdate }>
-							<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
-							<p></p>
-							<p style = { { marginBlock: '0.5rem' } }>You are about to remove <WebsiteCard website = { website.value } /> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
-							<p style = { { marginBlock: '1rem' } }>Are you sure you want to remove this website?</p>
+						<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Remove Host</span></Modal.Open>
+							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectUpdate }>
+								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Host Removal</h2>
+								<p></p>
+								<p style = { { marginBlock: '0.5rem' } }>You are about to remove <WebsiteCard website = { website.value } /> and every affected site on <b>{ hostScopeDetails.value?.hostname }</b> from the access list. Those sites will no longer have access to your wallet addresses.</p>
+								<p style = { { marginBlock: '1rem' } }>Are you sure you want to remove access for this host?</p>
 							<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>
 								<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
 								<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>

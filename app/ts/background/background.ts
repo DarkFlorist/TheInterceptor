@@ -32,19 +32,11 @@ import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { isInternalProviderMethod } from '../utils/internalProviderMethods.js'
+import { summarizeRequestForLogging } from '../utils/errors.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const INTERNAL_PROVIDER_METHODS = [
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'InterceptorError',
-	'signer_chainChanged',
-	'signer_reply',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
 
 export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
 	try {
@@ -180,7 +172,7 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		console.warn({ request })
+		console.warn('Failed to parse RPC request', summarizeRequestForLogging(request))
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
@@ -321,7 +313,7 @@ export async function changeActiveAddressAndChain(
 
 	const updatedSettings = await getSettings()
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings)
+		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
@@ -508,7 +500,7 @@ export async function popupMessageHandler(
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
-		console.warn({ request })
+		console.warn('Failed to parse popup request', summarizeRequestForLogging(request))
 		console.warn(maybeParsedRequest.fullError)
 		return {
 			error: {

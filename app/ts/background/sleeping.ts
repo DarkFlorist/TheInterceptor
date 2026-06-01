@@ -6,6 +6,8 @@ import { updateExtensionBadge } from './iconHandler.js'
 import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp, setRpcConnectionStatus } from './storageVariables.js'
 import { isConfirmTransactionFocused } from './windows/confirmTransaction.js'
 
+let scheduledSleepCheck: ReturnType<typeof setTimeout> | undefined
+
 const updateConnectionStatusRetry = async (ethereumClientService: EthereumClientService) => {
 	const status = await getRpcConnectionStatus()
 	if (status === undefined) return
@@ -17,12 +19,17 @@ const updateConnectionStatusRetry = async (ethereumClientService: EthereumClient
 }
 
 export const makeSureInterceptorIsNotSleeping = async (ethereumClientService: EthereumClientService) => {
-	setInterceptorStartSleepingTimestamp(Date.now() + TIME_BETWEEN_BLOCKS * 2 * 1000)
+	const sleepDeadline = Date.now() + TIME_BETWEEN_BLOCKS * 2 * 1000
+	await setInterceptorStartSleepingTimestamp(sleepDeadline)
 	if (!ethereumClientService.isBlockPolling()) {
 		console.info('The Interceptor woke up! ⏰')
 		ethereumClientService.setBlockPolling(true)
 		await updateConnectionStatusRetry(ethereumClientService)
 	}
+	if (scheduledSleepCheck !== undefined) clearTimeout(scheduledSleepCheck)
+	scheduledSleepCheck = setTimeout(() => {
+		void checkIfInterceptorShouldSleep(ethereumClientService)
+	}, Math.max(0, sleepDeadline - Date.now()))
 }
 
 const checkConfirmTransaction = async (ethereumClientService: EthereumClientService) => {
@@ -35,6 +42,10 @@ export const checkIfInterceptorShouldSleep = async (ethereumClientService: Ether
 	if (startSleping < Date.now() && ethereumClientService.isBlockPolling()) {
 		console.info('The Interceptor started to sleep 😴')
 		ethereumClientService.setBlockPolling(false)
+		if (scheduledSleepCheck !== undefined) {
+			clearTimeout(scheduledSleepCheck)
+			scheduledSleepCheck = undefined
+		}
 		await updateConnectionStatusRetry(ethereumClientService)
 	}
 }

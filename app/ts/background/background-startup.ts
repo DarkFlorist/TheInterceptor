@@ -207,12 +207,7 @@ async function startup() {
 	resetActiveRpcNetwork = (rpcNetwork) => {
 		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	}
-	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
-		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
-	}
-
-	recursiveCheckIfInterceptorShouldSleep()
+	await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
 
 	await updateExtensionBadge()
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)

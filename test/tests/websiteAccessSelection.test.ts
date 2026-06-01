@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { installDomMock } from './domMock.js'
+import { installDomMock, type RenderContainer } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
@@ -164,6 +164,12 @@ function isChecked(element: DomElement) {
 	return element.checked === true || element.attributes?.checked !== undefined
 }
 
+async function unmountView(root: RenderContainer) {
+	await act(() => {
+		render(null, root)
+	})
+}
+
 const websiteAccessEntries: readonly WebsiteAccess[] = [
 	{
 		website: { websiteOrigin: 'alpha.example', icon: 'alpha.png', title: 'Alpha' },
@@ -199,6 +205,7 @@ describe('WebsiteAccessView selection', () => {
 				},
 			})
 		})
+		await act(async () => { await Promise.resolve() })
 
 		const alphaRadio = findRadioByValue(dom.document.body, 'alpha.example')
 		const betaRadio = findRadioByValue(dom.document.body, 'beta.example')
@@ -214,6 +221,123 @@ describe('WebsiteAccessView selection', () => {
 
 		assert.equal(isChecked(alphaRadio), true)
 		assert.equal(isChecked(betaRadio), false)
+		await unmountView(dom.document.body)
+		dom.restore()
+	})
+
+	test('describes hostname-scoped actions when sibling origins share a host', async () => {
+		const dom = installWindowHashMock('#origin:localhost:3000')
+		const { WebsiteAccessView } = await modulesPromise
+		const localhostEntries: readonly WebsiteAccess[] = [
+			{
+				website: { websiteOrigin: 'localhost:3000', icon: 'alpha.png', title: 'Local App A' },
+				addressAccess: undefined,
+				access: true,
+			},
+			{
+				website: { websiteOrigin: 'localhost:5173', icon: 'beta.png', title: 'Local App B' },
+				addressAccess: undefined,
+				access: true,
+			},
+		]
+
+		await act(() => {
+			render(h(WebsiteAccessView, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browserMock.dispatch({
+				role: 'all',
+				method: 'popup_retrieveWebsiteAccessReply',
+				data: {
+					websiteAccess: localhostEntries,
+					addressAccessMetadata: [],
+				},
+			})
+		})
+		await act(async () => { await Promise.resolve() })
+
+		assert.ok(dom.document.body.textContent.includes('These settings apply to all sites on localhost.'))
+		assert.ok(dom.document.body.textContent.includes('Affected sites: localhost:3000, localhost:5173'))
+		assert.ok(dom.document.body.textContent.includes('This includes sibling origin on other port or scheme variants.'))
+		assert.ok(dom.document.body.textContent.includes('Remove Host Access'))
+		await unmountView(dom.document.body)
+		dom.restore()
+	})
+
+	test('single-origin hosts do not claim sibling origins exist', async () => {
+		const dom = installWindowHashMock('#origin:solo.example')
+		const { WebsiteAccessView } = await modulesPromise
+
+		await act(() => {
+			render(h(WebsiteAccessView, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browserMock.dispatch({
+				role: 'all',
+				method: 'popup_retrieveWebsiteAccessReply',
+				data: {
+					websiteAccess: [{
+						website: { websiteOrigin: 'solo.example', icon: 'solo.png', title: 'Solo' },
+						addressAccess: undefined,
+						access: true,
+					}],
+					addressAccessMetadata: [],
+				},
+			})
+		})
+		await act(async () => { await Promise.resolve() })
+
+		assert.ok(dom.document.body.textContent.includes('Affected site: solo.example'))
+		assert.equal(dom.document.body.textContent.includes('This includes sibling origin'), false)
+		await unmountView(dom.document.body)
+		dom.restore()
+	})
+
+	test('selection lookup stays stable when the sidebar would be filtered', async () => {
+		const { deriveWebsiteAccessViewState } = await modulesPromise
+		const allWebsiteAccess: readonly WebsiteAccess[] = [
+			{
+				website: { websiteOrigin: 'localhost:3000', icon: 'alpha.png', title: 'Local App A' },
+				addressAccess: undefined,
+				access: true,
+			},
+			{
+				website: { websiteOrigin: 'localhost:5173', icon: 'beta.png', title: 'Local App B' },
+				addressAccess: undefined,
+				access: true,
+			},
+		]
+		const viewState = deriveWebsiteAccessViewState(allWebsiteAccess, '3000', 'localhost:5173')
+
+		assert.deepEqual(viewState.websiteAccessList.map((entry) => entry.website.websiteOrigin), ['localhost:3000'])
+		assert.equal(viewState.selectedWebsiteAccess?.website.websiteOrigin, 'localhost:5173')
+		assert.deepEqual(viewState.hostScopeDetails?.affectedOrigins, ['localhost:3000', 'localhost:5173'])
+	})
+
+	test('loaded empty website access clears stale hash-backed selection', async () => {
+		const dom = installWindowHashMock('#origin:solo.example')
+		const { WebsiteAccessView } = await modulesPromise
+
+		await act(() => {
+			render(h(WebsiteAccessView, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browserMock.dispatch({
+				role: 'all',
+				method: 'popup_retrieveWebsiteAccessReply',
+				data: {
+					websiteAccess: [],
+					addressAccessMetadata: [],
+				},
+			})
+		})
+		await act(async () => { await Promise.resolve() })
+
+		assert.equal(globalThis.window.location.hash, '')
+		await unmountView(dom.document.body)
 		dom.restore()
 	})
 })

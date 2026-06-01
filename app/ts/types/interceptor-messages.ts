@@ -473,12 +473,23 @@ const MessageToPopupSimple = funtypes.ReadonlyObject({
 		funtypes.Literal('popup_chain_update'),
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
 		funtypes.Literal('popup_accounts_update'),
-		funtypes.Literal('popup_addressBookEntriesChanged'),
-		funtypes.Literal('popup_interceptor_access_changed'),
-		funtypes.Literal('popup_notification_removed'),
-		funtypes.Literal('popup_signer_name_changed'),
-		funtypes.Literal('popup_websiteAccess_changed'),
-	)
+			funtypes.Literal('popup_addressBookEntriesChanged'),
+			funtypes.Literal('popup_interceptor_access_changed'),
+			funtypes.Literal('popup_notification_removed'),
+			funtypes.Literal('popup_signer_name_changed'),
+		)
+	}).asReadonly()
+
+type WebsiteAccessPopupData = funtypes.Static<typeof WebsiteAccessPopupData>
+const WebsiteAccessPopupData = funtypes.ReadonlyObject({
+	websiteAccess: WebsiteAccessArray,
+	addressAccessMetadata: AddressBookEntries,
+}).asReadonly()
+
+type WebsiteAccessChanged = funtypes.Static<typeof WebsiteAccessChanged>
+const WebsiteAccessChanged = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_websiteAccess_changed'),
+	data: WebsiteAccessPopupData,
 }).asReadonly()
 
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
@@ -783,10 +794,7 @@ export const RetrieveWebsiteAccess = funtypes.ReadonlyObject({
 type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
 const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
-	data: funtypes.ReadonlyObject({
-		websiteAccess: WebsiteAccessArray,
-		addressAccessMetadata: AddressBookEntries
-	})
+	data: WebsiteAccessPopupData
 }).asReadonly()
 
 type PopupAddOrModifyAddressWindowStateInfomation = funtypes.Static<typeof PopupAddOrModifyAddressWindowStateInfomation>
@@ -886,6 +894,7 @@ export const ImportSimulationStack = funtypes.ReadonlyObject({
 export type MessageToPopupPayload = funtypes.Static<typeof MessageToPopupPayload>
 export const MessageToPopupPayload = funtypes.Union(
 	MessageToPopupSimple,
+	WebsiteAccessChanged,
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
 	ChangeChainRequest,

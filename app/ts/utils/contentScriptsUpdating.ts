@@ -1,11 +1,13 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort } from './requests.js'
+import { doWebsiteOriginsShareHostname, getDomainMatchPatternsForHostname, getHostnameForWebsiteOrigin } from './websiteOrigins.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map((origin) => `*://*.${ origin }/*`)
+	const excludeMatches = [...new Set(getInterceptorDisabledSites(await getSettings()).map((origin) => getHostnameForWebsiteOrigin(origin)))]
+		.flatMap((hostname) => getDomainMatchPatternsForHostname(hostname))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
@@ -42,7 +44,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const urls = [content.url, ...thisTab?.url === undefined ? [] : [thisTab.url]]
 	const hostnames = urls.map((url) => getHostWithPort(url))
 	const disabledSites = getInterceptorDisabledSites(await getSettings())
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const noMatches = disabledSites.every((excludeMatch) => hostnames.every((hostname) => !doWebsiteOriginsShareHostname(excludeMatch, hostname)))
 	if (!noMatches) return false
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
