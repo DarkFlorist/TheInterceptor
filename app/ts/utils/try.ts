@@ -1,7 +1,4 @@
-export function tryOrUndefined<T>(
-	fn: () => T,
-	isExpected: (error: unknown) => boolean,
-) {
+export function tryOrUndefined<T>(fn: () => T, isExpected: (error: unknown) => boolean) {
 	try {
 		return fn()
 	} catch (error) {
@@ -10,10 +7,7 @@ export function tryOrUndefined<T>(
 	}
 }
 
-export function tryOrFalse(
-	fn: () => unknown,
-	isExpected: (error: unknown) => boolean,
-) {
+export function tryOrFalse(fn: () => unknown, isExpected: (error: unknown) => boolean) {
 	try {
 		fn()
 		return true

@@ -1,9 +1,4 @@
-import {
-	type ComponentChildren,
-	createContext,
-	type JSX,
-	type RefObject,
-} from 'preact'
+import { type ComponentChildren, createContext, type JSX, type RefObject } from 'preact'
 import { useContext, useEffect, useRef } from 'preact/hooks'
 
 /**
@@ -32,16 +27,10 @@ import { useContext, useEffect, useRef } from 'preact/hooks'
  */
 export const Modal = ({ children }: { children: ComponentChildren }) => {
 	const dialogRef = useRef<HTMLDialogElement>(null)
-	return (
-		<ModalContext.Provider value={{ dialogRef }}>
-			{children}
-		</ModalContext.Provider>
-	)
+	return <ModalContext.Provider value={{ dialogRef }}>{children}</ModalContext.Provider>
 }
 
-const ModalContext = createContext<
-	{ dialogRef: RefObject<HTMLDialogElement> } | undefined
->(undefined)
+const ModalContext = createContext<{ dialogRef: RefObject<HTMLDialogElement> } | undefined>(undefined)
 
 /**
  * Modal.Open Component
@@ -76,11 +65,7 @@ type ModalDialogProps<T extends string> = JSX.IntrinsicElements['dialog'] & {
 	onModalClose: (returnValue: T) => void
 }
 
-const Dialog = <T extends string>({
-	children,
-	onModalClose,
-	...props
-}: ModalDialogProps<T>) => {
+const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDialogProps<T>) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Dialog must be used within a Modal')
 

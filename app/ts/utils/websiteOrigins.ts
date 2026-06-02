@@ -32,29 +32,15 @@ export function isHostScopedWebsiteOrigin(origin: string) {
 }
 
 function isIpHostname(hostname: string) {
-	return (
-		IPV4_HOST_PATTERN.test(hostname) ||
-		hostname.startsWith('[') ||
-		hostname.includes(':')
-	)
+	return IPV4_HOST_PATTERN.test(hostname) || hostname.startsWith('[') || hostname.includes(':')
 }
 
 function canMatchSubdomains(hostname: string) {
-	return (
-		hostname !== 'localhost' &&
-		hostname.includes('.') &&
-		!isIpHostname(hostname)
-	)
+	return hostname !== 'localhost' && hostname.includes('.') && !isIpHostname(hostname)
 }
 
-export function doWebsiteOriginsShareHostname(
-	leftOrigin: string,
-	rightOrigin: string,
-) {
-	return (
-		getHostnameForWebsiteOrigin(leftOrigin) ===
-		getHostnameForWebsiteOrigin(rightOrigin)
-	)
+export function doWebsiteOriginsShareHostname(leftOrigin: string, rightOrigin: string) {
+	return getHostnameForWebsiteOrigin(leftOrigin) === getHostnameForWebsiteOrigin(rightOrigin)
 }
 
 export function getDomainMatchPatternsForHostname(hostname: string) {

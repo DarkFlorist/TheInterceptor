@@ -1,13 +1,5 @@
 import * as funtypes from 'funtypes'
-import {
-	EthereumAddress,
-	EthereumBytes32,
-	EthereumTimestamp,
-	LiteralConverterParserFactory,
-	NonHexBigInt,
-	EthereumInput,
-	EthereumQuantity,
-} from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -145,49 +137,21 @@ export const Permit2 = funtypes.ReadonlyObject({
 
 type SeaPortItemType = funtypes.Static<typeof SeaPortItemType>
 const SeaPortItemType = funtypes.Union(
-	funtypes
-		.Literal('0')
-		.withParser(LiteralConverterParserFactory('0', 'NATIVE' as const)),
-	funtypes
-		.Literal('1')
-		.withParser(LiteralConverterParserFactory('1', 'ERC20' as const)),
-	funtypes
-		.Literal('2')
-		.withParser(LiteralConverterParserFactory('2', 'ERC721' as const)),
-	funtypes
-		.Literal('3')
-		.withParser(LiteralConverterParserFactory('3', 'ERC1155' as const)),
-	funtypes
-		.Literal('4')
-		.withParser(
-			LiteralConverterParserFactory('4', 'ERC721_WITH_CRITERIA' as const),
-		),
-	funtypes
-		.Literal('5')
-		.withParser(
-			LiteralConverterParserFactory('5', 'ERC1155_WITH_CRITERIA' as const),
-		),
+	funtypes.Literal('0').withParser(LiteralConverterParserFactory('0', 'NATIVE' as const)),
+	funtypes.Literal('1').withParser(LiteralConverterParserFactory('1', 'ERC20' as const)),
+	funtypes.Literal('2').withParser(LiteralConverterParserFactory('2', 'ERC721' as const)),
+	funtypes.Literal('3').withParser(LiteralConverterParserFactory('3', 'ERC1155' as const)),
+	funtypes.Literal('4').withParser(LiteralConverterParserFactory('4', 'ERC721_WITH_CRITERIA' as const)),
+	funtypes.Literal('5').withParser(LiteralConverterParserFactory('5', 'ERC1155_WITH_CRITERIA' as const)),
 )
 
 type SeaPortOrderType = funtypes.Static<typeof SeaPortOrderType>
 const SeaPortOrderType = funtypes.Union(
-	funtypes
-		.Literal('0')
-		.withParser(LiteralConverterParserFactory('0', 'FULL_OPEN' as const)),
-	funtypes
-		.Literal('1')
-		.withParser(LiteralConverterParserFactory('1', 'PARTIAL_OPEN' as const)),
-	funtypes
-		.Literal('2')
-		.withParser(LiteralConverterParserFactory('2', 'FULL_RESTRICTED' as const)),
-	funtypes
-		.Literal('3')
-		.withParser(
-			LiteralConverterParserFactory('3', 'PARTIAL_RESTRICTED' as const),
-		),
-	funtypes
-		.Literal('4')
-		.withParser(LiteralConverterParserFactory('4', 'CONTRACT' as const)),
+	funtypes.Literal('0').withParser(LiteralConverterParserFactory('0', 'FULL_OPEN' as const)),
+	funtypes.Literal('1').withParser(LiteralConverterParserFactory('1', 'PARTIAL_OPEN' as const)),
+	funtypes.Literal('2').withParser(LiteralConverterParserFactory('2', 'FULL_RESTRICTED' as const)),
+	funtypes.Literal('3').withParser(LiteralConverterParserFactory('3', 'PARTIAL_RESTRICTED' as const)),
+	funtypes.Literal('4').withParser(LiteralConverterParserFactory('4', 'CONTRACT' as const)),
 )
 
 type SeaPortSingleOffer = funtypes.Static<typeof SeaPortSingleOffer>
@@ -199,9 +163,7 @@ const SeaPortSingleOffer = funtypes.ReadonlyObject({
 	endAmount: NonHexBigInt,
 })
 
-type SeaPortSingleConsideration = funtypes.Static<
-	typeof SeaPortSingleConsideration
->
+type SeaPortSingleConsideration = funtypes.Static<typeof SeaPortSingleConsideration>
 const SeaPortSingleConsideration = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: EthereumAddress,
@@ -353,52 +315,40 @@ const OpenSeaOrder = funtypes.ReadonlyObject({
 	message: OpenSeaOrderMessage,
 })
 
-export type SeaPortSingleOfferWithAddressBookEntries = funtypes.Static<
-	typeof SeaPortSingleOfferWithAddressBookEntries
->
-export const SeaPortSingleOfferWithAddressBookEntries = funtypes.ReadonlyObject(
-	{
-		itemType: SeaPortItemType,
-		token: AddressBookEntry,
-		identifierOrCriteria: NonHexBigInt,
-		startAmount: NonHexBigInt,
-		endAmount: NonHexBigInt,
-	},
-)
+export type SeaPortSingleOfferWithAddressBookEntries = funtypes.Static<typeof SeaPortSingleOfferWithAddressBookEntries>
+export const SeaPortSingleOfferWithAddressBookEntries = funtypes.ReadonlyObject({
+	itemType: SeaPortItemType,
+	token: AddressBookEntry,
+	identifierOrCriteria: NonHexBigInt,
+	startAmount: NonHexBigInt,
+	endAmount: NonHexBigInt,
+})
 
-export type SeaPortSingleConsiderationWithAddressBookEntries = funtypes.Static<
-	typeof SeaPortSingleConsiderationWithAddressBookEntries
->
-export const SeaPortSingleConsiderationWithAddressBookEntries =
-	funtypes.ReadonlyObject({
-		itemType: SeaPortItemType,
-		token: AddressBookEntry,
-		identifierOrCriteria: NonHexBigInt,
-		startAmount: NonHexBigInt,
-		endAmount: NonHexBigInt,
-		recipient: AddressBookEntry,
-	})
+export type SeaPortSingleConsiderationWithAddressBookEntries = funtypes.Static<typeof SeaPortSingleConsiderationWithAddressBookEntries>
+export const SeaPortSingleConsiderationWithAddressBookEntries = funtypes.ReadonlyObject({
+	itemType: SeaPortItemType,
+	token: AddressBookEntry,
+	identifierOrCriteria: NonHexBigInt,
+	startAmount: NonHexBigInt,
+	endAmount: NonHexBigInt,
+	recipient: AddressBookEntry,
+})
 
-export type OpenSeaOrderMessageWithAddressBookEntries = funtypes.Static<
-	typeof OpenSeaOrderMessageWithAddressBookEntries
->
-export const OpenSeaOrderMessageWithAddressBookEntries =
-	funtypes.ReadonlyObject({
-		offerer: AddressBookEntry,
-		offer: funtypes.ReadonlyArray(SeaPortSingleOfferWithAddressBookEntries),
-		consideration: funtypes.ReadonlyArray(
-			SeaPortSingleConsiderationWithAddressBookEntries,
-		),
-		startTime: NonHexBigInt,
-		endTime: NonHexBigInt,
-		orderType: SeaPortOrderType,
-		zone: AddressBookEntry,
-		zoneHash: EthereumBytes32,
-		salt: NonHexBigInt,
-		conduitKey: EthereumBytes32,
-		totalOriginalConsiderationItems: NonHexBigInt,
-		counter: NonHexBigInt,
-	})
+export type OpenSeaOrderMessageWithAddressBookEntries = funtypes.Static<typeof OpenSeaOrderMessageWithAddressBookEntries>
+export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject({
+	offerer: AddressBookEntry,
+	offer: funtypes.ReadonlyArray(SeaPortSingleOfferWithAddressBookEntries),
+	consideration: funtypes.ReadonlyArray(SeaPortSingleConsiderationWithAddressBookEntries),
+	startTime: NonHexBigInt,
+	endTime: NonHexBigInt,
+	orderType: SeaPortOrderType,
+	zone: AddressBookEntry,
+	zoneHash: EthereumBytes32,
+	salt: NonHexBigInt,
+	conduitKey: EthereumBytes32,
+	totalOriginalConsiderationItems: NonHexBigInt,
+	counter: NonHexBigInt,
+})
 
 type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
 const PersonalSignRequestBase = funtypes.Intersect(
@@ -421,20 +371,11 @@ const PersonalSignRequestBase = funtypes.Intersect(
 	}),
 )
 
-type VisualizedPersonalSignRequestNotParsed = funtypes.Static<
-	typeof VisualizedPersonalSignRequest
->
+type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
 const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		method: funtypes.Union(
-			funtypes.Literal('personal_sign'),
-			funtypes.Literal('eth_signTypedData'),
-			funtypes.Literal('eth_signTypedData_v1'),
-			funtypes.Literal('eth_signTypedData_v2'),
-			funtypes.Literal('eth_signTypedData_v3'),
-			funtypes.Literal('eth_signTypedData_v4'),
-		),
+		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData'), funtypes.Literal('eth_signTypedData_v1'), funtypes.Literal('eth_signTypedData_v2'), funtypes.Literal('eth_signTypedData_v3'), funtypes.Literal('eth_signTypedData_v4')),
 		type: funtypes.Literal('NotParsed'),
 		message: funtypes.String,
 		messageHash: funtypes.Union(funtypes.String, funtypes.Undefined),
@@ -442,16 +383,9 @@ const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 )
 
 type EthSignTyped = funtypes.Static<typeof EthSignTyped>
-const EthSignTyped = funtypes.Union(
-	funtypes.Literal('eth_signTypedData_v1'),
-	funtypes.Literal('eth_signTypedData_v2'),
-	funtypes.Literal('eth_signTypedData_v3'),
-	funtypes.Literal('eth_signTypedData_v4'),
-)
+const EthSignTyped = funtypes.Union(funtypes.Literal('eth_signTypedData_v1'), funtypes.Literal('eth_signTypedData_v2'), funtypes.Literal('eth_signTypedData_v3'), funtypes.Literal('eth_signTypedData_v4'))
 
-type VisualizedPersonalSignRequestEIP712 = funtypes.Static<
-	typeof VisualizedPersonalSignRequestEIP712
->
+type VisualizedPersonalSignRequestEIP712 = funtypes.Static<typeof VisualizedPersonalSignRequestEIP712>
 const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
@@ -463,9 +397,7 @@ const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 	}),
 )
 
-export type VisualizedPersonalSignRequestPermit = funtypes.Static<
-	typeof VisualizedPersonalSignRequestPermit
->
+export type VisualizedPersonalSignRequestPermit = funtypes.Static<typeof VisualizedPersonalSignRequestPermit>
 export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
@@ -480,9 +412,7 @@ export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 	}),
 )
 
-export type VisualizedPersonalSignRequestPermit2 = funtypes.Static<
-	typeof VisualizedPersonalSignRequestPermit2
->
+export type VisualizedPersonalSignRequestPermit2 = funtypes.Static<typeof VisualizedPersonalSignRequestPermit2>
 export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
@@ -497,9 +427,7 @@ export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 	}),
 )
 
-type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<
-	typeof VisualizedPersonalSignRequestOrderComponents
->
+type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<typeof VisualizedPersonalSignRequestOrderComponents>
 const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
@@ -590,17 +518,14 @@ export const SafeTx = funtypes.ReadonlyObject({
 	}),
 })
 
-export type VisualizedPersonalSignRequestSafeTx = funtypes.Static<
-	typeof VisualizedPersonalSignRequestSafeTx
->
+export type VisualizedPersonalSignRequestSafeTx = funtypes.Static<typeof VisualizedPersonalSignRequestSafeTx>
 export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('SafeTx'),
 		message: SafeTx,
-		parsedMessageDataAddressBookEntries:
-			funtypes.ReadonlyArray(AddressBookEntry),
+		parsedMessageDataAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 		parsedMessageData: EnrichedEthereumInputData,
 		gasToken: AddressBookEntry,
 		to: AddressBookEntry,
@@ -612,24 +537,8 @@ export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 	}),
 )
 
-export type VisualizedPersonalSignRequest = funtypes.Static<
-	typeof VisualizedPersonalSignRequest
->
-export const VisualizedPersonalSignRequest = funtypes.Union(
-	VisualizedPersonalSignRequestNotParsed,
-	VisualizedPersonalSignRequestEIP712,
-	VisualizedPersonalSignRequestPermit,
-	VisualizedPersonalSignRequestPermit2,
-	VisualizedPersonalSignRequestSafeTx,
-	VisualizedPersonalSignRequestOrderComponents,
-)
+export type VisualizedPersonalSignRequest = funtypes.Static<typeof VisualizedPersonalSignRequest>
+export const VisualizedPersonalSignRequest = funtypes.Union(VisualizedPersonalSignRequestNotParsed, VisualizedPersonalSignRequestEIP712, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx, VisualizedPersonalSignRequestOrderComponents)
 
-export type PersonalSignRequestIdentifiedEIP712Message = funtypes.Static<
-	typeof PersonalSignRequestIdentifiedEIP712Message
->
-export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(
-	EIP2612Message,
-	Permit2,
-	OpenSeaOrder,
-	SafeTx,
-)
+export type PersonalSignRequestIdentifiedEIP712Message = funtypes.Static<typeof PersonalSignRequestIdentifiedEIP712Message>
+export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(EIP2612Message, Permit2, OpenSeaOrder, SafeTx)

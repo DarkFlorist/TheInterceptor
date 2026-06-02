@@ -3,8 +3,7 @@ export type BenchmarkRpcRequestSample = {
 	durationMs: number
 }
 
-export const BENCHMARK_RPC_REQUESTS_GLOBAL =
-	'__interceptorBenchmarkRpcRequests' as const
+export const BENCHMARK_RPC_REQUESTS_GLOBAL = '__interceptorBenchmarkRpcRequests' as const
 
 type BenchmarkGlobal = typeof globalThis & {
 	[BENCHMARK_RPC_REQUESTS_GLOBAL]?: BenchmarkRpcRequestSample[]

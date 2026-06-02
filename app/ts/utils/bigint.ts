@@ -8,11 +8,7 @@ export function bigintToDecimalString(value: bigint, power: bigint) {
 	return `${sign}${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
 }
 
-export const bigintToNumberFormatParts = (
-	amount: bigint,
-	decimals = 18n,
-	maximumSignificantDigits = 4,
-) => {
+export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
 	const floatValue = Number(formatUnits(amount, Number(decimals)))
 
 	let formatterOptions: Intl.NumberFormatOptions = {
@@ -21,8 +17,7 @@ export const bigintToNumberFormatParts = (
 	}
 
 	// maintain accuracy if value is a fraction of 1 ex 0.00001
-	if (floatValue % 1 === floatValue)
-		formatterOptions.maximumSignificantDigits = maximumSignificantDigits
+	if (floatValue % 1 === floatValue) formatterOptions.maximumSignificantDigits = maximumSignificantDigits
 
 	// apply only compacting with prefixes for values >= 10k or values <= -10k
 	if (Math.abs(floatValue) >= 1e4) {
@@ -46,28 +41,17 @@ export const bigintToNumberFormatParts = (
 	return partsMap
 }
 
-export const bigintToRoundedPrettyDecimalString = (
-	amount: bigint,
-	decimals?: bigint,
-	maximumSignificantDigits = 4,
-) => {
-	const numberParts = bigintToNumberFormatParts(
-		amount,
-		decimals,
-		maximumSignificantDigits,
-	)
+export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
+	const numberParts = bigintToNumberFormatParts(amount, decimals, maximumSignificantDigits)
 	let numberString = ''
 	for (const [_type, value] of numberParts) numberString += value
 	return numberString
 }
 
 export const nanoString = (value: bigint) => bigintToDecimalString(value, 9n)
-export const addressString = (address: bigint): `0x${string}` =>
-	`0x${address.toString(16).padStart(40, '0')}`
-export const addressStringWithout0x = (address: bigint) =>
-	address.toString(16).padStart(40, '0')
-export const checksummedAddress = (address: bigint) =>
-	getAddress(addressString(address))
+export const addressString = (address: bigint): `0x${string}` => `0x${address.toString(16).padStart(40, '0')}`
+export const addressStringWithout0x = (address: bigint) => address.toString(16).padStart(40, '0')
+export const checksummedAddress = (address: bigint) => getAddress(addressString(address))
 
 export function stringToAddress(addressString: string | undefined) {
 	if (addressString === undefined) return undefined
@@ -76,8 +60,7 @@ export function stringToAddress(addressString: string | undefined) {
 	return BigInt(trimmedAddress)
 }
 
-export const bytes32String = (bytes32: bigint): `0x${string}` =>
-	`0x${bytes32.toString(16).padStart(64, '0')}`
+export const bytes32String = (bytes32: bigint): `0x${string}` => `0x${bytes32.toString(16).padStart(64, '0')}`
 
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
@@ -98,10 +81,7 @@ export function dataStringWith0xStart(data: Uint8Array | null): `0x${string}` {
 
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	if (typeof value === 'number') value = BigInt(value)
-	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n)
-		throw new Error(
-			`Cannot fit ${value} into a ${numberOfBytes}-byte unsigned integer.`,
-		)
+	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${value} into a ${numberOfBytes}-byte unsigned integer.`)
 	const result = new Uint8Array(numberOfBytes)
 	for (let i = 0; i < result.length; ++i) {
 		result[i] = Number((value >> (BigInt(numberOfBytes - i - 1) * 8n)) & 0xffn)
@@ -109,10 +89,7 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	return result
 }
 
-export function stringifyJSONWithBigInts(
-	value: unknown,
-	space?: string | number,
-): string {
+export function stringifyJSONWithBigInts(value: unknown, space?: string | number): string {
 	return JSON.stringify(
 		value,
 		(_key, value) => {
@@ -138,10 +115,8 @@ export function bytesToUnsigned(bytes: Uint8Array): bigint {
 	return value
 }
 
-export const min = (left: bigint, right: bigint) =>
-	left < right ? left : right
-export const max = (left: bigint, right: bigint) =>
-	left > right ? left : right
+export const min = (left: bigint, right: bigint) => (left < right ? left : right)
+export const max = (left: bigint, right: bigint) => (left > right ? left : right)
 export const abs = (x: bigint) => (x < 0n ? -1n * x : x)
 
 export function isHexEncodedNumber(input: string): boolean {
@@ -149,23 +124,11 @@ export function isHexEncodedNumber(input: string): boolean {
 	return hexNumberRegex.test(input)
 }
 
-export function calculateWeightedPercentile(
-	data: readonly { dataPoint: bigint; weight: bigint }[],
-	percentile: bigint,
-): bigint {
+export function calculateWeightedPercentile(data: readonly { dataPoint: bigint; weight: bigint }[], percentile: bigint): bigint {
 	if (data.length === 0) return 0n
-	if (
-		percentile < 0 ||
-		percentile > 100 ||
-		data.map((point) => point.weight).some((weight) => weight < 0)
-	)
-		throw new Error('Invalid input')
-	const sortedData = [...data].sort((a, b) =>
-		a.dataPoint < b.dataPoint ? -1 : a.dataPoint > b.dataPoint ? 1 : 0,
-	)
-	const cumulativeWeights = sortedData
-		.map((point) => point.weight)
-		.reduce((acc, w, i) => [...acc, (acc[i] ?? 0n) + w], [0n])
+	if (percentile < 0 || percentile > 100 || data.map((point) => point.weight).some((weight) => weight < 0)) throw new Error('Invalid input')
+	const sortedData = [...data].sort((a, b) => (a.dataPoint < b.dataPoint ? -1 : a.dataPoint > b.dataPoint ? 1 : 0))
+	const cumulativeWeights = sortedData.map((point) => point.weight).reduce((acc, w, i) => [...acc, (acc[i] ?? 0n) + w], [0n])
 	const totalWeight = cumulativeWeights[cumulativeWeights.length - 1]
 	if (totalWeight === undefined) throw new Error('Invalid input')
 
@@ -183,42 +146,25 @@ export function calculateWeightedPercentile(
 	const lowerWeight = cumulativeWeights[lowerIndex]
 	const upperWeight = cumulativeWeights[upperIndex]
 
-	if (
-		lowerWeight === undefined ||
-		upperWeight === undefined ||
-		lowerValue === undefined ||
-		upperValue === undefined
-	)
-		throw new Error('weights were undefined')
+	if (lowerWeight === undefined || upperWeight === undefined || lowerValue === undefined || upperValue === undefined) throw new Error('weights were undefined')
 	if (lowerIndex === upperIndex) return lowerValue.dataPoint
 
-	const interpolation =
-		(targetIndex - lowerWeight) / (upperWeight - lowerWeight)
-	return (
-		lowerValue.dataPoint +
-		(upperValue.dataPoint - lowerValue.dataPoint) * interpolation
-	)
+	const interpolation = (targetIndex - lowerWeight) / (upperWeight - lowerWeight)
+	return lowerValue.dataPoint + (upperValue.dataPoint - lowerValue.dataPoint) * interpolation
 }
 
 export const bigintSecondsToDate = (seconds: bigint) => {
-	if (seconds > 8640000000000n)
-		throw new Error(`Too big seconds value: ${seconds}`)
+	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${seconds}`)
 	if (seconds < 0) throw new Error(`Got negative seconds: ${seconds}`)
 	return new Date(Number(seconds) * 1000)
 }
 
-export const dateToBigintSeconds = (date: Date) =>
-	BigInt(date.getTime()) / 1000n
+export const dateToBigintSeconds = (date: Date) => BigInt(date.getTime()) / 1000n
 
 export function generate256BitRandomBigInt(): bigint {
 	const cryptoInterface = globalThis.crypto
-	if (
-		cryptoInterface === undefined ||
-		cryptoInterface.getRandomValues === undefined
-	) {
-		throw new Error(
-			'Secure random number generator is not available in this environment',
-		)
+	if (cryptoInterface === undefined || cryptoInterface.getRandomValues === undefined) {
+		throw new Error('Secure random number generator is not available in this environment')
 	}
 	const randomBytes = new Uint8Array(32)
 	cryptoInterface.getRandomValues(randomBytes)

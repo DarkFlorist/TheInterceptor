@@ -81,20 +81,9 @@ const CallDataType = funtypes.Union(
 	}),
 )
 
-export function parseTransaction(transaction: {
-	input?: Uint8Array
-	from: bigint
-}) {
-	if (
-		!('input' in transaction) ||
-		transaction.input === undefined ||
-		transaction.input.length < 4
-	)
-		return undefined
-	const parsed = decodeCallDataLoose(
-		erc20andErc721FunctionSignatures,
-		dataStringWith0xStart(transaction.input),
-	)
+export function parseTransaction(transaction: { input?: Uint8Array; from: bigint }) {
+	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
+	const parsed = decodeCallDataLoose(erc20andErc721FunctionSignatures, dataStringWith0xStart(transaction.input))
 	if (parsed === undefined) return undefined
 
 	// https://github.com/ForbesLindesay/funtypes/issues/53

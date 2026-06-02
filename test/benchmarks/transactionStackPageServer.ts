@@ -7,10 +7,7 @@ export type TransactionStackPageServer = {
 }
 
 export async function startTransactionStackPageServer(): Promise<TransactionStackPageServer> {
-	const html = await readFile(
-		new URL('./transactionStackPage.html', import.meta.url),
-		'utf8',
-	)
+	const html = await readFile(new URL('./transactionStackPage.html', import.meta.url), 'utf8')
 	const server = createServer((request, response) => {
 		if (request.url === '/favicon.ico') {
 			response.writeHead(204, { 'Cache-Control': 'no-store' })
@@ -31,10 +28,7 @@ export async function startTransactionStackPageServer(): Promise<TransactionStac
 	})
 
 	const address = server.address()
-	if (address === null || typeof address === 'string')
-		throw new Error(
-			'Could not start the transaction stack benchmark page server',
-		)
+	if (address === null || typeof address === 'string') throw new Error('Could not start the transaction stack benchmark page server')
 
 	return {
 		baseUrl: `http://127.0.0.1:${address.port}/`,

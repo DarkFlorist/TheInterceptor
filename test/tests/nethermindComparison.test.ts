@@ -1,19 +1,7 @@
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import {
-	appendTransactionToInputAndSimulate,
-	getSimulatedBlock,
-	getSimulatedTransactionByHash,
-	mockSignTransaction,
-} from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import {
-	EthereumSignedTransactionWithBlockData,
-	serialize,
-} from '../../app/ts/types/wire-types.js'
-import {
-	GetBlockReturn,
-	JsonRpcResponse,
-	type EthereumJsonRpcRequest,
-} from '../../app/ts/types/JsonRpc-types.js'
+import { appendTransactionToInputAndSimulate, getSimulatedBlock, getSimulatedTransactionByHash, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
+import { GetBlockReturn, JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import {
 	eth_getBlockByNumber_goerli_8443561_false,
 	eth_getBlockByNumber_goerli_8443561_true,
@@ -28,15 +16,11 @@ import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
-import {
-	type SimulationState,
-	toResolvedSimulationState,
-} from '../../app/ts/types/visualizer-types.js'
+import { type SimulationState, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse)
-		throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
+	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
 	return jsonRpcResponse.result
 }
 
@@ -47,29 +31,17 @@ class MockEthereumJSONRpcRequestHandler {
 
 	public getChainId = async () => 5n
 
-	public readonly jsonRpcRequest = async (
-		rpcRequest: EthereumJsonRpcRequest,
-	) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber':
 				return `0x${8443561n.toString(16)}`
 			case 'eth_getBlockByNumber': {
 				if (rpcRequest.params[0] === 8443562n) {
-					if (rpcRequest.params[1] !== true)
-						throw new Error(
-							'Compatibility block only supports full transactions',
-						)
-					return parseRequest(
-						eth_getBlockByNumber_7702_invalid_auth_yParity_true,
-					)
+					if (rpcRequest.params[1] !== true) throw new Error('Compatibility block only supports full transactions')
+					return parseRequest(eth_getBlockByNumber_7702_invalid_auth_yParity_true)
 				}
-				if (
-					rpcRequest.params[0] !== 8443561n &&
-					rpcRequest.params[0] !== 'latest'
-				)
-					throw new Error('Unsupported block number')
-				if (rpcRequest.params[1] === true)
-					return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
+				if (rpcRequest.params[0] !== 8443561n && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
+				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			}
 			case 'eth_simulateV1': {
@@ -101,13 +73,8 @@ class MockEthereumJSONRpcRequestHandler {
 				return parseRequest(eth_simulateV1_dummy_call_result)
 			}
 			case 'eth_getTransactionByHash': {
-				if (
-					rpcRequest.params[0] ===
-					0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn
-				) {
-					return parseRequest(
-						eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f,
-					)
+				if (rpcRequest.params[0] === 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn) {
+					return parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
 				}
 				throw new Error('unsupported Hash')
 			}
@@ -165,144 +132,70 @@ const exampleTransaction = {
 
 describe('Nethermind testing', () => {
 	test('getBlock with true aligns with Nethermind', async () => {
-		const block = await getSimulatedBlock(
-			ethereum,
-			undefined,
-			resolvedSimulationState,
-			blockNumber,
-			true,
-		)
+		const block = await getSimulatedBlock(ethereum, undefined, resolvedSimulationState, blockNumber, true)
 		if (block === null) throw new Error('Block was null')
 		const serialized = GetBlockReturn.serialize(block)
 		const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 		assertIsObject(expected)
-		assert.equal(
-			JSON.stringify(serialized, Object.keys(block).sort()),
-			JSON.stringify(expected, Object.keys(expected).sort()),
-		)
+		assert.equal(JSON.stringify(serialized, Object.keys(block).sort()), JSON.stringify(expected, Object.keys(expected).sort()))
 	})
 
 	test('getBlock with false aligns with Nethermind', async () => {
-		const block = await getSimulatedBlock(
-			ethereum,
-			undefined,
-			resolvedSimulationState,
-			blockNumber,
-			false,
-		)
+		const block = await getSimulatedBlock(ethereum, undefined, resolvedSimulationState, blockNumber, false)
 		if (block === null) throw new Error('Block was null')
 		const serialized = GetBlockReturn.serialize(block)
 		const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 		assertIsObject(expected)
-		assert.equal(
-			JSON.stringify(serialized, Object.keys(block).sort()),
-			JSON.stringify(expected, Object.keys(expected).sort()),
-		)
+		assert.equal(JSON.stringify(serialized, Object.keys(block).sort()), JSON.stringify(expected, Object.keys(expected).sort()))
 	})
 
 	test('getBlock rejects non-spec 7702 authorization parity values', async () => {
-		await assert.rejects(
-			async () => await ethereum.getBlock(undefined, 8443562n, true),
-		)
+		await assert.rejects(async () => await ethereum.getBlock(undefined, 8443562n, true))
 	})
 
 	test('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
-		const newState = await appendTransactionToInputAndSimulate(
-			ethereum,
-			undefined,
-			simulationState.simulationStateInput,
-			[
-				{
-					signedTransaction: mockSignTransaction(exampleTransaction),
-					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
-					created: new Date(),
-					originalRequestParameters: {
-						method: 'eth_sendTransaction',
-						params: [{}],
-					},
-					transactionIdentifier: 1n,
+		const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState.simulationStateInput, [
+			{
+				signedTransaction: mockSignTransaction(exampleTransaction),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: {
+					method: 'eth_sendTransaction',
+					params: [{}],
 				},
-			],
-		)
-		const nextBlock = await getSimulatedBlock(
-			ethereum,
-			undefined,
-			toResolvedSimulationState(newState),
-			blockNumber + 1n,
-			true,
-		)
+				transactionIdentifier: 1n,
+			},
+		])
+		const nextBlock = await getSimulatedBlock(ethereum, undefined, toResolvedSimulationState(newState), blockNumber + 1n, true)
 		if (nextBlock === null) throw new Error('Block was null')
 		const serializedNextBlock = GetBlockReturn.serialize(nextBlock)
-		const expectedSimulationResult = parseRequest(
-			eth_simulateV1_dummy_call_result,
-		)
-		if (!Array.isArray(expectedSimulationResult))
-			throw new Error('Expected simulated result to be an array')
+		const expectedSimulationResult = parseRequest(eth_simulateV1_dummy_call_result)
+		if (!Array.isArray(expectedSimulationResult)) throw new Error('Expected simulated result to be an array')
 		const expectedSimulatedBlock = expectedSimulationResult[0]
 		assertIsObject(expectedSimulatedBlock)
-		const requiredFields = [
-			...Object.keys(expectedSimulatedBlock).filter((key) => key !== 'calls'),
-			'author',
-		].sort()
-		assert.equal(
-			JSON.stringify(Object.keys(serializedNextBlock).sort()),
-			JSON.stringify(requiredFields),
-		)
+		const requiredFields = [...Object.keys(expectedSimulatedBlock).filter((key) => key !== 'calls'), 'author'].sort()
+		assert.equal(JSON.stringify(Object.keys(serializedNextBlock).sort()), JSON.stringify(requiredFields))
 		assert.equal(serializedNextBlock.hash, expectedSimulatedBlock.hash)
-		assert.equal(
-			serializedNextBlock.parentHash,
-			expectedSimulatedBlock.parentHash,
-		)
-		assert.equal(
-			serializedNextBlock.logsBloom,
-			expectedSimulatedBlock.logsBloom,
-		)
+		assert.equal(serializedNextBlock.parentHash, expectedSimulatedBlock.parentHash)
+		assert.equal(serializedNextBlock.logsBloom, expectedSimulatedBlock.logsBloom)
 		assert.equal(serializedNextBlock.mixHash, expectedSimulatedBlock.mixHash)
-		assert.equal(
-			serializedNextBlock.receiptsRoot,
-			expectedSimulatedBlock.receiptsRoot,
-		)
-		assert.equal(
-			serializedNextBlock.stateRoot,
-			expectedSimulatedBlock.stateRoot,
-		)
+		assert.equal(serializedNextBlock.receiptsRoot, expectedSimulatedBlock.receiptsRoot)
+		assert.equal(serializedNextBlock.stateRoot, expectedSimulatedBlock.stateRoot)
 		assert.equal(serializedNextBlock.size, expectedSimulatedBlock.size)
-		assert.equal(
-			serializedNextBlock.transactionsRoot,
-			expectedSimulatedBlock.transactionsRoot,
-		)
-		assert.equal(
-			serializedNextBlock.withdrawalsRoot,
-			expectedSimulatedBlock.withdrawalsRoot,
-		)
+		assert.equal(serializedNextBlock.transactionsRoot, expectedSimulatedBlock.transactionsRoot)
+		assert.equal(serializedNextBlock.withdrawalsRoot, expectedSimulatedBlock.withdrawalsRoot)
 		assert.equal(serializedNextBlock.gasUsed, expectedSimulatedBlock.gasUsed)
-		assert.equal(
-			serializedNextBlock.baseFeePerGas,
-			expectedSimulatedBlock.baseFeePerGas,
-		)
+		assert.equal(serializedNextBlock.baseFeePerGas, expectedSimulatedBlock.baseFeePerGas)
 	})
 
 	test('get transaction by hash aligns with Nethermind', async () => {
-		const transaction = await getSimulatedTransactionByHash(
-			ethereum,
-			undefined,
-			resolvedSimulationState,
-			0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn,
-		)
+		const transaction = await getSimulatedTransactionByHash(ethereum, undefined, resolvedSimulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
 		if (transaction === null) throw new Error('Transaction is not found')
 
-		const serialized = serialize(
-			EthereumSignedTransactionWithBlockData,
-			transaction,
-		)
-		const expected = parseRequest(
-			eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f,
-		)
+		const serialized = serialize(EthereumSignedTransactionWithBlockData, transaction)
+		const expected = parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
 		assertIsObject(expected)
 		assertIsObject(serialized)
-		assert.equal(
-			JSON.stringify(serialized, Object.keys(serialized).sort()),
-			JSON.stringify(expected, Object.keys(expected).sort()),
-		)
+		assert.equal(JSON.stringify(serialized, Object.keys(serialized).sort()), JSON.stringify(expected, Object.keys(expected).sort()))
 	})
 })

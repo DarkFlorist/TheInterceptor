@@ -15,24 +15,15 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -43,9 +34,7 @@ function installBrowserMock() {
 describe('website access migration', () => {
 	test('sanitizes stored remote website icons', async () => {
 		const storageState = installBrowserMock()
-		const { migrateWebsiteAccess } = await import(
-			'../../app/ts/background/websiteAccessMigration.js'
-		)
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
 		storageState.websiteAccess = [
 			{
 				website: {
@@ -68,20 +57,14 @@ describe('website access migration', () => {
 		await migrateWebsiteAccess()
 
 		assert.equal(Array.isArray(storageState.websiteAccess), true)
-		if (!Array.isArray(storageState.websiteAccess))
-			throw new Error('Expected websiteAccess to remain an array')
+		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
 		assert.equal(storageState.websiteAccess[0]?.website.icon, undefined)
-		assert.equal(
-			storageState.websiteAccess[1]?.website.icon,
-			'data:image/png;base64,Y2FjaGVk',
-		)
+		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 
 	test('normalizes host scoped settings across sibling origins', async () => {
 		const storageState = installBrowserMock()
-		const { migrateWebsiteAccess } = await import(
-			'../../app/ts/background/websiteAccessMigration.js'
-		)
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
 		storageState.websiteAccess = [
 			{
 				website: {
@@ -114,8 +97,7 @@ describe('website access migration', () => {
 		await migrateWebsiteAccess()
 
 		assert.equal(Array.isArray(storageState.websiteAccess), true)
-		if (!Array.isArray(storageState.websiteAccess))
-			throw new Error('Expected websiteAccess to remain an array')
+		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
 		assert.deepEqual(storageState.websiteAccess.slice(0, 2), [
 			{
 				website: {

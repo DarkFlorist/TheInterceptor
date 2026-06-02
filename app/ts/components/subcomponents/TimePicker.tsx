@@ -1,10 +1,4 @@
-import {
-	type Signal,
-	batch,
-	useComputed,
-	useSignal,
-	useSignalEffect,
-} from '@preact/signals'
+import { type Signal, batch, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { DropDownMenu } from './DropDownMenu.js'
 import type { JSX } from 'preact/jsx-runtime'
 import { assertNever } from '../../utils/typescript.js'
@@ -12,25 +6,12 @@ import { dateToBigintSeconds } from '../../utils/bigint.js'
 
 const timePickerModeDownOptions = ['Until', 'For', 'No Delay'] as const
 const timePickerModeDownOptionsWithoutNoDelay = ['Until', 'For'] as const
-const timePickerDeltaOptions = [
-	'Seconds',
-	'Minutes',
-	'Hours',
-	'Days',
-	'Weeks',
-	'Months',
-	'Years',
-] as const
+const timePickerDeltaOptions = ['Seconds', 'Minutes', 'Hours', 'Days', 'Weeks', 'Months', 'Years'] as const
 
 export type DeltaUnit = (typeof timePickerDeltaOptions)[number]
 export type TimePickerMode = (typeof timePickerModeDownOptions)[number]
 
-export const getTimeManipulatorFromSignals = (
-	timeSelectorMode: TimePickerMode,
-	timeSelectorAbsoluteTime: Date | undefined,
-	timeSelectorDeltaValue: bigint,
-	timeSelectorDeltaUnit: DeltaUnit,
-) => {
+export const getTimeManipulatorFromSignals = (timeSelectorMode: TimePickerMode, timeSelectorAbsoluteTime: Date | undefined, timeSelectorDeltaValue: bigint, timeSelectorDeltaUnit: DeltaUnit) => {
 	switch (timeSelectorMode) {
 		case 'No Delay':
 			return { type: 'No Delay' } as const
@@ -41,8 +22,7 @@ export const getTimeManipulatorFromSignals = (
 				deltaUnit: timeSelectorDeltaUnit,
 			} as const
 		case 'Until': {
-			if (timeSelectorAbsoluteTime === undefined)
-				return { type: 'No Delay' } as const
+			if (timeSelectorAbsoluteTime === undefined) return { type: 'No Delay' } as const
 			return {
 				type: 'SetTimetamp',
 				timeToSet: dateToBigintSeconds(timeSelectorAbsoluteTime),
@@ -73,44 +53,17 @@ const formatDateToLocalDateTimeValue = (date: Date | undefined): string => {
 	return localDate.toISOString().slice(0, 16)
 }
 
-const TimePickerModeViews = ({
-	mode,
-	absoluteTime,
-	timePickerDeltaOptionsSignal,
-	deltaValue,
-	deltaUnit,
-	changeDeltaUnit,
-	absoluteTimeChanged,
-	changeDeltaValue,
-}: TimePickerModeViewsParams) => {
+const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal, deltaValue, deltaUnit, changeDeltaUnit, absoluteTimeChanged, changeDeltaValue }: TimePickerModeViewsParams) => {
 	switch (mode.value) {
 		case 'No Delay':
 			return <></>
 		case 'Until':
-			return (
-				<input
-					type="datetime-local"
-					class="timepicker-datetime-local"
-					value={formatDateToLocalDateTimeValue(absoluteTime.value)}
-					onInput={absoluteTimeChanged}
-				/>
-			)
+			return <input type="datetime-local" class="timepicker-datetime-local" value={formatDateToLocalDateTimeValue(absoluteTime.value)} onInput={absoluteTimeChanged} />
 		case 'For':
 			return (
 				<div>
-					<input
-						class="input"
-						style="width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;"
-						type="number"
-						value={Number(deltaValue.value)}
-						onInput={changeDeltaValue}
-					/>
-					<DropDownMenu
-						selected={deltaUnit}
-						dropDownOptions={timePickerDeltaOptionsSignal}
-						onChangedCallBack={changeDeltaUnit}
-						buttonClassses={'btn btn--outline is-small'}
-					/>
+					<input class="input" style="width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;" type="number" value={Number(deltaValue.value)} onInput={changeDeltaValue} />
+					<DropDownMenu selected={deltaUnit} dropDownOptions={timePickerDeltaOptionsSignal} onChangedCallBack={changeDeltaUnit} buttonClassses={'btn btn--outline is-small'} />
 				</div>
 			)
 		default:
@@ -128,30 +81,14 @@ type TimePickerParams = {
 	removeNoDelayOption: boolean
 }
 
-export const TimePicker = ({
-	mode,
-	absoluteTime,
-	deltaValue,
-	deltaUnit,
-	onChangedCallBack,
-	startText,
-	removeNoDelayOption,
-}: TimePickerParams) => {
-	const timePickerModeDownOptionsSignal = useSignal<readonly TimePickerMode[]>(
-		removeNoDelayOption
-			? timePickerModeDownOptionsWithoutNoDelay
-			: timePickerModeDownOptions,
-	)
-	const timePickerDeltaOptionsSignal = useSignal<readonly DeltaUnit[]>(
-		timePickerDeltaOptions,
-	)
+export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChangedCallBack, startText, removeNoDelayOption }: TimePickerParams) => {
+	const timePickerModeDownOptionsSignal = useSignal<readonly TimePickerMode[]>(removeNoDelayOption ? timePickerModeDownOptionsWithoutNoDelay : timePickerModeDownOptions)
+	const timePickerDeltaOptionsSignal = useSignal<readonly DeltaUnit[]>(timePickerDeltaOptions)
 
 	const temporaryMode = useSignal<'No Delay' | 'Until' | 'For'>(mode.value)
 	const temporaryAbsoluteTime = useSignal<Date | undefined>(absoluteTime.value)
 	const temporaryDeltaValue = useSignal<bigint | undefined>(deltaValue.value)
-	const temporaryDeltaUnit = useSignal<
-		'Seconds' | 'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Months' | 'Years'
-	>(deltaUnit.value)
+	const temporaryDeltaUnit = useSignal<'Seconds' | 'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Months' | 'Years'>(deltaUnit.value)
 
 	useSignalEffect(() => {
 		mode.value
@@ -174,18 +111,14 @@ export const TimePicker = ({
 	const changeDeltaUnit = (newOption: DeltaUnit) => {
 		temporaryDeltaUnit.value = newOption
 	}
-	const absoluteTimeChanged = (
-		event: JSX.TargetedInputEvent<HTMLInputElement>,
-	) => {
+	const absoluteTimeChanged = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
 		if (event.currentTarget.value.length === 0) {
 			temporaryAbsoluteTime.value = undefined
 		} else {
 			temporaryAbsoluteTime.value = new Date(event.currentTarget.value)
 		}
 	}
-	const changeDeltaValue = (
-		event: JSX.TargetedInputEvent<HTMLInputElement>,
-	) => {
+	const changeDeltaValue = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
 		event.preventDefault()
 		const sanitized = event.currentTarget.value.replace(/[^0-9.]/g, '')
 		if (sanitized.length === 0 || Number.isNaN(parseInt(sanitized))) {
@@ -201,16 +134,9 @@ export const TimePicker = ({
 		if (mode.value !== temporaryMode.value) return true
 		if (mode.value === 'For') {
 			if (temporaryDeltaValue.value === undefined) return false
-			return (
-				deltaUnit.value !== temporaryDeltaUnit.value ||
-				deltaValue.value !== temporaryDeltaValue.value
-			)
+			return deltaUnit.value !== temporaryDeltaUnit.value || deltaValue.value !== temporaryDeltaValue.value
 		}
-		if (mode.value === 'Until')
-			return (
-				absoluteTime.value !== temporaryAbsoluteTime.value &&
-				temporaryAbsoluteTime.value !== undefined
-			)
+		if (mode.value === 'Until') return absoluteTime.value !== temporaryAbsoluteTime.value && temporaryAbsoluteTime.value !== undefined
 		return false
 	})
 
@@ -234,12 +160,7 @@ export const TimePicker = ({
 					{startText}{' '}
 				</p>
 				<div style="display: grid; grid-template-columns: auto auto auto; column-gap: 10px; padding-left: 5px">
-					<DropDownMenu
-						selected={temporaryMode}
-						dropDownOptions={timePickerModeDownOptionsSignal}
-						onChangedCallBack={changeMode}
-						buttonClassses={'btn btn--outline is-small'}
-					/>
+					<DropDownMenu selected={temporaryMode} dropDownOptions={timePickerModeDownOptionsSignal} onChangedCallBack={changeMode} buttonClassses={'btn btn--outline is-small'} />
 					<TimePickerModeViews
 						mode={temporaryMode}
 						absoluteTime={temporaryAbsoluteTime}

@@ -1,15 +1,8 @@
 import * as funtypes from 'funtypes'
-import {
-	EthereumAddress,
-	EthereumData,
-	EthereumQuantity,
-} from './wire-types.js'
+import { EthereumAddress, EthereumData, EthereumQuantity } from './wire-types.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 
-const SignedBigIntParser: funtypes.ParsedValue<
-	funtypes.String,
-	bigint
->['config'] = {
+const SignedBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: (value) => {
 		if (!/^-?0x[a-fA-F0-9]{1,64}$/.test(value))
 			return {
@@ -22,12 +15,10 @@ const SignedBigIntParser: funtypes.ParsedValue<
 		}
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint')
-			return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
 		return {
 			success: true,
-			value:
-				value < 0 ? `-0x${(-value).toString(16)}` : `0x${value.toString(16)}`,
+			value: value < 0 ? `-0x${(-value).toString(16)}` : `0x${value.toString(16)}`,
 		}
 	},
 }
@@ -35,9 +26,7 @@ const SignedBigIntParser: funtypes.ParsedValue<
 export const SignedBigInt = funtypes.String.withParser(SignedBigIntParser)
 export type SignedBigInt = funtypes.Static<typeof SignedBigInt>
 
-export type PureGroupedSolidityType = funtypes.Static<
-	typeof PureGroupedSolidityType
->
+export type PureGroupedSolidityType = funtypes.Static<typeof PureGroupedSolidityType>
 export const PureGroupedSolidityType = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('signedInteger'),
@@ -98,9 +87,7 @@ export const PureGroupedSolidityType = funtypes.Union(
 	}),
 )
 
-export type EnrichedGroupedSolidityType = funtypes.Static<
-	typeof EnrichedGroupedSolidityType
->
+export type EnrichedGroupedSolidityType = funtypes.Static<typeof EnrichedGroupedSolidityType>
 export const EnrichedGroupedSolidityType = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('signedInteger'),

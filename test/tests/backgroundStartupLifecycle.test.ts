@@ -1,9 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import {
-	isIgnorablePortLifecycleError,
-	tryRegisterContentScriptPortListeners,
-} from '../../app/ts/background/contentScriptPortLifecycle.js'
+import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from '../../app/ts/background/contentScriptPortLifecycle.js'
 
 describe('background startup lifecycle', () => {
 	test('ignores invalidated connect ports before listeners can be attached', () => {
@@ -12,9 +9,7 @@ describe('background startup lifecycle', () => {
 
 		const port = {
 			get onDisconnect() {
-				throw new Error(
-					"Failed to read the 'onDisconnect' property from 'Object': Extension context invalidated.",
-				)
+				throw new Error("Failed to read the 'onDisconnect' property from 'Object': Extension context invalidated.")
 			},
 			onMessage: {
 				addListener: () => {
@@ -40,13 +35,6 @@ describe('background startup lifecycle', () => {
 	})
 
 	test('classifies extension context invalidation as an ignorable lifecycle error', () => {
-		assert.equal(
-			isIgnorablePortLifecycleError(
-				new Error(
-					"Failed to read the 'onDisconnect' property from 'Object': Extension context invalidated.",
-				),
-			),
-			true,
-		)
+		assert.equal(isIgnorablePortLifecycleError(new Error("Failed to read the 'onDisconnect' property from 'Object': Extension context invalidated.")), true)
 	})
 })

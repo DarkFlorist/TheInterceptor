@@ -6,17 +6,13 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": [
-			"app/**/*.ts",
-			"app/**/*.tsx",
-			"test/**/*.ts",
-			"build/**/*.mts"
-		],
+		"includes": ["app/**/*.ts", "app/**/*.tsx", "test/**/*.ts", "build/**/*.mts"],
 		"ignoreUnknown": true
 	},
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
+		"lineWidth": 320,
 		"useEditorconfig": true
 	},
 	"assist": {

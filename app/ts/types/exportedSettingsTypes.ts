@@ -1,17 +1,9 @@
 import * as funtypes from 'funtypes'
 import { RpcNetwork } from './rpc.js'
-import {
-	EthereumAddress,
-	EthereumQuantity,
-	LiteralConverterParserFactory,
-	OptionalEthereumAddress,
-} from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
-import {
-	EditEnsNamedHashWindowState,
-	ModifyAddressWindowState,
-} from './visualizer-types.js'
+import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -38,12 +30,7 @@ export const ActiveAddress = funtypes
 	.ReadonlyObject({
 		name: funtypes.String,
 		address: EthereumAddress,
-		askForAddressAccess: funtypes.Union(
-			funtypes.Boolean,
-			funtypes
-				.Literal(undefined)
-				.withParser(LiteralConverterParserFactory(undefined, true)),
-		),
+		askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 	})
 	.asReadonly()
 

@@ -32,24 +32,15 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -127,8 +118,7 @@ async function loadModules() {
 describe('unexpected error security', () => {
 	test('keep spoofed InterceptorError diagnostics out of popup state', async () => {
 		const { storageState, popupMessages } = installBrowserMock()
-		const { getLatestUnexpectedError, handleIterceptorError } =
-			await loadModules()
+		const { getLatestUnexpectedError, handleIterceptorError } = await loadModules()
 
 		await handleIterceptorError({
 			method: 'InterceptorError',
@@ -142,20 +132,13 @@ describe('unexpected error security', () => {
 
 	test('use generic popup copy for unknown thrown values', async () => {
 		const { popupMessages } = installBrowserMock()
-		const {
-			getLatestUnexpectedError,
-			handleUnexpectedError,
-			GENERIC_UNEXPECTED_ERROR_MESSAGE,
-		} = await loadModules()
+		const { getLatestUnexpectedError, handleUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
 
 		await handleUnexpectedError({ arbitrary: 'value' })
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)
-		assert.equal(
-			latestUnexpectedError?.data.message,
-			GENERIC_UNEXPECTED_ERROR_MESSAGE,
-		)
+		assert.equal(latestUnexpectedError?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
@@ -164,17 +147,13 @@ describe('unexpected error security', () => {
 
 	test('preserve trusted internal Error messages for popup display', async () => {
 		installBrowserMock()
-		const { getLatestUnexpectedError, handleUnexpectedError } =
-			await loadModules()
+		const { getLatestUnexpectedError, handleUnexpectedError } = await loadModules()
 
 		await handleUnexpectedError(new Error('Trusted extension failure'))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)
-		assert.equal(
-			latestUnexpectedError?.data.message,
-			'Trusted extension failure',
-		)
+		assert.equal(latestUnexpectedError?.data.message, 'Trusted extension failure')
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')

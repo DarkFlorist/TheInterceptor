@@ -1,22 +1,10 @@
 import * as funtypes from 'funtypes'
-import {
-	BytesParser,
-	EthereumAddress,
-	EthereumBytes32,
-	EthereumData,
-	EthereumInput,
-	EthereumQuantity,
-	EthereumUnsignedTransaction,
-	LiteralConverterParserFactory,
-} from './wire-types.js'
+import { BytesParser, EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedTransaction } from './visualizer-types.js'
 import { EthBalanceChanges } from './JsonRpc-types.js'
 import { StateOverrides } from './ethSimulate-types.js'
 
-const RevertErrorParser: funtypes.ParsedValue<
-	funtypes.String,
-	string
->['config'] = {
+const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config'] = {
 	parse: (value) => {
 		if (!value.startsWith('Reverted ')) return { success: true, value }
 		const parseResult = BytesParser.parse(value.slice('Reverted '.length))
@@ -41,18 +29,14 @@ const OldMulticallLog = funtypes
 	})
 	.asReadonly()
 
-export type GetSimulationStackReplyV1 = funtypes.Static<
-	typeof GetSimulationStackReplyV1
->
+export type GetSimulationStackReplyV1 = funtypes.Static<typeof GetSimulationStackReplyV1>
 export const GetSimulationStackReplyV1 = funtypes.ReadonlyArray(
 	funtypes.Intersect(
 		EthereumUnsignedTransaction,
 		funtypes.Union(
 			funtypes
 				.Object({
-					statusCode: funtypes
-						.Literal(1)
-						.withParser(LiteralConverterParserFactory(1, 'success' as const)),
+					statusCode: funtypes.Literal(1).withParser(LiteralConverterParserFactory(1, 'success' as const)),
 					gasSpent: EthereumQuantity,
 					returnValue: EthereumData,
 					events: funtypes.ReadonlyArray(OldMulticallLog),
@@ -61,9 +45,7 @@ export const GetSimulationStackReplyV1 = funtypes.ReadonlyArray(
 				.asReadonly(),
 			funtypes
 				.Object({
-					statusCode: funtypes
-						.Literal(0)
-						.withParser(LiteralConverterParserFactory(0, 'failure' as const)),
+					statusCode: funtypes.Literal(0).withParser(LiteralConverterParserFactory(0, 'failure' as const)),
 					gasSpent: EthereumQuantity,
 					error: funtypes.String.withParser(RevertErrorParser),
 					returnValue: EthereumData,
@@ -81,9 +63,7 @@ export const GetSimulationStackReplyV1 = funtypes.ReadonlyArray(
 	),
 )
 
-export type GetSimulationStackReplyV2 = funtypes.Static<
-	typeof GetSimulationStackReplyV2
->
+export type GetSimulationStackReplyV2 = funtypes.Static<typeof GetSimulationStackReplyV2>
 export const GetSimulationStackReplyV2 = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
 	transactions: funtypes.ReadonlyArray(

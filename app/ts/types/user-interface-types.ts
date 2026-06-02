@@ -1,34 +1,10 @@
 import * as funtypes from 'funtypes'
-import {
-	EthereumAddress,
-	EthereumBlockHeader,
-	EthereumQuantity,
-	EthereumTimestamp,
-	OptionalEthereumAddress,
-} from './wire-types.js'
-import type {
-	SimulatedAndVisualizedTransaction,
-	ResolvedSimulationResults,
-	SimulationUpdatingState,
-	SimulationResultState,
-	ModifyAddressWindowState,
-	BlockTimeManipulation,
-} from './visualizer-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
+import type { SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import type { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import {
-	InterceptedRequest,
-	UniqueRequestIdentifier,
-	type WebsiteSocket,
-} from '../utils/requests.js'
-import type {
-	AddressBookEntries,
-	AddressBookEntry,
-} from './addressBookTypes.js'
-import {
-	PopupOrTabId,
-	Website,
-	type WebsiteAccessArray,
-} from './websiteAccessTypes.js'
+import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
+import type { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
+import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import {
 	ICON_ACCESS_DENIED,
@@ -63,9 +39,7 @@ export type InterceptorAccessListParams = {
 
 export type AddAddressParam = {
 	close: () => void
-	setActiveAddressAndInformAboutIt:
-		| ((address: bigint | 'signer') => Promise<void>)
-		| undefined
+	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined
 	modifyAddressWindowState: Signal<ModifyAddressWindowState>
 	activeAddress: bigint | undefined
 	rpcEntries: Signal<RpcEntries>
@@ -126,9 +100,7 @@ export type FirstCardParams = {
 
 export type SimulationStateParam = {
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
-	removeTransactionOrSignedMessage: (
-		transactionOrMessageIdentifier: TransactionOrMessageIdentifier,
-	) => void
+	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -202,10 +174,7 @@ export const TabState = funtypes.ReadonlyObject({
 	signerConnected: funtypes.Boolean,
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
-	signerAccountError: funtypes.Union(
-		ErrorWithCodeAndOptionalData,
-		funtypes.Undefined,
-	),
+	signerAccountError: funtypes.Union(ErrorWithCodeAndOptionalData, funtypes.Undefined),
 	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	tabIconDetails: TabIconDetails,
 	activeSigningAddress: OptionalEthereumAddress,
@@ -223,9 +192,7 @@ export const RpcConnectionStatus = funtypes.Union(
 	}),
 )
 
-export type PendingChainChangeConfirmationPromise = funtypes.Static<
-	typeof PendingChainChangeConfirmationPromise
->
+export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
 export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
@@ -234,13 +201,10 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 })
 
-export type PendingFetchSimulationStackRequestPromise = funtypes.Static<
-	typeof PendingFetchSimulationStackRequestPromise
->
-export const PendingFetchSimulationStackRequestPromise =
-	funtypes.ReadonlyObject({
-		website: Website,
-		popupOrTabId: PopupOrTabId,
-		simulationStackVersion: SimulationStackVersion,
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
-	})
+export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof PendingFetchSimulationStackRequestPromise>
+export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
+	website: Website,
+	popupOrTabId: PopupOrTabId,
+	simulationStackVersion: SimulationStackVersion,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+})

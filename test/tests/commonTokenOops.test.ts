@@ -19,24 +19,15 @@ const installBrowserMock = () => {
 			local: {
 				async get(keys?: string | readonly string[] | Record<string, unknown>) {
 					if (keys === undefined) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | readonly string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -125,16 +116,8 @@ describe('commonTokenOops', () => {
 			}),
 		})
 
-		const result = await commonTokenOops(
-			transaction,
-			ethereum,
-			undefined,
-			simulationState,
-		)
+		const result = await commonTokenOops(transaction, ethereum, undefined, simulationState)
 
-		assert.equal(
-			result,
-			'Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens',
-		)
+		assert.equal(result, 'Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens')
 	})
 })

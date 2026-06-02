@@ -1,12 +1,7 @@
 import { get4Byte, get4ByteString } from '../../utils/calldata.js'
 import { BURN_ADDRESSES, FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
-import {
-	type MaybeSimulatedTransaction,
-	type SimulatedAndVisualizedTransaction,
-	SimulatedAndVisualizedTransactionBase,
-	TransactionWithAddressBookEntries,
-} from '../../types/visualizer-types.js'
+import { type MaybeSimulatedTransaction, type SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -16,10 +11,7 @@ import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFak
 import type { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
-import type {
-	EthereumAddress,
-	EthereumQuantity,
-} from '../../types/wire-types.js'
+import type { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { deduplicateByFunction } from '../../utils/array.js'
 import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
@@ -57,8 +49,7 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 	if (getSimpleTokenApprovalOrUndefined(simTx)) {
 		const tokenResults = extractTokenEvents(simTx.events)
 		const tokenResult = tokenResults[0]
-		if (tokenResult === undefined)
-			throw new Error('token result were undefined')
+		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
 			case 'ERC20':
@@ -119,22 +110,11 @@ function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 	const fourByte = get4Byte(simTx.transaction.input)
 	if (fourByte === undefined) return undefined
 	const explanation = FourByteExplanations[fourByte]
-	if (
-		explanation !== 'Cast Vote' &&
-		explanation !== 'Submit Vote' &&
-		explanation !== 'Cast Vote by Signature' &&
-		explanation !== 'Cast Vote with Reason' &&
-		explanation !== 'Cast Vote with Reason and Additional Info' &&
-		explanation !== 'Cast Vote with Reason And Additional Info by Signature'
-	)
-		return undefined
+	if (explanation !== 'Cast Vote' && explanation !== 'Submit Vote' && explanation !== 'Cast Vote by Signature' && explanation !== 'Cast Vote with Reason' && explanation !== 'Cast Vote with Reason and Additional Info' && explanation !== 'Cast Vote with Reason And Additional Info by Signature') return undefined
 	const fourByteString = get4ByteString(simTx.transaction.input)
 	if (fourByteString === undefined) return undefined
 	try {
-		const functionData = decodeCallDataLoose(
-			CompoundGovernanceAbi,
-			dataStringWith0xStart(simTx.transaction.input),
-		)
+		const functionData = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(simTx.transaction.input))
 		if (functionData === undefined) return undefined
 		return {
 			type: 'GovernanceVote' as const,
@@ -142,9 +122,7 @@ function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 			signingAction: 'Cast Vote',
 			simulationAction: 'Simulate Vote Casting',
 			rejectAction: `Don't Vote`,
-			governanceVoteInputParameters: parseVoteInputParameters(
-				functionData.namedArgs,
-			),
+			governanceVoteInputParameters: parseVoteInputParameters(functionData.namedArgs),
 		}
 	} catch (e) {
 		console.warn('malformed vote cast')
@@ -153,9 +131,7 @@ function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 	}
 }
 
-type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<
-	typeof SimulatedAndVisualizedSimpleApprovalTransaction
->
+type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleApprovalTransaction>
 const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
@@ -164,64 +140,32 @@ const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 	}),
 )
 
-function isSimpleTokenApproval(
-	simTx: SimulatedAndVisualizedTransaction,
-): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
+function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
 	const tokenResults = extractTokenEvents(simTx.events)
 	const tokenResult = tokenResults[0]
 	if (tokenResult === undefined) return false
-	if (
-		!(
-			simTx.transaction.value === 0n &&
-			tokenResults.length === 1 &&
-			tokenResult.isApproval === true &&
-			tokenResult.from.address !== tokenResult.to.address &&
-			tokenResult.from === simTx.transaction.from
-		)
-	)
-		return false
+	if (!(simTx.transaction.value === 0n && tokenResults.length === 1 && tokenResult.isApproval === true && tokenResult.from.address !== tokenResult.to.address && tokenResult.from === simTx.transaction.from)) return false
 	return true
 }
-const getSimpleTokenApprovalOrUndefined = createGuard<
-	SimulatedAndVisualizedTransaction,
-	SimulatedAndVisualizedSimpleApprovalTransaction
->((simTx) => (isSimpleTokenApproval(simTx) ? simTx : undefined))
+const getSimpleTokenApprovalOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleApprovalTransaction>((simTx) => (isSimpleTokenApproval(simTx) ? simTx : undefined))
 
-export type SimulatedAndVisualizedSimpleTokenTransferTransaction =
-	funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
-export const SimulatedAndVisualizedSimpleTokenTransferTransaction =
-	funtypes.Intersect(
-		SimulatedAndVisualizedTransactionBase,
-		funtypes.ReadonlyObject({
-			uniqueRequestIdentifier: UniqueRequestIdentifier,
-			transaction: funtypes.Intersect(
-				TransactionWithAddressBookEntries,
-				funtypes.ReadonlyObject({ to: AddressBookEntry }),
-			),
-		}),
-	)
+export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
+export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
+	SimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
+		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
+	}),
+)
 
-function isSimpleTokenTransfer(
-	transaction: SimulatedAndVisualizedTransaction,
-): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
+function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
 	const tokenResults = extractTokenEvents(transaction.events)
 	const tokenResult = tokenResults[0]
 	if (tokenResult === undefined) return false
-	if (
-		tokenResults.length === 1 &&
-		tokenResult.isApproval === false &&
-		tokenResult.from.address !== tokenResult.to.address &&
-		tokenResult.from.address === transaction.transaction.from.address &&
-		!BURN_ADDRESSES.includes(tokenResult.from.address) &&
-		!BURN_ADDRESSES.includes(tokenResult.to.address)
-	)
-		return true
+	if (tokenResults.length === 1 && tokenResult.isApproval === false && tokenResult.from.address !== tokenResult.to.address && tokenResult.from.address === transaction.transaction.from.address && !BURN_ADDRESSES.includes(tokenResult.from.address) && !BURN_ADDRESSES.includes(tokenResult.to.address)) return true
 	return false
 }
-const getSimpleTokenTransferOrUndefined = createGuard<
-	SimulatedAndVisualizedTransaction,
-	SimulatedAndVisualizedSimpleTokenTransferTransaction
->((simTx) => (isSimpleTokenTransfer(simTx) ? simTx : undefined))
+const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => (isSimpleTokenTransfer(simTx) ? simTx : undefined))
 
 type EntryAmount = funtypes.Static<typeof EntryAmount>
 const EntryAmount = funtypes.ReadonlyObject({
@@ -229,21 +173,16 @@ const EntryAmount = funtypes.ReadonlyObject({
 	amountDelta: funtypes.BigInt,
 })
 
-export type SimulatedAndVisualizedProxyTokenTransferTransaction =
-	funtypes.Static<typeof SimulatedAndVisualizedProxyTokenTransferTransaction>
-export const SimulatedAndVisualizedProxyTokenTransferTransaction =
-	funtypes.Intersect(
-		SimulatedAndVisualizedTransactionBase,
-		funtypes.ReadonlyObject({
-			uniqueRequestIdentifier: UniqueRequestIdentifier,
-			transaction: funtypes.Intersect(
-				TransactionWithAddressBookEntries,
-				funtypes.ReadonlyObject({ to: AddressBookEntry }),
-			),
-			transferRoute: funtypes.ReadonlyArray(AddressBookEntry),
-			transferedTo: funtypes.ReadonlyArray(EntryAmount),
-		}),
-	)
+export type SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedProxyTokenTransferTransaction>
+export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Intersect(
+	SimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
+		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
+		transferRoute: funtypes.ReadonlyArray(AddressBookEntry),
+		transferedTo: funtypes.ReadonlyArray(EntryAmount),
+	}),
+)
 
 const getNetSums = (
 	edges: readonly {
@@ -260,9 +199,7 @@ const getNetSums = (
 	return netSums
 }
 
-function isProxyTokenTransfer(
-	transaction: SimulatedAndVisualizedTransaction,
-): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
+function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
 	const tokenResults = extractTokenEvents(transaction.events)
 	// no ENS logs allowed in proxy token transfer
 	if (transaction.events.some((x) => x.type === 'ENS')) return false
@@ -270,78 +207,43 @@ function isProxyTokenTransfer(
 	if (tokenResults.length < 2) return false
 
 	// no burning allowed
-	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address)))
-		return false
-	if (
-		tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))
-	)
-		return false
+	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return false
+	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return false
 
 	// no approvals allowed
-	if (tokenResults.filter((result) => result.isApproval).length !== 0)
-		return false
+	if (tokenResults.filter((result) => result.isApproval).length !== 0) return false
 	// sender has only one token leaving by logs (gas fees are not in logs)
-	const senderLogs = tokenResults.filter(
-		(result) => result.from.address === transaction.transaction.from.address,
-	)
+	const senderLogs = tokenResults.filter((result) => result.from.address === transaction.transaction.from.address)
 	const senderLog = senderLogs[0]
 	if (senderLogs.length !== 1 || senderLog === undefined) return false
 	// sender does not receive any tokens
-	if (
-		tokenResults.filter(
-			(result) => result.to.address === transaction.transaction.from.address,
-		).length !== 0
-	)
-		return false
+	if (tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return false
 	// only one token of specific address is being transacted in the logs
-	if (
-		tokenResults.filter(
-			(result) => result.token.address !== senderLog.token.address,
-		).length !== 0
-	)
-		return false
+	if (tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
 	// only one token id (or undefined) is mentioned inte the logs
-	if (
-		new Set(
-			tokenResults.map((result) =>
-				'tokenId' in result ? result.tokenId : undefined,
-			),
-		).size !== 1
-	)
-		return false
+	if (new Set(tokenResults.map((result) => ('tokenId' in result ? result.tokenId : undefined))).size !== 1) return false
 	// can find a path
 	const edges = tokenResults.map((tokenResult) => ({
 		from: tokenResult.from.address,
 		to: tokenResult.to.address,
 		data: tokenResult.to,
-		amount:
-			!tokenResult.isApproval && tokenResult.type !== 'ERC721'
-				? tokenResult.amount
-				: 1n,
+		amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n,
 	}))
 	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
 	if (deadEnds.size === 0) return false
-	const nonDuplicatedPath = Array.from(deadEnds).flatMap(([_key, edges]) =>
-		edges.slice(0, -1),
-	)
+	const nonDuplicatedPath = Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1))
 	if (nonDuplicatedPath.length === 0) return false
 	// the sum of all currency in dead ends, must equal to the sum sent initially (multiplied by -1)
 	const netSums = getNetSums(edges)
 	const deadEndSum = Array.from(deadEnds)
 		.map((deadEnd) => netSums.get(deadEnd[0]) || 0n)
 		.reduce((prev, current) => prev + current, 0n)
-	if (netSums.get(transaction.transaction.from.address) !== -deadEndSum)
-		return false
+	if (netSums.get(transaction.transaction.from.address) !== -deadEndSum) return false
 	return true
 }
-const getProxyTokenTransferOrUndefined = createGuard<
-	SimulatedAndVisualizedTransaction,
-	SimulatedAndVisualizedSimpleTokenTransferTransaction
->((simTx) => (isProxyTokenTransfer(simTx) ? simTx : undefined))
+const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => (isProxyTokenTransfer(simTx) ? simTx : undefined))
 
-export function identifyTransaction(
-	simTx: MaybeSimulatedTransaction,
-): IdentifiedTransaction {
+export function identifyTransaction(simTx: MaybeSimulatedTransaction): IdentifiedTransaction {
 	if (simTx.transactionStatus === 'Transaction Succeeded') {
 		const tokenResults = extractTokenEvents(simTx.events)
 		const identifiedSwap = identifySwap(simTx)
@@ -358,8 +260,7 @@ export function identifyTransaction(
 
 		if (getSimpleTokenTransferOrUndefined(simTx)) {
 			const tokenResult = tokenResults[0]
-			if (tokenResult === undefined)
-				throw new Error('token result were undefined')
+			if (tokenResult === undefined) throw new Error('token result were undefined')
 			const symbol = tokenResult.token.symbol
 			return {
 				type: 'SimpleTokenTransfer',
@@ -373,24 +274,18 @@ export function identifyTransaction(
 
 		if (getProxyTokenTransferOrUndefined(simTx)) {
 			const tokenResult = tokenResults[0]
-			if (tokenResult === undefined)
-				throw new Error('token result were undefined')
+			if (tokenResult === undefined) throw new Error('token result were undefined')
 			const symbol = tokenResult.token.symbol
 			const edges = tokenResults.map((tokenResult) => ({
 				from: tokenResult.from.address,
 				to: tokenResult.to.address,
 				data: tokenResult.to,
-				amount:
-					!tokenResult.isApproval && tokenResult.type !== 'ERC721'
-						? tokenResult.amount
-						: 1n,
+				amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n,
 			}))
 			const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
 
 			const transferRoute = deduplicateByFunction(
-				Array.from(deadEnds).flatMap(([_key, edges]) =>
-					edges.slice(0, -1).map((edge) => edge.data),
-				),
+				Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)),
 				(entry: AddressBookEntry) => addressString(entry.address),
 			)
 			const netSums = getNetSums(edges)
@@ -420,13 +315,10 @@ export function identifyTransaction(
 							const deadEnd = deadEnds.get(address)
 							if (deadEnd === undefined) return undefined
 							const destinationEntry = deadEnd[deadEnd.length - 1]
-							if (destinationEntry === undefined)
-								throw new Error('path was missing')
+							if (destinationEntry === undefined) throw new Error('path was missing')
 							return { entry: destinationEntry.data, amountDelta }
 						})
-						.filter(
-							(x): x is EntryAmount => x !== undefined && x.amountDelta !== 0n,
-						),
+						.filter((x): x is EntryAmount => x !== undefined && x.amountDelta !== 0n),
 				},
 			}
 		}

@@ -62,8 +62,7 @@ class TestNode {
 	}
 
 	set textContent(value: string) {
-		this.childNodes =
-			value === '' ? [] : [new TestTextNode(this.ownerDocument, value)]
+		this.childNodes = value === '' ? [] : [new TestTextNode(this.ownerDocument, value)]
 		for (const node of this.childNodes) node.parentNode = this
 	}
 

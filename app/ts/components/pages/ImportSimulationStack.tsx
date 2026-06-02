@@ -42,31 +42,21 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 	const importError = useSignal<string | undefined>(undefined)
 	const isImporting = useSignal(false)
 
-	const isSubmitButtonDisabled = useComputed(
-		() =>
-			errorString.value !== undefined ||
-			param.simulationInput.value.trim().length === 0 ||
-			isImporting.value,
-	)
+	const isSubmitButtonDisabled = useComputed(() => errorString.value !== undefined || param.simulationInput.value.trim().length === 0 || isImporting.value)
 	const isValid = useComputed(() => errorString.value === undefined)
 
 	const errorString = useComputed(() => {
 		const trimmed = param.simulationInput.value.trim()
 		if (trimmed.length === 0) return undefined
 		if (!isJSON(trimmed)) return 'not a valid JSON'
-		const parseResult = InterceptorSimulationExport.safeParse(
-			JSON.parse(trimmed),
-		)
+		const parseResult = InterceptorSimulationExport.safeParse(JSON.parse(trimmed))
 		if (parseResult.success) return undefined
 		return `The input needs to be valid Interceptor Simulation Stack Export: ${parseResult.message}`
 	})
 
 	const Text = (param: { text: ComponentChildren }) => {
 		return (
-			<p
-				class="paragraph"
-				style="color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%"
-			>
+			<p class="paragraph" style="color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%">
 				{param.text}
 			</p>
 		)
@@ -82,8 +72,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 				data: InterceptorSimulationExport.parse(JSON.parse(trimmed)),
 			})
 			if (reply === undefined) {
-				importError.value =
-					'Import failed because the background page did not return a reply.'
+				importError.value = 'Import failed because the background page did not return a reply.'
 				return
 			}
 			if (!reply.ok) {
@@ -109,11 +98,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 					<div class="card-header-title">
 						<p class="paragraph"> {'Import Interceptor Simulation Stack'} </p>
 					</div>
-					<button
-						class="card-header-icon"
-						aria-label="close"
-						onClick={param.close}
-					>
+					<button class="card-header-icon" aria-label="close" onClick={param.close}>
 						<XMarkIcon />
 					</button>
 				</header>
@@ -121,43 +106,21 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 					<div class="card" style="margin: 10px;">
 						<div class="card-content">
 							<div class="media">
-								<div
-									class="media-content"
-									style="overflow-y: unset; overflow-x: unset;"
-								>
+								<div class="media-content" style="overflow-y: unset; overflow-x: unset;">
 									<div class="container" style="margin-bottom: 10px;">
 										<div class="simulation-stack-import-field">
 											<Text text={'Interceptor Simulation Stack: '} />
-											<SimulationInput
-												input={param.simulationInput}
-												isValid={isValid}
-												disabled={isImporting.value}
-											/>
+											<SimulationInput input={param.simulationInput} isValid={isValid} disabled={isImporting.value} />
 										</div>
 									</div>
 								</div>
 							</div>
 						</div>
 					</div>
-					<div style="padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px">
-						{errorString.value !== undefined ? (
-							<Notice text={errorString.value} />
-						) : importError.value !== undefined ? (
-							<Notice text={importError.value} />
-						) : (
-							<></>
-						)}
-					</div>
+					<div style="padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px">{errorString.value !== undefined ? <Notice text={errorString.value} /> : importError.value !== undefined ? <Notice text={importError.value} /> : <></>}</div>
 				</section>
-				<footer
-					class="modal-card-foot window-footer"
-					style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;"
-				>
-					<button
-						class="button is-success is-primary"
-						onClick={importStack}
-						disabled={isSubmitButtonDisabled.value}
-					>
+				<footer class="modal-card-foot window-footer" style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;">
+					<button class="button is-success is-primary" onClick={importStack} disabled={isSubmitButtonDisabled.value}>
 						{' '}
 						{isImporting.value ? 'Importing...' : 'Import'}{' '}
 					</button>

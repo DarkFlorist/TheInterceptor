@@ -4,11 +4,7 @@ import { promises as fs } from 'node:fs'
 import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
-const nodeModulesDirectory = path.join(
-	directoryOfThisFile,
-	'..',
-	'node_modules',
-)
+const nodeModulesDirectory = path.join(directoryOfThisFile, '..', 'node_modules')
 const vendoredDependencyMirrorDirectoryName = '__dependencies__'
 
 const vendoredDependencies = [
@@ -34,16 +30,7 @@ const vendoredDependencies = [
 	'viem/accounts',
 ] as const
 
-const extraPackageRoots = [
-	'ox',
-	'abitype',
-	'@adraffy/ens-normalize',
-	'@scure/base',
-	'@scure/bip32',
-	'@scure/bip39',
-	'eventemitter3',
-	'@noble/ciphers',
-] as const
+const extraPackageRoots = ['ox', 'abitype', '@adraffy/ens-normalize', '@scure/base', '@scure/bip32', '@scure/bip39', 'eventemitter3', '@noble/ciphers'] as const
 
 const vendorTypeShims = [
 	{
@@ -143,23 +130,11 @@ const vendorTypeShims = [
 		contents: "export { hashStruct, hashTypedData } from 'viem/utils'\n",
 	},
 	{
-		pathParts: [
-			'viem',
-			'_esm',
-			'utils',
-			'transaction',
-			'parseTransaction.d.ts',
-		],
+		pathParts: ['viem', '_esm', 'utils', 'transaction', 'parseTransaction.d.ts'],
 		contents: "export { parseTransaction } from 'viem/utils'\n",
 	},
 	{
-		pathParts: [
-			'viem',
-			'_esm',
-			'utils',
-			'transaction',
-			'serializeTransaction.d.ts',
-		],
+		pathParts: ['viem', '_esm', 'utils', 'transaction', 'serializeTransaction.d.ts'],
 		contents: "export { serializeTransaction } from 'viem/utils'\n",
 	},
 	{
@@ -171,23 +146,11 @@ const vendorTypeShims = [
 		contents: "export { privateKeyToAccount } from 'viem/accounts'\n",
 	},
 	{
-		pathParts: [
-			'abitype',
-			'dist',
-			'esm',
-			'human-readable',
-			'parseAbiItem.d.ts',
-		],
+		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiItem.d.ts'],
 		contents: "export { parseAbiItem } from 'abitype'\n",
 	},
 	{
-		pathParts: [
-			'abitype',
-			'dist',
-			'esm',
-			'human-readable',
-			'parseAbiParameters.d.ts',
-		],
+		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiParameters.d.ts'],
 		contents: "export { parseAbiParameters } from 'abitype'\n",
 	},
 	{
@@ -196,17 +159,9 @@ const vendorTypeShims = [
 	},
 ] as const
 
-const getPackageRoot = (packageName: string) =>
-	packageName.startsWith('@')
-		? packageName.split('/').slice(0, 2).join('/')
-		: packageName.split('/')[0]!
+const getPackageRoot = (packageName: string) => (packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0]!)
 
-const vendoredPackageRoots = [
-	...new Set([
-		...vendoredDependencies.map(getPackageRoot),
-		...extraPackageRoots,
-	]),
-]
+const vendoredPackageRoots = [...new Set([...vendoredDependencies.map(getPackageRoot), ...extraPackageRoots])]
 
 async function vendorDependencies() {
 	await fs.rm(path.join(directoryOfThisFile, '..', 'app', 'vendor'), {
@@ -215,57 +170,29 @@ async function vendorDependencies() {
 	})
 	for (const packageRoot of vendoredPackageRoots) {
 		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
-		const destinationDirectoryPath = path.join(
-			directoryOfThisFile,
-			'..',
-			'app',
-			'vendor',
-			packageRoot,
-		)
+		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageRoot)
 		async function inclusionPredicate(path: string, fileType: FileType) {
 			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
-			if (
-				/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(
-					path,
-				)
-			)
-				return false
+			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
 			if (path.endsWith('.js')) return true
 			if (path.endsWith('.ts')) return true
 			if (path.endsWith('.mjs')) return true
 			if (path.endsWith('.mts')) return true
 			if (path.endsWith('package.json')) return true
 			if (path.endsWith('.map')) return true
-			if (
-				path.endsWith('.git') ||
-				path.endsWith('.git/') ||
-				path.endsWith('.git\\')
-			)
-				return false
-			if (
-				path.includes('address-metadata/lib/images') ||
-				path.includes('address-metadata\\lib\\images')
-			)
-				return true
+			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
+			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
 			if (fileType === 'directory') return true
 			return false
 		}
-		await recursiveDirectoryCopy(
-			sourceDirectoryPath,
-			destinationDirectoryPath,
-			inclusionPredicate,
-			rewriteSourceMapSourcePath.bind(undefined, packageRoot),
-		)
+		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
 		await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
-		if (packageRoot === '@darkflorist/address-metadata')
-			await exposeAddressMetadataImagesAtPackageRoot(destinationDirectoryPath)
+		if (packageRoot === '@darkflorist/address-metadata') await exposeAddressMetadataImagesAtPackageRoot(destinationDirectoryPath)
 	}
 	await writeVendorTypeShims()
 }
 
-async function exposeAddressMetadataImagesAtPackageRoot(
-	packageDirectoryPath: string,
-) {
+async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
 	const sourceDirectoryPath = path.join(packageDirectoryPath, 'lib', 'images')
 	const destinationDirectoryPath = path.join(packageDirectoryPath, 'images')
 	const sourceStats = await fs.stat(sourceDirectoryPath)
@@ -274,14 +201,8 @@ async function exposeAddressMetadataImagesAtPackageRoot(
 }
 
 async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {
-	const nestedNodeModulesDirectoryPath = path.join(
-		packageDirectoryPath,
-		'node_modules',
-	)
-	const nestedDependenciesDirectoryPath = path.join(
-		packageDirectoryPath,
-		vendoredDependencyMirrorDirectoryName,
-	)
+	const nestedNodeModulesDirectoryPath = path.join(packageDirectoryPath, 'node_modules')
+	const nestedDependenciesDirectoryPath = path.join(packageDirectoryPath, vendoredDependencyMirrorDirectoryName)
 	try {
 		const nestedNodeModulesStats = await fs.stat(nestedNodeModulesDirectoryPath)
 		if (!nestedNodeModulesStats.isDirectory()) return
@@ -292,32 +213,19 @@ async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {
 		recursive: true,
 		force: true,
 	})
-	await fs.rename(
-		nestedNodeModulesDirectoryPath,
-		nestedDependenciesDirectoryPath,
-	)
+	await fs.rename(nestedNodeModulesDirectoryPath, nestedDependenciesDirectoryPath)
 }
 
 async function writeVendorTypeShims() {
 	for (const shim of vendorTypeShims) {
-		const destinationPath = path.join(
-			directoryOfThisFile,
-			'..',
-			'app',
-			'vendor',
-			...shim.pathParts,
-		)
+		const destinationPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', ...shim.pathParts)
 		await fs.mkdir(path.dirname(destinationPath), { recursive: true })
 		await fs.writeFile(destinationPath, shim.contents)
 	}
 }
 
 // rewrite the source paths in sourcemap files so they show up in the debugger in a reasonable location and if two source maps refer to the same (relative) path, we end up with them distinguished in the browser debugger
-async function rewriteSourceMapSourcePath(
-	packageName: string,
-	sourcePath: string,
-	destinationPath: string,
-) {
+async function rewriteSourceMapSourcePath(packageName: string, sourcePath: string, destinationPath: string) {
 	const fileExtension = path.extname(sourcePath)
 	if (fileExtension !== '.map') return
 	const fileContents = JSON.parse(await fs.readFile(sourcePath, 'utf-8')) as {
@@ -325,14 +233,8 @@ async function rewriteSourceMapSourcePath(
 	}
 	for (let i = 0; i < fileContents.sources.length; ++i) {
 		// we want to ensure all source files show up in the appropriate directory and don't leak out of our directory tree, so we strip leading '../' references
-		const sourcePath = fileContents.sources[i]
-			.replace(/^(?:.\/)*/, '')
-			.replace(/^(?:..\/)*/, '')
-		fileContents.sources[i] = [
-			'dependencies://dependencies',
-			packageName,
-			sourcePath,
-		].join('/')
+		const sourcePath = fileContents.sources[i].replace(/^(?:.\/)*/, '').replace(/^(?:..\/)*/, '')
+		fileContents.sources[i] = ['dependencies://dependencies', packageName, sourcePath].join('/')
 	}
 	await fs.writeFile(destinationPath, JSON.stringify(fileContents))
 }

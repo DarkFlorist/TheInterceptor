@@ -38,14 +38,7 @@ export function useAsyncState<T>(): AsyncState<T> {
 			}
 			setCapturedResult(resolvedState)
 		} catch (unknownError: unknown) {
-			const error =
-				unknownError instanceof Error
-					? unknownError
-					: typeof unknownError === 'string'
-						? new Error(unknownError)
-						: new Error(
-								`Unknown error occurred.\n${JSON.stringify(unknownError)}`,
-							)
+			const error = unknownError instanceof Error ? unknownError : typeof unknownError === 'string' ? new Error(unknownError) : new Error(`Unknown error occurred.\n${JSON.stringify(unknownError)}`)
 			const rejectedState = { state: 'rejected' as const, error }
 			setCapturedResult(rejectedState)
 		}

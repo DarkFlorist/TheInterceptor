@@ -1,12 +1,7 @@
 export function ArrowIcon(param: { color: string }) {
 	return (
 		<>
-			<svg
-				style="vertical-align: middle;"
-				width="24"
-				height="24"
-				viewBox="0 0 24 24"
-			>
+			<svg style="vertical-align: middle;" width="24" height="24" viewBox="0 0 24 24">
 				<path fill={param.color} d="M13 7v-6l11 11-11 11v-6h-13v-10z" />
 			</svg>
 		</>
@@ -16,14 +11,7 @@ export function ArrowIcon(param: { color: string }) {
 export function ApproveIcon(param: { color: string }) {
 	return (
 		<>
-			<svg
-				x="0px"
-				y="0px"
-				viewBox="0 0 122.88 98.75"
-				style="enable-background: new 0 0 122.88 98.75"
-				width="24"
-				height="24"
-			>
+			<svg x="0px" y="0px" viewBox="0 0 122.88 98.75" style="enable-background: new 0 0 122.88 98.75" width="24" height="24">
 				<g>
 					<path
 						fill={param.color}
@@ -38,14 +26,7 @@ export function ApproveIcon(param: { color: string }) {
 
 export const BroomIcon = () => {
 	return (
-		<svg
-			role="img"
-			width="1em"
-			height="1em"
-			viewBox="0 0 100 100"
-			fill="none"
-			xmlns="http://www.w3.org/2000/svg"
-		>
+		<svg role="img" width="1em" height="1em" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
 			<path
 				d="M50.8339 47.7216C44.9583 43.6222 36.25 40.4333 30.75 49.5444M50.8339 47.7216C58.7083 54.1 56.4166 60.4778 54.5833 65.9444M50.8339 47.7216L83.9167 9M30.75 49.5444C22.0416 63.6667 14.25 70.5 6 76.4222C12.4167 84.1667 21.125 86.9 21.125 86.9M30.75 49.5444L54.5833 65.9444M54.5833 65.9444C52.7499 74.1444 56.4166 85.5333 57.3333 91H38.9999M21.125 86.9C21.125 86.9 27.0833 76.8778 29.8333 72.3222M21.125 86.9C29.375 90.5444 38.9999 91 38.9999 91M38.9999 91C38.9999 91 41.2916 85.5333 41.7499 83.7111M74.2404 73.6888H87.125M75.6154 60.0221H81.6249M74.6988 87.3554H94"
 				stroke="currentColor"
@@ -58,31 +39,14 @@ export const BroomIcon = () => {
 
 export const XMarkIcon = () => {
 	return (
-		<svg
-			width="1em"
-			height="1em"
-			viewBox="0 0 16 16"
-			fill="none"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				d="M3 3L13 13M13 3L3 13"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-			/>
+		<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+			<path d="M3 3L13 13M13 3L3 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 		</svg>
 	)
 }
 
 export const RequestBlockedIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
+	<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path
 			d="M9.33755 12.7205C9.33755 12.9279 9.27472 13.1307 9.15701 13.3031C9.0393 13.4756 8.872 13.61 8.67625 13.6894C8.4805 13.7688 8.26511 13.7895 8.05731 13.7491C7.8495 13.7086 7.65863 13.6087 7.50881 13.4621C7.35899 13.3154 7.25696 13.1285 7.21563 12.9251C7.17429 12.7216 7.19551 12.5108 7.27659 12.3191C7.35767 12.1275 7.49498 11.9637 7.67114 11.8484C7.84731 11.7332 8.05442 11.6717 8.2663 11.6717C8.55041 11.6717 8.82289 11.7822 9.02379 11.9789C9.22469 12.1756 9.33755 12.4423 9.33755 12.7205ZM14.2252 4.59251L15.2643 3.57586C15.4152 3.4281 15.5 3.22768 15.5 3.01871C15.5 2.80973 15.4152 2.60932 15.2643 2.46155C15.1133 2.31378 14.9086 2.23077 14.6952 2.23077C14.4817 2.23077 14.277 2.31378 14.1261 2.46155L13.0869 3.4782L12.0485 2.46286C11.8976 2.31509 11.6928 2.23208 11.4794 2.23208C11.2659 2.23208 11.0612 2.31509 10.9103 2.46286C10.7594 2.61063 10.6746 2.81104 10.6746 3.02002C10.6746 3.22899 10.7594 3.42941 10.9103 3.57718L11.9487 4.59251L10.9116 5.60916C10.7607 5.75693 10.6759 5.95735 10.6759 6.16632C10.6759 6.37529 10.7607 6.57571 10.9116 6.72348C11.0626 6.87124 11.2673 6.95426 11.4807 6.95426C11.6942 6.95426 11.8989 6.87124 12.0498 6.72348L13.0869 5.70683L14.1254 6.72413C14.2001 6.7973 14.2889 6.85534 14.3865 6.89494C14.4841 6.93453 14.5888 6.95492 14.6945 6.95492C14.8002 6.95492 14.9048 6.93453 15.0025 6.89494C15.1001 6.85534 15.1889 6.7973 15.2636 6.72413C15.3383 6.65097 15.3976 6.5641 15.4381 6.46851C15.4785 6.37291 15.4993 6.27045 15.4993 6.16697C15.4993 6.0635 15.4785 5.96104 15.4381 5.86544C15.3976 5.76985 15.3383 5.68298 15.2636 5.60982L14.2252 4.59251ZM11.4198 9.52828C10.5042 8.8761 9.40097 8.52478 8.26864 8.52478C7.13632 8.52478 6.03312 8.8761 5.11748 9.52828C4.94524 9.6511 4.82988 9.83587 4.7968 10.042C4.76371 10.248 4.8156 10.4586 4.94106 10.6272C5.06651 10.7958 5.25525 10.9087 5.46576 10.9411C5.67626 10.9735 5.89129 10.9227 6.06353 10.7999C6.70435 10.3437 7.47631 10.098 8.26864 10.098C9.06097 10.098 9.83294 10.3437 10.4738 10.7999C10.646 10.9227 10.861 10.9735 11.0715 10.9411C11.282 10.9087 11.4708 10.7958 11.5962 10.6272C11.7217 10.4586 11.7736 10.248 11.7405 10.042C11.7074 9.83587 11.592 9.6511 11.4198 9.52828ZM9.06974 3.01936C9.06974 2.81075 8.98509 2.61068 8.83442 2.46317C8.68374 2.31566 8.47938 2.23279 8.2663 2.23279C5.54164 2.23416 2.90139 3.15845 0.793629 4.84881C0.712079 4.91435 0.644516 4.99499 0.594796 5.0861C0.545076 5.17721 0.514173 5.27702 0.503853 5.37982C0.493532 5.48263 0.503996 5.58641 0.534646 5.68526C0.565296 5.78411 0.615532 5.87607 0.682487 5.95591C0.749441 6.03575 0.831803 6.10189 0.924868 6.15057C1.01793 6.19925 1.11988 6.2295 1.22489 6.2396C1.3299 6.24971 1.43591 6.23946 1.53688 6.20946C1.63784 6.17945 1.73178 6.13027 1.81333 6.06472C3.63357 4.60523 5.91349 3.80718 8.2663 3.80594C8.47938 3.80594 8.68374 3.72307 8.83442 3.57555C8.98509 3.42804 9.06974 3.22797 9.06974 3.01936ZM9.06974 6.16566C9.06974 5.95705 8.98509 5.75698 8.83442 5.60947C8.68374 5.46196 8.47938 5.37909 8.2663 5.37909C6.3341 5.37208 4.4574 6.01127 2.94685 7.19083C2.78401 7.32169 2.68019 7.50992 2.65773 7.71499C2.63528 7.92006 2.696 8.12556 2.82681 8.28723C2.95761 8.4489 3.14805 8.5538 3.3571 8.57935C3.56614 8.60489 3.77707 8.54903 3.94446 8.42379C5.17176 7.46556 6.69651 6.94639 8.2663 6.95224C8.47938 6.95224 8.68374 6.86937 8.83442 6.72186C8.98509 6.57435 9.06974 6.37428 9.06974 6.16566Z"
 			fill="currentColor"
@@ -91,13 +55,7 @@ export const RequestBlockedIcon = () => (
 )
 
 export const InterceptorDisabledIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
+	<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path
 			fill-rule="evenodd"
 			clip-rule="evenodd"
@@ -108,13 +66,7 @@ export const InterceptorDisabledIcon = () => (
 )
 
 export const TrashIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
+	<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path
 			fill-rule="evenodd"
 			clip-rule="evenodd"
@@ -125,13 +77,7 @@ export const TrashIcon = () => (
 )
 
 export const SearchIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
+	<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path
 			d="M15 15L11.4563 11.4563M11.4563 11.4563C12.0251 10.8876 12.4763 10.2123 12.7841 9.46918C13.0919 8.72604 13.2504 7.92955 13.2504 7.12518C13.2504 6.32081 13.0919 5.52431 12.7841 4.78117C12.4763 4.03803 12.0251 3.3628 11.4563 2.79402C10.8876 2.22525 10.2123 1.77407 9.46918 1.46625C8.72604 1.15843 7.92955 1 7.12518 1C6.32081 1 5.52431 1.15843 4.78117 1.46625C4.03803 1.77407 3.3628 2.22525 2.79402 2.79402C1.64533 3.94272 1 5.50068 1 7.12518C1 8.74967 1.64533 10.3076 2.79402 11.4563C3.94272 12.605 5.50068 13.2504 7.12518 13.2504C8.74967 13.2504 10.3076 12.605 11.4563 11.4563Z"
 			stroke="currentColor"
@@ -143,99 +89,35 @@ export const SearchIcon = () => (
 )
 
 export const CopyIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 24 24"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
-		<path
-			d="M14.188 4.813H4.813v9.375h.937V17H3.875A1.875 1.875 0 0 1 2 15.125V3.875C2 2.839 2.84 2 3.875 2h11.25C16.16 2 17 2.84 17 3.875V5.75h-2.812z"
-			fill="currentColor"
-		/>
-		<path
-			fill-rule="evenodd"
-			clip-rule="evenodd"
-			d="M7 20V9a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2m12-1h-9v-9h9z"
-			fill="currentColor"
-		/>
+	<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M14.188 4.813H4.813v9.375h.937V17H3.875A1.875 1.875 0 0 1 2 15.125V3.875C2 2.839 2.84 2 3.875 2h11.25C16.16 2 17 2.84 17 3.875V5.75h-2.812z" fill="currentColor" />
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M7 20V9a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2m12-1h-9v-9h9z" fill="currentColor" />
 	</svg>
 )
 
 export const EditIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 24 24"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
-		<path
-			fill-rule="evenodd"
-			clip-rule="evenodd"
-			d="M10 3H7v2H4a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h3v2h3zM7 8v8H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"
-			fill="currentColor"
-		/>
-		<path
-			d="M19 16h-7v3h8a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-8v3h7a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1"
-			fill="currentColor"
-		/>
+	<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M10 3H7v2H4a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h3v2h3zM7 8v8H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" fill="currentColor" />
+		<path d="M19 16h-7v3h8a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-8v3h7a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1" fill="currentColor" />
 	</svg>
 )
 
 export const ChevronIcon = () => (
-	<svg
-		role="img"
-		aria-label="chevron-icon"
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
+	<svg role="img" aria-label="chevron-icon" width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path d="m2 5.333 6 6 6-6" stroke="currentColor" strokeWidth={1.5} />
 	</svg>
 )
 
 export const ImportIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 24 24"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
-		<path
-			d="M4 4h16v4h2V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v5h2z"
-			fill="currentColor"
-		/>
-		<path
-			fill-rule="evenodd"
-			clip-rule="evenodd"
-			d="M12 21l5-5h-3v-6h-4v6H7z"
-			fill="currentColor"
-		/>
+	<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M4 4h16v4h2V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v5h2z" fill="currentColor" />
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M12 21l5-5h-3v-6h-4v6H7z" fill="currentColor" />
 	</svg>
 )
 
 export const ExportIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 24 24"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
-		<path
-			d="M4 20h16v-4h2v5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-5h2z"
-			fill="currentColor"
-		/>
-		<path
-			fill-rule="evenodd"
-			clip-rule="evenodd"
-			d="M12 3l-5 5h3v6h4V8h3z"
-			fill="currentColor"
-		/>
+	<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M4 20h16v-4h2v5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-5h2z" fill="currentColor" />
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M12 3l-5 5h3v6h4V8h3z" fill="currentColor" />
 	</svg>
 )

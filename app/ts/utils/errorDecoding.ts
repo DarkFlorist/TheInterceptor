@@ -1,17 +1,11 @@
 import type { Abi, AbiItem } from 'viem'
 import { printError } from './errors.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
-import {
-	decodeAbiValues,
-	decodeErrorLoose,
-	normalizeAbi,
-	type AbiLike,
-} from './abiRuntime.js'
+import { decodeAbiValues, decodeErrorLoose, normalizeAbi, type AbiLike } from './abiRuntime.js'
 
 const ERROR_STRING_PREFIX = '0x08c379a0' // Error(string)
 const PANIC_CODE_PREFIX = '0x4e487b71' // Panic(uint256)
-const isHexData = (value: string): value is `0x${string}` =>
-	value.startsWith('0x')
+const isHexData = (value: string): value is `0x${string}` => value.startsWith('0x')
 
 const ErrorStringABI = [
 	{
@@ -60,19 +54,9 @@ type ErrorResultFormatterParam = {
 	signature?: string
 }
 
-const formatReason = (reason: string, defaultReason: string) =>
-	reason.trim() !== '' ? reason : defaultReason
+const formatReason = (reason: string, defaultReason: string) => (reason.trim() !== '' ? reason : defaultReason)
 
-const baseErrorResult = ({
-	type,
-	data,
-	reason,
-	fragment,
-	args,
-	selector,
-	name,
-	signature,
-}: ErrorResultFormatterParam & { type: ErrorType }): DecodedError => ({
+const baseErrorResult = ({ type, data, reason, fragment, args, selector, name, signature }: ErrorResultFormatterParam & { type: ErrorType }): DecodedError => ({
 	type,
 	reason: formatReason(reason, 'Unknown error'),
 	data: data ?? undefined,
@@ -83,17 +67,8 @@ const baseErrorResult = ({
 	signature: signature ?? undefined,
 })
 
-const emptyErrorResult = ({ data, reason }: ErrorResultFormatterParam) =>
-	baseErrorResult({ type: ErrorType.EmptyError, data, reason })
-const revertErrorResult = ({
-	data,
-	reason,
-	fragment,
-	args,
-	selector,
-	name,
-	signature,
-}: ErrorResultFormatterParam) =>
+const emptyErrorResult = ({ data, reason }: ErrorResultFormatterParam) => baseErrorResult({ type: ErrorType.EmptyError, data, reason })
+const revertErrorResult = ({ data, reason, fragment, args, selector, name, signature }: ErrorResultFormatterParam) =>
 	baseErrorResult({
 		type: ErrorType.RevertError,
 		reason,
@@ -104,26 +79,14 @@ const revertErrorResult = ({
 		name,
 		signature,
 	})
-const unknownErrorResult = ({
-	data,
-	reason,
-	name,
-}: ErrorResultFormatterParam) =>
+const unknownErrorResult = ({ data, reason, name }: ErrorResultFormatterParam) =>
 	baseErrorResult({
 		type: ErrorType.UnknownError,
 		reason: formatReason(reason, 'Unknown error'),
 		data,
 		name,
 	})
-const panicErrorResult = ({
-	data,
-	reason,
-	fragment,
-	args,
-	selector,
-	name,
-	signature,
-}: ErrorResultFormatterParam) =>
+const panicErrorResult = ({ data, reason, fragment, args, selector, name, signature }: ErrorResultFormatterParam) =>
 	baseErrorResult({
 		type: ErrorType.PanicError,
 		reason,
@@ -134,15 +97,7 @@ const panicErrorResult = ({
 		name,
 		signature,
 	})
-const customErrorResult = ({
-	data,
-	reason,
-	fragment,
-	args,
-	selector,
-	name,
-	signature,
-}: ErrorResultFormatterParam) => {
+const customErrorResult = ({ data, reason, fragment, args, selector, name, signature }: ErrorResultFormatterParam) => {
 	const resolvedSelector = selector ?? data?.slice(0, 10)
 	return baseErrorResult({
 		type: ErrorType.CustomError,
@@ -189,14 +144,11 @@ const getErrorAbiItem = (abi: Abi): ErrorAbiItem | undefined => {
 	return item
 }
 
-const handleEmptyError = (error: ErrorWithCodeAndOptionalData) =>
-	emptyErrorResult({ data: error.data, reason: error.message })
+const handleEmptyError = (error: ErrorWithCodeAndOptionalData) => emptyErrorResult({ data: error.data, reason: error.message })
 
 const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
-	if (error.data === undefined)
-		return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
-	const encodedReason =
-		`0x${error.data.slice(ERROR_STRING_PREFIX.length)}` as const
+	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
+	const encodedReason = `0x${error.data.slice(ERROR_STRING_PREFIX.length)}` as const
 	const fragment = getErrorAbiItem(ErrorStringABI)
 	if (fragment === undefined)
 		return unknownErrorResult({
@@ -216,8 +168,7 @@ const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 			signature: 'Error(string)',
 		})
 	} catch (decodeError) {
-		if (decodeError instanceof Error)
-			console.warn('Failed to decode Error(string) revert payload', decodeError)
+		if (decodeError instanceof Error) console.warn('Failed to decode Error(string) revert payload', decodeError)
 		return unknownErrorResult({
 			reason: 'Unknown error returned',
 			data: error.data,
@@ -226,10 +177,8 @@ const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 }
 
 const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
-	if (error.data === undefined)
-		return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
-	const encodedReason =
-		`0x${error.data.slice(PANIC_CODE_PREFIX.length)}` as const
+	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
+	const encodedReason = `0x${error.data.slice(PANIC_CODE_PREFIX.length)}` as const
 	const fragment = getErrorAbiItem(PanicABI)
 	if (fragment === undefined)
 		return unknownErrorResult({
@@ -239,10 +188,7 @@ const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 	try {
 		const args = decodeAbiValues(fragment.inputs ?? [], encodedReason)
 		const [errorCode] = args
-		const reason =
-			typeof errorCode === 'bigint'
-				? (panicErrorCodeToReason(errorCode) ?? 'Unknown panic code')
-				: 'Unknown panic code'
+		const reason = typeof errorCode === 'bigint' ? (panicErrorCodeToReason(errorCode) ?? 'Unknown panic code') : 'Unknown panic code'
 		return panicErrorResult({
 			data: error.data,
 			fragment,
@@ -253,11 +199,7 @@ const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 			signature: 'Panic(uint256)',
 		})
 	} catch (decodeError) {
-		if (decodeError instanceof Error)
-			console.warn(
-				'Failed to decode Panic(uint256) revert payload',
-				decodeError,
-			)
+		if (decodeError instanceof Error) console.warn('Failed to decode Panic(uint256) revert payload', decodeError)
 		return unknownErrorResult({
 			reason: 'Unknown panic error',
 			data: error.data,
@@ -265,24 +207,15 @@ const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 	}
 }
 
-const handleCustomError = (
-	errorAbis: readonly AbiLike[],
-	error: ErrorWithCodeAndOptionalData,
-) => {
+const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData) => {
 	const result: Parameters<typeof customErrorResult>[0] = {
 		data: error.data,
 		reason: error.message,
 	}
-	if (error.data === undefined || !isHexData(error.data))
-		return customErrorResult(result)
-	const errorItems = errorAbis.flatMap((abi) =>
-		normalizeAbi(abi).filter(
-			(item): item is ErrorAbiItem => item.type === 'error',
-		),
-	)
+	if (error.data === undefined || !isHexData(error.data)) return customErrorResult(result)
+	const errorItems = errorAbis.flatMap((abi) => normalizeAbi(abi).filter((item): item is ErrorAbiItem => item.type === 'error'))
 	const customError = decodeErrorLoose(errorItems, error.data)
-	if (customError === undefined || customError.fragment.type !== 'error')
-		return customErrorResult(result)
+	if (customError === undefined || customError.fragment.type !== 'error') return customErrorResult(result)
 	return customErrorResult({
 		...result,
 		fragment: customError.fragment,
@@ -294,16 +227,11 @@ const handleCustomError = (
 	})
 }
 
-export const decodeEthereumError = (
-	errorAbis: readonly AbiLike[],
-	error: ErrorWithCodeAndOptionalData,
-): DecodedError => {
+export const decodeEthereumError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData): DecodedError => {
 	try {
 		if (error.data === '0x') return handleEmptyError(error)
-		if (error.data?.startsWith(ERROR_STRING_PREFIX))
-			return handleRevertError(error)
-		if (error.data?.startsWith(PANIC_CODE_PREFIX))
-			return handlePanicError(error)
+		if (error.data?.startsWith(ERROR_STRING_PREFIX)) return handleRevertError(error)
+		if (error.data?.startsWith(PANIC_CODE_PREFIX)) return handlePanicError(error)
 		if (error.data !== undefined) return handleCustomError(errorAbis, error)
 		return unknownErrorResult({
 			data: error.data,

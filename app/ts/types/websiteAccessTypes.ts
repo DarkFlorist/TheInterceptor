@@ -20,18 +20,12 @@ export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
 export const WebsiteAccess = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		website: Website,
-		addressAccess: funtypes.Union(
-			funtypes.ReadonlyArray(WebsiteAddressAccess),
-			funtypes.Undefined,
-		),
+		addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
 	}),
 	funtypes.ReadonlyPartial({
 		access: funtypes.Boolean,
 		interceptorDisabled: funtypes.Boolean,
-		declarativeNetRequestBlockMode: funtypes.Union(
-			funtypes.Literal('block-all'),
-			funtypes.Literal('disabled'),
-		),
+		declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled')),
 	}),
 )
 

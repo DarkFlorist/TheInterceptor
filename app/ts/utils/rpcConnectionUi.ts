@@ -7,29 +7,16 @@ export type RpcWarningState = {
 	nextRetryAt: Date | undefined
 }
 
-export function noNewBlockForOverTwoMins(
-	connectionStatus: RpcConnectionStatus,
-) {
-	return (
-		connectionStatus?.latestBlock !== undefined &&
-		connectionStatus.latestBlock !== null &&
-		connectionStatus.lastConnnectionAttempt.getTime() -
-			connectionStatus.latestBlock.timestamp.getTime() >
-			2 * 60 * 1000
-	)
+export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {
+	return connectionStatus?.latestBlock !== undefined && connectionStatus.latestBlock !== null && connectionStatus.lastConnnectionAttempt.getTime() - connectionStatus.latestBlock.timestamp.getTime() > 2 * 60 * 1000
 }
 
 export function getNextRpcRetryAt(connectionStatus: RpcConnectionStatus) {
 	if (connectionStatus === undefined) return undefined
-	return new Date(
-		connectionStatus.lastConnnectionAttempt.getTime() +
-			TIME_BETWEEN_BLOCKS * 1000,
-	)
+	return new Date(connectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
 }
 
-export function getRpcWarningState(
-	connectionStatus: RpcConnectionStatus,
-): RpcWarningState {
+export function getRpcWarningState(connectionStatus: RpcConnectionStatus): RpcWarningState {
 	if (connectionStatus === undefined) {
 		return {
 			kind: 'none',
@@ -39,20 +26,11 @@ export function getRpcWarningState(
 	}
 	const retryState = connectionStatus.retrying ? 'active' : 'paused'
 	const nextRetryAt = getNextRpcRetryAt(connectionStatus)
-	if (connectionStatus.isConnected === false)
-		return { kind: 'disconnected', retryState, nextRetryAt }
-	if (connectionStatus.retrying && noNewBlockForOverTwoMins(connectionStatus))
-		return { kind: 'stalled', retryState, nextRetryAt }
+	if (connectionStatus.isConnected === false) return { kind: 'disconnected', retryState, nextRetryAt }
+	if (connectionStatus.retrying && noNewBlockForOverTwoMins(connectionStatus)) return { kind: 'stalled', retryState, nextRetryAt }
 	return { kind: 'none', retryState, nextRetryAt }
 }
 
-export function shouldShowRpcWarningCountdown(
-	warningState: RpcWarningState,
-	now: Date = new Date(),
-) {
-	return (
-		warningState.retryState === 'active' &&
-		warningState.nextRetryAt !== undefined &&
-		warningState.nextRetryAt.getTime() > now.getTime()
-	)
+export function shouldShowRpcWarningCountdown(warningState: RpcWarningState, now: Date = new Date()) {
+	return warningState.retryState === 'active' && warningState.nextRetryAt !== undefined && warningState.nextRetryAt.getTime() > now.getTime()
 }

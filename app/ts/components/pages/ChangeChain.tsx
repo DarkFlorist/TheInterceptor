@@ -2,19 +2,13 @@ import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import {
-	sendPopupMessageToBackgroundPage,
-	sendPopupReadyAndListening,
-} from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
-export function getChangeChainActionState(params: {
-	hasSupportedRpc: boolean
-	simulationMode: boolean
-}) {
+export function getChangeChainActionState(params: { hasSupportedRpc: boolean; simulationMode: boolean }) {
 	if (params.hasSupportedRpc)
 		return {
 			approveButtonText: 'Change chain',
@@ -24,22 +18,18 @@ export function getChangeChainActionState(params: {
 	if (params.simulationMode)
 		return {
 			approveButtonText: 'Change chain unavailable',
-			errorText:
-				'This chain is not supported by The Interceptor in Simulation mode. Switch to Signing mode and try again if you want to continue without simulation protection.',
+			errorText: 'This chain is not supported by The Interceptor in Simulation mode. Switch to Signing mode and try again if you want to continue without simulation protection.',
 			approveDisabled: true,
 		}
 	return {
 		approveButtonText: 'Change chain unavailable',
-		errorText:
-			'This chain is not supported by The Interceptor. This dialog cannot disable it for you. If you want to continue without its protection, disable The Interceptor from the main popup and retry the chain change in your wallet.',
+		errorText: 'This chain is not supported by The Interceptor. This dialog cannot disable it for you. If you want to continue without its protection, disable The Interceptor from the main popup and retry the chain change in your wallet.',
 		approveDisabled: true,
 	}
 }
 
 export function ChangeChain() {
-	const chainChangeData = useSignal<
-		PendingChainChangeConfirmationPromise | undefined
-	>(undefined)
+	const chainChangeData = useSignal<PendingChainChangeConfirmationPromise | undefined>(undefined)
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -62,15 +52,13 @@ export function ChangeChain() {
 		if (chainChangeData.value === undefined) return
 		await tryFocusingTabOrWindow({
 			type: 'tab',
-			id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket
-				.tabId,
+			id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket.tabId,
 		})
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_changeChainDialog',
 			data: {
 				accept: true,
-				uniqueRequestIdentifier:
-					chainChangeData.value.request.uniqueRequestIdentifier,
+				uniqueRequestIdentifier: chainChangeData.value.request.uniqueRequestIdentifier,
 				rpcNetwork: chainChangeData.value.rpcNetwork,
 			},
 		})
@@ -80,15 +68,13 @@ export function ChangeChain() {
 		if (chainChangeData.value === undefined) return
 		await tryFocusingTabOrWindow({
 			type: 'tab',
-			id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket
-				.tabId,
+			id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket.tabId,
 		})
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_changeChainDialog',
 			data: {
 				accept: false,
-				uniqueRequestIdentifier:
-					chainChangeData.value.request.uniqueRequestIdentifier,
+				uniqueRequestIdentifier: chainChangeData.value.request.uniqueRequestIdentifier,
 				rpcNetwork: chainChangeData.value.rpcNetwork,
 			},
 		})
@@ -99,9 +85,7 @@ export function ChangeChain() {
 		hasSupportedRpc: chainChangeData.value.rpcNetwork.httpsRpc !== undefined,
 		simulationMode: chainChangeData.value.simulationMode,
 	})
-	const websiteIcon = sanitizeStoredWebsiteIcon(
-		chainChangeData.value.website.icon,
-	)
+	const websiteIcon = sanitizeStoredWebsiteIcon(chainChangeData.value.website.icon)
 	return (
 		<main>
 			<div class="block" style="margin-bottom: 0px; margin: 10px">
@@ -120,10 +104,7 @@ export function ChangeChain() {
 						{websiteIcon === undefined ? (
 							<></>
 						) : (
-							<figure
-								class="media-left"
-								style="margin: auto; display: block; padding: 20px"
-							>
+							<figure class="media-left" style="margin: auto; display: block; padding: 20px">
 								<div class="image is-64x64">
 									<img src={websiteIcon} width="64" height="64" />
 								</div>
@@ -132,35 +113,19 @@ export function ChangeChain() {
 					</article>
 					<div class="media-content" style="padding-bottom: 10px">
 						<div class="content">
-							<p
-								class="title"
-								style="white-space: normal; text-align: center; padding: 10px;"
-							>
+							<p class="title" style="white-space: normal; text-align: center; padding: 10px;">
 								<b> {chainChangeData.value.website.websiteOrigin} </b>
 								would like to switch to
 								<b> {chainChangeData.value.rpcNetwork.name} </b>
 							</p>
-							{actionState.errorText === undefined ? (
-								<></>
-							) : (
-								<ErrorComponent text={actionState.errorText} />
-							)}
+							{actionState.errorText === undefined ? <></> : <ErrorComponent text={actionState.errorText} />}
 						</div>
 					</div>
 					<div style="overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;">
-						<button
-							class={'button is-danger'}
-							style={'flex-grow: 1; margin-left: 5px; margin-right: 5px;'}
-							onClick={reject}
-						>
+						<button class={'button is-danger'} style={'flex-grow: 1; margin-left: 5px; margin-right: 5px;'} onClick={reject}>
 							Don't change
 						</button>
-						<button
-							class={'button is-primary'}
-							disabled={actionState.approveDisabled}
-							style="flex-grow: 1; margin-left: 5px; margin-right: 5px;"
-							onClick={approve}
-						>
+						<button class={'button is-primary'} disabled={actionState.approveDisabled} style="flex-grow: 1; margin-left: 5px; margin-right: 5px;" onClick={approve}>
 							{actionState.approveButtonText}
 						</button>
 					</div>

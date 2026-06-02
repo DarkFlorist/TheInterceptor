@@ -1,8 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
-const ASYNC_RESPONSE_CLOSED_MESSAGE =
-	'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
+const ASYNC_RESPONSE_CLOSED_MESSAGE = 'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
 
 function installBrowserMock(errorMessage: string) {
 	const storageState: Record<string, unknown> = {}
@@ -26,24 +25,15 @@ function installBrowserMock(errorMessage: string) {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -103,9 +93,7 @@ function installBrowserMock(errorMessage: string) {
 			},
 		},
 	} as unknown as typeof globalThis.browser
-	;(
-		globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }
-	).chrome = { runtime: { id: 'test-extension' } }
+	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 	return storageState
 }
 
@@ -118,9 +106,7 @@ async function loadModules() {
 	}
 }
 
-async function withSilencedConsole<T>(
-	runWithConsoleSilenced: () => Promise<T>,
-) {
+async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
 	const originalConsole = {
 		error: console.error,
 		trace: console.trace,
@@ -141,8 +127,7 @@ async function withSilencedConsole<T>(
 describe('backgroundUtils messaging', () => {
 	test('ignore closed async response errors for popup fire-and-forget messages', async () => {
 		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
-		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } =
-			await loadModules()
+		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		assert.equal(storageState.latestUnexpectedError, undefined)
@@ -151,8 +136,7 @@ describe('backgroundUtils messaging', () => {
 
 	test('ignore closed async response errors when broadcasting to open popups', async () => {
 		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
-		const { sendPopupMessageToOpenWindows, getLatestUnexpectedError } =
-			await loadModules()
+		const { sendPopupMessageToOpenWindows, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToOpenWindows({
 			method: 'popup_addressBookEntriesChanged',
@@ -165,8 +149,7 @@ describe('backgroundUtils messaging', () => {
 	test('treat null popup replies as no reply without recording an unexpected error', async () => {
 		const storageState = installBrowserMock('')
 		globalThis.browser.runtime.sendMessage = async () => null
-		const { sendPopupMessageWithReply, getLatestUnexpectedError } =
-			await loadModules()
+		const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
 
 		const reply = await sendPopupMessageWithReply({
 			method: 'popup_requestSimulationMode',
@@ -179,8 +162,7 @@ describe('backgroundUtils messaging', () => {
 
 	test('parses a normal popup reply round-trip', async () => {
 		installBrowserMock('unused')
-		const { sendPopupMessageWithReply, PopupRequestsReplies } =
-			await loadModules()
+		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
 		globalThis.browser.runtime.sendMessage = async () =>
 			PopupRequestsReplies.popup_requestMakeMeRichData.serialize({
 				method: 'popup_requestMakeMeRichData',
@@ -201,8 +183,7 @@ describe('backgroundUtils messaging', () => {
 
 	test('parses latest unexpected error replies with the requested reply parser', async () => {
 		installBrowserMock('unused')
-		const { sendPopupMessageWithReply, PopupRequestsReplies } =
-			await loadModules()
+		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
 		const timestamp = new Date('2024-01-01T00:00:00.000Z')
 		globalThis.browser.runtime.sendMessage = async () =>
 			PopupRequestsReplies.popup_requestLatestUnexpectedError.serialize({
@@ -225,10 +206,7 @@ describe('backgroundUtils messaging', () => {
 
 		assert.equal(reply?.method, 'popup_requestLatestUnexpectedError')
 		assert.equal(reply?.latestUnexpectedError?.data.message, 'boom')
-		assert.equal(
-			reply?.latestUnexpectedError?.data.timestamp.valueOf(),
-			timestamp.valueOf(),
-		)
+		assert.equal(reply?.latestUnexpectedError?.data.timestamp.valueOf(), timestamp.valueOf())
 		assert.equal(reply?.latestUnexpectedError?.data.source, 'internal')
 		assert.equal(reply?.latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(reply?.latestUnexpectedError?.data.debugId, 'debug-1234')
@@ -236,11 +214,7 @@ describe('backgroundUtils messaging', () => {
 
 	test('reports request-specific parse errors for mismatched popup replies', async () => {
 		const storageState = installBrowserMock('unused')
-		const {
-			sendPopupMessageWithReply,
-			PopupRequestsReplies,
-			getLatestUnexpectedError,
-		} = await loadModules()
+		const { sendPopupMessageWithReply, PopupRequestsReplies, getLatestUnexpectedError } = await loadModules()
 		globalThis.browser.runtime.sendMessage = async () =>
 			PopupRequestsReplies.popup_requestSimulationMode.serialize({
 				method: 'popup_requestSimulationMode',
@@ -258,16 +232,8 @@ describe('backgroundUtils messaging', () => {
 		assert.equal(reply, undefined)
 		assert.equal(typeof storageState.latestUnexpectedError, 'object')
 		assert.equal(latestUnexpectedError?.method, 'popup_UnexpectedErrorOccured')
-		assert.ok(
-			latestUnexpectedError?.data.message.includes(
-				'popup_requestLatestUnexpectedError',
-			),
-		)
-		assert.ok(
-			!latestUnexpectedError?.data.message.includes(
-				'popup_requestMakeMeRichData',
-			),
-		)
+		assert.ok(latestUnexpectedError?.data.message.includes('popup_requestLatestUnexpectedError'))
+		assert.ok(!latestUnexpectedError?.data.message.includes('popup_requestMakeMeRichData'))
 	})
 
 	test('returns the complete visualized simulation reply instead of dropping it', async () => {
@@ -279,8 +245,7 @@ describe('backgroundUtils messaging', () => {
 			new Map() as unknown as import('../../app/ts/types/user-interface-types.js').WebsiteTabConnections,
 			{} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService,
 			{} as unknown as import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService,
-			(() =>
-				undefined) as unknown as import('../../app/ts/simulation/serviceLifecycle.js').ResetSimulationServices,
+			(() => undefined) as unknown as import('../../app/ts/simulation/serviceLifecycle.js').ResetSimulationServices,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
 			{
 				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
@@ -301,13 +266,7 @@ describe('backgroundUtils messaging', () => {
 			},
 		)
 
-		const parsedReply =
-			PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.parse(
-				reply,
-			)
-		assert.equal(
-			parsedReply.method,
-			'popup_requestCompleteVisualizedSimulation',
-		)
+		const parsedReply = PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.parse(reply)
+		assert.equal(parsedReply.method, 'popup_requestCompleteVisualizedSimulation')
 	})
 })

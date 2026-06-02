@@ -1,21 +1,11 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import {
-	requestPopupCompleteVisualizedSimulation,
-	requestPopupSimulationMetadata,
-	sendPopupMessageToBackgroundPage,
-	sendPopupReadyAndListening,
-} from '../../background/backgroundUtils.js'
+import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import {
-	type CompleteVisualizedSimulation,
-	type ModifyAddressWindowState,
-	type SimulationAndVisualisationResults,
-	createPassthroughCompleteVisualizedSimulation,
-} from '../../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -27,22 +17,14 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
-type ModalState =
-	| { page: 'modifyAddress'; state: Signal<ModifyAddressWindowState> }
-	| { page: 'noModal' }
+type ModalState = { page: 'modifyAddress'; state: Signal<ModifyAddressWindowState> } | { page: 'noModal' }
 
 export function FetchSimulationStack() {
-	const changeRequest = useSignal<
-		PendingFetchSimulationStackRequestPromise | undefined
-	>(undefined)
+	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(
-		createPassthroughCompleteVisualizedSimulation(),
-	)
-	const simulationMetadata = useSignal<SimulationMetadata | undefined>(
-		undefined,
-	)
+	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
+	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -77,8 +59,7 @@ export function FetchSimulationStack() {
 	const updateSimulation = async () => {
 		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
-		completeVisualizedSimulation.value =
-			simulationStack.visualizedSimulatorState
+		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	const updateMetaData = async () => {
 		const data = await requestPopupSimulationMetadata()
@@ -125,16 +106,13 @@ export function FetchSimulationStack() {
 		})
 	}
 
-	const simulationStackResults = useComputed<
-		SimulationAndVisualisationResults | undefined
-	>(() => {
+	const simulationStackResults = useComputed<SimulationAndVisualisationResults | undefined>(() => {
 		const complete = completeVisualizedSimulation.value
 		if (complete.simulationState.kind === 'passthrough') return undefined
 		return {
 			blockNumber: complete.simulationState.value.blockNumber,
 			blockTimestamp: complete.simulationState.value.blockTimestamp,
-			simulationConductedTimestamp:
-				complete.simulationState.value.simulationConductedTimestamp,
+			simulationConductedTimestamp: complete.simulationState.value.simulationConductedTimestamp,
 			simulationStateInput: complete.simulationState.value.simulationStateInput,
 			addressBookEntries: complete.addressBookEntries,
 			visualizedSimulationState: complete.visualizedSimulationState,
@@ -147,44 +125,28 @@ export function FetchSimulationStack() {
 	const isThereSimulationStack = useComputed(() => {
 		const stackResults = simulationStackResults.value
 		if (stackResults === undefined) return false
-		return (
-			stackResults.simulationStateInput.some(
-				(block) =>
-					block.transactions.length > 0 || block.signedMessages.length > 0,
-			) || completeVisualizedSimulation.value?.numberOfAddressesMadeRich !== 0
-		)
+		return stackResults.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0) || completeVisualizedSimulation.value?.numberOfAddressesMadeRich !== 0
 	})
 
 	const addressReferences = useComputed(() => {
 		if (simulationMetadata.value === undefined) return []
-		return simulationMetadata.value.addressBookEntries.filter(
-			(address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS,
-		)
+		return simulationMetadata.value.addressBookEntries.filter((address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS)
 	})
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const addressMetaData = useComputed(
-		() => simulationMetadata.value?.addressBookEntries ?? [],
-	)
+	const addressMetaData = useComputed(() => simulationMetadata.value?.addressBookEntries ?? [])
 
-	if (
-		changeRequest.value === undefined ||
-		simulationMetadata.value === undefined
-	)
+	if (changeRequest.value === undefined || simulationMetadata.value === undefined)
 		return (
 			<main>
 				{' '}
 				<CenterToPageTextSpinner text={'Getting simulation stack...'} />
 			</main>
 		)
-	const websiteIcon = sanitizeStoredWebsiteIcon(
-		changeRequest.value.website.icon,
-	)
+	const websiteIcon = sanitizeStoredWebsiteIcon(changeRequest.value.website.icon)
 	return (
 		<main>
 			<Hint>
-				<div
-					class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}
-				>
+				<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
 					{modalState.value.page === 'modifyAddress' ? (
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt={undefined}
@@ -215,10 +177,7 @@ export function FetchSimulationStack() {
 							{websiteIcon === undefined ? (
 								<></>
 							) : (
-								<figure
-									class="media-left"
-									style="margin: auto; display: block; padding: 20px"
-								>
+								<figure class="media-left" style="margin: auto; display: block; padding: 20px">
 									<div class="image is-64x64">
 										<img src={websiteIcon} width="64" height="64" />
 									</div>
@@ -227,10 +186,7 @@ export function FetchSimulationStack() {
 						</article>
 						<div class="media-content" style="padding-bottom: 10px">
 							<div class="content">
-								<p
-									class="title"
-									style="white-space: normal; text-align: center; padding: 10px;"
-								>
+								<p class="title" style="white-space: normal; text-align: center; padding: 10px;">
 									<b> {changeRequest.value.website.websiteOrigin} </b>
 									would like to retrieve your Simulation Stack
 								</p>
@@ -238,16 +194,10 @@ export function FetchSimulationStack() {
 									<div style="width: 100%;">
 										<p class="paragraph" style={{ minWidth: '400px' }}>
 											{' '}
-											Your simulation stack includes references to the following
-											addresses. Sharing this information may allow the website
-											to link these addresses together:
+											Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:
 										</p>
 										<div class="sub-importance-box">
-											{addressReferences.value.length === 0 ? (
-												<p class="paragraph"> No address references</p>
-											) : (
-												<></>
-											)}
+											{addressReferences.value.length === 0 ? <p class="paragraph"> No address references</p> : <></>}
 											<div
 												style={{
 													display: 'flex',
@@ -256,11 +206,7 @@ export function FetchSimulationStack() {
 												}}
 											>
 												{addressReferences.value.map((addressBookEntry) => (
-													<SmallAddress
-														key={addressBookEntry.address.toString()}
-														addressBookEntry={addressBookEntry}
-														renameAddressCallBack={renameAddressCallBack}
-													/>
+													<SmallAddress key={addressBookEntry.address.toString()} addressBookEntry={addressBookEntry} renameAddressCallBack={renameAddressCallBack} />
 												))}
 											</div>
 										</div>
@@ -273,9 +219,7 @@ export function FetchSimulationStack() {
 											) : (
 												<>
 													<SimulationStackRows
-														simulationAndVisualisationResults={
-															simulationStackResults
-														}
+														simulationAndVisualisationResults={simulationStackResults}
 														removeTransactionOrSignedMessage={undefined}
 														activeAddress={activeAddress}
 														renameAddressCallBack={renameAddressCallBack}
@@ -291,19 +235,10 @@ export function FetchSimulationStack() {
 							</div>
 						</div>
 						<div style="overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;">
-							<button
-								class={'button is-danger'}
-								style={'flex-grow: 1; margin-left: 5px; margin-right: 5px;'}
-								onClick={reject}
-							>
+							<button class={'button is-danger'} style={'flex-grow: 1; margin-left: 5px; margin-right: 5px;'} onClick={reject}>
 								Don't allow
 							</button>
-							<button
-								class={'button is-primary'}
-								disabled={false}
-								style="flex-grow: 1; margin-left: 5px; margin-right: 5px;"
-								onClick={approve}
-							>
+							<button class={'button is-primary'} disabled={false} style="flex-grow: 1; margin-left: 5px; margin-right: 5px;" onClick={approve}>
 								Allow
 							</button>
 						</div>

@@ -3,14 +3,11 @@ import { stringToBytes, namehash, keccak256 } from './viem.js'
 import { CHAIN_NAMES } from './chainNames.js'
 
 // common contract addresses
-export const UNISWAP_V2_ROUTER_ADDRESS =
-	0x7a250d5630b4cf539739df2c5dacb4c659f2488dn
-export const SUSHISWAP_V2_ROUTER_ADDRESS =
-	0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9fn
+export const UNISWAP_V2_ROUTER_ADDRESS = 0x7a250d5630b4cf539739df2c5dacb4c659f2488dn
+export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9fn
 export const UNISWAP_V3_ROUTER = 0xe592427a0aece92de3edee1f18e0157c05861564n
 export const MULTICALL3 = 0xca11bde05977b3631167028862be2a173976ca11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
-export const ETHEREUM_LOGS_LOGGER_ADDRESS =
-	0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeen
+export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeen
 // export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 // export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 
@@ -61,74 +58,41 @@ const signatureHash = (signature: string) => keccak256(stringToBytes(signature))
 // common event log signatures
 export const TRANSFER_LOG = signatureHash('Transfer(address,address,uint256)')
 export const APPROVAL_LOG = signatureHash('Approval(address,address,uint256)')
-export const ERC721_APPROVAL_FOR_ALL_LOG = signatureHash(
-	'ApprovalForAll(address,address,bool)',
-)
+export const ERC721_APPROVAL_FOR_ALL_LOG = signatureHash('ApprovalForAll(address,address,bool)')
 export const DEPOSIT_LOG = signatureHash('Deposit(address,uint256)')
 export const WITHDRAWAL_LOG = signatureHash('Withdrawal(address,uint256)')
-export const ERC1155_TRANSFERBATCH_LOG = signatureHash(
-	'TransferBatch(address,address,address,uint256[],uint256[])',
-)
-export const ERC1155_TRANSFERSINGLE_LOG = signatureHash(
-	'TransferSingle(address,address,address,uint256,uint256)',
-)
+export const ERC1155_TRANSFERBATCH_LOG = signatureHash('TransferBatch(address,address,address,uint256[],uint256[])')
+export const ERC1155_TRANSFERSINGLE_LOG = signatureHash('TransferSingle(address,address,address,uint256,uint256)')
 
 // ENS event signatures
 export const ENS_ADDR_CHANGED = signatureHash('AddrChanged(bytes32,address)')
-export const ENS_ADDRESS_CHANGED = signatureHash(
-	'AddressChanged(bytes32,uint256,bytes)',
-)
-export const ENS_CONTROLLER_NAME_RENEWED = signatureHash(
-	'NameRenewed(string,bytes32,uint256,uint256)',
-)
-export const ENS_BASE_REGISTRAR_NAME_RENEWED = signatureHash(
-	'NameRenewed(uint256,uint256)',
-)
-export const ENS_BASE_REGISTRAR_NAME_REGISTERED = signatureHash(
-	'NameRegistered(uint256,address,uint256)',
-)
+export const ENS_ADDRESS_CHANGED = signatureHash('AddressChanged(bytes32,uint256,bytes)')
+export const ENS_CONTROLLER_NAME_RENEWED = signatureHash('NameRenewed(string,bytes32,uint256,uint256)')
+export const ENS_BASE_REGISTRAR_NAME_RENEWED = signatureHash('NameRenewed(uint256,uint256)')
+export const ENS_BASE_REGISTRAR_NAME_REGISTERED = signatureHash('NameRegistered(uint256,address,uint256)')
 export const ENS_TRANSFER = signatureHash('Transfer(bytes32,address)')
 export const ENS_NEW_OWNER = signatureHash('NewOwner(bytes32,bytes32,address)')
 export const ENS_NEW_RESOLVER = signatureHash('NewResolver(bytes32,address)')
-export const ENS_TEXT_CHANGED = signatureHash(
-	'TextChanged(bytes32,string,string)',
-)
-export const ENS_TEXT_CHANGED_KEY_VALUE = signatureHash(
-	'TextChanged(bytes32,string,string,string)',
-)
-export const ENS_CONTENT_HASH_CHANGED = signatureHash(
-	'ContenthashChanged(bytes32,bytes)',
-)
+export const ENS_TEXT_CHANGED = signatureHash('TextChanged(bytes32,string,string)')
+export const ENS_TEXT_CHANGED_KEY_VALUE = signatureHash('TextChanged(bytes32,string,string,string)')
+export const ENS_CONTENT_HASH_CHANGED = signatureHash('ContenthashChanged(bytes32,bytes)')
 export const ENS_FUSES_SET = signatureHash('FusesSet(bytes32,uint32)')
-export const ENS_NAME_UNWRAPPED = signatureHash(
-	'NameUnwrapped(bytes32,address)',
-)
-export const ENS_NAME_WRAPPED = signatureHash(
-	'NameWrapped(bytes32,bytes,address,uint32,uint64)',
-)
+export const ENS_NAME_UNWRAPPED = signatureHash('NameUnwrapped(bytes32,address)')
+export const ENS_NAME_WRAPPED = signatureHash('NameWrapped(bytes32,bytes,address,uint32,uint64)')
 export const ENS_NAME_CHANGED = signatureHash('NameChanged(bytes32,string)')
-export const ENS_REVERSE_CLAIMED = signatureHash(
-	'ReverseClaimed(address,bytes32)',
-)
-export const ENS_CONTROLLER_NAME_REGISTERED = signatureHash(
-	'NameRegistered(string,bytes32,address,uint256,uint256)',
-)
+export const ENS_REVERSE_CLAIMED = signatureHash('ReverseClaimed(address,bytes32)')
+export const ENS_CONTROLLER_NAME_REGISTERED = signatureHash('NameRegistered(string,bytes32,address,uint256,uint256)')
 export const ENS_NEW_TTL = signatureHash('NewTTL(bytes32,uint64)')
-export const ENS_EXPIRY_EXTENDED = signatureHash(
-	'ExpiryExtended(bytes32,uint64)',
-)
+export const ENS_EXPIRY_EXTENDED = signatureHash('ExpiryExtended(bytes32,uint64)')
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
 export const ENS_PUBLIC_RESOLVER = 0x231b0ee14048e9dccd1d247744d114a4eb5e8e63n
 export const ENS_TOKEN_WRAPPER = 0xd4416b13d2b3a9abae7acd5d6c2bbdbe25686401n //mainnet only
-export const ENS_ETH_REGISTRAR_CONTROLLER =
-	0x253553366da8546fc250f225fe3d25d0c782303bn
-export const ENS_ETHEREUM_NAME_SERVICE =
-	0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85n
+export const ENS_ETH_REGISTRAR_CONTROLLER = 0x253553366da8546fc250f225fe3d25d0c782303bn
+export const ENS_ETHEREUM_NAME_SERVICE = 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85n
 export const ENS_PUBLIC_RESOLVER_2 = 0x4976fb03c32e5b8cfe2b6ccb31c09ba78ebaba41n
-export const ENS_REGISTRY_WITH_FALLBACK =
-	0x00000000000c2e074ec69a0dfb2997ba6c7d2e1en
+export const ENS_REGISTRY_WITH_FALLBACK = 0x00000000000c2e074ec69a0dfb2997ba6c7d2e1en
 export const ENS_REVERSE_REGISTRAR = 0xa58e81fe9b61b5c3fe2afd33cf304c454abfc7cbn
 
 // ENS Nodes
@@ -200,38 +164,25 @@ function get4Byte(functionAbi: string) {
 }
 
 export const FourByteExplanations = {
-	[get4Byte('transferFrom(address,address,uint256)')]:
-		'ERC20/ERC721 Transfer From' as const,
+	[get4Byte('transferFrom(address,address,uint256)')]: 'ERC20/ERC721 Transfer From' as const,
 	[get4Byte('transfer(address,uint256)')]: 'ERC20 Transfer' as const,
 	[get4Byte('approve(address,uint256)')]: 'ERC20 Approval' as const,
-	[get4Byte('setApprovalForAll(address,bool)')]:
-		'ERC721 Approval For All' as const,
-	[get4Byte(
-		'swapExactTokensForTokens(uint256,uint256,address[],address,uint256)',
-	)]: 'Swap Exact Tokens For Tokens' as const,
-	[get4Byte('swapExactETHForTokens(uint256,address[],address,uint256)')]:
-		'Swap Exact ETH For Tokens' as const,
+	[get4Byte('setApprovalForAll(address,bool)')]: 'ERC721 Approval For All' as const,
+	[get4Byte('swapExactTokensForTokens(uint256,uint256,address[],address,uint256)')]: 'Swap Exact Tokens For Tokens' as const,
+	[get4Byte('swapExactETHForTokens(uint256,address[],address,uint256)')]: 'Swap Exact ETH For Tokens' as const,
 	[get4Byte('multicall((address,uint256,bytes)[])')]: 'Multicall' as const,
-	[get4Byte('exactInput((bytes,address,uint256,uint256,uint256))')]:
-		'Exact Input Swap' as const,
+	[get4Byte('exactInput((bytes,address,uint256,uint256,uint256))')]: 'Exact Input Swap' as const,
 	[get4Byte('multicall(uint256,bytes[])')]: 'Multicall' as const,
 	[get4Byte('multicall(bytes[])')]: 'Multicall' as const,
 	[get4Byte('mint(address)')]: 'Mint' as const,
-	[get4Byte(
-		'mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))',
-	)]: 'Mint' as const,
+	[get4Byte('mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))')]: 'Mint' as const,
 	[get4Byte('burn(address)')]: 'Burn' as const,
 	[get4Byte('submitVote(uint256,bool)')]: 'Submit Vote' as const,
 	[get4Byte('castVote(uint256,uint8)')]: 'Cast Vote' as const,
-	[get4Byte('castVoteWithReason(uint256,uint8,string)')]:
-		'Cast Vote with Reason' as const,
-	[get4Byte('castVoteWithReasonAndParams(uint256,uint8,string,bytes)')]:
-		'Cast Vote with Reason and Additional Info' as const,
-	[get4Byte('castVoteBySig(uint256,uint8,voter,bytes)')]:
-		'Cast Vote by Signature' as const,
-	[get4Byte(
-		'castVoteWithReasonAndParamsBySig(uint256,uint8,address,string,bytes,bytes)',
-	)]: 'Cast Vote with Reason And Additional Info by Signature' as const,
+	[get4Byte('castVoteWithReason(uint256,uint8,string)')]: 'Cast Vote with Reason' as const,
+	[get4Byte('castVoteWithReasonAndParams(uint256,uint8,string,bytes)')]: 'Cast Vote with Reason and Additional Info' as const,
+	[get4Byte('castVoteBySig(uint256,uint8,voter,bytes)')]: 'Cast Vote by Signature' as const,
+	[get4Byte('castVoteWithReasonAndParamsBySig(uint256,uint8,address,string,bytes,bytes)')]: 'Cast Vote with Reason And Additional Info by Signature' as const,
 }
 
 export const ICON_ACTIVE = '../img/head.png' as const
@@ -239,22 +190,15 @@ export const ICON_ACCESS_DENIED = '../img/head-access-denied.png' as const
 export const ICON_NOT_ACTIVE = '../img/head-not-active.png' as const
 export const ICON_SIMULATING = '../img/head-simulating.png' as const
 export const ICON_SIGNING = '../img/head-signing.png' as const
-export const ICON_SIGNING_NOT_SUPPORTED =
-	'../img/head-signing-unsupported-network.png' as const
-export const ICON_INTERCEPTOR_DISABLED =
-	'../img/head-interceptor-disabled.png' as const
+export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-network.png' as const
+export const ICON_INTERCEPTOR_DISABLED = '../img/head-interceptor-disabled.png' as const
 
 export const ICON_ACTIVE_WITH_SHIELD = '../img/head-shield.png' as const
-export const ICON_ACCESS_DENIED_WITH_SHIELD =
-	'../img/head-access-denied-shield.png' as const
-export const ICON_NOT_ACTIVE_WITH_SHIELD =
-	'../img/head-not-active-shield.png' as const
-export const ICON_SIMULATING_WITH_SHIELD =
-	'../img/head-simulating-shield.png' as const
-export const ICON_SIGNING_WITH_SHIELD =
-	'../img/head-signing-shield.png' as const
-export const ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD =
-	'../img/head-signing-unsupported-network-shield.png' as const
+export const ICON_ACCESS_DENIED_WITH_SHIELD = '../img/head-access-denied-shield.png' as const
+export const ICON_NOT_ACTIVE_WITH_SHIELD = '../img/head-not-active-shield.png' as const
+export const ICON_SIMULATING_WITH_SHIELD = '../img/head-simulating-shield.png' as const
+export const ICON_SIGNING_WITH_SHIELD = '../img/head-signing-shield.png' as const
+export const ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD = '../img/head-signing-unsupported-network-shield.png' as const
 
 export const DEFAULT_TAB_CONNECTION = {
 	icon: ICON_NOT_ACTIVE,
@@ -281,14 +225,12 @@ export function getChainName(chainId: bigint) {
 export const ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER = 4n // Bounds the maximum gas limit an EIP-1559 block may have, Ethereum = 4, Polygon = 8, lets just default to 4
 export const ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR = 8n // Bounds the amount the base fee can change between blocks.
 
-export const MOCK_PRIVATE_KEYS_ADDRESS =
-	0x7e5f4552091a69125d5dfcb7b8c2659029395bdfn // an address represeting 0x1 privatekey
+export const MOCK_PRIVATE_KEYS_ADDRESS = 0x7e5f4552091a69125d5dfcb7b8c2659029395bdfn // an address represeting 0x1 privatekey
 
 export const WARNING_COLOR = '#FFC107'
 export const PRIMARY_COLOR = '#58a5b3'
 
-export const CANNOT_SIMULATE_OFF_LEGACY_BLOCK =
-	'Cannot simulate off a legacy block'
+export const CANNOT_SIMULATE_OFF_LEGACY_BLOCK = 'Cannot simulate off a legacy block'
 
 export const NEW_BLOCK_ABORT = 'New Block Abort'
 
@@ -310,8 +252,4 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 	transactionSendingFormat: 'eth_sendTransaction' as const,
 }
 
-export const BURN_ADDRESSES = [
-	0x0000000000000000000000000000000000000000n,
-	0x000000000000000000000000000000000000deadn,
-	0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddeadn,
-]
+export const BURN_ADDRESSES = [0x0000000000000000000000000000000000000000n, 0x000000000000000000000000000000000000deadn, 0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddeadn]

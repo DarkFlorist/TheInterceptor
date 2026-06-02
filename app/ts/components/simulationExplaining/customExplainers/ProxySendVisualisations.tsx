@@ -1,17 +1,9 @@
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedProxyTokenTransferTransaction } from '../identifyTransaction.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
-import {
-	AddressBeforeAfter,
-	type BeforeAfterAddress,
-	SimpleSend,
-	getAsset,
-} from './SimpleSendVisualisations.js'
+import { AddressBeforeAfter, type BeforeAfterAddress, SimpleSend, getAsset } from './SimpleSendVisualisations.js'
 import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
-import {
-	TokenOrEth,
-	type TokenOrEtherParams,
-} from '../../subcomponents/coins.js'
+import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { interleave } from '../../../utils/typed-arrays.js'
@@ -29,41 +21,19 @@ type ProxyMultiSendParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function ProxyMultiSend({
-	transaction,
-	asset,
-	sender,
-	receivers,
-	renameAddressCallBack,
-	viaProxypath,
-}: ProxyMultiSendParams) {
+function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCallBack, viaProxypath }: ProxyMultiSendParams) {
 	return (
 		<div class="notification transaction-importance-box">
 			<span style="grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;">
-				<p
-					class="paragraph"
-					style="font-size: 28px; font-weight: 500; justify-self: right;"
-				>
+				<p class="paragraph" style="font-size: 28px; font-weight: 500; justify-self: right;">
 					{' '}
 					Send&nbsp;
 				</p>
-				<TokenOrEth
-					{...asset}
-					useFullTokenName={false}
-					style={{ 'font-weight': '500' }}
-					fontSize="big"
-				/>
+				<TokenOrEth {...asset} useFullTokenName={false} style={{ 'font-weight': '500' }} fontSize="big" />
 			</span>
 			<p class="paragraph"> From </p>
-			<div
-				class="box"
-				style="background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;"
-			>
-				<AddressBeforeAfter
-					{...sender}
-					renameAddressCallBack={renameAddressCallBack}
-					tokenOrEtherDefinition={asset}
-				/>
+			<div class="box" style="background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;">
+				<AddressBeforeAfter {...sender} renameAddressCallBack={renameAddressCallBack} tokenOrEtherDefinition={asset} />
 			</div>
 			<p class="paragraph"> To </p>
 			{receivers.map((receiver) => (
@@ -81,10 +51,7 @@ function ProxyMultiSend({
 							useFullTokenName={false}
 						/>
 					</span>
-					<div
-						class="box"
-						style="background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;"
-					>
+					<div class="box" style="background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;">
 						<AddressBeforeAfter
 							{...receiver}
 							renameAddressCallBack={renameAddressCallBack}
@@ -96,10 +63,7 @@ function ProxyMultiSend({
 					</div>
 				</>
 			))}
-			<span
-				class="log-table"
-				style={{ display: 'inline-flex', marginTop: '5px' }}
-			>
+			<span class="log-table" style={{ display: 'inline-flex', marginTop: '5px' }}>
 				<GasFee tx={transaction} rpcNetwork={transaction.rpcNetwork} />
 			</span>
 			{viaProxypath === undefined ? (
@@ -113,13 +77,7 @@ function ProxyMultiSend({
 					<>
 						{' '}
 						{interleave(
-							viaProxypath.map((addressBookEntry) => (
-								<SmallAddress
-									key={addressBookEntry.address.toString()}
-									addressBookEntry={addressBookEntry}
-									renameAddressCallBack={renameAddressCallBack}
-								/>
-							)),
+							viaProxypath.map((addressBookEntry) => <SmallAddress key={addressBookEntry.address.toString()} addressBookEntry={addressBookEntry} renameAddressCallBack={renameAddressCallBack} />),
 							<p class="paragraph" style={'color: var(--subtitle-text-color)'}>
 								&nbsp;{','}&nbsp;
 							</p>,
@@ -131,47 +89,21 @@ function ProxyMultiSend({
 	)
 }
 
-export function ProxyTokenTransferVisualisation({
-	simTx,
-	renameAddressCallBack,
-}: {
-	simTx: SimulatedAndVisualizedProxyTokenTransferTransaction
-	renameAddressCallBack: RenameAddressCallBack
-}) {
+export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedProxyTokenTransferTransaction; renameAddressCallBack: RenameAddressCallBack }) {
 	// proxy send to multiple addresses
 	const transfer = extractTokenEvents(simTx.events)[0]
 	if (transfer === undefined) throw new Error('transfer was undefined')
 	const asset = getAsset(transfer, renameAddressCallBack)
 	if (asset === undefined) throw new Error('asset was undefined')
-	const senderAfter = simTx.tokenBalancesAfter.find(
-		(change) =>
-			change.owner === transfer.from.address &&
-			change.token === asset.tokenEntry.address &&
-			change.tokenId === asset.tokenId,
-	)?.balance
-	const senderGasFees =
-		asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS &&
-		asset.tokenEntry.type === 'ERC20' &&
-		transfer.from.address === simTx.transaction.from.address
-			? simTx.gasSpent * simTx.realizedGasPrice
-			: 0n
+	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
+	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
 
 	if (simTx.transferedTo.length === 1) {
 		// proxy send to a single address
 		const receiver = simTx.transferedTo[0]?.entry
 		if (receiver === undefined) throw new Error('receiver was undefined')
-		const receiverAfter = simTx.tokenBalancesAfter.find(
-			(change) =>
-				change.owner === receiver.address &&
-				change.token === asset.tokenEntry.address &&
-				change.tokenId === asset.tokenId,
-		)?.balance
-		const receiverGasFees =
-			asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS &&
-			asset.tokenEntry.type === 'ERC20' &&
-			receiver.address === simTx.transaction.from.address
-				? simTx.gasSpent * simTx.realizedGasPrice
-				: 0n
+		const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === receiver.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
+		const receiverGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && receiver.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
 		return (
 			<SimpleSend
 				viaProxypath={simTx.transferRoute}
@@ -217,18 +149,8 @@ export function ProxyTokenTransferVisualisation({
 							},
 			}}
 			receivers={simTx.transferedTo.map((destination) => {
-				const receiverAfter = simTx.tokenBalancesAfter.find(
-					(change) =>
-						change.owner === destination.entry.address &&
-						change.token === asset.tokenEntry.address &&
-						change.tokenId === asset.tokenId,
-				)?.balance
-				const receiverGasFees =
-					asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS &&
-					asset.tokenEntry.type === 'ERC20' &&
-					destination.entry.address === simTx.transaction.from.address
-						? simTx.gasSpent * simTx.realizedGasPrice
-						: 0n
+				const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === destination.entry.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
+				const receiverGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && destination.entry.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
 				return {
 					address: destination.entry,
 					amount: destination.amountDelta,
@@ -236,8 +158,7 @@ export function ProxyTokenTransferVisualisation({
 						receiverAfter === undefined || !('amount' in asset)
 							? undefined
 							: {
-									before:
-										receiverAfter + receiverGasFees - destination.amountDelta,
+									before: receiverAfter + receiverGasFees - destination.amountDelta,
 									after: receiverAfter,
 								},
 				}

@@ -5,9 +5,6 @@ import { GENERATED_INTERNAL_PROVIDER_METHODS } from '../../app/ts/utils/internal
 
 describe('internal provider method definitions', () => {
 	test('generated inpage allowlist stays aligned with the shared background definition', () => {
-		assert.deepEqual(
-			[...GENERATED_INTERNAL_PROVIDER_METHODS],
-			[...INTERNAL_PROVIDER_METHODS],
-		)
+		assert.deepEqual([...GENERATED_INTERNAL_PROVIDER_METHODS], [...INTERNAL_PROVIDER_METHODS])
 	})
 })

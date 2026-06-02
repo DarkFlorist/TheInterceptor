@@ -51,27 +51,15 @@ function createBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys
-								.filter((key) => key in storageState)
-								.map((key) => [key, storageState[key]]),
-						)
-					if (typeof keys === 'string')
-						return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -178,10 +166,7 @@ function installWindowHashMock(initialHash: string) {
 			return currentHash
 		},
 		set hash(nextHash: string) {
-			currentHash =
-				nextHash.length === 0 || nextHash.startsWith('#')
-					? nextHash
-					: `#${nextHash}`
+			currentHash = nextHash.length === 0 || nextHash.startsWith('#') ? nextHash : `#${nextHash}`
 			dispatchHashChange()
 		},
 	}
@@ -209,25 +194,14 @@ function installWindowHashMock(initialHash: string) {
 	}
 }
 
-function collectElements(
-	node: DomElement,
-	tagName: string,
-	results: DomElement[] = [],
-) {
+function collectElements(node: DomElement, tagName: string, results: DomElement[] = []) {
 	if (node.tagName === tagName.toUpperCase()) results.push(node)
-	for (const child of node.childNodes ?? [])
-		collectElements(child, tagName, results)
+	for (const child of node.childNodes ?? []) collectElements(child, tagName, results)
 	return results
 }
 
 function findRadioByValue(root: DomElement, value: string) {
-	return collectElements(root, 'input').find(
-		(element) =>
-			(element.type === 'radio' || element.attributes?.type === 'radio') &&
-			(element.value === value ||
-				element.attributes?.value === value ||
-				element.attributes?.id === value),
-	)
+	return collectElements(root, 'input').find((element) => (element.type === 'radio' || element.attributes?.type === 'radio') && (element.value === value || element.attributes?.value === value || element.attributes?.id === value))
 }
 
 function isChecked(element: DomElement) {
@@ -343,21 +317,9 @@ describe('WebsiteAccessView selection', () => {
 			await Promise.resolve()
 		})
 
-		assert.ok(
-			dom.document.body.textContent.includes(
-				'These settings apply to all sites on localhost.',
-			),
-		)
-		assert.ok(
-			dom.document.body.textContent.includes(
-				'Affected sites: localhost:3000, localhost:5173',
-			),
-		)
-		assert.ok(
-			dom.document.body.textContent.includes(
-				'This includes sibling origin on other port or scheme variants.',
-			),
-		)
+		assert.ok(dom.document.body.textContent.includes('These settings apply to all sites on localhost.'))
+		assert.ok(dom.document.body.textContent.includes('Affected sites: localhost:3000, localhost:5173'))
+		assert.ok(dom.document.body.textContent.includes('This includes sibling origin on other port or scheme variants.'))
 		assert.ok(dom.document.body.textContent.includes('Remove Host Access'))
 		await unmountView(dom.document.body)
 		dom.restore()
@@ -395,13 +357,8 @@ describe('WebsiteAccessView selection', () => {
 			await Promise.resolve()
 		})
 
-		assert.ok(
-			dom.document.body.textContent.includes('Affected site: solo.example'),
-		)
-		assert.equal(
-			dom.document.body.textContent.includes('This includes sibling origin'),
-			false,
-		)
+		assert.ok(dom.document.body.textContent.includes('Affected site: solo.example'))
+		assert.equal(dom.document.body.textContent.includes('This includes sibling origin'), false)
 		await unmountView(dom.document.body)
 		dom.restore()
 	})
@@ -428,24 +385,14 @@ describe('WebsiteAccessView selection', () => {
 				access: true,
 			},
 		]
-		const viewState = deriveWebsiteAccessViewState(
-			allWebsiteAccess,
-			'3000',
-			'localhost:5173',
-		)
+		const viewState = deriveWebsiteAccessViewState(allWebsiteAccess, '3000', 'localhost:5173')
 
 		assert.deepEqual(
 			viewState.websiteAccessList.map((entry) => entry.website.websiteOrigin),
 			['localhost:3000'],
 		)
-		assert.equal(
-			viewState.selectedWebsiteAccess?.website.websiteOrigin,
-			'localhost:5173',
-		)
-		assert.deepEqual(viewState.hostScopeDetails?.affectedOrigins, [
-			'localhost:3000',
-			'localhost:5173',
-		])
+		assert.equal(viewState.selectedWebsiteAccess?.website.websiteOrigin, 'localhost:5173')
+		assert.deepEqual(viewState.hostScopeDetails?.affectedOrigins, ['localhost:3000', 'localhost:5173'])
 	})
 
 	test('loaded empty website access clears stale hash-backed selection', async () => {

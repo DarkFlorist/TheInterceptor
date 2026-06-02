@@ -3,11 +3,7 @@ import { describe, test } from 'bun:test'
 import { getAddressesToIdentifyForVisualiserFromTransactions } from '../../app/ts/background/metadataUtils.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
-import type {
-	EnrichedEthereumEvents,
-	EnrichedEthereumInputData,
-	SolidityVariable,
-} from '../../app/ts/types/EnrichedEthereumData.js'
+import type { EnrichedEthereumEvents, EnrichedEthereumInputData, SolidityVariable } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 
@@ -19,8 +15,7 @@ const TX_FROM_ADDRESS = 0x5000000000000000000000000000000000000005n
 const TX_TO_ADDRESS = 0x6000000000000000000000000000000000000006n
 const INPUT_ADDRESS = 0x7000000000000000000000000000000000000007n
 
-const toAddressSet = (addresses: readonly bigint[]) =>
-	new Set(addresses.map((address) => addressString(address)))
+const toAddressSet = (addresses: readonly bigint[]) => new Set(addresses.map((address) => addressString(address)))
 const ZERO_BLOCK_TIME_MANIPULATION = {
 	type: 'AddToTimestamp',
 	deltaToAdd: 0n,
@@ -94,11 +89,7 @@ const getAddressesForEvent = (event: EnrichedEthereumEvents[number]) => {
 			],
 		},
 	]
-	return getAddressesToIdentifyForVisualiserFromTransactions(
-		[event],
-		inputData,
-		simulationStateInput,
-	)
+	return getAddressesToIdentifyForVisualiserFromTransactions([event], inputData, simulationStateInput)
 }
 
 function assertCommonAddresses(addresses: readonly bigint[]) {
@@ -106,10 +97,7 @@ function assertCommonAddresses(addresses: readonly bigint[]) {
 	assert.equal(addressSet.has(addressString(TX_FROM_ADDRESS)), true)
 	assert.equal(addressSet.has(addressString(TX_TO_ADDRESS)), true)
 	assert.equal(addressSet.has(addressString(INPUT_ADDRESS)), true)
-	assert.equal(
-		addressSet.has(addressString(ETHEREUM_LOGS_LOGGER_ADDRESS)),
-		true,
-	)
+	assert.equal(addressSet.has(addressString(ETHEREUM_LOGS_LOGGER_ADDRESS)), true)
 }
 
 describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
@@ -120,10 +108,7 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 			isParsed: 'Parsed',
 			name: 'Transfer',
 			signature: 'Transfer(address,address,uint256)',
-			args: [
-				toAddressArg('from', FROM_ADDRESS),
-				toAddressArg('to', TO_ADDRESS),
-			],
+			args: [toAddressArg('from', FROM_ADDRESS), toAddressArg('to', TO_ADDRESS)],
 			loggersAddressBookEntry: {
 				type: 'ERC20',
 				name: 'Token',
@@ -157,10 +142,7 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 			isParsed: 'Parsed',
 			name: 'Approval',
 			signature: 'Approval(address,address,uint256)',
-			args: [
-				toAddressArg('owner', FROM_ADDRESS),
-				toAddressArg('spender', TO_ADDRESS),
-			],
+			args: [toAddressArg('owner', FROM_ADDRESS), toAddressArg('spender', TO_ADDRESS)],
 			loggersAddressBookEntry: {
 				type: 'ERC20',
 				name: 'Token',
@@ -260,11 +242,7 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 			isParsed: 'Parsed',
 			name: 'TransferSingle',
 			signature: 'TransferSingle(address,address,address,uint256,uint256)',
-			args: [
-				toAddressArg('operator', OPERATOR_ADDRESS),
-				toAddressArg('from', FROM_ADDRESS),
-				toAddressArg('to', TO_ADDRESS),
-			],
+			args: [toAddressArg('operator', OPERATOR_ADDRESS), toAddressArg('from', FROM_ADDRESS), toAddressArg('to', TO_ADDRESS)],
 			loggersAddressBookEntry: {
 				type: 'ERC1155',
 				name: 'Collection',
@@ -301,11 +279,7 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 			isParsed: 'Parsed',
 			name: 'TransferBatch',
 			signature: 'TransferBatch(address,address,address,uint256[],uint256[])',
-			args: [
-				toAddressArg('operator', OPERATOR_ADDRESS),
-				toAddressArg('from', FROM_ADDRESS),
-				toAddressArg('to', TO_ADDRESS),
-			],
+			args: [toAddressArg('operator', OPERATOR_ADDRESS), toAddressArg('from', FROM_ADDRESS), toAddressArg('to', TO_ADDRESS)],
 			loggersAddressBookEntry: {
 				type: 'ERC1155',
 				name: 'Collection',

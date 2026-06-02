@@ -29,8 +29,7 @@ const clampHue = (h: number) => {
 }
 
 // scale byte in range min and max
-const bScaleRange = (byte: number, min: number, max: number) =>
-	bscale(byte, max - min) + min
+const bScaleRange = (byte: number, min: number, max: number) => bscale(byte, max - min) + min
 
 const lerpHueFn = (optionNum: number, direction: number) => {
 	const option = optionNum % 4
@@ -109,10 +108,7 @@ const gradientForBytes = (data: Uint8Array) => {
 	const startLightness = bScaleRange(bytes_2, 32, 69.5)
 	const endLightness = (97 + bScaleRange(bytes_8, 72, 97)) / 2
 	const startSaturation = bScaleRange(bytes_7, 81, 97)
-	const endSaturation = Math.min(
-		startSaturation - 10,
-		bScaleRange(bytes_10, 70, 92),
-	)
+	const endSaturation = Math.min(startSaturation - 10, bScaleRange(bytes_10, 70, 92))
 
 	const lightnessShiftFn = lerpLightnessFn(bytes_5 % 2)
 	const saturationShiftFn = lerpSaturationFn(bytes_3 % 2)
@@ -144,10 +140,7 @@ const gradientForBytes = (data: Uint8Array) => {
 		},
 	]
 
-	return inputs.map(
-		(input: HSL) =>
-			`hsl(${Math.round(input.h)}, ${Math.round(input.s)}%, ${Math.round(input.l)}%)`,
-	)
+	return inputs.map((input: HSL) => `hsl(${Math.round(input.h)}, ${Math.round(input.s)}%, ${Math.round(input.l)}%)`)
 }
 
 const zorbImageSVG = (bytes: Uint8Array) => {
@@ -172,5 +165,4 @@ const zorbImageSVG = (bytes: Uint8Array) => {
 }
 
 const makeBase64Svg = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`
-export const zorbImageDataURI = (input: Uint8Array) =>
-	makeBase64Svg(zorbImageSVG(input))
+export const zorbImageDataURI = (input: Uint8Array) => makeBase64Svg(zorbImageSVG(input))

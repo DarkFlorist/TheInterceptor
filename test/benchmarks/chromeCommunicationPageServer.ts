@@ -7,10 +7,7 @@ export type ChromeCommunicationPageServer = {
 }
 
 export async function startChromeCommunicationPageServer(): Promise<ChromeCommunicationPageServer> {
-	const html = await readFile(
-		new URL('./chromeCommunicationPage.html', import.meta.url),
-		'utf8',
-	)
+	const html = await readFile(new URL('./chromeCommunicationPage.html', import.meta.url), 'utf8')
 	const server = createServer((request, response) => {
 		if (request.url === '/favicon.ico') {
 			response.writeHead(204, { 'Cache-Control': 'no-store' })
@@ -31,8 +28,7 @@ export async function startChromeCommunicationPageServer(): Promise<ChromeCommun
 	})
 
 	const address = server.address()
-	if (address === null || typeof address === 'string')
-		throw new Error('Could not start the Chrome communication test page server')
+	if (address === null || typeof address === 'string') throw new Error('Could not start the Chrome communication test page server')
 
 	return {
 		baseUrl: `http://127.0.0.1:${address.port}/`,

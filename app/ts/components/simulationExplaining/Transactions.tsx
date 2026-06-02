@@ -1,83 +1,32 @@
-import type {
-	BlockTimeManipulationWithNoDelay,
-	MaybeSimulatedTransaction,
-	ResolvedSimulationResults,
-	SimulationAndVisualisationResults,
-	TransactionVisualizationParameters,
-} from '../../types/visualizer-types.js'
+import type { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import type {
-	NonSimulatedAndVisualizedTransaction,
-	SignedMessageTransaction,
-} from '../../types/visualizer-types.js'
+import type { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
-import {
-	TokenSymbol,
-	TokenAmount,
-	AllApproval,
-} from '../subcomponents/coins.js'
-import type {
-	LogAnalysisParams,
-	NonLogAnalysisParams,
-	RenameAddressCallBack,
-} from '../../types/user-interface-types.js'
+import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
+import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import {
-	identifyRoutes,
-	identifySwap,
-	SwapVisualization,
-} from './SwapTransactions.js'
-import {
-	RawTransactionDetailsCard,
-	GasFee,
-	TokenLogAnalysisCard,
-	TransactionCreated,
-	TransactionHeader,
-	NonTokenLogAnalysisCard,
-	TransactionsAccountChangesCard,
-} from './SimulationSummary.js'
+import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
 import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleTokenApprovalVisualisation.js'
 import { assertNever } from '../../utils/typescript.js'
-import {
-	CatchAllVisualizer,
-	tokenEventToTokenSymbolParams,
-} from './customExplainers/CatchAllVisualizer.js'
+import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
-import {
-	bigintSecondsToDate,
-	bytes32String,
-	dataStringWith0xStart,
-} from '../../utils/bigint.js'
+import { bigintSecondsToDate, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
-import {
-	EnrichedSolidityTypeComponentWithAddressBook,
-	StringElement,
-} from '../subcomponents/solidityType.js'
+import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { ProxyTokenTransferVisualisation } from './customExplainers/ProxySendVisualisations.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import {
-	type EditEnsNamedHashCallBack,
-	EnsNamedHashComponent,
-} from '../subcomponents/ens.js'
+import { type EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponents/ens.js'
 import { insertBetweenElements } from '../subcomponents/misc.js'
-import type {
-	EnrichedEthereumEventWithMetadata,
-	EnrichedEthereumInputData,
-	TokenVisualizerResultWithMetadata,
-} from '../../types/EnrichedEthereumData.js'
-import {
-	type DeltaUnit,
-	TimePicker,
-	type TimePickerMode,
-	getTimeManipulatorFromSignals,
-} from '../subcomponents/TimePicker.js'
+import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -85,19 +34,12 @@ import { useEffect } from 'preact/hooks'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import {
-	normalizeSimulationStackRows,
-	type SimulationStackMessageRow,
-	type SimulationStackTransactionRow,
-} from './simulationStackRows.js'
+import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 
-function isPositiveEvent(
-	visResult: TokenVisualizerResultWithMetadata,
-	ourAddressInReferenceFrame: bigint,
-) {
+function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
@@ -108,12 +50,7 @@ function isPositiveEvent(
 	// nfts
 	if (visResult.type === 'NFT All approval') {
 		// all approval is only positive if someone all approves us, or all approval is removed from us
-		return (
-			(visResult.allApprovalAdded &&
-				visResult.to.address === ourAddressInReferenceFrame) ||
-			(!visResult.allApprovalAdded &&
-				visResult.from.address === ourAddressInReferenceFrame)
-		)
+		return (visResult.allApprovalAdded && visResult.to.address === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from.address === ourAddressInReferenceFrame)
 	}
 
 	if (visResult.isApproval) {
@@ -123,11 +60,7 @@ function isPositiveEvent(
 	return visResult.to.address === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
-export function QuarantineReasons({
-	quarantineReasons,
-}: {
-	quarantineReasons: readonly string[]
-}) {
+export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: readonly string[] }) {
 	return (
 		<>
 			{' '}
@@ -156,158 +89,67 @@ export type TransactionImportanceBlockParams = {
 }
 
 // showcases the most important things the transaction does
-export function TransactionImportanceBlock(
-	param: TransactionImportanceBlockParams,
-) {
-	if (param.simTx.transactionStatus === 'Failed To Simulate')
-		return (
-			<ErrorComponent
-				text={'Failed to simulate this transaction.'}
-				containerStyle={{ margin: '0px' }}
-			/>
-		)
-	if (param.simTx.transactionStatus === 'Transaction Failed')
-		return (
-			<ErrorComponent
-				text={`The transaction fails with an error: '${param.simTx.error.decodedErrorMessage}' ${param.simTx.error.data !== undefined ? ` (data: '${param.simTx.error.data}')` : ''}`}
-				containerStyle={{ margin: '0px' }}
-			/>
-		)
+export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
+	if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text={'Failed to simulate this transaction.'} containerStyle={{ margin: '0px' }} />
+	if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text={`The transaction fails with an error: '${param.simTx.error.decodedErrorMessage}' ${param.simTx.error.data !== undefined ? ` (data: '${param.simTx.error.data}')` : ''}`} containerStyle={{ margin: '0px' }} />
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
 		case 'SimpleTokenTransfer':
-			return (
-				<SimpleTokenTransferVisualisation
-					simTx={transactionIdentification.identifiedTransaction}
-					renameAddressCallBack={param.renameAddressCallBack}
-				/>
-			)
+			return <SimpleTokenTransferVisualisation simTx={transactionIdentification.identifiedTransaction} renameAddressCallBack={param.renameAddressCallBack} />
 		case 'SimpleTokenApproval': {
 			const approval = transactionIdentification.identifiedTransaction.events[0]
-			if (approval === undefined || approval.type !== 'TokenEvent')
-				throw new Error('approval was undefined')
-			return (
-				<SimpleTokenApprovalVisualisation
-					approval={approval.logInformation}
-					transactionGasses={transactionIdentification.identifiedTransaction}
-					rpcNetwork={
-						transactionIdentification.identifiedTransaction.transaction
-							.rpcNetwork
-					}
-					renameAddressCallBack={param.renameAddressCallBack}
-				/>
-			)
+			if (approval === undefined || approval.type !== 'TokenEvent') throw new Error('approval was undefined')
+			return <SimpleTokenApprovalVisualisation approval={approval.logInformation} transactionGasses={transactionIdentification.identifiedTransaction} rpcNetwork={transactionIdentification.identifiedTransaction.transaction.rpcNetwork} renameAddressCallBack={param.renameAddressCallBack} />
 		}
 		case 'Swap': {
 			const identifiedSwap = identifySwap(param.simTx)
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
-			return (
-				<SwapVisualization
-					identifiedSwap={identifiedSwap}
-					renameAddressCallBack={param.renameAddressCallBack}
-				/>
-			)
+			return <SwapVisualization identifiedSwap={identifiedSwap} renameAddressCallBack={param.renameAddressCallBack} />
 		}
 		case 'ProxyTokenTransfer':
-			return (
-				<ProxyTokenTransferVisualisation
-					simTx={transactionIdentification.identifiedTransaction}
-					renameAddressCallBack={param.renameAddressCallBack}
-				/>
-			)
+			return <ProxyTokenTransferVisualisation simTx={transactionIdentification.identifiedTransaction} renameAddressCallBack={param.renameAddressCallBack} />
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitraryContractExecution':
-			return (
-				<CatchAllVisualizer
-					editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-					simTx={param.simTx}
-					renameAddressCallBack={param.renameAddressCallBack}
-					addressMetadata={param.addressMetadata}
-					rpcNetwork={param.rpcNetwork}
-				/>
-			)
+			return <CatchAllVisualizer editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} simTx={param.simTx} renameAddressCallBack={param.renameAddressCallBack} addressMetadata={param.addressMetadata} rpcNetwork={param.rpcNetwork} />
 		case 'GovernanceVote':
-			return (
-				<GovernanceVoteVisualizer
-					editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-					activeAddress={param.activeAddress}
-					simTx={param.simTx}
-					governanceVoteInputParameters={
-						transactionIdentification.governanceVoteInputParameters
-					}
-					renameAddressCallBack={param.renameAddressCallBack}
-				/>
-			)
+			return <GovernanceVoteVisualizer editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} activeAddress={param.activeAddress} simTx={param.simTx} governanceVoteInputParameters={transactionIdentification.governanceVoteInputParameters} renameAddressCallBack={param.renameAddressCallBack} />
 		default:
 			assertNever(transactionIdentification)
 	}
 }
 
-export function SenderReceiver({
-	from,
-	to,
-	renameAddressCallBack,
-}: {
-	from: AddressBookEntry
-	to: AddressBookEntry | undefined
-	renameAddressCallBack: (entry: AddressBookEntry) => void
-}) {
+export function SenderReceiver({ from, to, renameAddressCallBack }: { from: AddressBookEntry; to: AddressBookEntry | undefined; renameAddressCallBack: (entry: AddressBookEntry) => void }) {
 	const textColor = 'var(--text-color)'
 	if (to === undefined) {
 		return (
-			<span
-				class="log-table"
-				style="margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto"
-			>
+			<span class="log-table" style="margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto">
 				<div class="log-cell" style="">
-					<p style={'color: var(--subtitle-text-color);'}>
-						{' '}
-						Transaction sender:{' '}
-					</p>
+					<p style={'color: var(--subtitle-text-color);'}> Transaction sender: </p>
 				</div>
 				<div class="log-cell" style="">
-					<SmallAddress
-						addressBookEntry={from}
-						textColor={'var(--subtitle-text-color)'}
-						renameAddressCallBack={renameAddressCallBack}
-					/>
+					<SmallAddress addressBookEntry={from} textColor={'var(--subtitle-text-color)'} renameAddressCallBack={renameAddressCallBack} />
 				</div>
 			</span>
 		)
 	}
 	return (
-		<span
-			class="log-table"
-			style="justify-content: space-between; column-gap: 5px; grid-template-columns: auto auto auto;"
-		>
+		<span class="log-table" style="justify-content: space-between; column-gap: 5px; grid-template-columns: auto auto auto;">
 			<div class="log-cell" style="margin: 2px;">
-				<SmallAddress
-					addressBookEntry={from}
-					textColor={textColor}
-					renameAddressCallBack={renameAddressCallBack}
-				/>
+				<SmallAddress addressBookEntry={from} textColor={textColor} renameAddressCallBack={renameAddressCallBack} />
 			</div>
-			<div
-				class="log-cell"
-				style="padding-right: 0.2em; padding-left: 0.2em; justify-content: center;"
-			>
+			<div class="log-cell" style="padding-right: 0.2em; padding-left: 0.2em; justify-content: center;">
 				<ArrowIcon color={textColor} />
 			</div>
 			<div class="log-cell" style="margin: 2px; justify-content: end;">
-				<SmallAddress
-					addressBookEntry={to}
-					textColor={textColor}
-					renameAddressCallBack={renameAddressCallBack}
-				/>
+				<SmallAddress addressBookEntry={to} textColor={textColor} renameAddressCallBack={renameAddressCallBack} />
 			</div>
 		</span>
 	)
 }
 
 export function Transaction(param: TransactionVisualizationParameters) {
-	const removeTransactionOrSignedMessage =
-		param.removeTransactionOrSignedMessage
+	const removeTransactionOrSignedMessage = param.removeTransactionOrSignedMessage
 	const remove =
 		removeTransactionOrSignedMessage === undefined
 			? undefined
@@ -317,85 +159,43 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						transactionIdentifier: param.simTx.transactionIdentifier,
 					})
 				}
-	const rpcNetwork = useSignal(
-		param.simulationAndVisualisationResults.rpcNetwork,
-	)
+	const rpcNetwork = useSignal(param.simulationAndVisualisationResults.rpcNetwork)
 	useEffect(() => {
 		rpcNetwork.value = param.simulationAndVisualisationResults.rpcNetwork
 	}, [param.simulationAndVisualisationResults.rpcNetwork])
 	return (
 		<div class="card">
-			<TransactionHeader
-				simTx={param.simTx}
-				removeTransactionOrSignedMessage={remove}
-			/>
+			<TransactionHeader simTx={param.simTx} removeTransactionOrSignedMessage={remove} />
 			<div class="card-content" style="padding-bottom: 5px;">
 				<div class="container">
-					<TransactionImportanceBlock
-						{...param}
-						rpcNetwork={rpcNetwork}
-						addressMetadata={param.addressMetaData}
-					/>
+					<TransactionImportanceBlock {...param} rpcNetwork={rpcNetwork} addressMetadata={param.addressMetaData} />
 				</div>
 				{param.simTx.transactionStatus === 'Failed To Simulate' ? (
 					<></>
 				) : (
 					<>
-						<QuarantineReasons
-							quarantineReasons={param.simTx.quarantineReasons}
-						/>
-						<TransactionsAccountChangesCard
-							simTx={param.simTx}
-							simulationAndVisualisationResults={
-								param.simulationAndVisualisationResults
-							}
-							activeAddress={param.activeAddress}
-							renameAddressCallBack={param.renameAddressCallBack}
-							addressMetaData={param.addressMetaData}
-						/>
-						<TokenLogAnalysisCard
-							simTx={param.simTx}
-							renameAddressCallBack={param.renameAddressCallBack}
-						/>
-						<NonTokenLogAnalysisCard
-							simTx={param.simTx}
-							renameAddressCallBack={param.renameAddressCallBack}
-							addressMetaData={param.addressMetaData}
-							editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-						/>
+						<QuarantineReasons quarantineReasons={param.simTx.quarantineReasons} />
+						<TransactionsAccountChangesCard simTx={param.simTx} simulationAndVisualisationResults={param.simulationAndVisualisationResults} activeAddress={param.activeAddress} renameAddressCallBack={param.renameAddressCallBack} addressMetaData={param.addressMetaData} />
+						<TokenLogAnalysisCard simTx={param.simTx} renameAddressCallBack={param.renameAddressCallBack} />
+						<NonTokenLogAnalysisCard simTx={param.simTx} renameAddressCallBack={param.renameAddressCallBack} addressMetaData={param.addressMetaData} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} />
 					</>
 				)}
 				<RawTransactionDetailsCard
-					isRawTransaction={
-						param.simTx.originalRequestParameters.method ===
-						'eth_sendRawTransaction'
-					}
+					isRawTransaction={param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction'}
 					transaction={param.simTx.transaction}
 					transactionIdentifier={param.simTx.transactionIdentifier}
 					parsedInputData={param.simTx.parsedInputData}
 					renameAddressCallBack={param.renameAddressCallBack}
-					gasSpent={
-						'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined
-					}
+					gasSpent={'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined}
 					addressMetaData={param.addressMetaData}
 				/>
-				<SenderReceiver
-					from={param.simTx.transaction.from}
-					to={param.simTx.transaction.to}
-					renameAddressCallBack={param.renameAddressCallBack}
-				/>
+				<SenderReceiver from={param.simTx.transaction.from} to={param.simTx.transaction.to} renameAddressCallBack={param.renameAddressCallBack} />
 
-				<span
-					class="log-table"
-					style="margin-top: 10px; grid-template-columns: auto auto;"
-				>
+				<span class="log-table" style="margin-top: 10px; grid-template-columns: auto auto;">
 					<div class="log-cell">
 						<TransactionCreated created={param.simTx.created} />
 					</div>
-					<div
-						class="log-cell"
-						style={{ display: 'inline-flex', justifyContent: 'right' }}
-					>
+					<div class="log-cell" style={{ display: 'inline-flex', justifyContent: 'right' }}>
 						{param.simTx.transactionStatus === 'Failed To Simulate' ? (
 							<></>
 						) : (
@@ -410,15 +210,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	)
 }
 
-function PendingStackHeader({
-	title,
-	website,
-	statusIcon,
-}: {
-	title: string
-	website: SignalOrValue<Website | undefined>
-	statusIcon: string
-}) {
+function PendingStackHeader({ title, website, statusIcon }: { title: string; website: SignalOrValue<Website | undefined>; statusIcon: string }) {
 	return (
 		<header class="card-header">
 			<div class="card-header-icon unset-cursor">
@@ -429,10 +221,7 @@ function PendingStackHeader({
 			<p class="card-header-title" style="white-space: nowrap;">
 				{title}
 			</p>
-			<p
-				class="card-header-icon unsetcursor"
-				style="margin-left: auto; margin-right: 0; overflow: hidden;"
-			>
+			<p class="card-header-icon unsetcursor" style="margin-left: auto; margin-right: 0; overflow: hidden;">
 				<WebsiteOriginText website={website} />
 			</p>
 		</header>
@@ -460,80 +249,36 @@ function TransactionPreviewDetails({
 	errorMessage: string | undefined
 	title: string
 }) {
-	const from = getAddressBookEntryOrAFiller(
-		addressMetaData.value,
-		signedTransaction.from,
-	)
-	const to =
-		signedTransaction.to === null || signedTransaction.to === undefined
-			? undefined
-			: getAddressBookEntryOrAFiller(
-					addressMetaData.value,
-					signedTransaction.to,
-				)
+	const from = getAddressBookEntryOrAFiller(addressMetaData.value, signedTransaction.from)
+	const to = signedTransaction.to === null || signedTransaction.to === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData.value, signedTransaction.to)
 	return (
 		<div class="card">
-			<PendingStackHeader
-				title={title}
-				website={website}
-				statusIcon={
-					errorMessage === undefined
-						? '../img/question-mark-sign.svg'
-						: '../img/error-icon.svg'
-				}
-			/>
+			<PendingStackHeader title={title} website={website} statusIcon={errorMessage === undefined ? '../img/question-mark-sign.svg' : '../img/error-icon.svg'} />
 			<div class="card-content" style="padding-bottom: 5px;">
-				{errorMessage === undefined ? (
-					<></>
-				) : (
-					<ErrorComponent
-						text={errorMessage}
-						containerStyle={{ margin: '0px', marginBottom: '10px' }}
-					/>
-				)}
+				{errorMessage === undefined ? <></> : <ErrorComponent text={errorMessage} containerStyle={{ margin: '0px', marginBottom: '10px' }} />}
 				<div class="container">
 					<dl class="grid key-value-pair">
 						<dt>Transaction type</dt>
 						<dd>{signedTransaction.type}</dd>
 						<dt>From</dt>
 						<dd>
-							<SmallAddress
-								addressBookEntry={from}
-								renameAddressCallBack={renameAddressCallBack}
-							/>
+							<SmallAddress addressBookEntry={from} renameAddressCallBack={renameAddressCallBack} />
 						</dd>
 						<dt>To</dt>
-						<dd>
-							{to === undefined ? (
-								'No receiving Address'
-							) : (
-								<SmallAddress
-									addressBookEntry={to}
-									renameAddressCallBack={renameAddressCallBack}
-								/>
-							)}
-						</dd>
+						<dd>{to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry={to} renameAddressCallBack={renameAddressCallBack} />}</dd>
 						<dt>Value</dt>
 						<dd>{`${signedTransaction.value.toString(10)} wei`}</dd>
 						<dt>Nonce</dt>
 						<dd>{signedTransaction.nonce.toString(10)}</dd>
 						<dt>Chain ID</dt>
-						<dd>
-							{'chainId' in signedTransaction &&
-							signedTransaction.chainId !== undefined
-								? signedTransaction.chainId.toString(10)
-								: 'Unknown'}
-						</dd>
+						<dd>{'chainId' in signedTransaction && signedTransaction.chainId !== undefined ? signedTransaction.chainId.toString(10) : 'Unknown'}</dd>
 					</dl>
 				</div>
 				<div class="textbox" style="margin-top: 10px;">
 					<p class="paragraph" style="color: var(--subtitle-text-color)">
 						Original request
 					</p>
-					<p
-						class="paragraph"
-						style="color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;"
-					>
+					<p class="paragraph" style="color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;">
 						{stringifyJSONWithBigInts(originalRequestParameters, 2)}
 					</p>
 				</div>
@@ -546,26 +291,14 @@ function TransactionPreviewDetails({
 							<pre>{dataStringWith0xStart(signedTransaction.input)}</pre>
 						</div>
 					) : (
-						<TransactionInput
-							parsedInputData={parsedInputData}
-							input={signedTransaction.input}
-							to={to}
-							addressMetaData={addressMetaData}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<TransactionInput parsedInputData={parsedInputData} input={signedTransaction.input} to={to} addressMetaData={addressMetaData} renameAddressCallBack={renameAddressCallBack} />
 					)}
 				</div>
-				<span
-					class="log-table"
-					style="margin-top: 10px; grid-template-columns: auto auto;"
-				>
+				<span class="log-table" style="margin-top: 10px; grid-template-columns: auto auto;">
 					<div class="log-cell">
 						<TransactionCreated created={created} />
 					</div>
-					<div
-						class="log-cell"
-						style={{ display: 'inline-flex', justifyContent: 'right' }}
-					/>
+					<div class="log-cell" style={{ display: 'inline-flex', justifyContent: 'right' }} />
 				</span>
 			</div>
 		</div>
@@ -587,48 +320,22 @@ function MessagePreviewDetails({
 }) {
 	return (
 		<div class="card">
-			<PendingStackHeader
-				title={
-					errorMessage === undefined ? 'Pending signature' : 'Signature failed'
-				}
-				website={website}
-				statusIcon={
-					errorMessage === undefined
-						? '../img/question-mark-sign.svg'
-						: '../img/error-icon.svg'
-				}
-			/>
+			<PendingStackHeader title={errorMessage === undefined ? 'Pending signature' : 'Signature failed'} website={website} statusIcon={errorMessage === undefined ? '../img/question-mark-sign.svg' : '../img/error-icon.svg'} />
 			<div class="card-content" style="padding-bottom: 5px;">
-				{errorMessage === undefined ? (
-					<></>
-				) : (
-					<ErrorComponent
-						text={errorMessage}
-						containerStyle={{ margin: '0px', marginBottom: '10px' }}
-					/>
-				)}
+				{errorMessage === undefined ? <></> : <ErrorComponent text={errorMessage} containerStyle={{ margin: '0px', marginBottom: '10px' }} />}
 				<div class="textbox">
 					<p class="paragraph" style="color: var(--subtitle-text-color)">
 						Signature request
 					</p>
-					<p
-						class="paragraph"
-						style="color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;"
-					>
-						{stringifyJSONWithBigInts(
-							signedMessageTransaction.originalRequestParameters,
-							2,
-						)}
+					<p class="paragraph" style="color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;">
+						{stringifyJSONWithBigInts(signedMessageTransaction.originalRequestParameters, 2)}
 					</p>
 				</div>
 				<div class="textbox" style="margin-top: 10px;">
 					<p class="paragraph" style="color: var(--subtitle-text-color)">
 						Raw request
 					</p>
-					<p
-						class="paragraph"
-						style="color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;"
-					>
+					<p class="paragraph" style="color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;">
 						{stringifyJSONWithBigInts(signedMessageTransaction.request, 2)}
 					</p>
 				</div>
@@ -636,26 +343,14 @@ function MessagePreviewDetails({
 					<></>
 				) : (
 					<div style="margin-top: 10px;">
-						<SignatureCard
-							visualizedPersonalSignRequest={visualizedPersonalSignRequest}
-							renameAddressCallBack={() => undefined}
-							removeTransactionOrSignedMessage={undefined}
-							editEnsNamedHashCallBack={() => undefined}
-							numberOfUnderTransactions={0}
-						/>
+						<SignatureCard visualizedPersonalSignRequest={visualizedPersonalSignRequest} renameAddressCallBack={() => undefined} removeTransactionOrSignedMessage={undefined} editEnsNamedHashCallBack={() => undefined} numberOfUnderTransactions={0} />
 					</div>
 				)}
-				<span
-					class="log-table"
-					style="margin-top: 10px; grid-template-columns: auto auto;"
-				>
+				<span class="log-table" style="margin-top: 10px; grid-template-columns: auto auto;">
 					<div class="log-cell">
 						<TransactionCreated created={created} />
 					</div>
-					<div
-						class="log-cell"
-						style={{ display: 'inline-flex', justifyContent: 'right' }}
-					/>
+					<div class="log-cell" style={{ display: 'inline-flex', justifyContent: 'right' }} />
 				</span>
 			</div>
 		</div>
@@ -663,38 +358,23 @@ function MessagePreviewDetails({
 }
 
 type TransactionOrMessageWithBlockTimeManipulatorParams = {
-	simulationAndVisualisationResults: ReadonlySignal<
-		SimulationAndVisualisationResults | undefined
-	>
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
 	stackRow: SimulationStackTransactionRow | SimulationStackMessageRow
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	removeTransactionOrSignedMessage?: (
-		transactionOrMessageIdentifier: TransactionOrMessageIdentifier,
-	) => void
+	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: ReadonlySignal<bigint | undefined>
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	blockTimeManipulation: BlockTimeManipulationWithNoDelay
 	showTimePicker?: boolean
 }
 
-const TransactionOrMessageWithBlockTimeManipulator = ({
-	stackRow,
-	renameAddressCallBack,
-	editEnsNamedHashCallBack,
-	removeTransactionOrSignedMessage,
-	simulationAndVisualisationResults,
-	activeAddress,
-	addressMetaData,
-	blockTimeManipulation,
-	showTimePicker = true,
-}: TransactionOrMessageWithBlockTimeManipulatorParams) => {
+const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation, showTimePicker = true }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
 	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
-	const currentSimulationAndVisualisationResults =
-		simulationAndVisualisationResults.value
+	const currentSimulationAndVisualisationResults = simulationAndVisualisationResults.value
 
 	useEffect(() => {
 		switch (blockTimeManipulation.type) {
@@ -714,9 +394,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({
 			}
 			case 'SetTimetamp': {
 				timeSelectorMode.value = 'Until'
-				timeSelectorAbsoluteTime.value = bigintSecondsToDate(
-					blockTimeManipulation.timeToSet,
-				)
+				timeSelectorAbsoluteTime.value = bigintSecondsToDate(blockTimeManipulation.timeToSet)
 				timeSelectorDeltaValue.value = 12n
 				timeSelectorDeltaUnit.value = 'Seconds'
 				break
@@ -726,30 +404,18 @@ const TransactionOrMessageWithBlockTimeManipulator = ({
 		}
 	}, [stackRow, blockTimeManipulation])
 
-	const timeSelectorOnChange = (
-		transactionOrMessage:
-			| SimulationStackTransactionRow
-			| SimulationStackMessageRow,
-	) => {
-		const blockTimeManipulation = getTimeManipulatorFromSignals(
-			timeSelectorMode.value,
-			timeSelectorAbsoluteTime.value,
-			timeSelectorDeltaValue.value,
-			timeSelectorDeltaUnit.value,
-		)
+	const timeSelectorOnChange = (transactionOrMessage: SimulationStackTransactionRow | SimulationStackMessageRow) => {
+		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
 		if (blockTimeManipulation === undefined) return
 		const transactionOrMessageIdentifier =
 			transactionOrMessage.type === 'Message'
 				? ({
 						type: 'Message',
-						messageIdentifier:
-							transactionOrMessage.signedMessageTransaction.messageIdentifier,
+						messageIdentifier: transactionOrMessage.signedMessageTransaction.messageIdentifier,
 					} as const)
 				: ({
 						type: 'Transaction',
-						transactionIdentifier:
-							transactionOrMessage.preSimulationTransaction
-								.transactionIdentifier,
+						transactionIdentifier: transactionOrMessage.preSimulationTransaction.transactionIdentifier,
 					} as const)
 		return sendPopupMessageToBackgroundPage({
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
@@ -760,44 +426,19 @@ const TransactionOrMessageWithBlockTimeManipulator = ({
 		<>
 			{stackRow.type === 'Message' ? (
 				<>
-					{stackRow.status === 'simulated' &&
-					stackRow.visualizedPersonalSignRequest !== undefined ? (
-						<SignatureCard
-							visualizedPersonalSignRequest={
-								stackRow.visualizedPersonalSignRequest
-							}
-							renameAddressCallBack={renameAddressCallBack}
-							removeTransactionOrSignedMessage={
-								removeTransactionOrSignedMessage
-							}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-							numberOfUnderTransactions={0}
-						/>
+					{stackRow.status === 'simulated' && stackRow.visualizedPersonalSignRequest !== undefined ? (
+						<SignatureCard visualizedPersonalSignRequest={stackRow.visualizedPersonalSignRequest} renameAddressCallBack={renameAddressCallBack} removeTransactionOrSignedMessage={removeTransactionOrSignedMessage} editEnsNamedHashCallBack={editEnsNamedHashCallBack} numberOfUnderTransactions={0} />
 					) : (
-						<MessagePreviewDetails
-							website={stackRow.signedMessageTransaction.website}
-							created={stackRow.signedMessageTransaction.created}
-							signedMessageTransaction={stackRow.signedMessageTransaction}
-							visualizedPersonalSignRequest={
-								stackRow.visualizedPersonalSignRequest
-							}
-							errorMessage={undefined}
-						/>
+						<MessagePreviewDetails website={stackRow.signedMessageTransaction.website} created={stackRow.signedMessageTransaction.created} signedMessageTransaction={stackRow.signedMessageTransaction} visualizedPersonalSignRequest={stackRow.visualizedPersonalSignRequest} errorMessage={undefined} />
 					)}
 				</>
 			) : (
 				<>
-					{stackRow.status === 'simulated' &&
-					stackRow.simulatedTransaction !== undefined &&
-					currentSimulationAndVisualisationResults !== undefined ? (
+					{stackRow.status === 'simulated' && stackRow.simulatedTransaction !== undefined && currentSimulationAndVisualisationResults !== undefined ? (
 						<Transaction
 							simTx={stackRow.simulatedTransaction}
-							simulationAndVisualisationResults={
-								currentSimulationAndVisualisationResults
-							}
-							removeTransactionOrSignedMessage={
-								removeTransactionOrSignedMessage
-							}
+							simulationAndVisualisationResults={currentSimulationAndVisualisationResults}
+							removeTransactionOrSignedMessage={removeTransactionOrSignedMessage}
 							activeAddress={activeAddress}
 							renameAddressCallBack={renameAddressCallBack}
 							addressMetaData={addressMetaData}
@@ -807,30 +448,13 @@ const TransactionOrMessageWithBlockTimeManipulator = ({
 						<TransactionPreviewDetails
 							website={stackRow.preSimulationTransaction.website}
 							created={stackRow.preSimulationTransaction.created}
-							originalRequestParameters={
-								stackRow.preSimulationTransaction.originalRequestParameters
-							}
-							signedTransaction={
-								stackRow.preSimulationTransaction.signedTransaction
-							}
+							originalRequestParameters={stackRow.preSimulationTransaction.originalRequestParameters}
+							signedTransaction={stackRow.preSimulationTransaction.signedTransaction}
 							parsedInputData={stackRow.simulatedTransaction?.parsedInputData}
 							addressMetaData={addressMetaData}
 							renameAddressCallBack={renameAddressCallBack}
-							errorMessage={
-								stackRow.status === 'failed'
-									? ((
-											stackRow.simulatedTransaction as
-												| NonSimulatedAndVisualizedTransaction
-												| undefined
-										)?.error.decodedErrorMessage ??
-										'Failed to simulate this transaction.')
-									: undefined
-							}
-							title={
-								stackRow.status === 'failed'
-									? 'Not simulated'
-									: 'Pending transaction'
-							}
+							errorMessage={stackRow.status === 'failed' ? ((stackRow.simulatedTransaction as NonSimulatedAndVisualizedTransaction | undefined)?.error.decodedErrorMessage ?? 'Failed to simulate this transaction.') : undefined}
+							title={stackRow.status === 'failed' ? 'Not simulated' : 'Pending transaction'}
 						/>
 					)}
 				</>
@@ -858,9 +482,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({
 
 type TransactionsAndSignedMessagesParams = {
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
-	removeTransactionOrSignedMessage?: (
-		transactionOrMessageIdentifier: TransactionOrMessageIdentifier,
-	) => void
+	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
@@ -868,75 +490,40 @@ type TransactionsAndSignedMessagesParams = {
 	showTimePicker?: boolean
 }
 
-export function TransactionsAndSignedMessages(
-	param: TransactionsAndSignedMessagesParams,
-) {
+export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const simulationAndVisualisationResults = useComputed(() => {
 		const currentResults = param.simulationAndVisualisationResults.value
-		return currentResults.kind === 'passthrough'
-			? undefined
-			: currentResults.value
+		return currentResults.kind === 'passthrough' ? undefined : currentResults.value
 	})
-	return (
-		<SimulationStackRows
-			{...param}
-			simulationAndVisualisationResults={simulationAndVisualisationResults}
-			showTimePicker={true}
-		/>
-	)
+	return <SimulationStackRows {...param} simulationAndVisualisationResults={simulationAndVisualisationResults} showTimePicker={true} />
 }
 
-type SimulationStackRowsParams = Omit<
-	TransactionsAndSignedMessagesParams,
-	'simulationAndVisualisationResults'
-> & {
-	simulationAndVisualisationResults: ReadonlySignal<
-		SimulationAndVisualisationResults | undefined
-	>
+type SimulationStackRowsParams = Omit<TransactionsAndSignedMessagesParams, 'simulationAndVisualisationResults'> & {
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
 }
 
 export function SimulationStackRows(param: SimulationStackRowsParams) {
 	const transactionsAndMessagesInBlock = useComputed(() => {
 		const results = param.simulationAndVisualisationResults.value
-		if (results === undefined || results.simulationStateInput === undefined)
-			return []
-		return normalizeSimulationStackRows(
-			results.simulationStateInput,
-			results.visualizedSimulationState,
-		)
+		if (results === undefined || results.simulationStateInput === undefined) return []
+		return normalizeSimulationStackRows(results.simulationStateInput, results.visualizedSimulationState)
 	})
 	return (
 		<ul>
 			{' '}
 			{transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
-				const nextBlockManipulator =
-					transactionsAndMessagesInBlock.value[blockIndex + 1]
-						?.blockTimeManipulation || ({ type: 'No Delay' } as const)
+				const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || ({ type: 'No Delay' } as const)
 				return block.rows.map((stackRow, transactionIndex) => (
-					<li
-						key={
-							stackRow.type === 'Message'
-								? `message-${stackRow.signedMessageTransaction.messageIdentifier.toString()}`
-								: `transaction-${stackRow.preSimulationTransaction.transactionIdentifier.toString()}`
-						}
-					>
+					<li key={stackRow.type === 'Message' ? `message-${stackRow.signedMessageTransaction.messageIdentifier.toString()}` : `transaction-${stackRow.preSimulationTransaction.transactionIdentifier.toString()}`}>
 						<TransactionOrMessageWithBlockTimeManipulator
-							simulationAndVisualisationResults={
-								param.simulationAndVisualisationResults
-							}
+							simulationAndVisualisationResults={param.simulationAndVisualisationResults}
 							stackRow={stackRow}
 							renameAddressCallBack={param.renameAddressCallBack}
 							editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-							removeTransactionOrSignedMessage={
-								param.removeTransactionOrSignedMessage
-							}
+							removeTransactionOrSignedMessage={param.removeTransactionOrSignedMessage}
 							activeAddress={param.activeAddress}
 							addressMetaData={param.addressMetaData}
-							blockTimeManipulation={
-								transactionIndex === block.rows.length - 1
-									? nextBlockManipulator
-									: ({ type: 'No Delay' } as const)
-							}
+							blockTimeManipulation={transactionIndex === block.rows.length - 1 ? nextBlockManipulator : ({ type: 'No Delay' } as const)}
 							showTimePicker={param.showTimePicker !== false}
 						/>
 					</li>
@@ -954,39 +541,23 @@ type TokenLogEventParams = {
 
 function TokenLogEvent(params: TokenLogEventParams) {
 	const style = {
-		color: isPositiveEvent(
-			params.tokenVisualizerResult,
-			params.ourAddressInReferenceFrame,
-		)
-			? 'var(--dim-text-color)'
-			: 'var(--negative-dim-color)',
+		color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)',
 	}
 
 	return (
 		<>
 			<div class="log-cell" style="justify-content: right;">
 				{params.tokenVisualizerResult.type === 'NFT All approval' ? (
-					<AllApproval
-						{...params.tokenVisualizerResult}
-						style={style}
-						fontSize="normal"
-					/>
+					<AllApproval {...params.tokenVisualizerResult} style={style} fontSize="normal" />
 				) : (
 					<>
 						{' '}
-						{'amount' in params.tokenVisualizerResult &&
-						params.tokenVisualizerResult.amount >= 2n ** 96n - 1n &&
-						params.tokenVisualizerResult.isApproval ? (
+						{'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= 2n ** 96n - 1n && params.tokenVisualizerResult.isApproval ? (
 							<p class="ellipsis" style={`color: ${style.color}`}>
 								<b>ALL</b>
 							</p>
 						) : 'amount' in params.tokenVisualizerResult ? (
-							<TokenAmount
-								amount={params.tokenVisualizerResult.amount}
-								tokenEntry={params.tokenVisualizerResult.token}
-								style={style}
-								fontSize="normal"
-							/>
+							<TokenAmount amount={params.tokenVisualizerResult.amount} tokenEntry={params.tokenVisualizerResult.token} style={style} fontSize="normal" />
 						) : (
 							<></>
 						)}{' '}
@@ -994,74 +565,32 @@ function TokenLogEvent(params: TokenLogEventParams) {
 				)}
 			</div>
 			<div class="log-cell" style="padding-right: 0.2em">
-				<TokenSymbol
-					{...tokenEventToTokenSymbolParams(params.tokenVisualizerResult)}
-					style={style}
-					useFullTokenName={false}
-					renameAddressCallBack={params.renameAddressCallBack}
-					fontSize="normal"
-				/>
+				<TokenSymbol {...tokenEventToTokenSymbolParams(params.tokenVisualizerResult)} style={style} useFullTokenName={false} renameAddressCallBack={params.renameAddressCallBack} fontSize="normal" />
 			</div>
 			<div class="log-cell-flexless" style="margin: 2px;">
-				<SmallAddress
-					addressBookEntry={params.tokenVisualizerResult.from}
-					textColor={style.color}
-					renameAddressCallBack={params.renameAddressCallBack}
-				/>
+				<SmallAddress addressBookEntry={params.tokenVisualizerResult.from} textColor={style.color} renameAddressCallBack={params.renameAddressCallBack} />
 			</div>
 			<div class="log-cell" style="padding-right: 0.2em; padding-left: 0.2em">
-				{params.tokenVisualizerResult.isApproval ? (
-					<ApproveIcon color={style.color} />
-				) : (
-					<ArrowIcon color={style.color} />
-				)}
+				{params.tokenVisualizerResult.isApproval ? <ApproveIcon color={style.color} /> : <ArrowIcon color={style.color} />}
 			</div>
 			<div class="log-cell-flexless" style="margin: 2px;">
-				<SmallAddress
-					addressBookEntry={params.tokenVisualizerResult.to}
-					textColor={style.color}
-					renameAddressCallBack={params.renameAddressCallBack}
-				/>
+				<SmallAddress addressBookEntry={params.tokenVisualizerResult.to} textColor={style.color} renameAddressCallBack={params.renameAddressCallBack} />
 			</div>
 		</>
 	)
 }
 
 export function TokenLogAnalysis(param: LogAnalysisParams) {
-	const tokenEvents = extractTokenEvents(
-		param.simulatedAndVisualizedTransaction.events,
-	)
+	const tokenEvents = extractTokenEvents(param.simulatedAndVisualizedTransaction.events)
 
-	if (tokenEvents.length === 0)
-		return <p class="paragraph"> No token events </p>
-	const routes = identifyRoutes(
-		param.simulatedAndVisualizedTransaction,
-		param.identifiedSwap,
-	)
+	if (tokenEvents.length === 0) return <p class="paragraph"> No token events </p>
+	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return (
 		<span class="log-table" style="justify-content: center; column-gap: 5px;">
 			{' '}
 			{routes
-				? routes.map((tokenVisualizerResult, index) => (
-						<TokenLogEvent
-							key={index}
-							tokenVisualizerResult={tokenVisualizerResult}
-							ourAddressInReferenceFrame={
-								param.simulatedAndVisualizedTransaction.transaction.from.address
-							}
-							renameAddressCallBack={param.renameAddressCallBack}
-						/>
-					))
-				: tokenEvents.map((tokenEvent, index) => (
-						<TokenLogEvent
-							key={index}
-							tokenVisualizerResult={tokenEvent}
-							ourAddressInReferenceFrame={
-								param.simulatedAndVisualizedTransaction.transaction.from.address
-							}
-							renameAddressCallBack={param.renameAddressCallBack}
-						/>
-					))}{' '}
+				? routes.map((tokenVisualizerResult, index) => <TokenLogEvent key={index} tokenVisualizerResult={tokenVisualizerResult} ourAddressInReferenceFrame={param.simulatedAndVisualizedTransaction.transaction.from.address} renameAddressCallBack={param.renameAddressCallBack} />)
+				: tokenEvents.map((tokenEvent, index) => <TokenLogEvent key={index} tokenVisualizerResult={tokenEvent} ourAddressInReferenceFrame={param.simulatedAndVisualizedTransaction.transaction.from.address} renameAddressCallBack={param.renameAddressCallBack} />)}{' '}
 		</span>
 	)
 }
@@ -1080,13 +609,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		return (
 			<>
 				<div class="log-cell" style={cellStyle}>
-					<SmallAddress
-						addressBookEntry={getAddressBookEntryOrAFiller(
-							params.addressMetaData.value,
-							params.nonTokenLog.address,
-						)}
-						renameAddressCallBack={params.renameAddressCallBack}
-					/>
+					<SmallAddress addressBookEntry={getAddressBookEntryOrAFiller(params.addressMetaData.value, params.nonTokenLog.address)} renameAddressCallBack={params.renameAddressCallBack} />
 				</div>
 				<div class="log-cell" style={cellStyle}>
 					<p class="paragraph" style={textStyle}>
@@ -1094,16 +617,9 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 						{dataStringWith0xStart(params.nonTokenLog.data)}{' '}
 					</p>
 				</div>
-				<div
-					class="log-cell"
-					style={'grid-column: 2 / 4; display: flex; flex-wrap: wrap;'}
-				>
+				<div class="log-cell" style={'grid-column: 2 / 4; display: flex; flex-wrap: wrap;'}>
 					{params.nonTokenLog.topics.map((topic, index) => (
-						<p
-							key={`${bytes32String(topic)}-${index}`}
-							class="paragraph"
-							style={textStyle}
-						>
+						<p key={`${bytes32String(topic)}-${index}`} class="paragraph" style={textStyle}>
 							{' '}
 							{bytes32String(topic)}{' '}
 						</p>
@@ -1115,13 +631,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 	return (
 		<>
 			<div class="log-cell" style={cellStyle}>
-				<SmallAddress
-					addressBookEntry={getAddressBookEntryOrAFiller(
-						params.addressMetaData.value,
-						params.nonTokenLog.address,
-					)}
-					renameAddressCallBack={params.renameAddressCallBack}
-				/>
+				<SmallAddress addressBookEntry={getAddressBookEntryOrAFiller(params.addressMetaData.value, params.nonTokenLog.address)} renameAddressCallBack={params.renameAddressCallBack} />
 			</div>
 			<div style="display: contents;" />
 			<div
@@ -1139,62 +649,36 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 				</p>
 				{insertBetweenElements(
 					params.nonTokenLog.args.map((arg) => {
-						if (
-							arg.paramName === 'node' &&
-							'logInformation' in params.nonTokenLog &&
-							'node' in params.nonTokenLog.logInformation
-						) {
+						if (arg.paramName === 'node' && 'logInformation' in params.nonTokenLog && 'node' in params.nonTokenLog.logInformation) {
 							return (
 								<>
 									<p style={textStyle} class="paragraph">
 										{' '}
 										{`${arg.paramName} =`}&nbsp;
 									</p>
-									<EnsNamedHashComponent
-										type="nameHash"
-										nameHash={params.nonTokenLog.logInformation.node.nameHash}
-										name={params.nonTokenLog.logInformation.node.name}
-										editEnsNamedHashCallBack={params.editEnsNamedHashCallBack}
-									/>
+									<EnsNamedHashComponent type="nameHash" nameHash={params.nonTokenLog.logInformation.node.nameHash} name={params.nonTokenLog.logInformation.node.name} editEnsNamedHashCallBack={params.editEnsNamedHashCallBack} />
 								</>
 							)
 						}
-						if (
-							(arg.paramName === 'id' || arg.paramName === 'label') &&
-							'logInformation' in params.nonTokenLog &&
-							'labelHash' in params.nonTokenLog.logInformation
-						) {
+						if ((arg.paramName === 'id' || arg.paramName === 'label') && 'logInformation' in params.nonTokenLog && 'labelHash' in params.nonTokenLog.logInformation) {
 							return (
 								<>
 									<p style={textStyle} class="paragraph">
 										{' '}
 										{`${arg.paramName} =`}&nbsp;
 									</p>
-									<EnsNamedHashComponent
-										type="labelHash"
-										nameHash={
-											params.nonTokenLog.logInformation.labelHash.labelHash
-										}
-										name={params.nonTokenLog.logInformation.labelHash.label}
-										editEnsNamedHashCallBack={params.editEnsNamedHashCallBack}
-									/>
+									<EnsNamedHashComponent type="labelHash" nameHash={params.nonTokenLog.logInformation.labelHash.labelHash} name={params.nonTokenLog.logInformation.labelHash.label} editEnsNamedHashCallBack={params.editEnsNamedHashCallBack} />
 								</>
 							)
 						}
-						if (
-							arg.paramName === 'fuses' &&
-							'logInformation' in params.nonTokenLog &&
-							'fuses' in params.nonTokenLog.logInformation
-						) {
+						if (arg.paramName === 'fuses' && 'logInformation' in params.nonTokenLog && 'fuses' in params.nonTokenLog.logInformation) {
 							return (
 								<>
 									<p style={textStyle} class="paragraph">
 										{' '}
 										{`${arg.paramName} = [`}
 									</p>
-									<StringElement
-										text={params.nonTokenLog.logInformation.fuses.join(', ')}
-									/>
+									<StringElement text={params.nonTokenLog.logInformation.fuses.join(', ')} />
 									<p style={textStyle} class="paragraph">
 										]
 									</p>
@@ -1207,11 +691,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 									{' '}
 									{`${arg.paramName} =`}&nbsp;
 								</p>
-								<EnrichedSolidityTypeComponentWithAddressBook
-									valueType={arg.typeValue}
-									addressMetaData={params.addressMetaData}
-									renameAddressCallBack={params.renameAddressCallBack}
-								/>
+								<EnrichedSolidityTypeComponentWithAddressBook valueType={arg.typeValue} addressMetaData={params.addressMetaData} renameAddressCallBack={params.renameAddressCallBack} />
 							</>
 						)
 					}),
@@ -1229,21 +709,11 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 }
 
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
-	if (param.nonTokenLogs.length === 0)
-		return <p class="paragraph"> No non-token events </p>
+	if (param.nonTokenLogs.length === 0) return <p class="paragraph"> No non-token events </p>
 	return (
-		<span
-			class="nontoken-log-table"
-			style="justify-content: center; column-gap: 5px; row-gap: 5px;"
-		>
+		<span class="nontoken-log-table" style="justify-content: center; column-gap: 5px; row-gap: 5px;">
 			{param.nonTokenLogs.map((nonTokenLog, index) => (
-				<NonTokenLogEvent
-					key={index}
-					nonTokenLog={nonTokenLog}
-					addressMetaData={param.addressMetaData}
-					renameAddressCallBack={param.renameAddressCallBack}
-					editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-				/>
+				<NonTokenLogEvent key={index} nonTokenLog={nonTokenLog} addressMetaData={param.addressMetaData} renameAddressCallBack={param.renameAddressCallBack} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} />
 			))}
 		</span>
 	)
@@ -1289,11 +759,7 @@ export function ParsedInputData(params: ParsedInputDataParams) {
 									{' '}
 									{`${arg.paramName} =`}&nbsp;
 								</p>
-								<EnrichedSolidityTypeComponentWithAddressBook
-									valueType={arg.typeValue}
-									addressMetaData={params.addressMetaData}
-									renameAddressCallBack={params.renameAddressCallBack}
-								/>
+								<EnrichedSolidityTypeComponentWithAddressBook valueType={arg.typeValue} addressMetaData={params.addressMetaData} renameAddressCallBack={params.renameAddressCallBack} />
 							</>
 						)
 					}),

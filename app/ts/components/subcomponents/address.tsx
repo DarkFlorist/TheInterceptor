@@ -2,26 +2,16 @@ import type { ComponentChildren } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import type {
-	AddressBookEntries,
-	AddressBookEntry,
-} from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
-import {
-	type ActionableIconProps,
-	type ActionableTextProps,
-	MultilineCard,
-} from './MultilineCard.js'
+import { type ActionableIconProps, type ActionableTextProps, MultilineCard } from './MultilineCard.js'
 
-export function getActiveAddressEntry(
-	addressToFind: bigint,
-	activeAddresses: AddressBookEntries,
-): AddressBookEntry {
+export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
 		if (info.address === addressToFind) return info
 	}
@@ -42,13 +32,7 @@ type AddressIconParams = {
 	backgroundColor: string
 }
 
-const AddressIconFrame = ({
-	isBig,
-	children,
-}: {
-	isBig: boolean
-	children?: ComponentChildren
-}) => {
+const AddressIconFrame = ({ isBig, children }: { isBig: boolean; children?: ComponentChildren }) => {
 	const cssProperties: JSX.CSSProperties = {
 		backgroundColor: 'var(--unimportant-text-color)',
 		fontSize: isBig ? '2.5em' : '1.5em',
@@ -100,18 +84,12 @@ type BigAddressParams = {
 
 export function BigAddress(params: BigAddressParams) {
 	const addressBookEntry = resolveSignal(params.addressBookEntry)
-	const addressString =
-		addressBookEntry && checksummedAddress(addressBookEntry.address)
-	const labelText =
-		addressBookEntry?.name || addressString || 'No address found'
-	const noteText =
-		addressString && addressString !== labelText
-			? addressString
-			: '(Not in addressbook)'
+	const addressString = addressBookEntry && checksummedAddress(addressBookEntry.address)
+	const labelText = addressBookEntry?.name || addressString || 'No address found'
+	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
 
 	const configPartialWithEditOnClick = {
-		onClick: () =>
-			addressBookEntry && params.renameAddressCallBack(addressBookEntry),
+		onClick: () => addressBookEntry && params.renameAddressCallBack(addressBookEntry),
 		buttonLabel: 'Edit',
 		buttonIcon: () => <EditIcon />,
 	}
@@ -124,38 +102,20 @@ export function BigAddress(params: BigAddressParams) {
 
 	const labelConfig: ActionableTextProps = {
 		displayText: labelText,
-		...(labelText === addressString && !params.noCopying
-			? configPartialWithCopyOnClick
-			: params.noEditAddress
-				? undefined
-				: configPartialWithEditOnClick),
+		...(labelText === addressString && !params.noCopying ? configPartialWithCopyOnClick : params.noEditAddress ? undefined : configPartialWithEditOnClick),
 	}
 
 	const noteConfig: ActionableTextProps = {
 		displayText: noteText,
-		...(noteText === addressString && !params.noCopying
-			? configPartialWithCopyOnClick
-			: params.noEditAddress
-				? undefined
-				: configPartialWithEditOnClick),
+		...(noteText === addressString && !params.noCopying ? configPartialWithCopyOnClick : params.noEditAddress ? undefined : configPartialWithEditOnClick),
 	}
 
 	const iconConfig: ActionableIconProps = {
-		icon: () =>
-			addressBookEntry ? <Blockie address={addressBookEntry.address} /> : <></>,
-		...(!params.noCopying && addressString
-			? configPartialWithCopyOnClick
-			: { onClick: undefined }),
+		icon: () => (addressBookEntry ? <Blockie address={addressBookEntry.address} /> : <></>),
+		...(!params.noCopying && addressString ? configPartialWithCopyOnClick : { onClick: undefined }),
 	}
 
-	return (
-		<MultilineCard
-			label={labelConfig}
-			note={noteConfig}
-			icon={iconConfig}
-			style={params.style}
-		/>
-	)
+	return <MultilineCard label={labelConfig} note={noteConfig} icon={iconConfig} style={params.style} />
 }
 
 type ActiveAddressParams = {
@@ -170,18 +130,11 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 	return (
 		<div class="log-table" style="grid-template-columns: auto max-content">
 			<div class="log-cell" style="display: block;">
-				<BigAddress
-					addressBookEntry={params.activeAddress}
-					renameAddressCallBack={params.renameAddressCallBack}
-				/>
+				<BigAddress addressBookEntry={params.activeAddress} renameAddressCallBack={params.renameAddressCallBack} />
 			</div>
 			<div class="log-cell">
 				<div class="media-right">
-					<button
-						class="button is-primary"
-						disabled={params.disableButton}
-						onClick={params.changeActiveAddress}
-					>
+					<button class="button is-primary" disabled={params.disableButton} onClick={params.changeActiveAddress}>
 						{params.buttonText}
 					</button>
 				</div>
@@ -197,74 +150,33 @@ type SmallAddressParams = {
 	readonly style?: JSX.CSSProperties
 }
 
-export function SmallAddress({
-	addressBookEntry,
-	renameAddressCallBack,
-	style,
-}: SmallAddressParams) {
+export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }: SmallAddressParams) {
 	const currentAddressBookEntry = resolveSignal(addressBookEntry)
 	if (currentAddressBookEntry === undefined) return <></>
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
 
 	const generateIcon = () => {
-		if (currentAddressBookEntry?.logoUri !== undefined)
-			return (
-				<img
-					src={currentAddressBookEntry.logoUri}
-					width="16"
-					height="16"
-					style={{ minWidth: '1em', minHeight: '1em' }}
-				/>
-			)
+		if (currentAddressBookEntry?.logoUri !== undefined) return <img src={currentAddressBookEntry.logoUri} width="16" height="16" style={{ minWidth: '1em', minHeight: '1em' }} />
 		return <Blockie address={currentAddressBookEntry.address} />
 	}
 
-	return (
-		<InlineCard
-			label={currentAddressBookEntry.name}
-			copyValue={addressString}
-			icon={generateIcon}
-			onEditClicked={() => renameAddressCallBack(currentAddressBookEntry)}
-			style={style}
-		/>
-	)
+	return <InlineCard label={currentAddressBookEntry.name} copyValue={addressString} icon={generateIcon} onEditClicked={() => renameAddressCallBack(currentAddressBookEntry)} style={style} />
 }
 
-export function WebsiteOriginText({
-	website,
-}: {
-	website: SignalOrValue<Website | undefined>
-}) {
+export function WebsiteOriginText({ website }: { website: SignalOrValue<Website | undefined> }) {
 	const currentWebsite = resolveSignal(website)
 	if (currentWebsite === undefined) return <></>
 	const icon = sanitizeStoredWebsiteIcon(currentWebsite.icon)
 	const { websiteOrigin, title } = currentWebsite
 	return (
 		<div class="card-header-icon unsetcursor" style="width: 100%; padding: 0">
-			<span style="width: 24px; height: 24px; min-width: 24px">
-				{icon === undefined ? (
-					<></>
-				) : (
-					<img
-						src={icon}
-						width="24"
-						height="24"
-						style="width: 24px; height: 24px;"
-					/>
-				)}
-			</span>
+			<span style="width: 24px; height: 24px; min-width: 24px">{icon === undefined ? <></> : <img src={icon} width="24" height="24" style="width: 24px; height: 24px;" />}</span>
 
-			<div
-				class="media-content"
-				style="overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;"
-			>
+			<div class="media-content" style="overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;">
 				<p class="title is-5 is-spaced address-text" style="overflow: hidden;">
 					{websiteOrigin}
 				</p>
-				<p
-					class="subtitle is-7"
-					style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden;"
-				>
+				<p class="subtitle is-7" style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">
 					{' '}
 					{title}{' '}
 				</p>

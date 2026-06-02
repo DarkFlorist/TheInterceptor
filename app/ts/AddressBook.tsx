@@ -1,27 +1,16 @@
 import { useEffect } from 'preact/hooks'
 import type { RenameAddressCallBack } from './types/user-interface-types.js'
-import {
-	GetAddressBookDataReply,
-	MessageToPopup,
-} from './types/interceptor-messages.js'
+import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
-import type {
-	AddressBookEntries,
-	AddressBookEntry,
-} from './types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
 import type { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
-import {
-	Signal,
-	useComputed,
-	useSignal,
-	useSignalEffect,
-} from '@preact/signals'
+import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import type { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
@@ -45,16 +34,9 @@ const filterDefs = {
 }
 type FilterKey = keyof typeof filterDefs
 
-function FilterLink(param: {
-	name: FilterKey
-	currentFilter: FilterKey
-	setActiveFilter: (activeFilter: FilterKey) => void
-}) {
+function FilterLink(param: { name: FilterKey; currentFilter: FilterKey; setActiveFilter: (activeFilter: FilterKey) => void }) {
 	return (
-		<a
-			class={param.currentFilter === param.name ? 'is-active' : ''}
-			onClick={() => param.setActiveFilter(param.name)}
-		>
+		<a class={param.currentFilter === param.name ? 'is-active' : ''} onClick={() => param.setActiveFilter(param.name)}>
 			{param.name}
 		</a>
 	)
@@ -68,9 +50,7 @@ type ConfirmaddressBookEntryToBeRemovedParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function ConfirmaddressBookEntryToBeRemoved(
-	param: ConfirmaddressBookEntryToBeRemovedParams,
-) {
+function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRemovedParams) {
 	const remove = () => {
 		param.removeEntry(param.addressBookEntry)
 		param.close()
@@ -88,28 +68,18 @@ function ConfirmaddressBookEntryToBeRemoved(
 					<div class="card-header-title">
 						<p class="paragraph"> {`Remove ${filterDefs[param.category]}`} </p>
 					</div>
-					<button
-						class="card-header-icon"
-						aria-label="close"
-						onClick={param.close}
-					>
+					<button class="card-header-icon" aria-label="close" onClick={param.close}>
 						<XMarkIcon />
 					</button>
 				</header>
 				<section class="modal-card-body">
 					<div class="card" style="margin: 10px;">
 						<div class="card-content">
-							<BigAddress
-								addressBookEntry={param.addressBookEntry}
-								renameAddressCallBack={param.renameAddressCallBack}
-							/>
+							<BigAddress addressBookEntry={param.addressBookEntry} renameAddressCallBack={param.renameAddressCallBack} />
 						</div>
 					</div>
 				</section>
-				<footer
-					class="modal-card-foot window-footer"
-					style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;"
-				>
+				<footer class="modal-card-foot window-footer" style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;">
 					<button class="button is-success is-primary" onClick={remove}>
 						{' '}
 						{'Remove'}{' '}
@@ -129,11 +99,7 @@ type ListElementParam = (AddressBookEntry | { type: 'empty' }) & {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function AddressBookEntryCard({
-	removeEntry,
-	renameAddressCallBack,
-	...entry
-}: ListElementParam) {
+function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: ListElementParam) {
 	const conditionallyRemoveEntry = () => {
 		if (entry.type === 'empty') return
 		removeEntry(entry)
@@ -145,10 +111,7 @@ function AddressBookEntryCard({
 	}
 
 	return (
-		<div
-			class="card"
-			style={{ marginLeft: '1rem', marginRight: '1rem', marginBottom: '1rem' }}
-		>
+		<div class="card" style={{ marginLeft: '1rem', marginRight: '1rem', marginBottom: '1rem' }}>
 			<div class="card-content" style="width: 500px;">
 				<div class="media" style={{ alignItems: 'stretch' }}>
 					<div
@@ -180,22 +143,15 @@ function AddressBookEntryCard({
 
 						{entry.category === 'ERC20 Tokens' ? (
 							<div>
-								<p
-									class="paragraph"
-									style="display: inline-block; font-size: 13px; vertical-align: top;"
-								>{`Decimals: ${'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING'}`}</p>
+								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top;">{`Decimals: ${'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING'}`}</p>
 							</div>
 						) : (
 							<></>
 						)}
 
-						{entry.category === 'Non Fungible Tokens' ||
-						entry.category === 'Other Contracts' ? (
+						{entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts' ? (
 							<div>
-								<p
-									class="paragraph"
-									style="display: inline-block; font-size: 13px; vertical-align: top;"
-								>
+								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top;">
 									{`Protocol: ${'protocol' in entry ? entry.protocol : ''} `}
 								</p>
 							</div>
@@ -205,58 +161,28 @@ function AddressBookEntryCard({
 
 						{entry.category === 'My Active Addresses' ? (
 							<label class="form-control" style="padding-top: 10px">
-								<input
-									type="checkbox"
-									checked={
-										'askForAddressAccess' in entry && !entry.askForAddressAccess
-									}
-									disabled={true}
-								/>
-								<p class="paragraph checkbox-text">
-									Don't request for an access (insecure){' '}
-								</p>
+								<input type="checkbox" checked={'askForAddressAccess' in entry && !entry.askForAddressAccess} disabled={true} />
+								<p class="paragraph checkbox-text">Don't request for an access (insecure) </p>
 							</label>
 						) : (
 							<div>
-								<p
-									class="paragraph"
-									style="display: inline-block; font-size: 13px; vertical-align: top; width: 420px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"
-								>
+								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top; width: 420px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
 									{`ABI: ${'abi' in entry && entry.abi !== undefined ? entry.abi : 'No ABI available'} `}
 								</p>
 							</div>
 						)}
 						<div>
-							<p
-								class="paragraph"
-								style="display: inline-block; font-size: 13px; color: var(--subtitle-text-color);"
-							>
+							<p class="paragraph" style="display: inline-block; font-size: 13px; color: var(--subtitle-text-color);">
 								{`Source: ${'entrySource' in entry ? entry.entrySource : ''}`}
 							</p>
 						</div>
 					</div>
 
-					<div
-						class="content"
-						style="color: var(--text-color); display: flex; flex-direction: column; justify-content: space-between;"
-					>
-						<button
-							class="card-header-icon"
-							style="padding: 0px; margin-left: auto;"
-							aria-label="delete"
-							disabled={
-								entry.type === 'empty' ||
-								(entry.entrySource !== 'User' &&
-									entry.entrySource !== 'OnChain')
-							}
-							onClick={conditionallyRemoveEntry}
-						>
+					<div class="content" style="color: var(--text-color); display: flex; flex-direction: column; justify-content: space-between;">
+						<button class="card-header-icon" style="padding: 0px; margin-left: auto;" aria-label="delete" disabled={entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain')} onClick={conditionallyRemoveEntry}>
 							<XMarkIcon />
 						</button>
-						<button
-							class="button is-primary is-small"
-							onClick={conditionallyEditEntry}
-						>
+						<button class="button is-primary is-small" onClick={conditionallyEditEntry}>
 							Edit
 						</button>
 					</div>
@@ -277,10 +203,7 @@ type AddressBookEntriesWithFilter = {
 	activeFilter: FilterKey
 }
 
-export function doesReplyMatchViewFilter(
-	viewFilter: ViewFilter,
-	replyFilter: GetAddressBookDataReply['data']['data'],
-) {
+export function doesReplyMatchViewFilter(viewFilter: ViewFilter, replyFilter: GetAddressBookDataReply['data']['data']) {
 	if (viewFilter.chain?.chainId !== replyFilter.chainId) return false
 	if (viewFilter.activeFilter !== replyFilter.filter) return false
 	return viewFilter.searchString === replyFilter.searchString
@@ -291,9 +214,7 @@ export function AddressBook() {
 		addressBookEntries: [],
 		activeFilter: 'My Active Addresses',
 	})
-	const addressBookEntries = useComputed(
-		() => addressBookEntriesWithFilter.value.addressBookEntries || [],
-	)
+	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
 	const activeChainId = useComputed(() => activeChain.value?.chainId || 1n)
 	const rpcEntries = useSignal<RpcEntries>([])
@@ -334,15 +255,9 @@ export function AddressBook() {
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
 				const prevActiveNetwork = activeChain.peek()
-				if (
-					prevActiveNetwork === undefined ||
-					prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId
-				) {
+				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
 					activeChain.value = parsed.data.activeRpcNetwork
-					if (
-						prevActiveNetwork === undefined ||
-						viewFilter.value.chain === undefined
-					) {
+					if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
 						viewFilter.value = {
 							...viewFilter.value,
 							chain:
@@ -392,15 +307,8 @@ export function AddressBook() {
 
 	function GetNoResultsError() {
 		const errorMessage =
-			viewFilter.value.searchString &&
-			viewFilter.value.searchString.trim().length > 0
-				? `No entries found for "${viewFilter.value.searchString}" in ${viewFilter.value.activeFilter} on ${viewFilter.value.chain?.name}`
-				: `No cute dinosaurs in ${viewFilter.value.activeFilter} on ${viewFilter.value.chain?.name}`
-		return (
-			<div style={{ width: 500, padding: '0 1rem', margin: '0 1rem' }}>
-				{errorMessage}
-			</div>
-		)
+			viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 ? `No entries found for "${viewFilter.value.searchString}" in ${viewFilter.value.activeFilter} on ${viewFilter.value.chain?.name}` : `No cute dinosaurs in ${viewFilter.value.activeFilter} on ${viewFilter.value.chain?.name}`
+		return <div style={{ width: 500, padding: '0 1rem', margin: '0 1rem' }}>{errorMessage}</div>
 	}
 
 	function openNewAddress(filter: FilterKey) {
@@ -468,18 +376,10 @@ export function AddressBook() {
 	return (
 		<main>
 			<Hint>
-				<div
-					class="columns"
-					style={{ width: 'fit-content', margin: 'auto', padding: '0 1rem' }}
-				>
+				<div class="columns" style={{ width: 'fit-content', margin: 'auto', padding: '0 1rem' }}>
 					<div style={{ padding: '1rem 0' }}>
 						<div style="padding: 10px;">
-							<ChainSelector
-								rpcEntries={rpcEntries}
-								chainId={activeChainId}
-								changeChain={changeActiveChain}
-								buttonClassses="button is-primary chainSelector"
-							/>
+							<ChainSelector rpcEntries={rpcEntries} chainId={activeChainId} changeChain={changeActiveChain} buttonClassses="button is-primary chainSelector" />
 						</div>
 						<aside class="menu">
 							<ul class="menu-list">
@@ -490,19 +390,11 @@ export function AddressBook() {
 								<ul>
 									<li>
 										{' '}
-										<FilterLink
-											name="My Active Addresses"
-											currentFilter={viewFilter.value.activeFilter}
-											setActiveFilter={changeFilter}
-										/>{' '}
+										<FilterLink name="My Active Addresses" currentFilter={viewFilter.value.activeFilter} setActiveFilter={changeFilter} />{' '}
 									</li>
 									<li>
 										{' '}
-										<FilterLink
-											name="My Contacts"
-											currentFilter={viewFilter.value.activeFilter}
-											setActiveFilter={changeFilter}
-										/>{' '}
+										<FilterLink name="My Contacts" currentFilter={viewFilter.value.activeFilter} setActiveFilter={changeFilter} />{' '}
 									</li>
 								</ul>
 							</ul>
@@ -514,35 +406,19 @@ export function AddressBook() {
 								<ul>
 									<li>
 										{' '}
-										<FilterLink
-											name="ERC20 Tokens"
-											currentFilter={viewFilter.value.activeFilter}
-											setActiveFilter={changeFilter}
-										/>{' '}
+										<FilterLink name="ERC20 Tokens" currentFilter={viewFilter.value.activeFilter} setActiveFilter={changeFilter} />{' '}
 									</li>
 									<li>
 										{' '}
-										<FilterLink
-											name="Non Fungible Tokens"
-											currentFilter={viewFilter.value.activeFilter}
-											setActiveFilter={changeFilter}
-										/>{' '}
+										<FilterLink name="Non Fungible Tokens" currentFilter={viewFilter.value.activeFilter} setActiveFilter={changeFilter} />{' '}
 									</li>
 									<li>
 										{' '}
-										<FilterLink
-											name="ERC1155 Tokens"
-											currentFilter={viewFilter.value.activeFilter}
-											setActiveFilter={changeFilter}
-										/>{' '}
+										<FilterLink name="ERC1155 Tokens" currentFilter={viewFilter.value.activeFilter} setActiveFilter={changeFilter} />{' '}
 									</li>
 									<li>
 										{' '}
-										<FilterLink
-											name="Other Contracts"
-											currentFilter={viewFilter.value.activeFilter}
-											setActiveFilter={changeFilter}
-										/>{' '}
+										<FilterLink name="Other Contracts" currentFilter={viewFilter.value.activeFilter} setActiveFilter={changeFilter} />{' '}
 									</li>
 								</ul>
 							</ul>
@@ -566,17 +442,8 @@ export function AddressBook() {
 								alignItems: 'center',
 							}}
 						>
-							<input
-								class="input"
-								type="text"
-								placeholder="Search In Category"
-								value={viewFilter.value.searchString}
-								onInput={(e) => search(e.currentTarget.value)}
-							/>
-							<button
-								class="button is-primary"
-								onClick={() => openNewAddress(viewFilter.value.activeFilter)}
-							>
+							<input class="input" type="text" placeholder="Search In Category" value={viewFilter.value.searchString} onInput={(e) => search(e.currentTarget.value)} />
+							<button class="button is-primary" onClick={() => openNewAddress(viewFilter.value.activeFilter)}>
 								{`Add New ${filterDefs[viewFilter.value.activeFilter]}`}
 							</button>
 						</div>
@@ -605,9 +472,7 @@ export function AddressBook() {
 					</div>
 				</div>
 
-				<div
-					class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}
-				>
+				<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
 					{modalState.value.page === 'addNewAddress' ? (
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt={undefined}

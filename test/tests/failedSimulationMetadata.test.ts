@@ -23,24 +23,15 @@ function installBrowserMock() {
 			local: {
 				async get(keys) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -114,15 +105,9 @@ function installBrowserMock() {
 
 installBrowserMock()
 
-const { ETHEREUM_LOGS_LOGGER_ADDRESS } = await import(
-	'../../app/ts/utils/constants.js'
-)
-const { visualizeSimulatorState } = await import(
-	'../../app/ts/background/simulationUpdating.js'
-)
-const { EthereumClientService } = await import(
-	'../../app/ts/simulation/services/EthereumClientService.js'
-)
+const { ETHEREUM_LOGS_LOGGER_ADDRESS } = await import('../../app/ts/utils/constants.js')
+const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
+const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 
 describe('visualizeSimulatorState failed simulations', () => {
 	test('keeps fetched address metadata instead of returning an empty address book', async () => {
@@ -218,12 +203,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			rpcNetwork,
 		}
 
-		const visualized = await visualizeSimulatorState(
-			failedSimulationState,
-			ethereum,
-			{ estimateEthereumPricesForTokens: async () => [] },
-			undefined,
-		)
+		const visualized = await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
 
 		assert.equal(visualized.addressBookEntries.length, 2)
 		assert.equal(
@@ -231,21 +211,11 @@ describe('visualizeSimulatorState failed simulations', () => {
 			true,
 		)
 		assert.equal(
-			visualized.addressBookEntries.some(
-				(entry) => entry.address === ETHEREUM_LOGS_LOGGER_ADDRESS,
-			),
+			visualized.addressBookEntries.some((entry) => entry.address === ETHEREUM_LOGS_LOGGER_ADDRESS),
 			true,
 		)
 		assert.equal(visualized.visualizedSimulationState.success, false)
-		assert.equal(
-			visualized.visualizedSimulationState.visualizedBlocks[0]
-				?.simulatedAndVisualizedTransactions[0]?.transaction.from.address,
-			0n,
-		)
-		assert.equal(
-			visualized.visualizedSimulationState.visualizedBlocks[0]
-				?.simulatedAndVisualizedTransactions[0]?.transaction.to?.address,
-			ETHEREUM_LOGS_LOGGER_ADDRESS,
-		)
+		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.from.address, 0n)
+		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.address, ETHEREUM_LOGS_LOGGER_ADDRESS)
 	})
 })

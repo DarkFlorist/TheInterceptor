@@ -15,24 +15,15 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -40,9 +31,7 @@ function installBrowserMock() {
 	return storageState
 }
 
-async function withSilencedConsole<T>(
-	runWithConsoleSilenced: () => Promise<T>,
-) {
+async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
 	const originalWarn = console.warn
 	console.warn = () => undefined
 	try {
@@ -55,9 +44,7 @@ async function withSilencedConsole<T>(
 describe('address book migration', () => {
 	test('migrates valid V1 entries through to V3', async () => {
 		const storageState = installBrowserMock()
-		const { migrateAddressBook } = await import(
-			'../../app/ts/background/addressBookMigration.js'
-		)
+		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
 		const legacyAddress = '0x0000000000000000000000000000000000000001'
 		storageState.userAddressBookEntries = [
 			{
@@ -75,8 +62,7 @@ describe('address book migration', () => {
 		assert.equal(storageState.userAddressBookEntriesV2, undefined)
 		const migratedEntries = storageState.userAddressBookEntriesV3
 		assert.ok(Array.isArray(migratedEntries))
-		if (!Array.isArray(migratedEntries))
-			throw new Error('Expected migrated entries array')
+		if (!Array.isArray(migratedEntries)) throw new Error('Expected migrated entries array')
 		assert.equal(
 			migratedEntries.some(
 				(entry) =>
@@ -99,9 +85,7 @@ describe('address book migration', () => {
 
 	test('clears corrupt V1 entries without failing migration', async () => {
 		const storageState = installBrowserMock()
-		const { migrateAddressBook } = await import(
-			'../../app/ts/background/addressBookMigration.js'
-		)
+		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
 		storageState.userAddressBookEntries = null
 
 		await withSilencedConsole(async () => await migrateAddressBook())
@@ -111,9 +95,7 @@ describe('address book migration', () => {
 
 	test('clears corrupt V2 entries without failing migration', async () => {
 		const storageState = installBrowserMock()
-		const { migrateAddressBook } = await import(
-			'../../app/ts/background/addressBookMigration.js'
-		)
+		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
 		storageState.userAddressBookEntriesV2 = null
 
 		await withSilencedConsole(async () => await migrateAddressBook())

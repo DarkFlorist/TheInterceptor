@@ -43,27 +43,15 @@ function installBrowserMock() {
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys))
-							return Object.fromEntries(
-								keys
-									.filter((key) => key in storageState)
-									.map((key) => [key, storageState[key]]),
-							)
-						if (typeof keys === 'string')
-							return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(
-							Object.entries(keys).map(([key, defaultValue]) => [
-								key,
-								key in storageState ? storageState[key] : defaultValue,
-							]),
-						)
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 					},
 					async set(items: Record<string, unknown>) {
 						Object.assign(storageState, items)
 					},
 					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys])
-							delete storageState[key]
+						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 					},
 				},
 			},
@@ -158,10 +146,7 @@ function installBrowserMock() {
 	return { sentMessages }
 }
 
-function createPort(
-	tabId: number,
-	onPostMessage?: (message: PortMessage) => void,
-) {
+function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void) {
 	const messages: PortMessage[] = []
 	const port = {
 		name: '0x0',
@@ -182,9 +167,7 @@ async function loadModules() {
 		...(await import('../../app/ts/background/storageVariables.js')),
 		...(await import('../../app/ts/background/popupMessageHandlers.js')),
 		...(await import('../../app/ts/background/backgroundUtils.js')),
-		...(await import(
-			'../../app/ts/simulation/services/EthereumClientService.js'
-		)),
+		...(await import('../../app/ts/simulation/services/EthereumClientService.js')),
 		...(await import('../../app/ts/simulation/services/priceEstimator.js')),
 	}
 }
@@ -195,15 +178,7 @@ describe('refreshHomeData', () => {
 	test('sends a fresh home snapshot with the woken retry state', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const {
-			browserStorageLocalSet,
-			defaultActiveAddresses,
-			defaultRpcs,
-			setRpcConnectionStatus,
-			refreshHomeData,
-			EthereumClientService,
-			TokenPriceService,
-		} = modules
+		const { browserStorageLocalSet, defaultActiveAddresses, defaultRpcs, setRpcConnectionStatus, refreshHomeData, EthereumClientService, TokenPriceService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -250,29 +225,14 @@ describe('refreshHomeData', () => {
 			ethereum.cleanup()
 		}
 
-		const homeUpdate = browserMock.sentMessages.findLast(
-			(message) => message.method === 'popup_UpdateHomePage',
-		)
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
 		assert.equal(homeUpdate?.data?.rpcConnectionStatus?.retrying, true)
 	})
 
 	test('refresh path waits for signer accounts when missing but refresh is enabled', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const {
-			browserStorageLocalSet,
-			saveCurrentTabId,
-			updateTabState,
-			setRpcConnectionStatus,
-			refreshHomeData,
-			defaultActiveAddresses,
-			defaultRpcs,
-			websiteSocketToString,
-			sendInternalWindowMessage,
-			EthereumClientService,
-			TokenPriceService,
-			getTabState,
-		} = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, refreshHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, sendInternalWindowMessage, EthereumClientService, TokenPriceService, getTabState } = modules
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
 		const rpcNetwork = defaultRpcs[0]
@@ -356,22 +316,12 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(
-				ethereum,
-				tokenPriceService,
-				websiteTabConnections,
-				true,
-				false,
-			)
+			await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, false)
 		} finally {
 			ethereum.cleanup()
 		}
 
-		const homeUpdate = browserMock.sentMessages.findLast(
-			(message) => message.method === 'popup_UpdateHomePage',
-		) as
-			| { data?: { tabState?: { signerAccounts?: readonly string[] } } }
-			| undefined
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { tabState?: { signerAccounts?: readonly string[] } } } | undefined
 		const updatedState = await getTabState(1)
 		const result = homeUpdate?.data?.tabState?.signerAccounts
 		assert.equal(requestCount, 1)
@@ -382,17 +332,7 @@ describe('refreshHomeData', () => {
 
 	test('refresh path does not request signer accounts with no approved socket', async () => {
 		const browserMock = installBrowserMock()
-		const {
-			browserStorageLocalSet,
-			saveCurrentTabId,
-			updateTabState,
-			setRpcConnectionStatus,
-			refreshHomeData,
-			defaultActiveAddresses,
-			defaultRpcs,
-			EthereumClientService,
-			TokenPriceService,
-		} = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, refreshHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -449,27 +389,13 @@ describe('refreshHomeData', () => {
 			ethereum.cleanup()
 		}
 
-		const homeUpdate = browserMock.sentMessages.findLast(
-			(message) => message.method === 'popup_UpdateHomePage',
-		) as
-			| { data?: { tabState?: { signerAccounts?: readonly string[] } } }
-			| undefined
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { tabState?: { signerAccounts?: readonly string[] } } } | undefined
 		assert.equal(homeUpdate?.data?.tabState?.signerAccounts?.length, 0)
 	})
 
 	test('changeSettings refreshes home without triggering signer account refresh', async () => {
 		const browserMock = installBrowserMock()
-		const {
-			browserStorageLocalSet,
-			saveCurrentTabId,
-			updateTabState,
-			setRpcConnectionStatus,
-			changeSettings,
-			defaultActiveAddresses,
-			defaultRpcs,
-			EthereumClientService,
-			TokenPriceService,
-		} = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -521,20 +447,12 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await changeSettings(
-				ethereum,
-				tokenPriceService,
-				{} as never,
-				{ method: 'popup_ChangeSettings', data: {} } as never,
-				undefined,
-			)
+			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: {} } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
 
-		const requestMessages = browserMock.sentMessages.filter(
-			(message) => message.method === 'request_signer_to_eth_accounts',
-		)
+		const requestMessages = browserMock.sentMessages.filter((message) => message.method === 'request_signer_to_eth_accounts')
 		assert.equal(requestMessages.length, 0)
 	})
 })

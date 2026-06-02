@@ -1,11 +1,7 @@
 import type { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
-import {
-	getSignerLogo,
-	getPrettySignerName,
-	SignerLogoText,
-} from '../subcomponents/signers.js'
+import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
@@ -28,9 +24,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		param.addNewAddress()
 	}
 
-	const signerAddressName = param.activeAddresses.value.find(
-		(x) => x.address === getSignerAccount(),
-	)?.name
+	const signerAddressName = param.activeAddresses.value.find((x) => x.address === getSignerAccount())?.name
 
 	return (
 		<>
@@ -45,11 +39,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					<div class="card-header-title">
 						<p class="paragraph">Change Active Address</p>
 					</div>
-					<button
-						class="card-header-icon"
-						aria-label="close"
-						onClick={param.close}
-					>
+					<button class="card-header-icon" aria-label="close" onClick={param.close}>
 						<XMarkIcon />
 					</button>
 				</header>
@@ -74,24 +64,14 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 														</p>
 													</div>
 												) : (
-													<img
-														src={getSignerLogo(param.signerName)}
-														width="40"
-														height="40"
-														style="max-width: 40px; max-height: 40px"
-													/>
+													<img src={getSignerLogo(param.signerName)} width="40" height="40" style="max-width: 40px; max-height: 40px" />
 												)}
 											</figure>
 										</div>
 
 										<div class="media-content" style="overflow-y: hidden;">
 											<p class="title is-5 is-spaced">{`Use address from ${getPrettySignerName(param.signerName)}`}</p>
-											<p class="subtitle is-7">
-												{' '}
-												{signerAddressName === undefined
-													? ''
-													: signerAddressName}
-											</p>
+											<p class="subtitle is-7"> {signerAddressName === undefined ? '' : signerAddressName}</p>
 										</div>
 									</div>
 								</div>
@@ -109,22 +89,11 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 											changeAndStoreActiveAddress(activeAddress.address)
 										}}
 									>
-										<div
-											class="card-content hoverable "
-											style="cursor: pointer;"
-										>
-											<BigAddress
-												addressBookEntry={activeAddress}
-												noCopying={true}
-												noEditAddress={true}
-												renameAddressCallBack={param.renameAddressCallBack}
-											/>
+										<div class="card-content hoverable " style="cursor: pointer;">
+											<BigAddress addressBookEntry={activeAddress} noCopying={true} noEditAddress={true} renameAddressCallBack={param.renameAddressCallBack} />
 											{isSignerConnected(activeAddress.address) ? (
 												<div class="content" style="color: var(--text-color)">
-													<SignerLogoText
-														signerName={param.signerName}
-														text={` ${getPrettySignerName(param.signerName)} connected`}
-													/>
+													<SignerLogoText signerName={param.signerName} text={` ${getPrettySignerName(param.signerName)} connected`} />
 												</div>
 											) : (
 												<></>
@@ -136,10 +105,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						)}
 					</ul>
 				</section>
-				<footer
-					class="modal-card-foot window-footer"
-					style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;"
-				>
+				<footer class="modal-card-foot window-footer" style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;">
 					<button class="button is-primary is-success" onClick={param.close}>
 						{' '}
 						Close{' '}

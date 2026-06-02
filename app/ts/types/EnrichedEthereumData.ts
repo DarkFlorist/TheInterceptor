@@ -1,18 +1,7 @@
 import * as funtypes from 'funtypes'
-import {
-	EthereumAddress,
-	EthereumBytes32,
-	EthereumData,
-	EthereumInput,
-	EthereumQuantity,
-} from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { PureGroupedSolidityType } from './solidityType.js'
-import {
-	AddressBookEntry,
-	Erc1155Entry,
-	Erc20TokenEntry,
-	Erc721Entry,
-} from './addressBookTypes.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 import { MaybeENSLabelHash, MaybeENSNameHash } from './ens.js'
 
 export type SolidityVariable = funtypes.Static<typeof SolidityVariable>
@@ -21,9 +10,7 @@ export const SolidityVariable = funtypes.ReadonlyObject({
 	paramName: funtypes.String,
 })
 
-export type EnrichedEthereumInputData = funtypes.Static<
-	typeof EnrichedEthereumInputData
->
+export type EnrichedEthereumInputData = funtypes.Static<typeof EnrichedEthereumInputData>
 export const EnrichedEthereumInputData = funtypes.Union(
 	funtypes.ReadonlyObject({
 		input: EthereumInput,
@@ -58,9 +45,7 @@ const NonParsedEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 })
 
-export type TokenVisualizerResult = funtypes.Static<
-	typeof TokenVisualizerResult
->
+export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		from: EthereumAddress,
@@ -266,14 +251,9 @@ export const ParsedEnsEvent = funtypes.Intersect(
 	),
 )
 
-export type EnrichedEthereumEvent = funtypes.Static<
-	typeof EnrichedEthereumEvent
->
+export type EnrichedEthereumEvent = funtypes.Static<typeof EnrichedEthereumEvent>
 export const EnrichedEthereumEvent = funtypes.Union(
-	funtypes.Intersect(
-		NonParsedEvent,
-		funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') }),
-	),
+	funtypes.Intersect(NonParsedEvent, funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') })),
 	ParsedEnsEvent,
 	funtypes.Intersect(
 		ParsedEvent,
@@ -287,16 +267,10 @@ export const EnrichedEthereumEvent = funtypes.Union(
 	),
 )
 
-export type EnrichedEthereumEvents = funtypes.Static<
-	typeof EnrichedEthereumEvents
->
-export const EnrichedEthereumEvents = funtypes.ReadonlyArray(
-	EnrichedEthereumEvent,
-)
+export type EnrichedEthereumEvents = funtypes.Static<typeof EnrichedEthereumEvents>
+export const EnrichedEthereumEvents = funtypes.ReadonlyArray(EnrichedEthereumEvent)
 
-export type TokenVisualizerErc20Event = funtypes.Static<
-	typeof TokenVisualizerErc20Event
->
+export type TokenVisualizerErc20Event = funtypes.Static<typeof TokenVisualizerErc20Event>
 export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
 	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC20'),
@@ -307,9 +281,7 @@ export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
-export type TokenVisualizerErc721Event = funtypes.Static<
-	typeof TokenVisualizerErc721Event
->
+export type TokenVisualizerErc721Event = funtypes.Static<typeof TokenVisualizerErc721Event>
 export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC721'),
@@ -320,9 +292,7 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
-type TokenVisualizerErc1155Event = funtypes.Static<
-	typeof TokenVisualizerErc1155Event
->
+type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
 const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC1155'),
@@ -335,9 +305,7 @@ const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Literal(false),
 })
 
-export type TokenVisualizerNFTAllApprovalEvent = funtypes.Static<
-	typeof TokenVisualizerNFTAllApprovalEvent
->
+export type TokenVisualizerNFTAllApprovalEvent = funtypes.Static<typeof TokenVisualizerNFTAllApprovalEvent>
 export const TokenVisualizerNFTAllApprovalEvent = funtypes.ReadonlyObject({
 	logObject: funtypes.Union(funtypes.Undefined, ParsedEvent),
 	type: funtypes.Literal('NFT All approval'),
@@ -348,15 +316,8 @@ export const TokenVisualizerNFTAllApprovalEvent = funtypes.ReadonlyObject({
 	isApproval: funtypes.Literal(true),
 })
 
-export type TokenVisualizerResultWithMetadata = funtypes.Static<
-	typeof TokenVisualizerResultWithMetadata
->
-export const TokenVisualizerResultWithMetadata = funtypes.Union(
-	TokenVisualizerErc20Event,
-	TokenVisualizerErc721Event,
-	TokenVisualizerErc1155Event,
-	TokenVisualizerNFTAllApprovalEvent,
-)
+export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisualizerResultWithMetadata>
+export const TokenVisualizerResultWithMetadata = funtypes.Union(TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerErc1155Event, TokenVisualizerNFTAllApprovalEvent)
 
 export type TokenEvent = funtypes.Static<typeof TokenEvent>
 export const TokenEvent = funtypes.Intersect(
@@ -522,18 +483,5 @@ export const EnsEvent = funtypes.Intersect(
 	),
 )
 
-export type EnrichedEthereumEventWithMetadata = funtypes.Static<
-	typeof EnrichedEthereumEventWithMetadata
->
-export const EnrichedEthereumEventWithMetadata = funtypes.Union(
-	funtypes.Intersect(
-		NonParsedEvent,
-		funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') }),
-	),
-	funtypes.Intersect(
-		ParsedEvent,
-		funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') }),
-	),
-	EnsEvent,
-	TokenEvent,
-)
+export type EnrichedEthereumEventWithMetadata = funtypes.Static<typeof EnrichedEthereumEventWithMetadata>
+export const EnrichedEthereumEventWithMetadata = funtypes.Union(funtypes.Intersect(NonParsedEvent, funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') })), funtypes.Intersect(ParsedEvent, funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') })), EnsEvent, TokenEvent)

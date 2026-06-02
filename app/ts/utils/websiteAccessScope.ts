@@ -17,37 +17,19 @@ function getInitialHostScopedState(websiteAccess: WebsiteAccessArray) {
 		const hostname = getHostnameForWebsiteOrigin(access.website.websiteOrigin)
 		const previous = hostScopedState.get(hostname)
 		hostScopedState.set(hostname, {
-			interceptorDisabled:
-				previous?.interceptorDisabled === true ||
-				access.interceptorDisabled === true
-					? true
-					: previous?.interceptorDisabled,
-			declarativeNetRequestBlockMode:
-				previous?.declarativeNetRequestBlockMode === 'block-all' ||
-				access.declarativeNetRequestBlockMode === 'block-all'
-					? 'block-all'
-					: previous?.declarativeNetRequestBlockMode,
+			interceptorDisabled: previous?.interceptorDisabled === true || access.interceptorDisabled === true ? true : previous?.interceptorDisabled,
+			declarativeNetRequestBlockMode: previous?.declarativeNetRequestBlockMode === 'block-all' || access.declarativeNetRequestBlockMode === 'block-all' ? 'block-all' : previous?.declarativeNetRequestBlockMode,
 		})
 	}
 	return hostScopedState
 }
 
-export function normalizeHostnameScopedWebsiteAccess(
-	websiteAccess: WebsiteAccessArray,
-	hostScopedOverrides: ReadonlyMap<
-		string,
-		HostScopedFieldOverrides
-	> = new Map(),
-) {
+export function normalizeHostnameScopedWebsiteAccess(websiteAccess: WebsiteAccessArray, hostScopedOverrides: ReadonlyMap<string, HostScopedFieldOverrides> = new Map()) {
 	const hostScopedState = getInitialHostScopedState(websiteAccess)
 	for (const [hostname, overrides] of hostScopedOverrides.entries()) {
 		hostScopedState.set(hostname, {
-			interceptorDisabled:
-				overrides.interceptorDisabled ??
-				hostScopedState.get(hostname)?.interceptorDisabled,
-			declarativeNetRequestBlockMode:
-				overrides.declarativeNetRequestBlockMode ??
-				hostScopedState.get(hostname)?.declarativeNetRequestBlockMode,
+			interceptorDisabled: overrides.interceptorDisabled ?? hostScopedState.get(hostname)?.interceptorDisabled,
+			declarativeNetRequestBlockMode: overrides.declarativeNetRequestBlockMode ?? hostScopedState.get(hostname)?.declarativeNetRequestBlockMode,
 		})
 	}
 
@@ -57,26 +39,14 @@ export function normalizeHostnameScopedWebsiteAccess(
 		const hostState = hostScopedState.get(hostname)
 		if (hostState === undefined) return access
 
-		const nextInterceptorDisabled =
-			hostState.interceptorDisabled ?? access.interceptorDisabled
-		const nextDeclarativeNetRequestBlockMode =
-			hostState.declarativeNetRequestBlockMode ??
-			access.declarativeNetRequestBlockMode
-		if (
-			nextInterceptorDisabled === access.interceptorDisabled &&
-			nextDeclarativeNetRequestBlockMode ===
-				access.declarativeNetRequestBlockMode
-		)
-			return access
+		const nextInterceptorDisabled = hostState.interceptorDisabled ?? access.interceptorDisabled
+		const nextDeclarativeNetRequestBlockMode = hostState.declarativeNetRequestBlockMode ?? access.declarativeNetRequestBlockMode
+		if (nextInterceptorDisabled === access.interceptorDisabled && nextDeclarativeNetRequestBlockMode === access.declarativeNetRequestBlockMode) return access
 		changed = true
 		return {
 			...access,
-			...(nextInterceptorDisabled !== undefined
-				? { interceptorDisabled: nextInterceptorDisabled }
-				: {}),
-			...(nextDeclarativeNetRequestBlockMode !== undefined
-				? { declarativeNetRequestBlockMode: nextDeclarativeNetRequestBlockMode }
-				: {}),
+			...(nextInterceptorDisabled !== undefined ? { interceptorDisabled: nextInterceptorDisabled } : {}),
+			...(nextDeclarativeNetRequestBlockMode !== undefined ? { declarativeNetRequestBlockMode: nextDeclarativeNetRequestBlockMode } : {}),
 		}
 	})
 

@@ -1,8 +1,5 @@
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import {
-	MessageToPopup,
-	type ImportSettingsReply,
-} from '../../types/interceptor-messages.js'
+import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -26,10 +23,7 @@ type CheckBoxSettingParam = {
 function CheckBoxSetting(param: CheckBoxSettingParam) {
 	return (
 		<div class="container">
-			<label
-				class="form-control"
-				style={'color: var(--text-color); font-size: 1em;'}
-			>
+			<label class="form-control" style={'color: var(--text-color); font-size: 1em;'}>
 				<input
 					type="checkbox"
 					checked={param.checked}
@@ -51,11 +45,7 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 function ImportExport() {
 	const settingsReply = useSignal<ImportSettingsReply | undefined>(undefined)
 	const dismissedNotification = useSignal<boolean>(false)
-	const errorText = useComputed(() =>
-		settingsReply.value?.data.success === false
-			? settingsReply.value.data.errorMessage
-			: undefined,
-	)
+	const errorText = useComputed(() => (settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined))
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -68,10 +58,7 @@ function ImportExport() {
 				return false
 			}
 			if (parsed.method !== 'popup_initiate_export_settings') return false
-			downloadFile(
-				'interceptorSettingsAndAddressbook.json',
-				parsed.data.fileContents,
-			)
+			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
@@ -93,14 +80,10 @@ function ImportExport() {
 		document.body.removeChild(a)
 	}
 
-	const importSettings = async (inputElement: {
-		target: EventTarget | (EventTarget & { files: FileList }) | null
-	}) => {
+	const importSettings = async (inputElement: { target: EventTarget | (EventTarget & { files: FileList }) | null }) => {
 		if (inputElement.target === null) return
-		if (!('files' in inputElement.target))
-			throw new Error('Did not select one file.')
-		if (inputElement.target.files.length !== 1)
-			throw new Error('Did not select one file.')
+		if (!('files' in inputElement.target)) throw new Error('Did not select one file.')
+		if (inputElement.target.files.length !== 1) throw new Error('Did not select one file.')
 		const reader = new FileReader()
 		const firstFile = inputElement.target.files[0]
 		if (firstFile === undefined) throw new Error('File was undefined')
@@ -124,15 +107,8 @@ function ImportExport() {
 
 	return (
 		<>
-			{settingsReply.value !== undefined &&
-			settingsReply.value.data.success === false ? (
-				<ErrorComponent warning={true} text={errorText} />
-			) : (
-				<></>
-			)}
-			{settingsReply.value !== undefined &&
-			settingsReply.value.data.success === true &&
-			dismissedNotification.value === false ? (
+			{settingsReply.value !== undefined && settingsReply.value.data.success === false ? <ErrorComponent warning={true} text={errorText} /> : <></>}
+			{settingsReply.value !== undefined && settingsReply.value.data.success === true && dismissedNotification.value === false ? (
 				<DinoSaysNotification
 					text={'Settings and address book loaded!'}
 					close={() => {
@@ -144,23 +120,11 @@ function ImportExport() {
 			)}
 			<div class="popup-button-row">
 				<div style="display: flex; flex-direction: row;">
-					<label
-						class="button is-primary is-danger"
-						style="flex-grow: 1; margin-left: 5px; margin-right: 5px;"
-					>
+					<label class="button is-primary is-danger" style="flex-grow: 1; margin-left: 5px; margin-right: 5px;">
 						Import settings
-						<input
-							type="file"
-							accept=".json"
-							onInput={importSettings}
-							style="position: absolute; width: 100%; height: 100%; opacity: 0;"
-						/>
+						<input type="file" accept=".json" onInput={importSettings} style="position: absolute; width: 100%; height: 100%; opacity: 0;" />
 					</label>
-					<button
-						class="button is-primary"
-						style="flex-grow: 1; margin-left: 5px; margin-right: 5px;"
-						onClick={exportSettings}
-					>
+					<button class="button is-primary" style="flex-grow: 1; margin-left: 5px; margin-right: 5px;" onClick={exportSettings}>
 						Export settings
 					</button>
 				</div>
@@ -225,18 +189,8 @@ export function SettingsView() {
 					<ul>
 						<li>
 							<p class="paragraph">Misc</p>
-							<CheckBoxSetting
-								text={'Open popups as tabs (experimental)'}
-								checked={useTabsInsteadOfPopup.value}
-								onInput={requestToUseTabsInsteadOfPopup}
-							/>
-							<CheckBoxSetting
-								text={
-									"Metamask compatibility mode (mimics Metamask's behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site"
-								}
-								checked={metamaskCompatibilityMode.value}
-								onInput={requestToMetamaskCompatibilityMode}
-							/>
+							<CheckBoxSetting text={'Open popups as tabs (experimental)'} checked={useTabsInsteadOfPopup.value} onInput={requestToUseTabsInsteadOfPopup} />
+							<CheckBoxSetting text={"Metamask compatibility mode (mimics Metamask's behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site"} checked={metamaskCompatibilityMode.value} onInput={requestToMetamaskCompatibilityMode} />
 						</li>
 						<li>
 							<p class="paragraph">Export & Import</p>
@@ -279,15 +233,8 @@ const RpcListings = () => {
 						rowGap: '0.5rem',
 					}}
 				>
-					<p style={{ color: 'var(--disabled-text-color)' }}>
-						Interceptor requires at least 1 active RPC connection to work, do
-						you want to reset to the default list instead?
-					</p>
-					<button
-						class="btn btn--outline"
-						style="font-weight: 600"
-						onClick={loadDefaultRpcs}
-					>
+					<p style={{ color: 'var(--disabled-text-color)' }}>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
+					<button class="btn btn--outline" style="font-weight: 600" onClick={loadDefaultRpcs}>
 						Yes, load the default RPC list
 					</button>
 				</aside>
@@ -301,20 +248,13 @@ const RpcListings = () => {
 	return (
 		<ul class="grid" style="--gap-y: 0.5rem">
 			{rpcEntries.value.map((entry) => (
-				<RpcSummary
-					key={JSON.stringify(serialize(RpcEntry, entry))}
-					info={entry}
-				/>
+				<RpcSummary key={JSON.stringify(serialize(RpcEntry, entry))} info={entry} />
 			))}
 		</ul>
 	)
 }
 
-const RpcSummary = ({
-	info,
-}: {
-	info: SignalOrValue<RpcEntry | undefined>
-}) => {
+const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => {
 	const currentInfo = resolveSignal(info)
 	if (currentInfo === undefined) return <></>
 	const networkName = getChainName(currentInfo.chainId)
@@ -324,10 +264,7 @@ const RpcSummary = ({
 
 	return (
 		<li class="grid brief">
-			<div
-				class="grid"
-				style="--grid-cols: 1fr max-content; --text-color: gray"
-			>
+			<div class="grid" style="--grid-cols: 1fr max-content; --text-color: gray">
 				<div style="--area: 1 / 1">
 					<strong>{currentInfo.name}</strong>
 				</div>

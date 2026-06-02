@@ -1,23 +1,10 @@
 import * as funtypes from 'funtypes'
-import {
-	AddressBookEntry,
-	ChainIdWithUniversal,
-} from '../types/addressBookTypes.js'
+import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
-import {
-	CompleteVisualizedSimulation,
-	InterceptorSimulationExport,
-	NamedTokenId,
-} from './visualizer-types.js'
-import {
-	EthereumAddress,
-	EthereumQuantity,
-	EthereumTimestamp,
-} from './wire-types.js'
+import { CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId } from './visualizer-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 
-export type UnexpectedErrorOccured = funtypes.Static<
-	typeof UnexpectedErrorOccured
->
+export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
 	data: funtypes.ReadonlyObject({
@@ -29,66 +16,45 @@ export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	}),
 })
 
-export type EnrichedRichListElement = funtypes.Static<
-	typeof EnrichedRichListElement
->
+export type EnrichedRichListElement = funtypes.Static<typeof EnrichedRichListElement>
 export const EnrichedRichListElement = funtypes.ReadonlyObject({
 	addressBookEntry: AddressBookEntry,
 	makingRich: funtypes.Boolean,
-	type: funtypes.Union(
-		funtypes.Literal('PreviousActiveAddress'),
-		funtypes.Literal('UserAdded'),
-		funtypes.Literal('CurrentActiveAddress'),
-	),
+	type: funtypes.Union(funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded'), funtypes.Literal('CurrentActiveAddress')),
 })
 
-type RequestMakeMeRichDataReply = funtypes.Static<
-	typeof RequestMakeMeRichDataReply
->
+type RequestMakeMeRichDataReply = funtypes.Static<typeof RequestMakeMeRichDataReply>
 const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestMakeMeRichData'),
 	richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 	makeCurrentAddressRich: funtypes.Boolean,
 })
 
-type RequestActiveAddressesReply = funtypes.Static<
-	typeof RequestActiveAddressesReply
->
+type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
 const RequestActiveAddressesReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestActiveAddresses'),
 	activeAddresses: funtypes.ReadonlyArray(AddressBookEntry),
 })
 
-type RequestSimulationModeReply = funtypes.Static<
-	typeof RequestSimulationModeReply
->
+type RequestSimulationModeReply = funtypes.Static<typeof RequestSimulationModeReply>
 const RequestSimulationModeReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestSimulationMode'),
 	simulationMode: funtypes.Boolean,
 })
 
-type RequestLatestUnexpectedErrorReply = funtypes.Static<
-	typeof RequestLatestUnexpectedErrorReply
->
+type RequestLatestUnexpectedErrorReply = funtypes.Static<typeof RequestLatestUnexpectedErrorReply>
 const RequestLatestUnexpectedErrorReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestLatestUnexpectedError'),
-	latestUnexpectedError: funtypes.Union(
-		funtypes.Undefined,
-		UnexpectedErrorOccured,
-	),
+	latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 })
 
-type RequestInterceptorSimulationInputReply = funtypes.Static<
-	typeof RequestInterceptorSimulationInputReply
->
+type RequestInterceptorSimulationInputReply = funtypes.Static<typeof RequestInterceptorSimulationInputReply>
 const RequestInterceptorSimulationInputReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestInterceptorSimulationInput'),
 	ethSimulateV1InputString: funtypes.String,
 })
 
-export type ImportSimulationStackReply = funtypes.Static<
-	typeof ImportSimulationStackReply
->
+export type ImportSimulationStackReply = funtypes.Static<typeof ImportSimulationStackReply>
 export const ImportSimulationStackReply = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('ImportSimulationStackReply'),
@@ -101,9 +67,7 @@ export const ImportSimulationStackReply = funtypes.Union(
 	}),
 )
 
-type RequestCompleteVisualizedSimulationReply = funtypes.Static<
-	typeof RequestCompleteVisualizedSimulationReply
->
+type RequestCompleteVisualizedSimulationReply = funtypes.Static<typeof RequestCompleteVisualizedSimulationReply>
 const RequestCompleteVisualizedSimulationReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestCompleteVisualizedSimulation'),
 	visualizedSimulatorState: CompleteVisualizedSimulation,
@@ -129,17 +93,13 @@ export const SimulationMetadata = funtypes.ReadonlyObject({
 	}),
 })
 
-type RequestSimulationMetadataReply = funtypes.Static<
-	typeof RequestSimulationMetadataReply
->
+type RequestSimulationMetadataReply = funtypes.Static<typeof RequestSimulationMetadataReply>
 const RequestSimulationMetadataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestSimulationMetadata'),
 	metadata: SimulationMetadata,
 })
 
-type RequestAbiAndNameFromBlockExplorerReply = funtypes.Static<
-	typeof RequestAbiAndNameFromBlockExplorerReply
->
+type RequestAbiAndNameFromBlockExplorerReply = funtypes.Static<typeof RequestAbiAndNameFromBlockExplorerReply>
 const RequestAbiAndNameFromBlockExplorerReply = funtypes
 	.ReadonlyObject({
 		method: funtypes.Literal('popup_requestAbiAndNameFromBlockExplorer'),
@@ -157,9 +117,7 @@ const RequestAbiAndNameFromBlockExplorerReply = funtypes
 	})
 	.asReadonly()
 
-export type RequestIdentifyAddress = funtypes.Static<
-	typeof RequestIdentifyAddress
->
+export type RequestIdentifyAddress = funtypes.Static<typeof RequestIdentifyAddress>
 export const RequestIdentifyAddress = funtypes
 	.ReadonlyObject({
 		method: funtypes.Literal('popup_requestIdentifyAddress'),
@@ -169,9 +127,7 @@ export const RequestIdentifyAddress = funtypes
 	})
 	.asReadonly()
 
-type RequestIdentifyAddressReply = funtypes.Static<
-	typeof RequestIdentifyAddressReply
->
+type RequestIdentifyAddressReply = funtypes.Static<typeof RequestIdentifyAddressReply>
 const RequestIdentifyAddressReply = funtypes
 	.ReadonlyObject({
 		method: funtypes.Literal('popup_requestIdentifyAddress'),
@@ -191,9 +147,7 @@ const RequestIsMainWindowOpen = funtypes
 	})
 	.asReadonly()
 
-type PopupReadyAndListeningReply = funtypes.Static<
-	typeof PopupReadyAndListeningReply
->
+type PopupReadyAndListeningReply = funtypes.Static<typeof PopupReadyAndListeningReply>
 const PopupReadyAndListeningReply = funtypes
 	.ReadonlyObject({
 		method: funtypes.Literal('popup_readyAndListening'),
@@ -208,28 +162,21 @@ export const PopupRequestsReplies = {
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
-	popup_requestInterceptorSimulationInput:
-		RequestInterceptorSimulationInputReply,
+	popup_requestInterceptorSimulationInput: RequestInterceptorSimulationInputReply,
 	popup_importSimulationStack: ImportSimulationStackReply,
-	popup_requestCompleteVisualizedSimulation:
-		RequestCompleteVisualizedSimulationReply,
+	popup_requestCompleteVisualizedSimulation: RequestCompleteVisualizedSimulationReply,
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
-	popup_requestAbiAndNameFromBlockExplorer:
-		RequestAbiAndNameFromBlockExplorerReply,
+	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
 }
 
 type PopupRequestsReplies = {
-	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<
-		(typeof PopupRequestsReplies)[Key]
-	>
+	[Key in keyof typeof PopupRequestsReplies]?: funtypes.Static<(typeof PopupRequestsReplies)[Key]>
 }
 
-export type RequestAbiAndNameFromBlockExplorer = funtypes.Static<
-	typeof RequestAbiAndNameFromBlockExplorer
->
+export type RequestAbiAndNameFromBlockExplorer = funtypes.Static<typeof RequestAbiAndNameFromBlockExplorer>
 export const RequestAbiAndNameFromBlockExplorer = funtypes
 	.ReadonlyObject({
 		method: funtypes.Literal('popup_requestAbiAndNameFromBlockExplorer'),
@@ -274,21 +221,13 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({
 		method: funtypes.Literal('popup_readyAndListening'),
 		data: funtypes.ReadonlyObject({
-			page: funtypes.Union(
-				funtypes.Literal('changeChain'),
-				funtypes.Literal('confirmTransaction'),
-				funtypes.Literal('interceptorAccess'),
-				funtypes.Literal('fetchSimulationStack'),
-			),
+			page: funtypes.Union(funtypes.Literal('changeChain'), funtypes.Literal('confirmTransaction'), funtypes.Literal('interceptorAccess'), funtypes.Literal('fetchSimulationStack')),
 		}),
 	}),
 )
 
 export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
-export type PopupRequestsReplyReturn<Request extends PopupRequests> =
-	Request['method'] extends keyof typeof PopupRequestsReplies
-		? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]>
-		: undefined
+export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
 export type PopupReplyOption = funtypes.Static<typeof PopupReplyOption>
 export const PopupReplyOption = funtypes.Union(

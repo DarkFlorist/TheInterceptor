@@ -2,16 +2,12 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
-import {
-	TIME_BETWEEN_BLOCKS,
-	MAX_BLOCK_CACHE,
-} from '../../app/ts/utils/constants.js'
+import { TIME_BETWEEN_BLOCKS, MAX_BLOCK_CACHE } from '../../app/ts/utils/constants.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse)
-		throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
+	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
 	return jsonRpcResponse.result as T
 }
 
@@ -33,22 +29,17 @@ describe('EthereumClientService cache expiry', () => {
 				rpcUrl: rpcNetwork.httpsRpc,
 				clearCache: () => undefined,
 				getChainId: async () => rpcNetwork.chainId,
-				jsonRpcRequest: async () =>
-					parseRequest(eth_getBlockByNumber_goerli_8443561_true),
+				jsonRpcRequest: async () => parseRequest(eth_getBlockByNumber_goerli_8443561_true),
 			},
 			async () => undefined,
 			async () => undefined,
 			rpcNetwork,
 		)
 
-		const block = parseRequest<
-			NonNullable<ReturnType<typeof service.getCachedBlock>>
-		>(eth_getBlockByNumber_goerli_8443561_true)
+		const block = parseRequest<NonNullable<ReturnType<typeof service.getCachedBlock>>>(eth_getBlockByNumber_goerli_8443561_true)
 		Reflect.set(service, 'cachedBlock', {
 			...block,
-			timestamp: new Date(
-				Date.now() - (TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE + 1) * 1000,
-			),
+			timestamp: new Date(Date.now() - (TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE + 1) * 1000),
 		})
 
 		assert.equal(service.getCachedBlock(), undefined)

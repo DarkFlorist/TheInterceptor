@@ -8,11 +8,7 @@ const makeMockBrowser = () => {
 
 	const get = async (keys: string | readonly string[]) => {
 		const requested = Array.isArray(keys) ? keys : [keys]
-		return Object.fromEntries(
-			requested
-				.filter((key) => key in storage)
-				.map((key) => [key, storage[key]]),
-		)
+		return Object.fromEntries(requested.filter((key) => key in storage).map((key) => [key, storage[key]]))
 	}
 	const set = async (items: Record<string, unknown>) => {
 		Object.assign(storage, items)
@@ -79,20 +75,11 @@ Object.defineProperty(globalThis, 'chrome', {
 	writable: true,
 })
 
-const { getCurrentSimulationInput } = await import(
-	'../../app/ts/background/simulationUpdating.js'
-)
-const { getInterceptorTransactionStack, updateInterceptorTransactionStack } =
-	await import('../../app/ts/background/storageVariables.js')
-const { setTransactionOrMessageBlockTimeManipulator } = await import(
-	'../../app/ts/background/popupMessageHandlers.js'
-)
-const { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } = await import(
-	'../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-)
-const { browserStorageLocalSet } = await import(
-	'../../app/ts/utils/storageUtils.js'
-)
+const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
+const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
+const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers.js')
+const { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 
 const baseTransaction = {
 	type: '1559',
@@ -143,9 +130,7 @@ const newDelay = {
 const ethereum = {
 	getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
 } as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[0]
-const tokenPriceService = {} as never as Parameters<
-	typeof setTransactionOrMessageBlockTimeManipulator
->[1]
+const tokenPriceService = {} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[1]
 
 const resetStack = async () => {
 	await updateInterceptorTransactionStack(() => ({
@@ -183,57 +168,45 @@ describe('simulate delay editor', () => {
 	test('replacing an existing delay removes adjacent duplicate manipulators', async () => {
 		await resetStack()
 
-		await setTransactionOrMessageBlockTimeManipulator(
-			ethereum,
-			tokenPriceService,
-			{
-				method: 'popup_setTransactionOrMessageBlockTimeManipulator',
-				data: {
-					transactionOrMessageIdentifier: {
-						type: 'Transaction',
-						transactionIdentifier: 1n,
-					},
-					blockTimeManipulation: newDelay,
+		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
+			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
+			data: {
+				transactionOrMessageIdentifier: {
+					type: 'Transaction',
+					transactionIdentifier: 1n,
 				},
+				blockTimeManipulation: newDelay,
 			},
-		)
+		})
 
 		const stack = await getInterceptorTransactionStack()
 		assert.equal(stack.operations.length, 3)
 		assert.equal(stack.operations[0]?.type, 'Transaction')
 		assert.equal(stack.operations[1]?.type, 'TimeManipulation')
 		assert.equal(stack.operations[2]?.type, 'Transaction')
-		if (stack.operations[1]?.type !== 'TimeManipulation')
-			throw new Error('missing time manipulation')
+		if (stack.operations[1]?.type !== 'TimeManipulation') throw new Error('missing time manipulation')
 		assert.deepStrictEqual(stack.operations[1].blockTimeManipulation, newDelay)
 	})
 
 	test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
 		await resetStack()
 
-		await setTransactionOrMessageBlockTimeManipulator(
-			ethereum,
-			tokenPriceService,
-			{
-				method: 'popup_setTransactionOrMessageBlockTimeManipulator',
-				data: {
-					transactionOrMessageIdentifier: {
-						type: 'Transaction',
-						transactionIdentifier: 1n,
-					},
-					blockTimeManipulation: newDelay,
+		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
+			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
+			data: {
+				transactionOrMessageIdentifier: {
+					type: 'Transaction',
+					transactionIdentifier: 1n,
 				},
+				blockTimeManipulation: newDelay,
 			},
-		)
+		})
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.equal(simulationInput.length, 2)
 		assert.deepStrictEqual(
 			simulationInput.map((block) => block.blockTimeManipulation),
-			[
-				{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
-				newDelay,
-			],
+			[{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' }, newDelay],
 		)
 	})
 
@@ -248,20 +221,16 @@ describe('simulate delay editor', () => {
 			},
 		})
 
-		await setTransactionOrMessageBlockTimeManipulator(
-			ethereum,
-			tokenPriceService,
-			{
-				method: 'popup_setTransactionOrMessageBlockTimeManipulator',
-				data: {
-					transactionOrMessageIdentifier: {
-						type: 'Transaction',
-						transactionIdentifier: 1n,
-					},
-					blockTimeManipulation: newDelay,
+		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
+			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
+			data: {
+				transactionOrMessageIdentifier: {
+					type: 'Transaction',
+					transactionIdentifier: 1n,
 				},
+				blockTimeManipulation: newDelay,
 			},
-		)
+		})
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.equal(simulationInput.length, 2)

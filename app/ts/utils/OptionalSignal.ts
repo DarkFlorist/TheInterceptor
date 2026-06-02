@@ -1,28 +1,11 @@
-import {
-	type ReadonlySignal,
-	Signal,
-	batch,
-	useSignalEffect,
-} from '@preact/signals'
+import { type ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
 import { useMemo } from 'preact/hooks'
 
-export class OptionalSignal<T>
-	extends Signal<Signal<T> | undefined>
-	implements ReadonlySignal<Signal<T> | undefined>
-{
+export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements ReadonlySignal<Signal<T> | undefined> {
 	private inner: Signal<T> | undefined
 
-	public constructor(
-		value: Signal<T> | T | undefined,
-		startUndefined?: boolean,
-	) {
-		super(
-			value === undefined || startUndefined === true
-				? undefined
-				: value instanceof Signal
-					? value
-					: new Signal(value),
-		)
+	public constructor(value: Signal<T> | T | undefined, startUndefined?: boolean) {
+		super(value === undefined || startUndefined === true ? undefined : value instanceof Signal ? value : new Signal(value))
 		this.set = this.set.bind(this)
 		if (this.value instanceof Signal) this.inner = this.value
 	}
@@ -61,10 +44,7 @@ export class OptionalSignal<T>
 	}
 }
 
-export function useOptionalSignal<T>(
-	value: Signal<T> | T | undefined,
-	startUndefined?: boolean,
-) {
+export function useOptionalSignal<T>(value: Signal<T> | T | undefined, startUndefined?: boolean) {
 	return useMemo(() => new OptionalSignal<T>(value, startUndefined), [])
 }
 

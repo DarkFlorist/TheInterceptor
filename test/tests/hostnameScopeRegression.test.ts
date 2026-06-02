@@ -7,9 +7,7 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 	const registeredContentScripts: Array<{
 		excludeMatches?: readonly string[]
 	}> = []
-	let webRequestListener:
-		| ((details: browser.webRequest._OnBeforeRequestDetails) => unknown)
-		| undefined
+	let webRequestListener: ((details: browser.webRequest._OnBeforeRequestDetails) => unknown) | undefined
 
 	globalThis.browser = {
 		runtime: {
@@ -31,25 +29,15 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
-					if (typeof keys === 'string')
-						return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
+					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -115,14 +103,8 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 			async unregisterContentScripts() {
 				return undefined
 			},
-			async registerContentScripts(
-				scripts: Array<{ excludeMatches?: readonly string[] }>,
-			) {
-				registeredContentScripts.splice(
-					0,
-					registeredContentScripts.length,
-					...scripts,
-				)
+			async registerContentScripts(scripts: Array<{ excludeMatches?: readonly string[] }>) {
+				registeredContentScripts.splice(0, registeredContentScripts.length, ...scripts)
 			},
 		},
 		declarativeNetRequest: {
@@ -147,27 +129,17 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 		},
 		webRequest: {
 			onBeforeRequest: {
-				addListener(
-					listener: (
-						details: browser.webRequest._OnBeforeRequestDetails,
-					) => unknown,
-				) {
+				addListener(listener: (details: browser.webRequest._OnBeforeRequestDetails) => unknown) {
 					webRequestListener = listener
 				},
-				removeListener(
-					listener: (
-						details: browser.webRequest._OnBeforeRequestDetails,
-					) => unknown,
-				) {
+				removeListener(listener: (details: browser.webRequest._OnBeforeRequestDetails) => unknown) {
 					if (webRequestListener === listener) webRequestListener = undefined
 				},
 			},
 		},
 	} as unknown as typeof globalThis.browser
 
-	;(
-		globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }
-	).chrome = { runtime: { id: 'test-extension' } }
+	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 
 	return {
 		registeredContentScripts,
@@ -191,19 +163,13 @@ describe('hostname scope regressions', () => {
 			],
 		}
 		const { registeredContentScripts } = installBrowserMock(storageState)
-		const { updateContentScriptInjectionStrategyManifestV3 } = await import(
-			'../../app/ts/utils/contentScriptsUpdating.js'
-		)
+		const { updateContentScriptInjectionStrategyManifestV3 } = await import('../../app/ts/utils/contentScriptsUpdating.js')
 
 		await updateContentScriptInjectionStrategyManifestV3()
 
 		assert.equal(registeredContentScripts.length, 2)
-		assert.deepEqual(registeredContentScripts[0]?.excludeMatches, [
-			'*://localhost/*',
-		])
-		assert.deepEqual(registeredContentScripts[1]?.excludeMatches, [
-			'*://localhost/*',
-		])
+		assert.deepEqual(registeredContentScripts[0]?.excludeMatches, ['*://localhost/*'])
+		assert.deepEqual(registeredContentScripts[1]?.excludeMatches, ['*://localhost/*'])
 	})
 
 	test('removing one origin clears hostname-scoped website access entries', async () => {
@@ -254,20 +220,12 @@ describe('hostname scope regressions', () => {
 			simulationMode: true,
 		}
 		installBrowserMock(storageState)
-		const { removeWebsiteAccess } = await import(
-			'../../app/ts/background/popupMessageHandlers.js'
-		)
+		const { removeWebsiteAccess } = await import('../../app/ts/background/popupMessageHandlers.js')
 
-		await removeWebsiteAccess(
-			{} as never,
-			{} as never,
-			{} as never,
-			new Map(),
-			{
-				method: 'popup_removeWebsiteAccess',
-				data: { websiteOrigin: 'localhost:3000' },
-			},
-		)
+		await removeWebsiteAccess({} as never, {} as never, {} as never, new Map(), {
+			method: 'popup_removeWebsiteAccess',
+			data: { websiteOrigin: 'localhost:3000' },
+		})
 
 		assert.deepEqual(storageState.websiteAccess, [
 			{
@@ -311,9 +269,7 @@ describe('hostname scope regressions', () => {
 			simulationMode: true,
 		}
 		const { getWebRequestListener } = installBrowserMock(storageState, 2)
-		const { updateDeclarativeNetRequestBlocks } = await import(
-			'../../app/ts/background/accessManagement.js'
-		)
+		const { updateDeclarativeNetRequestBlocks } = await import('../../app/ts/background/accessManagement.js')
 
 		await updateDeclarativeNetRequestBlocks(new Map())
 
@@ -376,44 +332,36 @@ describe('hostname scope regressions', () => {
 			simulationMode: true,
 		}
 		installBrowserMock(storageState)
-		const { changeInterceptorAccess } = await import(
-			'../../app/ts/background/popupMessageHandlers.js'
-		)
+		const { changeInterceptorAccess } = await import('../../app/ts/background/popupMessageHandlers.js')
 
-		await changeInterceptorAccess(
-			{} as never,
-			{} as never,
-			{} as never,
-			new Map(),
-			{
-				method: 'popup_changeInterceptorAccess',
-				data: [
-					{
-						oldEntry: {
-							website: {
-								websiteOrigin: 'localhost:3000',
-								icon: undefined,
-								title: 'App A',
-							},
-							addressAccess: [],
-							access: true,
-							declarativeNetRequestBlockMode: 'disabled',
+		await changeInterceptorAccess({} as never, {} as never, {} as never, new Map(), {
+			method: 'popup_changeInterceptorAccess',
+			data: [
+				{
+					oldEntry: {
+						website: {
+							websiteOrigin: 'localhost:3000',
+							icon: undefined,
+							title: 'App A',
 						},
-						newEntry: {
-							website: {
-								websiteOrigin: 'localhost:3000',
-								icon: undefined,
-								title: 'App A',
-							},
-							addressAccess: [],
-							access: true,
-							declarativeNetRequestBlockMode: 'block-all',
-						},
-						removed: false,
+						addressAccess: [],
+						access: true,
+						declarativeNetRequestBlockMode: 'disabled',
 					},
-				],
-			},
-		)
+					newEntry: {
+						website: {
+							websiteOrigin: 'localhost:3000',
+							icon: undefined,
+							title: 'App A',
+						},
+						addressAccess: [],
+						access: true,
+						declarativeNetRequestBlockMode: 'block-all',
+					},
+					removed: false,
+				},
+			],
+		})
 
 		assert.deepEqual(storageState.websiteAccess, [
 			{

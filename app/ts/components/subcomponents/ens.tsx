@@ -4,11 +4,7 @@ import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { zorbImageDataURI } from './EnsGradient.js'
 
-export type EditEnsNamedHashCallBack = (
-	type: 'nameHash' | 'labelHash',
-	nameHash: EthereumBytes32,
-	name: string | undefined,
-) => void
+export type EditEnsNamedHashCallBack = (type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) => void
 
 type NameHashComponentParams = {
 	readonly type: 'nameHash' | 'labelHash'
@@ -20,19 +16,11 @@ type NameHashComponentParams = {
 }
 
 export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
-	const name =
-		params.name !== undefined
-			? params.addDotEth
-				? `${params.name}.eth`
-				: params.name
-			: bytes32String(params.nameHash)
+	const name = params.name !== undefined ? (params.addDotEth ? `${params.name}.eth` : params.name) : bytes32String(params.nameHash)
 	return (
 		<span class="small-address-container" data-value={name}>
 			<span class="address-text-holder">
-				<span
-					class="small-address-baggage-tag vertical-center"
-					style={params.style}
-				>
+				<span class="small-address-baggage-tag vertical-center" style={params.style}>
 					<span style="margin-right: 5px">
 						<CopyToClipboard content={name} copyMessage="Copied!">
 							<img
@@ -45,32 +33,19 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 								}}
 								width="16"
 								height="16"
-								src={zorbImageDataURI(
-									stringToUint8Array(bytes32String(params.nameHash)),
-								)}
+								src={zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash)))}
 							/>
 						</CopyToClipboard>
 					</span>
-					<CopyToClipboard
-						content={name}
-						copyMessage="Copied!"
-						style={{ 'text-overflow': 'ellipsis', overflow: 'hidden' }}
-					>
-						<p
-							class="address-text noselect nopointer"
-							style="color: var(--text-color)"
-						>
+					<CopyToClipboard content={name} copyMessage="Copied!" style={{ 'text-overflow': 'ellipsis', overflow: 'hidden' }}>
+						<p class="address-text noselect nopointer" style="color: var(--text-color)">
 							{name}
 						</p>
 					</CopyToClipboard>
 					<button
 						class="button is-primary is-small rename-address-button"
 						onClick={() => {
-							params.editEnsNamedHashCallBack(
-								params.type,
-								params.nameHash,
-								params.name,
-							)
+							params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name)
 						}}
 					>
 						<span class="icon">

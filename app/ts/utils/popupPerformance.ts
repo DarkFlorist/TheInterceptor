@@ -9,20 +9,13 @@ export const POPUP_PERFORMANCE_MARKS = {
 	backgroundStartupReady: 'interceptor:background:startup-ready',
 	backgroundRefreshStart: 'interceptor:background:refresh-home-start',
 	backgroundRefreshEnd: 'interceptor:background:refresh-home-end',
-	backgroundTransactionRequestReceived:
-		'interceptor:background:transaction-request-received',
-	backgroundTransactionConfirmPopupOpened:
-		'interceptor:background:transaction-confirm-popup-opened',
-	backgroundTransactionSimulationStart:
-		'interceptor:background:transaction-simulation-start',
-	backgroundTransactionSimulationEnd:
-		'interceptor:background:transaction-simulation-end',
-	backgroundTransactionStackAppended:
-		'interceptor:background:transaction-stack-appended',
-	confirmTransactionSimulationStarted:
-		'interceptor:popup:confirm-transaction-simulation-started',
-	confirmTransactionSimulationReady:
-		'interceptor:popup:confirm-transaction-simulation-ready',
+	backgroundTransactionRequestReceived: 'interceptor:background:transaction-request-received',
+	backgroundTransactionConfirmPopupOpened: 'interceptor:background:transaction-confirm-popup-opened',
+	backgroundTransactionSimulationStart: 'interceptor:background:transaction-simulation-start',
+	backgroundTransactionSimulationEnd: 'interceptor:background:transaction-simulation-end',
+	backgroundTransactionStackAppended: 'interceptor:background:transaction-stack-appended',
+	confirmTransactionSimulationStarted: 'interceptor:popup:confirm-transaction-simulation-started',
+	confirmTransactionSimulationReady: 'interceptor:popup:confirm-transaction-simulation-ready',
 } as const
 
 const marked = new Set<string>()

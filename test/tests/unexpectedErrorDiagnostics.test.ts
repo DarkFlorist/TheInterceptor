@@ -13,19 +13,11 @@ type RuntimeMessage = {
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
-	const getStorageItems = (
-		keys?: string | string[] | Record<string, unknown> | null,
-	) => {
+	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys))
-			return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
+		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(
-			Object.entries(keys).map(([key, defaultValue]) => [
-				key,
-				key in storageState ? storageState[key] : defaultValue,
-			]),
-		)
+		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
 
 	const browserMock = {
@@ -54,8 +46,7 @@ function createBrowserMock() {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -152,13 +143,8 @@ const modulesPromise = loadModules()
 describe('unexpected error diagnostics', () => {
 	test('keeps forwarded InterceptorError diagnostics out of the popup message', async () => {
 		browserMock.reset()
-		const {
-			handleUnexpectedError,
-			getLatestUnexpectedError,
-			GENERIC_UNEXPECTED_ERROR_MESSAGE,
-		} = await modulesPromise
-		const diagnosticsMessage =
-			'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
+		const { handleUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
+		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
 
 		await handleUnexpectedError({
 			method: 'InterceptorError',
@@ -166,10 +152,7 @@ describe('unexpected error diagnostics', () => {
 		})
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
-		assert.equal(
-			latestUnexpectedError?.data.message,
-			GENERIC_UNEXPECTED_ERROR_MESSAGE,
-		)
+		assert.equal(latestUnexpectedError?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
@@ -178,8 +161,7 @@ describe('unexpected error diagnostics', () => {
 
 	test('keeps plain unexpected errors unchanged', async () => {
 		browserMock.reset()
-		const { handleUnexpectedError, getLatestUnexpectedError } =
-			await modulesPromise
+		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await handleUnexpectedError(new Error('plain error'))
 
@@ -195,8 +177,7 @@ describe('unexpected error diagnostics', () => {
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const timestamp = new Date('2024-01-01T00:00:05.000Z')
-		const diagnosticMessage =
-			'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17'
+		const diagnosticMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17'
 
 		await act(() => {
 			render(
@@ -210,20 +191,9 @@ describe('unexpected error diagnostics', () => {
 				dom.document.body,
 			)
 		})
-		assert.equal(
-			dom.document.body.textContent?.includes(
-				'inpage: Request did not exist anymore',
-			),
-			true,
-		)
-		assert.equal(
-			dom.document.body.textContent?.includes('phase: handle background reply'),
-			true,
-		)
-		assert.equal(
-			dom.document.body.textContent?.includes('requestMethod: eth_accounts'),
-			true,
-		)
+		assert.equal(dom.document.body.textContent?.includes('inpage: Request did not exist anymore'), true)
+		assert.equal(dom.document.body.textContent?.includes('phase: handle background reply'), true)
+		assert.equal(dom.document.body.textContent?.includes('requestMethod: eth_accounts'), true)
 
 		await act(() => {
 			render(
@@ -237,10 +207,7 @@ describe('unexpected error diagnostics', () => {
 				dom.document.body,
 			)
 		})
-		assert.equal(
-			dom.document.body.textContent?.includes('Local render error'),
-			true,
-		)
+		assert.equal(dom.document.body.textContent?.includes('Local render error'), true)
 
 		clock.restore()
 		dom.restore()

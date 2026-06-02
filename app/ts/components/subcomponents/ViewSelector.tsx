@@ -1,9 +1,4 @@
-import {
-	type Signal,
-	useComputed,
-	useSignal,
-	useSignalEffect,
-} from '@preact/signals'
+import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { type ComponentChildren, createContext, toChildArray } from 'preact'
 import { useContext, useEffect } from 'preact/hooks'
 
@@ -19,22 +14,12 @@ type ViewSelectorContext = {
 	setActiveView: (value: string) => void
 }
 
-const ViewSelectorContext = createContext<ViewSelectorContext | undefined>(
-	undefined,
-)
+const ViewSelectorContext = createContext<ViewSelectorContext | undefined>(undefined)
 
-export const ViewSelector = ({
-	children,
-	id,
-}: {
-	children: ComponentChildren
-	id: string
-}) => {
+export const ViewSelector = ({ children, id }: { children: ComponentChildren; id: string }) => {
 	const views = useSignal<ViewConfig[]>([])
 	const setActiveView = (value: string) => {
-		views.value = views
-			.peek()
-			.map((view) => ({ ...view, isActive: view.value === value }))
+		views.value = views.peek().map((view) => ({ ...view, isActive: view.value === value }))
 	}
 	return (
 		<ViewSelectorContext.Provider value={{ id, views, setActiveView }}>
@@ -45,22 +30,15 @@ export const ViewSelector = ({
 
 const useViewSwitcher = () => {
 	const context = useContext(ViewSelectorContext)
-	if (context === undefined)
-		throw new Error(
-			'useViewSwitcher can only be used within children of DisplayRoot',
-		)
+	if (context === undefined) throw new Error('useViewSwitcher can only be used within children of DisplayRoot')
 	return context
 }
 
 const List = ({ children }: { children: ComponentChildren }) => {
 	const { views } = useViewSwitcher()
 
-	const isActiveViewDefined = useComputed(() =>
-		views.value.some((view) => view.isActive === true),
-	)
-	const hasAllChildrenRendered = useComputed(
-		() => toChildArray(children).length === views.value.length,
-	)
+	const isActiveViewDefined = useComputed(() => views.value.some((view) => view.isActive === true))
+	const hasAllChildrenRendered = useComputed(() => toChildArray(children).length === views.value.length)
 
 	useSignalEffect(() => {
 		if (!hasAllChildrenRendered.value || isActiveViewDefined.value) return
@@ -72,16 +50,9 @@ const List = ({ children }: { children: ComponentChildren }) => {
 	return <div>{children}</div>
 }
 
-const View = ({
-	children,
-	title,
-	value,
-	isActive,
-}: ViewConfig & { children: ComponentChildren }) => {
+const View = ({ children, title, value, isActive }: ViewConfig & { children: ComponentChildren }) => {
 	const context = useViewSwitcher()
-	const activeView = useComputed(() =>
-		context.views.value.find((view) => view.isActive === true),
-	)
+	const activeView = useComputed(() => context.views.value.find((view) => view.isActive === true))
 	useEffect(() => {
 		context.views.value = [...context.views.peek(), { title, value, isActive }]
 	}, [])
@@ -101,12 +72,7 @@ const Triggers = () => {
 		<fieldset onChange={handleChange}>
 			{views.value.map((view) => (
 				<label key={view.value}>
-					<input
-						type="radio"
-						name={id}
-						value={view.value}
-						defaultChecked={view.isActive}
-					/>
+					<input type="radio" name={id} value={view.value} defaultChecked={view.isActive} />
 					<span>{view.title}</span>
 				</label>
 			))}

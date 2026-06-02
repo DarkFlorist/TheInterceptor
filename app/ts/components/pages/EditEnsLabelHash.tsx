@@ -29,10 +29,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 
 	const Text = (param: { text: ComponentChildren }) => {
 		return (
-			<p
-				class="paragraph"
-				style="color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%"
-			>
+			<p class="paragraph" style="color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%">
 				{param.text}
 			</p>
 		)
@@ -72,29 +69,12 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		})
 	}
 
-	function TextInput({
-		value,
-		setInput,
-		disabled,
-		placeholder,
-	}: TextInputParams) {
+	function TextInput({ value, setInput, disabled, placeholder }: TextInputParams) {
 		const ref = createRef<HTMLInputElement>()
 		useEffect(() => {
 			ref.current?.focus()
 		}, [])
-		return (
-			<input
-				class="input title is-5 is-spaced"
-				type="text"
-				value={value}
-				placeholder={placeholder}
-				onInput={(e) => setInput((e.target as HTMLInputElement).value)}
-				maxLength={42}
-				ref={ref}
-				style={'width: 100%'}
-				disabled={disabled}
-			/>
-		)
+		return <input class="input title is-5 is-spaced" type="text" value={value} placeholder={placeholder} onInput={(e) => setInput((e.target as HTMLInputElement).value)} maxLength={42} ref={ref} style={'width: 100%'} disabled={disabled} />
 	}
 
 	return (
@@ -108,18 +88,9 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 						</span>
 					</div>
 					<div class="card-header-title">
-						<p class="paragraph">
-							{' '}
-							{param.editEnsNamedHashWindowState.type === 'labelHash'
-								? 'What is the correct ENS label for this hash?'
-								: 'What is the correct ENS name for this hash?'}{' '}
-						</p>
+						<p class="paragraph"> {param.editEnsNamedHashWindowState.type === 'labelHash' ? 'What is the correct ENS label for this hash?' : 'What is the correct ENS name for this hash?'} </p>
 					</div>
-					<button
-						class="card-header-icon"
-						aria-label="close"
-						onClick={param.close}
-					>
+					<button class="card-header-icon" aria-label="close" onClick={param.close}>
 						<XMarkIcon />
 					</button>
 				</header>
@@ -127,42 +98,17 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 					<div class="card" style="margin: 10px;">
 						<div class="card-content">
 							<div class="container" style="margin-bottom: 10px;">
-								<span
-									class="log-table"
-									style="column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;"
-								>
+								<span class="log-table" style="column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;">
 									<CellElement element={<Text text={'Hash: '} />} />
-									<CellElement
-										element={
-											<TextInput
-												value={bytes32String(
-													param.editEnsNamedHashWindowState.nameHash,
-												)}
-												setInput={() => undefined}
-												disabled={true}
-												placeholder={''}
-											/>
-										}
-									/>
+									<CellElement element={<TextInput value={bytes32String(param.editEnsNamedHashWindowState.nameHash)} setInput={() => undefined} disabled={true} placeholder={''} />} />
 									<CellElement element={<Text text={'Name: '} />} />
 									<CellElement
 										element={
 											<TextInput
-												value={
-													param.editEnsNamedHashWindowState.name
-														? param.editEnsNamedHashWindowState.name
-														: name.value
-												}
-												disabled={
-													param.editEnsNamedHashWindowState.name !==
-														undefined || inputDisabled.value
-												}
+												value={param.editEnsNamedHashWindowState.name ? param.editEnsNamedHashWindowState.name : name.value}
+												disabled={param.editEnsNamedHashWindowState.name !== undefined || inputDisabled.value}
 												setInput={validateAndSetName}
-												placeholder={
-													param.editEnsNamedHashWindowState.type === 'labelHash'
-														? 'ENS label, eg. "vitalik"'
-														: 'ENS name, eg "vitalik.eth"'
-												}
+												placeholder={param.editEnsNamedHashWindowState.type === 'labelHash' ? 'ENS label, eg. "vitalik"' : 'ENS name, eg "vitalik.eth"'}
 											/>
 										}
 									/>
@@ -170,18 +116,9 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 							</div>
 						</div>
 					</div>
-					<div style="padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px">
-						{errorString.value === '' ? (
-							<></>
-						) : (
-							<Notice text={errorString.value} />
-						)}
-					</div>
+					<div style="padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px">{errorString.value === '' ? <></> : <Notice text={errorString.value} />}</div>
 				</section>
-				<footer
-					class="modal-card-foot window-footer"
-					style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;"
-				>
+				<footer class="modal-card-foot window-footer" style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;">
 					<button class="button is-primary" onClick={param.close}>
 						Ok
 					</button>

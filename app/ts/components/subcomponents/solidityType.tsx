@@ -1,14 +1,8 @@
 import type { JSX } from 'preact/jsx-runtime'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type {
-	EnrichedGroupedSolidityType,
-	PureGroupedSolidityType,
-} from '../../types/solidityType.js'
+import type { EnrichedGroupedSolidityType, PureGroupedSolidityType } from '../../types/solidityType.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import {
-	checksummedAddress,
-	dataStringWith0xStart,
-} from '../../utils/bigint.js'
+import { checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import { SmallAddress } from './address.js'
@@ -35,18 +29,12 @@ const JsxArray = ({ array }: { array: JSX.Element[] }) => (
 	</>
 )
 
-function PureSolidityTypeComponent({
-	valueType,
-}: {
-	valueType: PureGroupedSolidityType
-}) {
+function PureSolidityTypeComponent({ valueType }: { valueType: PureGroupedSolidityType }) {
 	switch (valueType.type) {
 		case 'address':
 			return <StringElement text={checksummedAddress(valueType.value)} />
 		case 'bool':
-			return (
-				<StringElement text={valueType.value === true ? 'True' : 'False'} />
-			)
+			return <StringElement text={valueType.value === true ? 'True' : 'False'} />
 		case 'bytes':
 			return (
 				<div class="textbox" style="white-space: normal;">
@@ -62,17 +50,9 @@ function PureSolidityTypeComponent({
 		case 'string':
 			return <StringElement text={`"${valueType.value}"`} />
 		case 'address[]':
-			return (
-				<StringElement
-					text={`[${valueType.value.map((value) => checksummedAddress(value)).toString()}]`}
-				/>
-			)
+			return <StringElement text={`[${valueType.value.map((value) => checksummedAddress(value)).toString()}]`} />
 		case 'bool[]':
-			return (
-				<StringElement
-					text={`[${valueType.value.map((a) => (a === true ? 'True' : 'False')).toString()}]`}
-				/>
-			)
+			return <StringElement text={`[${valueType.value.map((a) => (a === true ? 'True' : 'False')).toString()}]`} />
 		case 'bytes[]':
 			return (
 				<JsxArray
@@ -90,81 +70,29 @@ function PureSolidityTypeComponent({
 		case 'signedInteger[]':
 			return <StringElement text={`[${valueType.value.toString()}]`} />
 		case 'string[]':
-			return (
-				<StringElement text={`[${valueType.value.map((a) => `"${a}"`)}]`} />
-			)
+			return <StringElement text={`[${valueType.value.map((a) => `"${a}"`)}]`} />
 		default:
 			assertNever(valueType)
 	}
 }
 
-export function EnrichedSolidityTypeComponentWithAddressBook({
-	valueType,
-	addressMetaData,
-	renameAddressCallBack,
-}: {
-	valueType: PureGroupedSolidityType
-	addressMetaData: SignalOrValue<readonly AddressBookEntry[]>
-	renameAddressCallBack: RenameAddressCallBack
-}) {
+export function EnrichedSolidityTypeComponentWithAddressBook({ valueType, addressMetaData, renameAddressCallBack }: { valueType: PureGroupedSolidityType; addressMetaData: SignalOrValue<readonly AddressBookEntry[]>; renameAddressCallBack: RenameAddressCallBack }) {
 	switch (valueType.type) {
 		case 'address':
-			return (
-				<SmallAddress
-					addressBookEntry={getAddressBookEntryOrAFiller(
-						resolveSignal(addressMetaData),
-						valueType.value,
-					)}
-					renameAddressCallBack={renameAddressCallBack}
-				/>
-			)
+			return <SmallAddress addressBookEntry={getAddressBookEntryOrAFiller(resolveSignal(addressMetaData), valueType.value)} renameAddressCallBack={renameAddressCallBack} />
 		case 'address[]':
-			return (
-				<JsxArray
-					array={valueType.value.map((value) => (
-						<SmallAddress
-							key={value.toString()}
-							addressBookEntry={getAddressBookEntryOrAFiller(
-								resolveSignal(addressMetaData),
-								value,
-							)}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
-					))}
-				/>
-			)
+			return <JsxArray array={valueType.value.map((value) => <SmallAddress key={value.toString()} addressBookEntry={getAddressBookEntryOrAFiller(resolveSignal(addressMetaData), value)} renameAddressCallBack={renameAddressCallBack} />)} />
 		default:
 			return <PureSolidityTypeComponent valueType={valueType} />
 	}
 }
 
-export function EnrichedSolidityTypeComponent({
-	valueType,
-	renameAddressCallBack,
-}: {
-	valueType: EnrichedGroupedSolidityType
-	renameAddressCallBack: RenameAddressCallBack
-}) {
+export function EnrichedSolidityTypeComponent({ valueType, renameAddressCallBack }: { valueType: EnrichedGroupedSolidityType; renameAddressCallBack: RenameAddressCallBack }) {
 	switch (valueType.type) {
 		case 'address':
-			return (
-				<SmallAddress
-					addressBookEntry={valueType.value}
-					renameAddressCallBack={renameAddressCallBack}
-				/>
-			)
+			return <SmallAddress addressBookEntry={valueType.value} renameAddressCallBack={renameAddressCallBack} />
 		case 'address[]':
-			return (
-				<JsxArray
-					array={valueType.value.map((value) => (
-						<SmallAddress
-							key={value.address.toString()}
-							addressBookEntry={value}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
-					))}
-				/>
-			)
+			return <JsxArray array={valueType.value.map((value) => <SmallAddress key={value.address.toString()} addressBookEntry={value} renameAddressCallBack={renameAddressCallBack} />)} />
 		default:
 			return <PureSolidityTypeComponent valueType={valueType} />
 	}

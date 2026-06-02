@@ -64,27 +64,15 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys
-								.filter((key) => key in storageState)
-								.map((key) => [key, storageState[key]]),
-						)
-					if (typeof keys === 'string')
-						return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -166,12 +154,7 @@ Object.defineProperty(globalThis, 'fetch', {
 	configurable: true,
 	writable: true,
 	value: async (input: RequestInfo | URL) => {
-		const url =
-			typeof input === 'string'
-				? input
-				: input instanceof URL
-					? input.toString()
-					: input.url
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
 		fetchCalls.push(url)
 		return new Response(new Blob(['icon'], { type: 'image/png' }), {
 			status: 200,
@@ -210,9 +193,7 @@ afterAll(() => {
 	console.warn = originalWarn
 })
 
-const { retrieveWebsiteDetails } = await import(
-	'../../app/ts/background/iconHandler.js'
-)
+const { retrieveWebsiteDetails } = await import('../../app/ts/background/iconHandler.js')
 
 describe('retrieveWebsiteDetails favicon handling', () => {
 	test('returns no icon and does not fetch when favIconUrl is undefined', async () => {
@@ -259,9 +240,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 
 		assert.deepEqual(result, { title: 'Unsupported favicon', icon: undefined })
 		assert.equal(fetchCalls.length, 0)
-		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 3 (https://scheme.test): unsupported URL scheme chrome:',
-		])
+		assert.deepEqual(warnings, ['Failed to load favicon for tab 3 (https://scheme.test): unsupported URL scheme chrome:'])
 	})
 
 	test('rejects file favicon urls', async () => {
@@ -277,9 +256,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 
 		assert.deepEqual(result, { title: 'File favicon', icon: undefined })
 		assert.equal(fetchCalls.length, 0)
-		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 6 (https://file.test): unsupported URL scheme file:',
-		])
+		assert.deepEqual(warnings, ['Failed to load favicon for tab 6 (https://file.test): unsupported URL scheme file:'])
 	})
 
 	test('fetches same-origin favicon urls once for stored websites that are missing an icon', async () => {
@@ -421,9 +398,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 
 		assert.deepEqual(result, { title: 'HTML favicon', icon: undefined })
 		assert.equal(fetchCalls.length, 0)
-		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 9 (https://html-icon.test/page): favicon data URL was not an image or exceeded the size limit',
-		])
+		assert.deepEqual(warnings, ['Failed to load favicon for tab 9 (https://html-icon.test/page): favicon data URL was not an image or exceeded the size limit'])
 	})
 
 	test('rejects oversized data url favicons', async () => {
@@ -439,9 +414,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 
 		assert.deepEqual(result, { title: 'Oversized favicon', icon: undefined })
 		assert.equal(fetchCalls.length, 0)
-		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 10 (https://oversized-icon.test/page): favicon data URL was not an image or exceeded the size limit',
-		])
+		assert.deepEqual(warnings, ['Failed to load favicon for tab 10 (https://oversized-icon.test/page): favicon data URL was not an image or exceeded the size limit'])
 	})
 
 	test('rejects cross-origin favicon urls without fetching them in the background', async () => {
@@ -465,9 +438,6 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 			icon: undefined,
 		})
 		assert.equal(fetchCalls.length, 0)
-		assert.deepEqual(warnings, [
-			'Failed to load favicon for tab 5 (https://page.test/app): favicon origin https://cdn.test did not match page origin https://page.test',
-			'Failed to load favicon for tab 5 (https://page.test/app): favicon origin https://cdn.test did not match page origin https://page.test',
-		])
+		assert.deepEqual(warnings, ['Failed to load favicon for tab 5 (https://page.test/app): favicon origin https://cdn.test did not match page origin https://page.test', 'Failed to load favicon for tab 5 (https://page.test/app): favicon origin https://cdn.test did not match page origin https://page.test'])
 	})
 })

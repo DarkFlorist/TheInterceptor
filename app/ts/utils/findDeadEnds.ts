@@ -1,9 +1,6 @@
 type Edge<T> = { from: bigint; to: bigint; data: T }
 
-export function findDeadEnds<T>(
-	Edges: readonly Edge<T>[],
-	startId: bigint,
-): Map<bigint, Edge<T>[]> {
+export function findDeadEnds<T>(Edges: readonly Edge<T>[], startId: bigint): Map<bigint, Edge<T>[]> {
 	const adjacencyList: Map<bigint, Edge<T>[]> = new Map()
 	const visited: Set<bigint> = new Set()
 	const deadEnds: Map<bigint, Edge<T>[]> = new Map()

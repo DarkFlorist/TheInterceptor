@@ -1,60 +1,21 @@
 import { useEffect } from 'preact/hooks'
-import {
-	MessageToPopup,
-	UpdateConfirmTransactionDialog,
-	UpdateConfirmTransactionDialogPendingTransactions,
-} from '../../types/interceptor-messages.js'
-import {
-	type CompleteVisualizedSimulation,
-	type EditEnsNamedHashWindowState,
-	type MaybeSimulatedTransaction,
-	type ModifyAddressWindowState,
-	type VisualizedSimulationState,
-	createPassthroughCompleteVisualizedSimulation,
-} from '../../types/visualizer-types.js'
+import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
+import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import {
-	RawTransactionDetailsCard,
-	GasFee,
-	TokenLogAnalysisCard,
-	SimulatedInBlockNumber,
-	TransactionCreated,
-	TransactionHeader,
-	TransactionHeaderForFailedToSimulate,
-	TransactionsAccountChangesCard,
-	NonTokenLogAnalysisCard,
-	getSimulationDisplayBlockNumber,
-} from '../simulationExplaining/SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import type {
-	RenameAddressCallBack,
-	RpcConnectionStatus,
-} from '../../types/user-interface-types.js'
-import {
-	sendPopupMessageToBackgroundPage,
-	sendPopupReadyAndListening,
-} from '../../background/backgroundUtils.js'
+import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
+import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
-import {
-	type CaughtError,
-	ErrorCheckBox,
-	UnexpectedError,
-} from '../subcomponents/Error.js'
-import {
-	QuarantineReasons,
-	SenderReceiver,
-	TransactionImportanceBlock,
-} from '../simulationExplaining/Transactions.js'
+import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
+import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type {
-	PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage,
-	SimulatedPendingTransaction,
-} from '../../types/accessRequest.js'
+import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { type EthereumBytes32, serialize } from '../../types/wire-types.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
@@ -63,159 +24,79 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
-import {
-	InvalidMessage,
-	SignatureCard,
-	SignatureHeader,
-	identifySignature,
-	isPossibleToSignMessage,
-} from './PersonalSign.js'
+import { InvalidMessage, SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
-import {
-	type ReadonlySignal,
-	Signal,
-	useComputed,
-	useSignal,
-} from '@preact/signals'
+import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import type { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import {
-	POPUP_PERFORMANCE_MARKS,
-	markPerformance,
-	markPerformanceOnce,
-} from '../../utils/popupPerformance.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 
 type UnderTransactionsParams = {
-	pendingTransactionsAndSignableMessages: ReadonlySignal<
-		PendingTransactionOrSignableMessage[]
-	>
+	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
 }
 
-const getResultsForTransaction = (
-	visualizedSimulationState: VisualizedSimulationState,
-	transactionIdentifier: bigint,
-) => {
-	return visualizedSimulationState.visualizedBlocks
-		.flatMap(
-			(block): readonly MaybeSimulatedTransaction[] =>
-				block.simulatedAndVisualizedTransactions,
-		)
-		.find(
-			(transaction) =>
-				transaction.transactionIdentifier === transactionIdentifier,
-		)
+const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
+	return visualizedSimulationState.visualizedBlocks.flatMap((block): readonly MaybeSimulatedTransaction[] => block.simulatedAndVisualizedTransactions).find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 }
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-export function shouldDisableSignableMessageConfirm(params: {
-	isValidMessage: boolean
-	canSignMessage: boolean
-	forceSendEnabled: boolean
-	hasSupportedRpc: boolean
-}) {
+export function shouldDisableSignableMessageConfirm(params: { isValidMessage: boolean; canSignMessage: boolean; forceSendEnabled: boolean; hasSupportedRpc: boolean }) {
 	if (!params.isValidMessage) return true
-	return (
-		!params.canSignMessage &&
-		!params.forceSendEnabled &&
-		!params.hasSupportedRpc
-	)
+	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
 }
 
 function UnderTransactions(param: UnderTransactionsParams) {
-	const absoluteStyle =
-		'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'
+	const absoluteStyle = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'
 	const nTx = param.pendingTransactionsAndSignableMessages.value.length
 	return (
 		<div style={`position: relative; top: ${nTx * -HALF_HEADER_HEIGHT}px;`}>
-			{param.pendingTransactionsAndSignableMessages.value.map(
-				(pendingTransaction, index) => {
-					const style = `margin-bottom: 0px; scale: ${Math.pow(0.95, nTx - index)}; position: relative; top: ${(nTx - index) * HALF_HEADER_HEIGHT}px;`
-					const stackItemKey =
-						pendingTransaction.type === 'Transaction'
-							? `transaction-${pendingTransaction.transactionIdentifier.toString()}`
-							: `message-${pendingTransaction.uniqueRequestIdentifier.requestId.toString()}`
-					if (
-						pendingTransaction.transactionOrMessageCreationStatus !==
-						'Simulated'
-					)
-						return (
-							<div key={stackItemKey} class="card" style={style}>
-								<header class="card-header">
-									<div class="card-header-icon unset-cursor">
-										<span class="icon">
-											{pendingTransaction.transactionOrMessageCreationStatus ===
-											'FailedToSimulate' ? (
-												<img
-													src="../img/error-icon.svg"
-													width="24"
-													height="24"
-												/>
-											) : (
-												<Spinner height="2em" />
-											)}
-										</span>
-									</div>
-									<p class="card-header-title" style="white-space: nowrap;">
-										{pendingTransaction.transactionOrMessageCreationStatus ===
-										'FailedToSimulate'
-											? pendingTransaction.transactionToSimulate.error.message
-											: 'Simulating...'}
-									</p>
-									<p
-										class="card-header-icon unsetcursor"
-										style={
-											'margin-left: auto; margin-right: 0; overflow: hidden;'
-										}
-									>
-										<WebsiteOriginText website={pendingTransaction.website} />
-									</p>
-								</header>
-								<div style={absoluteStyle}></div>
-							</div>
-						)
-					if (pendingTransaction.type === 'Transaction') {
-						if (
-							pendingTransaction.popupVisualisation.statusCode === 'success' &&
-							pendingTransaction.popupVisualisation.data
-								.visualizedSimulationState.success
-						) {
-							const simTx = getResultsForTransaction(
-								pendingTransaction.popupVisualisation.data
-									.visualizedSimulationState,
-								pendingTransaction.transactionIdentifier,
-							)
-							if (simTx === undefined)
-								throw new Error('No simulated and visualized transactions')
-							return (
-								<div key={stackItemKey} class="card" style={style}>
-									<TransactionHeader simTx={simTx} />
-									<div style={absoluteStyle}></div>
+			{param.pendingTransactionsAndSignableMessages.value.map((pendingTransaction, index) => {
+				const style = `margin-bottom: 0px; scale: ${Math.pow(0.95, nTx - index)}; position: relative; top: ${(nTx - index) * HALF_HEADER_HEIGHT}px;`
+				const stackItemKey = pendingTransaction.type === 'Transaction' ? `transaction-${pendingTransaction.transactionIdentifier.toString()}` : `message-${pendingTransaction.uniqueRequestIdentifier.requestId.toString()}`
+				if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated')
+					return (
+						<div key={stackItemKey} class="card" style={style}>
+							<header class="card-header">
+								<div class="card-header-icon unset-cursor">
+									<span class="icon">{pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? <img src="../img/error-icon.svg" width="24" height="24" /> : <Spinner height="2em" />}</span>
 								</div>
-							)
-						}
+								<p class="card-header-title" style="white-space: nowrap;">
+									{pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...'}
+								</p>
+								<p class="card-header-icon unsetcursor" style={'margin-left: auto; margin-right: 0; overflow: hidden;'}>
+									<WebsiteOriginText website={pendingTransaction.website} />
+								</p>
+							</header>
+							<div style={absoluteStyle}></div>
+						</div>
+					)
+				if (pendingTransaction.type === 'Transaction') {
+					if (pendingTransaction.popupVisualisation.statusCode === 'success' && pendingTransaction.popupVisualisation.data.visualizedSimulationState.success) {
+						const simTx = getResultsForTransaction(pendingTransaction.popupVisualisation.data.visualizedSimulationState, pendingTransaction.transactionIdentifier)
+						if (simTx === undefined) throw new Error('No simulated and visualized transactions')
 						return (
 							<div key={stackItemKey} class="card" style={style}>
-								<TransactionHeaderForFailedToSimulate
-									website={pendingTransaction.transactionToSimulate.website}
-								/>
+								<TransactionHeader simTx={simTx} />
 								<div style={absoluteStyle}></div>
 							</div>
 						)
 					}
 					return (
 						<div key={stackItemKey} class="card" style={style}>
-							<SignatureHeader
-								visualizedPersonalSignRequest={
-									pendingTransaction.visualizedPersonalSignRequest
-								}
-							/>
+							<TransactionHeaderForFailedToSimulate website={pendingTransaction.transactionToSimulate.website} />
 							<div style={absoluteStyle}></div>
 						</div>
 					)
-				},
-			)}
+				}
+				return (
+					<div key={stackItemKey} class="card" style={style}>
+						<SignatureHeader visualizedPersonalSignRequest={pendingTransaction.visualizedPersonalSignRequest} />
+						<div style={absoluteStyle}></div>
+					</div>
+				)
+			})}
 		</div>
 	)
 }
@@ -223,86 +104,32 @@ function UnderTransactions(param: UnderTransactionsParams) {
 type TransactionNamesParams = {
 	includeCurrentTransaction: boolean
 	completeVisualizedSimulation: Signal<CompleteVisualizedSimulation>
-	currentPendingTransaction: Signal<
-		PendingTransactionOrSignableMessage | undefined
-	>
+	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage | undefined>
 }
 
 export const TransactionNames = (param: TransactionNamesParams) => {
-	if (
-		param.completeVisualizedSimulation.value.simulationResultState !== 'done' ||
-		param.completeVisualizedSimulation.value.simulationState.kind ===
-			'passthrough'
-	)
-		return <></>
+	if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough') return <></>
 
 	const titleOfCurrentPendingTransaction = () => {
-		const currentPendingTransactionOrSignableMessage =
-			param.currentPendingTransaction.value
-		if (currentPendingTransactionOrSignableMessage === undefined)
-			return 'Loading...'
-		if (
-			currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !==
-			'Simulated'
-		)
-			return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
-		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage')
-			return identifySignature(
-				currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest,
-			).title
-		if (
-			currentPendingTransactionOrSignableMessage.popupVisualisation
-				.statusCode === 'failed'
-		)
-			return 'Failing transaction'
+		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction.value
+		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
+		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
+		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
+		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
 		const lastTx =
-			currentPendingTransactionOrSignableMessage.popupVisualisation
-				.statusCode !== 'success' ||
-			currentPendingTransactionOrSignableMessage.popupVisualisation.data
-				.visualizedSimulationState.success === false
+			currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false
 				? undefined
-				: getResultsForTransaction(
-						currentPendingTransactionOrSignableMessage.popupVisualisation.data
-							.visualizedSimulationState,
-						currentPendingTransactionOrSignableMessage.transactionIdentifier,
-					)
+				: getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
 		return identifyTransaction(lastTx).title
 	}
 
 	const namesWithCurrentTransaction = useComputed(() => {
-		if (
-			param.completeVisualizedSimulation.value.simulationResultState !==
-				'done' ||
-			param.completeVisualizedSimulation.value.simulationState.kind ===
-				'passthrough' ||
-			param.completeVisualizedSimulation.value.visualizedSimulationState
-				.success === false
-		)
-			return []
-		const visualizedBlocks =
-			param.completeVisualizedSimulation.value.visualizedSimulationState
-				.visualizedBlocks
-		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [
-			...block.visualizedPersonalSignRequests,
-			...block.simulatedAndVisualizedTransactions,
-		])
-		const names = transactionsAndMessages.map((transactionOrMessage) =>
-			'transaction' in transactionOrMessage
-				? identifyTransaction(transactionOrMessage).title
-				: identifySignature(transactionOrMessage).title,
-		)
-		return [
-			...(param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0
-				? [
-						`Simply making ${param.completeVisualizedSimulation.value.numberOfAddressesMadeRich} addresses rich`,
-					]
-				: []),
-			...names,
-			...(param.includeCurrentTransaction
-				? [titleOfCurrentPendingTransaction()]
-				: []),
-		]
+		if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough' || param.completeVisualizedSimulation.value.visualizedSimulationState.success === false) return []
+		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
+		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions])
+		const names = transactionsAndMessages.map((transactionOrMessage) => ('transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title))
+		return [...(param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${param.completeVisualizedSimulation.value.numberOfAddressesMadeRich} addresses rich`] : []), ...names, ...(param.includeCurrentTransaction ? [titleOfCurrentPendingTransaction()] : [])]
 	})
 
 	return (
@@ -310,14 +137,8 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 			<ul>
 				{namesWithCurrentTransaction.value.map((name, index) => (
 					<li key={`${index}-${name}`} style="margin: 0px;">
-						<div
-							class="card"
-							style={`padding: 5px; margin: 5px; ${index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : ''}`}
-						>
-							<p
-								class="paragraph"
-								style={`margin: 0px; ${index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'color: var(--disabled-text-color)' : ''}`}
-							>
+						<div class="card" style={`padding: 5px; margin: 5px; ${index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : ''}`}>
+							<p class="paragraph" style={`margin: 0px; ${index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'color: var(--disabled-text-color)' : ''}`}>
 								{name}
 							</p>
 						</div>
@@ -329,9 +150,7 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 }
 
 type TransactionCardParams = {
-	currentPendingTransaction: ReadonlySignal<
-		PendingTransactionOrSignableMessage | undefined
-	>
+	currentPendingTransaction: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
 	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
@@ -342,21 +161,11 @@ type TransactionCardParams = {
 
 export function TransactionCard(param: TransactionCardParams) {
 	const currentPendingTransaction = param.currentPendingTransaction.value
-	if (
-		currentPendingTransaction === undefined ||
-		currentPendingTransaction.type !== 'Transaction' ||
-		(currentPendingTransaction.transactionOrMessageCreationStatus !==
-			'Simulated' &&
-			currentPendingTransaction.transactionOrMessageCreationStatus !==
-				'FailedToSimulate')
-	)
-		return <></>
+	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction' || (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return <></>
 	return (
 		<TransactionCardContent
 			currentPendingTransaction={currentPendingTransaction}
-			pendingTransactionsAndSignableMessages={
-				param.pendingTransactionsAndSignableMessages
-			}
+			pendingTransactionsAndSignableMessages={param.pendingTransactionsAndSignableMessages}
 			renameAddressCallBack={param.renameAddressCallBack}
 			editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
 			currentBlockNumber={param.currentBlockNumber}
@@ -380,22 +189,14 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	const currentPendingTransaction = param.currentPendingTransaction
 	const popupVisualisation = currentPendingTransaction.popupVisualisation
 	const getErrorMesssage = () => {
-		if (popupVisualisation.statusCode === 'failed')
-			return `${popupVisualisation.data.error.decodedErrorMessage} ${popupVisualisation.data.error.data !== undefined ? ` (data: '${popupVisualisation.data.error.data}')` : ''}`
-		if (!popupVisualisation.data.transactionToSimulate.success)
-			return popupVisualisation.data.transactionToSimulate.error.message
+		if (popupVisualisation.statusCode === 'failed') return `${popupVisualisation.data.error.decodedErrorMessage} ${popupVisualisation.data.error.data !== undefined ? ` (data: '${popupVisualisation.data.error.data}')` : ''}`
+		if (!popupVisualisation.data.transactionToSimulate.success) return popupVisualisation.data.transactionToSimulate.error.message
 		return 'Unknown error'
 	}
-	if (
-		popupVisualisation.statusCode === 'failed' ||
-		popupVisualisation.data.transactionToSimulate.success === false
-	) {
+	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
 		return (
 			<>
-				<div
-					class="card"
-					style={`top: ${param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT}px`}
-				>
+				<div class="card" style={`top: ${param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT}px`}>
 					<header class="card-header">
 						<div class="card-header-icon unset-cursor">
 							<span class="icon">
@@ -403,63 +204,30 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 							</span>
 						</div>
 						<p class="card-header-title" style="white-space: nowrap;">
-							{popupVisualisation.data.transactionToSimulate.success
-								? 'Gas estimation error'
-								: 'Execution error'}
+							{popupVisualisation.data.transactionToSimulate.success ? 'Gas estimation error' : 'Execution error'}
 						</p>
-						<p
-							class="card-header-icon unsetcursor"
-							style={'margin-left: auto; margin-right: 0; overflow: hidden;'}
-						>
-							<WebsiteOriginText
-								website={
-									currentPendingTransaction.transactionToSimulate.website
-								}
-							/>
+						<p class="card-header-icon unsetcursor" style={'margin-left: auto; margin-right: 0; overflow: hidden;'}>
+							<WebsiteOriginText website={currentPendingTransaction.transactionToSimulate.website} />
 						</p>
 					</header>
 
 					<div class="card-content" style="padding-bottom: 5px;">
 						<div class="container">
-							<ErrorComponent
-								text={`The transaction fails with an error '${getErrorMesssage()}'`}
-								containerStyle={{ margin: '0px' }}
-							/>
+							<ErrorComponent text={`The transaction fails with an error '${getErrorMesssage()}'`} containerStyle={{ margin: '0px' }} />
 						</div>
 
 						<div class="textbox">
 							<p class="paragraph" style="color: var(--subtitle-text-color)">
-								{stringifyJSONWithBigInts(
-									serialize(
-										OriginalSendRequestParameters,
-										currentPendingTransaction.originalRequestParameters,
-									),
-									4,
-								)}
+								{stringifyJSONWithBigInts(serialize(OriginalSendRequestParameters, currentPendingTransaction.originalRequestParameters), 4)}
 							</p>
 						</div>
-						<span
-							class="log-table"
-							style="margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;"
-						>
+						<span class="log-table" style="margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;">
 							<div class="log-cell"></div>
 							<div class="log-cell" style="justify-content: center;">
-								<TransactionCreated
-									created={currentPendingTransaction.created}
-								/>
+								<TransactionCreated created={currentPendingTransaction.created} />
 							</div>
 							<div class="log-cell" style="justify-content: right;">
-								<SimulatedInBlockNumber
-									simulationBlockNumber={
-										popupVisualisation.data.simulationState.blockNumber
-									}
-									currentBlockNumber={param.currentBlockNumber}
-									simulationConductedTimestamp={
-										popupVisualisation.data.simulationState
-											.simulationConductedTimestamp
-									}
-									rpcConnectionStatus={param.rpcConnectionStatus}
-								/>
+								<SimulatedInBlockNumber simulationBlockNumber={popupVisualisation.data.simulationState.blockNumber} currentBlockNumber={param.currentBlockNumber} simulationConductedTimestamp={popupVisualisation.data.simulationState.simulationConductedTimestamp} rpcConnectionStatus={param.rpcConnectionStatus} />
 							</div>
 						</span>
 					</div>
@@ -468,42 +236,25 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		)
 	}
 	const activeAddress = useComputed(() => popupVisualisation.data.activeAddress)
-	const addressMetaData = useComputed(
-		() => popupVisualisation.data.addressBookEntries,
-	)
-	const rpcNetwork = useComputed(
-		() => popupVisualisation.data.simulationState.rpcNetwork,
-	)
+	const addressMetaData = useComputed(() => popupVisualisation.data.addressBookEntries)
+	const rpcNetwork = useComputed(() => popupVisualisation.data.simulationState.rpcNetwork)
 	const simulationAndVisualisationResults = {
 		blockNumber: popupVisualisation.data.simulationState.blockNumber,
 		blockTimestamp: popupVisualisation.data.simulationState.blockTimestamp,
-		simulationConductedTimestamp:
-			popupVisualisation.data.simulationState.simulationConductedTimestamp,
-		simulationStateInput:
-			popupVisualisation.data.simulationState.simulationStateInput,
+		simulationConductedTimestamp: popupVisualisation.data.simulationState.simulationConductedTimestamp,
+		simulationStateInput: popupVisualisation.data.simulationState.simulationStateInput,
 		addressBookEntries: popupVisualisation.data.addressBookEntries,
 		rpcNetwork: popupVisualisation.data.simulationState.rpcNetwork,
 		tokenPriceEstimates: popupVisualisation.data.tokenPriceEstimates,
-		visualizedSimulationState:
-			popupVisualisation.data.visualizedSimulationState,
+		visualizedSimulationState: popupVisualisation.data.visualizedSimulationState,
 		namedTokenIds: popupVisualisation.data.namedTokenIds,
 	}
-	const simTx = getResultsForTransaction(
-		popupVisualisation.data.visualizedSimulationState,
-		currentPendingTransaction.transactionIdentifier,
-	)
-	if (simTx === undefined)
-		return <p> Unable to find simulation results for the transaction</p>
-	const simulationBlockNumber = getSimulationDisplayBlockNumber(
-		popupVisualisation.data.simulationState.blockNumber,
-		popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length,
-	)
+	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
+	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
+	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return (
 		<>
-			<div
-				class="card"
-				style={`top: ${param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT}px`}
-			>
+			<div class="card" style={`top: ${param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT}px`}>
 				<TransactionHeader simTx={simTx} />
 				<div class="card-content" style="padding-bottom: 5px;">
 					{simTx.transactionStatus === 'Failed To Simulate' ? (
@@ -511,46 +262,20 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 					) : (
 						<>
 							<div class="container">
-								<TransactionImportanceBlock
-									simTx={simTx}
-									activeAddress={activeAddress}
-									rpcNetwork={rpcNetwork}
-									renameAddressCallBack={param.renameAddressCallBack}
-									editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-									addressMetadata={addressMetaData}
-								/>
+								<TransactionImportanceBlock simTx={simTx} activeAddress={activeAddress} rpcNetwork={rpcNetwork} renameAddressCallBack={param.renameAddressCallBack} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} addressMetadata={addressMetaData} />
 							</div>
 							<QuarantineReasons quarantineReasons={simTx.quarantineReasons} />
 
-							<TransactionsAccountChangesCard
-								simTx={simTx}
-								simulationAndVisualisationResults={
-									simulationAndVisualisationResults
-								}
-								activeAddress={activeAddress}
-								renameAddressCallBack={param.renameAddressCallBack}
-								addressMetaData={addressMetaData}
-							/>
+							<TransactionsAccountChangesCard simTx={simTx} simulationAndVisualisationResults={simulationAndVisualisationResults} activeAddress={activeAddress} renameAddressCallBack={param.renameAddressCallBack} addressMetaData={addressMetaData} />
 
-							<TokenLogAnalysisCard
-								simTx={simTx}
-								renameAddressCallBack={param.renameAddressCallBack}
-							/>
+							<TokenLogAnalysisCard simTx={simTx} renameAddressCallBack={param.renameAddressCallBack} />
 
-							<NonTokenLogAnalysisCard
-								simTx={simTx}
-								renameAddressCallBack={param.renameAddressCallBack}
-								editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-								addressMetaData={addressMetaData}
-							/>
+							<NonTokenLogAnalysisCard simTx={simTx} renameAddressCallBack={param.renameAddressCallBack} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} addressMetaData={addressMetaData} />
 						</>
 					)}
 
 					<RawTransactionDetailsCard
-						isRawTransaction={
-							simTx.originalRequestParameters.method ===
-							'eth_sendRawTransaction'
-						}
+						isRawTransaction={simTx.originalRequestParameters.method === 'eth_sendRawTransaction'}
 						transaction={simTx.transaction}
 						transactionIdentifier={simTx.transactionIdentifier}
 						parsedInputData={simTx.parsedInputData}
@@ -559,16 +284,9 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 						addressMetaData={addressMetaData}
 					/>
 
-					<SenderReceiver
-						from={simTx.transaction.from}
-						to={simTx.transaction.to}
-						renameAddressCallBack={param.renameAddressCallBack}
-					/>
+					<SenderReceiver from={simTx.transaction.from} to={simTx.transaction.to} renameAddressCallBack={param.renameAddressCallBack} />
 
-					<span
-						class="log-table"
-						style="margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;"
-					>
+					<span class="log-table" style="margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;">
 						<div class="log-cell">
 							{simTx.transactionStatus === 'Failed To Simulate' ? (
 								<></>
@@ -584,15 +302,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 							<TransactionCreated created={currentPendingTransaction.created} />
 						</div>
 						<div class="log-cell" style="justify-content: right;">
-							<SimulatedInBlockNumber
-								simulationBlockNumber={simulationBlockNumber}
-								currentBlockNumber={param.currentBlockNumber}
-								simulationConductedTimestamp={
-									popupVisualisation.data.simulationState
-										.simulationConductedTimestamp
-								}
-								rpcConnectionStatus={param.rpcConnectionStatus}
-							/>
+							<SimulatedInBlockNumber simulationBlockNumber={simulationBlockNumber} currentBlockNumber={param.currentBlockNumber} simulationConductedTimestamp={popupVisualisation.data.simulationState.simulationConductedTimestamp} rpcConnectionStatus={param.rpcConnectionStatus} />
 						</div>
 					</span>
 				</div>
@@ -602,9 +312,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 }
 
 type CheckBoxesParams = {
-	currentPendingTransactionOrSignableMessage: ReadonlySignal<
-		PendingTransactionOrSignableMessage | undefined
-	>
+	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
 	forceSend: Signal<boolean>
 }
 const CheckBoxes = (params: CheckBoxesParams) => {
@@ -615,18 +323,10 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 		const visualizedPersonalSignRequest = current.visualizedPersonalSignRequest
 		return (
 			<>
-				{isPossibleToSignMessage(
-					visualizedPersonalSignRequest,
-					visualizedPersonalSignRequest.activeAddress.address,
-				) && visualizedPersonalSignRequest.quarantine ? (
+				{isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) && visualizedPersonalSignRequest.quarantine ? (
 					<div style="display: grid">
 						<div style="margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; ">
-							<ErrorCheckBox
-								text={
-									'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.'
-								}
-								checked={params.forceSend}
-							/>
+							<ErrorCheckBox text={'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.'} checked={params.forceSend} />
 						</div>
 					</div>
 				) : (
@@ -635,18 +335,10 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 			</>
 		)
 	}
-	if (
-		current?.popupVisualisation.statusCode !== 'success' ||
-		current.popupVisualisation.data.visualizedSimulationState.success === false
-	)
-		return <></>
-	const currentResults = getResultsForTransaction(
-		current.popupVisualisation.data.visualizedSimulationState,
-		current.transactionIdentifier,
-	)
+	if (current?.popupVisualisation.statusCode !== 'success' || current.popupVisualisation.data.visualizedSimulationState.success === false) return <></>
+	const currentResults = getResultsForTransaction(current.popupVisualisation.data.visualizedSimulationState, current.transactionIdentifier)
 
-	const margins =
-		'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
+	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
 	if (currentResults === undefined) return <></>
 	if (current?.approvalStatus.status === 'SignerError')
 		return (
@@ -660,12 +352,7 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 		return (
 			<div style="display: grid">
 				<div style={margins}>
-					<ErrorCheckBox
-						text={
-							'I understand that the transaction will fail but I want to send it anyway.'
-						}
-						checked={params.forceSend}
-					/>
+					<ErrorCheckBox text={'I understand that the transaction will fail but I want to send it anyway.'} checked={params.forceSend} />
 				</div>
 			</div>
 		)
@@ -673,12 +360,7 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 		return (
 			<div style="display: grid">
 				<div style={margins}>
-					<ErrorCheckBox
-						text={
-							'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.'
-						}
-						checked={params.forceSend}
-					/>
+					<ErrorCheckBox text={'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.'} checked={params.forceSend} />
 				</div>
 			</div>
 		)
@@ -686,45 +368,29 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 }
 
 type NetworkErrorParams = {
-	currentPendingTransactionOrSignableMessage: ReadonlySignal<
-		PendingTransactionOrSignableMessage | undefined
-	>
+	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
 }
 
-const WebsiteErrors = ({
-	currentPendingTransactionOrSignableMessage,
-}: NetworkErrorParams) => {
+const WebsiteErrors = ({ currentPendingTransactionOrSignableMessage }: NetworkErrorParams) => {
 	const current = currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
-	const message = getWebsiteWarningMessage(
-		current.website.websiteOrigin,
-		current.simulationMode,
-	)
+	const message = getWebsiteWarningMessage(current.website.websiteOrigin, current.simulationMode)
 	if (message === undefined) return <></>
-	if (message.suggestedAlternative === undefined)
-		return <ErrorComponent warning={true} text={message.message} />
+	if (message.suggestedAlternative === undefined) return <ErrorComponent warning={true} text={message.message} />
 	return (
 		<ErrorComponent
 			warning={true}
 			text={
 				<>
 					{' '}
-					{message.message}{' '}
-					<Link
-						url={message.suggestedAlternative}
-						text={'Suggested alternative'}
-						websiteSocket={current.uniqueRequestIdentifier.requestSocket}
-					/>{' '}
+					{message.message} <Link url={message.suggestedAlternative} text={'Suggested alternative'} websiteSocket={current.uniqueRequestIdentifier.requestSocket} />{' '}
 				</>
 			}
 		/>
 	)
 }
 
-type ModalState =
-	| { page: 'modifyAddress'; state: Signal<ModifyAddressWindowState> }
-	| { page: 'editEns'; state: EditEnsNamedHashWindowState }
-	| { page: 'noModal' }
+type ModalState = { page: 'modifyAddress'; state: Signal<ModifyAddressWindowState> } | { page: 'editEns'; state: EditEnsNamedHashWindowState } | { page: 'noModal' }
 
 type RejectButtonParams = {
 	onClick: () => void
@@ -732,10 +398,7 @@ type RejectButtonParams = {
 const RejectButton = ({ onClick }: RejectButtonParams) => {
 	return (
 		<div style="display: flex;">
-			<button
-				class="button is-primary is-danger button-overflow dialog-button-left"
-				onClick={onClick}
-			>
+			<button class="button is-primary is-danger button-overflow dialog-button-left" onClick={onClick}>
 				{'Reject'}
 			</button>
 		</div>
@@ -743,49 +406,22 @@ const RejectButton = ({ onClick }: RejectButtonParams) => {
 }
 
 type ButtonsParams = {
-	currentPendingTransactionOrSignableMessage:
-		| PendingTransactionOrSignableMessage
-		| undefined
+	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
 	reject: () => void
 	approve: () => void
 	confirmDisabled: ReadonlySignal<boolean>
 }
-function Buttons({
-	currentPendingTransactionOrSignableMessage,
-	reject,
-	approve,
-	confirmDisabled,
-}: ButtonsParams) {
-	if (currentPendingTransactionOrSignableMessage === undefined)
-		return <RejectButton onClick={reject} />
-	if (
-		currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !==
-		'Simulated'
-	)
-		return <RejectButton onClick={reject} />
+function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, confirmDisabled }: ButtonsParams) {
+	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick={reject} />
+	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick={reject} />
 
-	const signerName =
-		currentPendingTransactionOrSignableMessage.type === 'Transaction'
-			? currentPendingTransactionOrSignableMessage.popupVisualisation.data
-					.signerName
-			: currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest
-					.signerName
+	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
-		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage')
-			return identifySignature(
-				currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest,
-			)
+		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
 		const lastTx =
-			currentPendingTransactionOrSignableMessage.popupVisualisation
-				.statusCode !== 'success' ||
-			currentPendingTransactionOrSignableMessage.popupVisualisation.data
-				.visualizedSimulationState.success === false
+			currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false
 				? undefined
-				: getResultsForTransaction(
-						currentPendingTransactionOrSignableMessage.popupVisualisation.data
-							.visualizedSimulationState,
-						currentPendingTransactionOrSignableMessage.transactionIdentifier,
-					)
+				: getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return undefined
 		return identifyTransaction(lastTx)
 	}
@@ -794,37 +430,19 @@ function Buttons({
 
 	return (
 		<div style="display: flex; flex-direction: row;">
-			<button
-				class="button is-primary is-danger button-overflow dialog-button-left"
-				onClick={reject}
-			>
+			<button class="button is-primary is-danger button-overflow dialog-button-left" onClick={reject}>
 				{identified.rejectAction}
 			</button>
-			<button
-				class="button is-primary button-overflow dialog-button-right"
-				onClick={approve}
-				disabled={confirmDisabled}
-			>
-				{currentPendingTransactionOrSignableMessage.approvalStatus.status ===
-				'WaitingForSigner' ? (
+			<button class="button is-primary button-overflow dialog-button-right" onClick={approve} disabled={confirmDisabled}>
+				{currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? (
 					<>
 						<span>
 							{' '}
-							<Spinner height="1em" color="var(--text-color)" /> Waiting for{' '}
-							<SignersLogoName signerName={signerName} />{' '}
+							<Spinner height="1em" color="var(--text-color)" /> Waiting for <SignersLogoName signerName={signerName} />{' '}
 						</span>
 					</>
 				) : (
-					<>
-						{currentPendingTransactionOrSignableMessage.simulationMode ? (
-							`${identified.simulationAction}!`
-						) : (
-							<SignerLogoText
-								signerName={signerName}
-								text={identified.signingAction}
-							/>
-						)}
-					</>
+					<>{currentPendingTransactionOrSignableMessage.simulationMode ? `${identified.simulationAction}!` : <SignerLogoText signerName={signerName} text={identified.signingAction} />}</>
 				)}
 			</button>
 		</div>
@@ -832,15 +450,9 @@ function Buttons({
 }
 
 export function ConfirmTransaction() {
-	const currentPendingTransactionOrSignableMessage = useSignal<
-		PendingTransactionOrSignableMessage | undefined
-	>(undefined)
-	const pendingTransactionsAndSignableMessages = useSignal<
-		readonly PendingTransactionOrSignableMessage[]
-	>([])
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(
-		createPassthroughCompleteVisualizedSimulation(),
-	)
+	const currentPendingTransactionOrSignableMessage = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
+	const pendingTransactionsAndSignableMessages = useSignal<readonly PendingTransactionOrSignableMessage[]>([])
+	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const forceSend = useSignal<boolean>(false)
 	const currentBlockNumber = useSignal<undefined | bigint>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
@@ -849,9 +461,7 @@ export function ConfirmTransaction() {
 	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
 
-	const updatePendingTransactionsAndSignableMessages = (
-		message: UpdateConfirmTransactionDialog,
-	) => {
+	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
 		completeVisualizedSimulation.value = message.data.visualizedSimulatorState
 		currentBlockNumber.value = message.data.currentBlockNumber
 		rpcConnectionStatus.value = message.data.rpcConnectionStatus
@@ -884,8 +494,7 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_new_block_arrived') {
 				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 				refreshPopupVisualisationIfNeeded()
-				currentBlockNumber.value =
-					parsed.data.rpcConnectionStatus?.latestBlock?.number
+				currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
 				return false
 			}
 			if (parsed.method === 'popup_failed_to_get_block') {
@@ -893,73 +502,36 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_confirm_transaction_simulation_started') {
-				markPerformanceOnce(
-					POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted,
-				)
+				markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
 				return false
 			}
 			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialog } = parsed
-				updatePendingTransactionsAndSignableMessages(
-					UpdateConfirmTransactionDialog.parse(
-						popupUpdateConfirmTransactionDialog,
-					),
-				)
+				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(popupUpdateConfirmTransactionDialog))
 				return false
 			}
-			if (
-				parsed.method ===
-				'popup_update_confirm_transaction_dialog_pending_transactions'
-			) {
-				const {
-					role: _role,
-					...popupUpdateConfirmTransactionDialogPendingTransactions
-				} = parsed
-				const updateConfirmTransactionDialogPendingTransactions =
-					UpdateConfirmTransactionDialogPendingTransactions.parse(
-						popupUpdateConfirmTransactionDialogPendingTransactions,
-					)
-				rpcConnectionStatus.value =
-					updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus
-				pendingTransactionsAndSignableMessages.value =
-					updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages
-				const firstMessage =
-					updateConfirmTransactionDialogPendingTransactions.data
-						.pendingTransactionAndSignableMessages[0]
-				if (firstMessage === undefined)
-					throw new Error('message data was undefined')
+			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
+				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
+				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
+				rpcConnectionStatus.value = updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus
+				pendingTransactionsAndSignableMessages.value = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages
+				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
+				if (firstMessage === undefined) throw new Error('message data was undefined')
 				currentPendingTransactionOrSignableMessage.value = firstMessage
-				if (
-					firstMessage.type === 'Transaction' &&
-					firstMessage.transactionOrMessageCreationStatus === 'Simulating'
-				) {
-					markPerformanceOnce(
-						POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted,
-					)
+				if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
+					markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
+				}
+				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate')) {
+					markPerformance(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationReady)
 				}
 				if (
 					firstMessage.type === 'Transaction' &&
-					(firstMessage.transactionOrMessageCreationStatus === 'Simulated' ||
-						firstMessage.transactionOrMessageCreationStatus ===
-							'FailedToSimulate')
-				) {
-					markPerformance(
-						POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationReady,
-					)
-				}
-				if (
-					firstMessage.type === 'Transaction' &&
-					(firstMessage.transactionOrMessageCreationStatus === 'Simulated' ||
-						firstMessage.transactionOrMessageCreationStatus ===
-							'FailedToSimulate') &&
+					(firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') &&
 					firstMessage.popupVisualisation !== undefined &&
 					firstMessage.popupVisualisation.statusCode === 'success' &&
-					(currentBlockNumber.value === undefined ||
-						firstMessage.popupVisualisation.data.simulationState.blockNumber >
-							currentBlockNumber.value)
+					(currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)
 				) {
-					currentBlockNumber.value =
-						firstMessage.popupVisualisation.data.simulationState.blockNumber
+					currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
 				}
 			}
 			return false
@@ -974,20 +546,16 @@ export function ConfirmTransaction() {
 	}, [])
 
 	async function approve() {
-		if (currentPendingTransactionOrSignableMessage.value === undefined)
-			throw new Error('dialogState is not set')
+		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
-		if (currentWindow.id === undefined)
-			throw new Error('could not get our own Id!')
+		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		try {
 			await sendPopupMessageToBackgroundPage({
 				method: 'popup_confirmDialog',
 				data: {
-					uniqueRequestIdentifier:
-						currentPendingTransactionOrSignableMessage.value
-							.uniqueRequestIdentifier,
+					uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
 					action: 'accept',
 				},
 			})
@@ -997,50 +565,34 @@ export function ConfirmTransaction() {
 		}
 	}
 	async function reject() {
-		if (currentPendingTransactionOrSignableMessage.value === undefined)
-			throw new Error('dialogState is not set')
+		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
-		if (currentWindow.id === undefined)
-			throw new Error('could not get our own Id!')
+		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactionsAndSignableMessages.value.length === 1)
 			await tryFocusingTabOrWindow({
 				type: 'tab',
-				id: currentPendingTransactionOrSignableMessage.value
-					.uniqueRequestIdentifier.requestSocket.tabId,
+				id: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket.tabId,
 			})
 
 		const getPossibleErrorString = () => {
 			const pending = currentPendingTransactionOrSignableMessage.value
 			if (pending === undefined) return undefined
-			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate')
-				return pending.transactionToSimulate.error.message
-			if (pending.transactionOrMessageCreationStatus !== 'Simulated')
-				return undefined
+			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
 			if (pending.popupVisualisation.statusCode !== 'success') return undefined
-			if (
-				pending.popupVisualisation.data.visualizedSimulationState.success ===
-				false
-			)
-				return undefined
-			const results = getResultsForTransaction(
-				pending.popupVisualisation.data.visualizedSimulationState,
-				pending.transactionIdentifier,
-			)
+			if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return undefined
+			const results = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
 			if (results === undefined) return undefined
-			return results.transactionStatus !== 'Transaction Succeeded'
-				? results.error.message
-				: undefined
+			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
 		}
 
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_confirmDialog',
 			data: {
-				uniqueRequestIdentifier:
-					currentPendingTransactionOrSignableMessage.value
-						.uniqueRequestIdentifier,
+				uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
 				action: 'reject',
 				errorString: getPossibleErrorString(),
 			},
@@ -1060,57 +612,22 @@ export function ConfirmTransaction() {
 	}
 
 	const isConfirmDisabled = useComputed(() => {
-		if (currentPendingTransactionOrSignableMessage.value === undefined)
-			return true
-		if (
-			currentPendingTransactionOrSignableMessage.value
-				.transactionOrMessageCreationStatus !== 'Simulated'
-		)
-			return true
-		if (
-			currentPendingTransactionOrSignableMessage.value.type !== 'Transaction'
-		) {
+		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
+		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
+		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
-				isValidMessage:
-					currentPendingTransactionOrSignableMessage.value
-						.visualizedPersonalSignRequest.isValidMessage === true,
-				canSignMessage: isPossibleToSignMessage(
-					currentPendingTransactionOrSignableMessage.value
-						.visualizedPersonalSignRequest,
-					currentPendingTransactionOrSignableMessage.value.activeAddress,
-				),
+				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
+				canSignMessage: isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress),
 				forceSendEnabled: forceSend.value,
-				hasSupportedRpc:
-					currentPendingTransactionOrSignableMessage.value
-						.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
 			})
 		}
 		if (forceSend.value) return false
-		if (
-			currentPendingTransactionOrSignableMessage.value.popupVisualisation ===
-			undefined
-		)
-			return true
-		if (
-			currentPendingTransactionOrSignableMessage.value.popupVisualisation
-				.statusCode !== 'success'
-		)
-			return true
-		if (
-			currentPendingTransactionOrSignableMessage.value.approvalStatus.status ===
-			'WaitingForSigner'
-		)
-			return true
-		if (
-			currentPendingTransactionOrSignableMessage.value.popupVisualisation.data
-				.visualizedSimulationState.success === false
-		)
-			return true
-		const lastTx = getResultsForTransaction(
-			currentPendingTransactionOrSignableMessage.value.popupVisualisation.data
-				.visualizedSimulationState,
-			currentPendingTransactionOrSignableMessage.value.transactionIdentifier,
-		)
+		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
+		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
+		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status === 'WaitingForSigner') return true
+		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
+		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined) return true
 		if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
 		if (lastTx.quarantine) return true
@@ -1124,35 +641,21 @@ export function ConfirmTransaction() {
 		}
 	}
 
-	function editEnsNamedHashCallBack(
-		type: 'nameHash' | 'labelHash',
-		nameHash: EthereumBytes32,
-		name: string | undefined,
-	) {
+	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {
 		modalState.value = {
 			page: 'editEns',
 			state: { type, nameHash, name },
 		}
 	}
 
-	const getLoadingText = (
-		current: PendingTransactionOrSignableMessage | undefined,
-	) => {
+	const getLoadingText = (current: PendingTransactionOrSignableMessage | undefined) => {
 		if (current === undefined) return 'Initializing...'
-		if (current.transactionOrMessageCreationStatus === 'Crafting')
-			return 'Crafting Transaction...'
-		if (current.transactionOrMessageCreationStatus === 'Simulating')
-			return 'Simulating Transaction...'
-		if (
-			'popupVisualisation' in current &&
-			current.popupVisualisation?.statusCode === 'failed'
-		)
-			return 'Failed to simulate. Retrying...'
+		if (current.transactionOrMessageCreationStatus === 'Crafting') return 'Crafting Transaction...'
+		if (current.transactionOrMessageCreationStatus === 'Simulating') return 'Simulating Transaction...'
+		if ('popupVisualisation' in current && current.popupVisualisation?.statusCode === 'failed') return 'Failed to simulate. Retrying...'
 		return 'Loading...'
 	}
-	const loadingText = useComputed(() =>
-		getLoadingText(currentPendingTransactionOrSignableMessage.value),
-	)
+	const loadingText = useComputed(() => getLoadingText(currentPendingTransactionOrSignableMessage.value))
 
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
@@ -1161,20 +664,12 @@ export function ConfirmTransaction() {
 		})
 	}
 
-	if (
-		currentPendingTransactionOrSignableMessage.value === undefined ||
-		(currentPendingTransactionOrSignableMessage.value
-			.transactionOrMessageCreationStatus !== 'Simulated' &&
-			currentPendingTransactionOrSignableMessage.value
-				.transactionOrMessageCreationStatus !== 'FailedToSimulate')
-	) {
+	if (currentPendingTransactionOrSignableMessage.value === undefined || (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return (
 			<>
 				<main>
 					<Hint>
-						<div
-							class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}
-						>
+						<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
 							{modalState.value.page === 'editEns' ? (
 								<EditEnsLabelHash
 									close={() => {
@@ -1192,35 +687,18 @@ export function ConfirmTransaction() {
 									close={() => {
 										modalState.value = { page: 'noModal' }
 									}}
-									activeAddress={
-										currentPendingTransactionOrSignableMessage.value
-											?.activeAddress
-									}
+									activeAddress={currentPendingTransactionOrSignableMessage.value?.activeAddress}
 									rpcEntries={rpcEntries}
 								/>
 							) : (
 								<></>
 							)}
 						</div>
-						<div
-							class="block popup-block popup-block-scroll"
-							style="padding: 0px;"
-						>
-							<UnexpectedError
-								close={clearUnexpectedError}
-								error={unexpectedError.value}
-							/>
+						<div class="block popup-block popup-block-scroll" style="padding: 0px;">
+							<UnexpectedError close={clearUnexpectedError} error={unexpectedError.value} />
 							<NetworkErrors rpcConnectionStatus={rpcConnectionStatus} />
-							<WebsiteErrors
-								currentPendingTransactionOrSignableMessage={
-									currentPendingTransactionOrSignableMessage
-								}
-							/>
-							<InvalidMessage
-								pendingTransactionOrSignableMessage={
-									currentPendingTransactionOrSignableMessage
-								}
-							/>
+							<WebsiteErrors currentPendingTransactionOrSignableMessage={currentPendingTransactionOrSignableMessage} />
+							<InvalidMessage pendingTransactionOrSignableMessage={currentPendingTransactionOrSignableMessage} />
 							<CenterToPageTextSpinner text={loadingText} />
 						</div>
 					</Hint>
@@ -1228,15 +706,11 @@ export function ConfirmTransaction() {
 			</>
 		)
 	}
-	const underTransactions = useComputed(() =>
-		pendingTransactionsAndSignableMessages.value.slice(1).reverse(),
-	)
+	const underTransactions = useComputed(() => pendingTransactionsAndSignableMessages.value.slice(1).reverse())
 	return (
 		<main>
 			<Hint>
-				<div
-					class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}
-				>
+				<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
 					{modalState.value.page === 'editEns' ? (
 						<EditEnsLabelHash
 							close={() => {
@@ -1254,9 +728,7 @@ export function ConfirmTransaction() {
 							close={() => {
 								modalState.value = { page: 'noModal' }
 							}}
-							activeAddress={
-								currentPendingTransactionOrSignableMessage.value?.activeAddress
-							}
+							activeAddress={currentPendingTransactionOrSignableMessage.value?.activeAddress}
 							rpcEntries={rpcEntries}
 						/>
 					) : (
@@ -1265,39 +737,19 @@ export function ConfirmTransaction() {
 				</div>
 				<div class="block popup-block popup-block-scroll" style="padding: 0px">
 					<div style="position: sticky; top: 0; z-index: 1;">
-						<UnexpectedError
-							close={clearUnexpectedError}
-							error={unexpectedError.value}
-						/>
+						<UnexpectedError close={clearUnexpectedError} error={unexpectedError.value} />
 						<NetworkErrors rpcConnectionStatus={rpcConnectionStatus} />
-						<WebsiteErrors
-							currentPendingTransactionOrSignableMessage={
-								currentPendingTransactionOrSignableMessage
-							}
-						/>
-						<InvalidMessage
-							pendingTransactionOrSignableMessage={
-								currentPendingTransactionOrSignableMessage
-							}
-						/>
+						<WebsiteErrors currentPendingTransactionOrSignableMessage={currentPendingTransactionOrSignableMessage} />
+						<InvalidMessage pendingTransactionOrSignableMessage={currentPendingTransactionOrSignableMessage} />
 					</div>
 					<div class="popup-contents">
 						<div style="margin: 10px">
-							{currentPendingTransactionOrSignableMessage.value
-								.originalRequestParameters.method ===
-								'eth_sendRawTransaction' &&
-							currentPendingTransactionOrSignableMessage.value.type ===
-								'Transaction' ? (
+							{currentPendingTransactionOrSignableMessage.value.originalRequestParameters.method === 'eth_sendRawTransaction' && currentPendingTransactionOrSignableMessage.value.type === 'Transaction' ? (
 								<DinoSaysNotification
 									text={`This transaction is signed already. No extra signing required to forward it to ${
-										currentPendingTransactionOrSignableMessage.value
-											.transactionOrMessageCreationStatus !== 'Simulated' ||
-										currentPendingTransactionOrSignableMessage.value
-											.popupVisualisation.statusCode === 'failed'
+										currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode === 'failed'
 											? 'network'
-											: currentPendingTransactionOrSignableMessage.value
-													.popupVisualisation.data.simulationState.rpcNetwork
-													.name
+											: currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.simulationState.rpcNetwork.name
 									}.`}
 									close={() => {
 										pendingTransactionAddedNotification.value = false
@@ -1317,29 +769,14 @@ export function ConfirmTransaction() {
 								<></>
 							)}
 							<div style="margin-bottom: 10px;">
-								<TransactionNames
-									completeVisualizedSimulation={completeVisualizedSimulation}
-									currentPendingTransaction={
-										currentPendingTransactionOrSignableMessage
-									}
-									includeCurrentTransaction={true}
-								/>
+								<TransactionNames completeVisualizedSimulation={completeVisualizedSimulation} currentPendingTransaction={currentPendingTransactionOrSignableMessage} includeCurrentTransaction={true} />
 							</div>
-							<UnderTransactions
-								pendingTransactionsAndSignableMessages={underTransactions}
-							/>
-							<div
-								style={`top: ${underTransactions.value.length * -HALF_HEADER_HEIGHT}px`}
-							></div>
-							{currentPendingTransactionOrSignableMessage.value.type ===
-							'Transaction' ? (
+							<UnderTransactions pendingTransactionsAndSignableMessages={underTransactions} />
+							<div style={`top: ${underTransactions.value.length * -HALF_HEADER_HEIGHT}px`}></div>
+							{currentPendingTransactionOrSignableMessage.value.type === 'Transaction' ? (
 								<TransactionCard
-									currentPendingTransaction={
-										currentPendingTransactionOrSignableMessage
-									}
-									pendingTransactionsAndSignableMessages={
-										pendingTransactionsAndSignableMessages.value
-									}
+									currentPendingTransaction={currentPendingTransactionOrSignableMessage}
+									pendingTransactionsAndSignableMessages={pendingTransactionsAndSignableMessages.value}
 									renameAddressCallBack={renameAddressCallBack}
 									editEnsNamedHashCallBack={editEnsNamedHashCallBack}
 									currentBlockNumber={currentBlockNumber}
@@ -1349,10 +786,7 @@ export function ConfirmTransaction() {
 							) : (
 								<>
 									<SignatureCard
-										visualizedPersonalSignRequest={
-											currentPendingTransactionOrSignableMessage.value
-												.visualizedPersonalSignRequest
-										}
+										visualizedPersonalSignRequest={currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest}
 										renameAddressCallBack={renameAddressCallBack}
 										removeTransactionOrSignedMessage={undefined}
 										numberOfUnderTransactions={underTransactions.value.length}
@@ -1361,24 +795,9 @@ export function ConfirmTransaction() {
 								</>
 							)}
 						</div>
-						<nav
-							class="window-footer popup-button-row"
-							style="position: sticky; bottom: 0; width: 100%;"
-						>
-							<CheckBoxes
-								currentPendingTransactionOrSignableMessage={
-									currentPendingTransactionOrSignableMessage
-								}
-								forceSend={forceSend}
-							/>
-							<Buttons
-								currentPendingTransactionOrSignableMessage={
-									currentPendingTransactionOrSignableMessage.value
-								}
-								reject={reject}
-								approve={approve}
-								confirmDisabled={isConfirmDisabled}
-							/>
+						<nav class="window-footer popup-button-row" style="position: sticky; bottom: 0; width: 100%;">
+							<CheckBoxes currentPendingTransactionOrSignableMessage={currentPendingTransactionOrSignableMessage} forceSend={forceSend} />
+							<Buttons currentPendingTransactionOrSignableMessage={currentPendingTransactionOrSignableMessage.value} reject={reject} approve={approve} confirmDisabled={isConfirmDisabled} />
 						</nav>
 					</div>
 				</div>

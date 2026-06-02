@@ -1,12 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import {
-	HTTP_STATUS_TOO_MANY_REQUESTS,
-	JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
-	JSON_RPC_ERROR_CODE_INVALID_PARAMS,
-	JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED,
-} from '../../app/ts/utils/constants.js'
+import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 const responseHeaders = { 'Content-Type': 'application/json' }
@@ -20,8 +15,7 @@ function installFetchMock(responses: Response[]) {
 	globalThis.fetch = async () => {
 		const response = responses[calls]
 		calls += 1
-		if (response === undefined)
-			throw new Error(`Unexpected fetch call ${calls}`)
+		if (response === undefined) throw new Error(`Unexpected fetch call ${calls}`)
 		return response
 	}
 	return {
@@ -58,20 +52,11 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				{ status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders },
 			),
 		])
-		const requestHandler = new EthereumJSONRpcRequestHandler(
-			'https://example.invalid',
-			true,
-		)
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
 		try {
-			await assert.rejects(
-				requestHandler.jsonRpcRequest({ method: 'eth_chainId' }),
-				JsonRpcResponseError,
-			)
-			await assert.rejects(
-				requestHandler.jsonRpcRequest({ method: 'eth_chainId' }),
-				JsonRpcResponseError,
-			)
+			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), JsonRpcResponseError)
+			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), JsonRpcResponseError)
 			assert.equal(fetchMock.getCalls(), 2)
 		} finally {
 			fetchMock.restore()
@@ -92,10 +77,7 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				{ status: HTTP_STATUS_BAD_REQUEST, headers: responseHeaders },
 			),
 		])
-		const requestHandler = new EthereumJSONRpcRequestHandler(
-			'https://example.invalid',
-			true,
-		)
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
 		try {
 			await assert.rejects(
@@ -143,10 +125,7 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				{ status: HTTP_STATUS_OK, headers: responseHeaders },
 			),
 		])
-		const requestHandler = new EthereumJSONRpcRequestHandler(
-			'https://example.invalid',
-			true,
-		)
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
 		try {
 			await assert.rejects(

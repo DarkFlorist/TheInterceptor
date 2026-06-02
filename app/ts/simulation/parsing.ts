@@ -1,9 +1,5 @@
 import type { EthereumClientService } from './services/EthereumClientService.js'
-import {
-	type EthereumAddress,
-	EthereumData,
-	type EthereumQuantity,
-} from '../types/wire-types.js'
+import { type EthereumAddress, EthereumData, type EthereumQuantity } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import {
 	APPROVAL_LOG,
@@ -69,34 +65,19 @@ import {
 	handleNameWrapped,
 } from './logHandlers.js'
 import type { AddressBookEntryCategory } from '../types/addressBookTypes.js'
-import {
-	parseEventIfPossible,
-	parseTransactionInputIfPossible,
-} from './services/SimulationModeEthereumClientService.js'
-import {
-	getAbi,
-	extractFunctionArgumentTypes,
-	removeTextBetweenBrackets,
-} from '../utils/abi.js'
+import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
+import { getAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
 import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EthereumEvent } from '../types/ethSimulate-types.js'
-import type {
-	EnrichedEthereumEvent,
-	EnrichedEthereumInputData,
-	ParsedEvent,
-	TokenVisualizerResult,
-} from '../types/EnrichedEthereumData.js'
+import type { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 
 type TokenLogHandler = (event: EthereumEvent) => TokenVisualizerResult[]
 
-const getTokenEventHandler = (
-	type: AddressBookEntryCategory,
-	logSignature: string,
-) => {
+const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: string) => {
 	const erc20LogHanders = new Map<string, TokenLogHandler>([
 		[TRANSFER_LOG, handleERC20TransferLog],
 		[APPROVAL_LOG, handleApprovalLog],
@@ -133,10 +114,7 @@ const getTokenEventHandler = (
 const ensEventHandler = (parsedEvent: ParsedEvent) => {
 	if (parsedEvent.topics[0] !== undefined) {
 		const logSignature = bytes32String(parsedEvent.topics[0])
-		if (
-			parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER ||
-			parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER_2
-		) {
+		if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER || parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER_2) {
 			if (logSignature === ENS_ADDRESS_CHANGED)
 				return {
 					logInformation: handleEnsAddressChanged(parsedEvent),
@@ -199,10 +177,7 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 					type: 'ENS' as const,
 					subType: 'ENSExpiryExtended' as const,
 				}
-		} else if (
-			parsedEvent.loggersAddressBookEntry.address ===
-			ENS_ETH_REGISTRAR_CONTROLLER
-		) {
+		} else if (parsedEvent.loggersAddressBookEntry.address === ENS_ETH_REGISTRAR_CONTROLLER) {
 			if (logSignature === ENS_CONTROLLER_NAME_REGISTERED)
 				return {
 					logInformation: handleControllerNameRegistered(parsedEvent),
@@ -215,9 +190,7 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 					type: 'ENS' as const,
 					subType: 'ENSControllerNameRenewed' as const,
 				}
-		} else if (
-			parsedEvent.loggersAddressBookEntry.address === ENS_ETHEREUM_NAME_SERVICE
-		) {
+		} else if (parsedEvent.loggersAddressBookEntry.address === ENS_ETHEREUM_NAME_SERVICE) {
 			if (logSignature === ENS_BASE_REGISTRAR_NAME_RENEWED)
 				return {
 					logInformation: handleBaseRegistrarNameRenewed(parsedEvent),
@@ -230,9 +203,7 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 					type: 'ENS' as const,
 					subType: 'ENSBaseRegistrarNameRegistered' as const,
 				}
-		} else if (
-			parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK
-		) {
+		} else if (parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK) {
 			if (logSignature === ENS_TRANSFER)
 				return {
 					logInformation: handleEnsTransfer(parsedEvent),
@@ -263,9 +234,7 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 					type: 'ENS' as const,
 					subType: 'ENSExpiryExtended' as const,
 				}
-		} else if (
-			parsedEvent.loggersAddressBookEntry.address === ENS_REVERSE_REGISTRAR
-		) {
+		} else if (parsedEvent.loggersAddressBookEntry.address === ENS_REVERSE_REGISTRAR) {
 			if (logSignature === ENS_REVERSE_CLAIMED)
 				return {
 					logInformation: handleEnsReverseClaimed(parsedEvent),
@@ -288,18 +257,10 @@ export const parseInputData = async (
 ): Promise<EnrichedEthereumInputData> => {
 	const nonParsed = { input: transaction.input, type: 'NonParsed' as const }
 	if (transaction.to === undefined || transaction.to === null) return nonParsed
-	const addressBookEntry = await identifyAddress(
-		ethereumClientService,
-		requestAbortController,
-		transaction.to,
-	)
+	const addressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, transaction.to)
 	const abi = getAbi(addressBookEntry)
 	if (!abi) return nonParsed
-	const parsed = parseTransactionInputIfPossible(
-		abi,
-		transaction.input,
-		transaction.value,
-	)
+	const parsed = parseTransactionInputIfPossible(abi, transaction.input, transaction.value)
 	if (parsed === undefined) return nonParsed
 	if (parsed.fragment.type !== 'function') return nonParsed
 	const functionFragment = parsed.fragment
@@ -311,14 +272,10 @@ export const parseInputData = async (
 			const solidityType = argTypes[index]
 			const paramName = functionFragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
-			if (solidityType === undefined)
-				throw new Error(`unknown solidity type: ${solidityType}`)
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${solidityType}`)
 			const isArray = solidityType.includes('[')
-			const verifiedSolidityType = SolidityType.safeParse(
-				removeTextBetweenBrackets(solidityType),
-			)
-			if (verifiedSolidityType.success === false)
-				throw new Error(`unknown solidity type: ${solidityType}`)
+			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${solidityType}`)
 			if (typeof value === 'object' && value !== null && 'hash' in value) {
 				return {
 					paramName,
@@ -330,11 +287,7 @@ export const parseInputData = async (
 			}
 			return {
 				paramName,
-				typeValue: parseSolidityValueByTypePure(
-					verifiedSolidityType.value,
-					value,
-					isArray,
-				),
+				typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray),
 			}
 		})
 		return {
@@ -350,17 +303,9 @@ export const parseInputData = async (
 	}
 }
 
-export const parseEvents = async (
-	events: readonly EthereumEvent[],
-	ethereumClientService: EthereumClientService,
-	requestAbortController: AbortController | undefined,
-): Promise<readonly EnrichedEthereumEvent[]> => {
+export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await promiseAllMapAbortSafe(events, async (event) => {
-		const loggersAddressBookEntry = await identifyAddress(
-			ethereumClientService,
-			requestAbortController,
-			event.address,
-		)
+		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
 		const abi = getAbi(loggersAddressBookEntry)
 		const nonParsed = {
 			...event,
@@ -379,14 +324,10 @@ export const parseEvents = async (
 			const solidityType = argTypes[index]
 			const paramName = eventFragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
-			if (solidityType === undefined)
-				throw new Error(`unknown solidity type: ${solidityType}`)
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${solidityType}`)
 			const isArray = solidityType.includes('[')
-			const verifiedSolidityType = SolidityType.safeParse(
-				removeTextBetweenBrackets(solidityType),
-			)
-			if (verifiedSolidityType.success === false)
-				throw new Error(`unknown solidity type: ${solidityType}`)
+			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${solidityType}`)
 			if (typeof value === 'object' && value !== null && 'hash' in value) {
 				return {
 					paramName,
@@ -398,11 +339,7 @@ export const parseEvents = async (
 			}
 			return {
 				paramName,
-				typeValue: parseSolidityValueByTypePure(
-					verifiedSolidityType.value,
-					value,
-					isArray,
-				),
+				typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray),
 			}
 		})
 		return {
@@ -415,29 +352,21 @@ export const parseEvents = async (
 		}
 	})
 
-	const maybeParsedEvents: EnrichedEthereumEvent[][] = parsedEvents.map(
-		(parsedEvent) => {
-			if (parsedEvent.isParsed === 'NonParsed')
-				return [{ ...parsedEvent, type: 'NonParsed' }]
-			const logSignature = parsedEvent.topics[0]
-			if (logSignature === undefined)
-				return [{ ...parsedEvent, type: 'Parsed' }]
-			const tokenEventhandler = getTokenEventHandler(
-				parsedEvent.loggersAddressBookEntry.type,
-				bytes32String(logSignature),
-			)
-			if (tokenEventhandler !== undefined)
-				return tokenEventhandler(parsedEvent).map((logInformation) => ({
-					...parsedEvent,
-					type: 'TokenEvent',
-					logInformation,
-				}))
+	const maybeParsedEvents: EnrichedEthereumEvent[][] = parsedEvents.map((parsedEvent) => {
+		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
+		const logSignature = parsedEvent.topics[0]
+		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
+		const tokenEventhandler = getTokenEventHandler(parsedEvent.loggersAddressBookEntry.type, bytes32String(logSignature))
+		if (tokenEventhandler !== undefined)
+			return tokenEventhandler(parsedEvent).map((logInformation) => ({
+				...parsedEvent,
+				type: 'TokenEvent',
+				logInformation,
+			}))
 
-			const handledEnsEvent = ensEventHandler(parsedEvent)
-			if (handledEnsEvent !== undefined)
-				return [{ ...parsedEvent, ...handledEnsEvent }]
-			return [{ ...parsedEvent, type: 'Parsed' }]
-		},
-	)
+		const handledEnsEvent = ensEventHandler(parsedEvent)
+		if (handledEnsEvent !== undefined) return [{ ...parsedEvent, ...handledEnsEvent }]
+		return [{ ...parsedEvent, type: 'Parsed' }]
+	})
 	return maybeParsedEvents.flat()
 }

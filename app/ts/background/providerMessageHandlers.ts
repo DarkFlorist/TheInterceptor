@@ -1,39 +1,16 @@
-import {
-	ConnectedToSigner,
-	SignerReply,
-	WalletSwitchEthereumChainReply,
-} from '../types/interceptor-messages.js'
-import type {
-	TabState,
-	WebsiteTabConnections,
-} from '../types/user-interface-types.js'
-import {
-	EthereumAccountsReply,
-	EthereumChainReply,
-} from '../types/JsonRpc-types.js'
+import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
+import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChain } from './background.js'
-import {
-	getSocketFromPort,
-	sendInternalWindowMessage,
-	sendPopupMessageToOpenWindows,
-} from './backgroundUtils.js'
-import {
-	getRpcNetworkForChain,
-	getTabState,
-	setDefaultSignerName,
-	updatePendingTransactionOrMessage,
-	updateTabState,
-} from './storageVariables.js'
+import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import type { ApprovalState } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import {
-	resolvePendingTransactionOrMessage,
-	updateConfirmTransactionView,
-} from './windows/confirmTransaction.js'
+import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { addressString } from '../utils/bigint.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
@@ -63,9 +40,7 @@ export async function ethAccountsReply(
 	const [signerAccountsReply] = EthereumAccountsReply.parse(request.params)
 	const socket = getSocketFromPort(port)
 	if (signerAccountsReply.type === 'error') {
-		const stringifiedData = signerAccountsReply.error.data
-			? JSON.stringify(signerAccountsReply.error.data)
-			: undefined
+		const stringifiedData = signerAccountsReply.error.data ? JSON.stringify(signerAccountsReply.error.data) : undefined
 		const error = signerAccountsReply.error
 		await updateTabState(port.sender.tab.id, (previousState: TabState) =>
 			modifyObject(previousState, {
@@ -86,16 +61,13 @@ export async function ethAccountsReply(
 		return returnValue
 	}
 	const signerAccounts = signerAccountsReply.accounts
-	const activeSigningAddress =
-		signerAccounts.length > 0 ? signerAccounts[0] : undefined
-	const tabStateChange = await updateTabState(
-		port.sender.tab.id,
-		(previousState: TabState) =>
-			modifyObject(previousState, {
-				...(signerAccounts.length > 0 ? { signerAccountError: undefined } : {}),
-				signerAccounts,
-				activeSigningAddress,
-			}),
+	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
+	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) =>
+		modifyObject(previousState, {
+			...(signerAccounts.length > 0 ? { signerAccountError: undefined } : {}),
+			signerAccounts,
+			activeSigningAddress,
+		}),
 	)
 	sendPopupMessageToOpenWindows({
 		method: 'popup_activeSigningAddressChanged',
@@ -108,64 +80,30 @@ export async function ethAccountsReply(
 		})
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if (
-		(settings.useSignersAddressAsActiveAddress &&
-			settings.activeSimulationAddress !== signerAccounts[0]) ||
-		(settings.simulationMode === false &&
-			tabStateChange.previousState.activeSigningAddress !==
-				tabStateChange.newState.activeSigningAddress)
-	) {
-		await changeActiveAddressAndChain(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				simulationMode: settings.simulationMode,
-				activeAddress: tabStateChange.newState.activeSigningAddress,
-			},
-		)
+	if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0]) || (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: settings.simulationMode,
+			activeAddress: tabStateChange.newState.activeSigningAddress,
+		})
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
 	return returnValue
 }
 
-async function changeSignerChain(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
-	websiteTabConnections: WebsiteTabConnections,
-	port: browser.runtime.Port,
-	signerChain: bigint,
-	approval: ApprovalState,
-	_activeAddress: bigint | undefined,
-) {
+async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
 	const oldSignerChain = (await getTabState(port.sender.tab.id)).signerChain
-	if (oldSignerChain !== signerChain)
-		await updateTabState(port.sender.tab.id, (previousState: TabState) =>
-			modifyObject(previousState, { signerChain }),
-		)
+	if (oldSignerChain !== signerChain) await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerChain }))
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if (
-		(settings.useSignersAddressAsActiveAddress || !settings.simulationMode) &&
-		settings.activeRpcNetwork.chainId !== signerChain
-	) {
-		return changeActiveAddressAndChain(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				simulationMode: settings.simulationMode,
-				rpcNetwork: await getRpcNetworkForChain(signerChain),
-			},
-		)
+	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
+		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: settings.simulationMode,
+			rpcNetwork: await getRpcNetworkForChain(signerChain),
+		})
 	}
-	if (oldSignerChain !== signerChain)
-		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
 export async function signerChainChanged(
@@ -186,16 +124,7 @@ export async function signerChainChanged(
 	if (!('params' in request)) return returnValue
 	const signerChain = EthereumChainReply.parse(request.params)[0]
 	if (signerChain === undefined) throw new Error('signer chain were undefined')
-	await changeSignerChain(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
-		websiteTabConnections,
-		port,
-		signerChain,
-		approval,
-		activeAddress,
-	)
+	await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, port, signerChain, approval, activeAddress)
 	return returnValue
 }
 
@@ -216,17 +145,7 @@ export async function walletSwitchEthereumChainReply(
 	}
 	if (approval !== 'hasAccess') return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
-	if (params.accept)
-		await changeSignerChain(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			port,
-			params.chainId,
-			approval,
-			activeAddress,
-		)
+	if (params.accept) await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, port, params.chainId, approval, activeAddress)
 	await resolveSignerChainChange({
 		method: 'popup_signerChangeChainDialog',
 		data: [params],
@@ -256,11 +175,7 @@ export async function connectedToSigner(
 		}
 	}
 	await setDefaultSignerName(signerName)
-	await updateTabState(
-		request.uniqueRequestIdentifier.requestSocket.tabId,
-		(previousState: TabState) =>
-			modifyObject(previousState, { signerName, signerConnected }),
-	)
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => modifyObject(previousState, { signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
@@ -275,22 +190,12 @@ export async function connectedToSigner(
 		method: 'connected_to_signer' as const,
 		result: {
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-			activeAddress:
-				activeAddress === undefined ? '' : addressString(activeAddress),
+			activeAddress: activeAddress === undefined ? '' : addressString(activeAddress),
 		},
 	}
 }
 
-export async function signerReply(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	_resetSimulationServices: ResetSimulationServices,
-	websiteTabConnections: WebsiteTabConnections,
-	_port: browser.runtime.Port,
-	request: ProviderMessage,
-	_approval: ApprovalState,
-	_activeAddress: bigint | undefined,
-) {
+export async function signerReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const signerReply = SignerReply.parse(request)
 	const params = signerReply.params[0]
 	const doNotReply = { type: 'doNotReply' as const }
@@ -309,41 +214,32 @@ export async function signerReply(
 			}
 			if (params.success) {
 				try {
-					await resolvePendingTransactionOrMessage(
-						ethereum,
-						tokenPriceService,
-						websiteTabConnections,
-						{
-							method: 'popup_confirmDialog',
-							data: {
-								uniqueRequestIdentifier,
-								action: 'signerIncluded',
-								signerReply: params.reply,
-							},
+					await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
+						method: 'popup_confirmDialog',
+						data: {
+							uniqueRequestIdentifier,
+							action: 'signerIncluded',
+							signerReply: params.reply,
 						},
-					)
+					})
 				} catch (e) {
 					await handleUnexpectedError(e)
 				}
 				return doNotReply
 			}
 			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-				await updatePendingTransactionOrMessage(
-					uniqueRequestIdentifier,
-					async (transaction) =>
-						modifyObject(transaction, {
-							approvalStatus: { status: 'WaitingForUser' },
-						}),
+				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) =>
+					modifyObject(transaction, {
+						approvalStatus: { status: 'WaitingForUser' },
+					}),
 				)
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return doNotReply
 			}
-			await updatePendingTransactionOrMessage(
-				uniqueRequestIdentifier,
-				async (transaction) =>
-					modifyObject(transaction, {
-						approvalStatus: { status: 'SignerError', ...params.error },
-					}),
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) =>
+				modifyObject(transaction, {
+					approvalStatus: { status: 'SignerError', ...params.error },
+				}),
 			)
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

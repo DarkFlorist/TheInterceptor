@@ -1,17 +1,11 @@
 import type { EnsEvent } from '../../../types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import {
-	bigintSecondsToDate,
-	dataStringWith0xStart,
-} from '../../../utils/bigint.js'
+import { bigintSecondsToDate, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { Ether } from '../../subcomponents/coins.js'
-import {
-	type EditEnsNamedHashCallBack,
-	EnsNamedHashComponent,
-} from '../../subcomponents/ens.js'
+import { type EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../../subcomponents/ens.js'
 
 type EnsEvenExplainerParam = {
 	ensEvent: EnsEvent
@@ -21,16 +15,9 @@ type EnsEvenExplainerParam = {
 	rpcNetwork: RpcNetwork
 }
 
-const expiresToDateString = (expires: bigint) =>
-	bigintSecondsToDate(expires).toISOString()
+const expiresToDateString = (expires: bigint) => bigintSecondsToDate(expires).toISOString()
 
-const VisualizeEnsEvent = ({
-	ensEvent,
-	textColor,
-	editEnsNamedHashCallBack,
-	renameAddressCallBack,
-	rpcNetwork,
-}: EnsEvenExplainerParam) => {
+const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, renameAddressCallBack, rpcNetwork }: EnsEvenExplainerParam) => {
 	const textStyle = `color: ${textColor}; margin-bottom: 0px; display: inline-block`
 	switch (ensEvent.subType) {
 		case 'ENSAddrChanged':
@@ -42,12 +29,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -55,10 +37,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.to}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.to} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 				</div>
 			)
@@ -73,12 +52,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="labelHash"
-							nameHash={ensEvent.logInformation.labelHash.labelHash}
-							name={ensEvent.logInformation.labelHash.label}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="labelHash" nameHash={ensEvent.logInformation.labelHash.labelHash} name={ensEvent.logInformation.labelHash.label} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -86,10 +60,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.owner}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.owner} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -109,12 +80,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -139,13 +105,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="labelHash"
-							nameHash={ensEvent.logInformation.labelHash.labelHash}
-							name={ensEvent.logInformation.labelHash.label}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-							addDotEth={true}
-						/>
+						<EnsNamedHashComponent type="labelHash" nameHash={ensEvent.logInformation.labelHash.labelHash} name={ensEvent.logInformation.labelHash.label} editEnsNamedHashCallBack={editEnsNamedHashCallBack} addDotEth={true} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -153,10 +113,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.owner}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.owner} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -164,11 +121,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<Ether
-							amount={ensEvent.logInformation.cost}
-							rpcNetwork={rpcNetwork}
-							fontSize="normal"
-						/>
+						<Ether amount={ensEvent.logInformation.cost} rpcNetwork={rpcNetwork} fontSize="normal" />
 					</div>
 				</div>
 			)
@@ -181,13 +134,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="labelHash"
-							nameHash={ensEvent.logInformation.labelHash.labelHash}
-							name={ensEvent.logInformation.labelHash.label}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-							addDotEth={true}
-						/>
+						<EnsNamedHashComponent type="labelHash" nameHash={ensEvent.logInformation.labelHash.labelHash} name={ensEvent.logInformation.labelHash.label} editEnsNamedHashCallBack={editEnsNamedHashCallBack} addDotEth={true} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -195,11 +142,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<Ether
-							amount={ensEvent.logInformation.cost}
-							rpcNetwork={rpcNetwork}
-							fontSize="normal"
-						/>
+						<Ether amount={ensEvent.logInformation.cost} rpcNetwork={rpcNetwork} fontSize="normal" />
 					</div>
 				</div>
 			)
@@ -212,12 +155,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -235,12 +173,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -250,10 +183,7 @@ const VisualizeEnsEvent = ({
 					<div class="log-cell" style="display: block;">
 						{ensEvent.logInformation.fuses.map((fuse) => (
 							<>
-								<div
-									class="textbox"
-									style="white-space: nowrap; background-color: var(--alpha-015); margin: 5px"
-								>
+								<div class="textbox" style="white-space: nowrap; background-color: var(--alpha-015); margin: 5px">
 									<p class="paragraph"> {fuse}</p>
 								</div>
 							</>
@@ -270,12 +200,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -293,12 +218,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -306,10 +226,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.owner}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.owner} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 				</div>
 			)
@@ -322,12 +239,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -335,10 +247,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.owner}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.owner} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -348,10 +257,7 @@ const VisualizeEnsEvent = ({
 					<div class="log-cell">
 						{ensEvent.logInformation.fuses.map((fuse) => (
 							<>
-								<div
-									class="textbox"
-									style="white-space: nowrap; background-color: var(--alpha-015); margin: 5px"
-								>
+								<div class="textbox" style="white-space: nowrap; background-color: var(--alpha-015); margin: 5px">
 									<p class="paragraph"> {fuse}</p>
 								</div>
 							</>
@@ -368,10 +274,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.owner}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.owner} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -379,12 +282,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="labelHash"
-							nameHash={ensEvent.logInformation.labelHash.labelHash}
-							name={ensEvent.logInformation.labelHash.label}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="labelHash" nameHash={ensEvent.logInformation.labelHash.labelHash} name={ensEvent.logInformation.labelHash.label} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -392,12 +290,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 				</div>
 			)
@@ -410,10 +303,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.address}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.address} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -421,12 +311,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 				</div>
 			)
@@ -439,12 +324,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -462,12 +342,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -475,10 +350,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.address}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.address} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 				</div>
 			)
@@ -491,12 +363,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -538,12 +405,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -592,12 +454,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<EnsNamedHashComponent
-							type="nameHash"
-							nameHash={ensEvent.logInformation.node.nameHash}
-							name={ensEvent.logInformation.node.name}
-							editEnsNamedHashCallBack={editEnsNamedHashCallBack}
-						/>
+						<EnsNamedHashComponent type="nameHash" nameHash={ensEvent.logInformation.node.nameHash} name={ensEvent.logInformation.node.name} editEnsNamedHashCallBack={editEnsNamedHashCallBack} />
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
@@ -605,10 +462,7 @@ const VisualizeEnsEvent = ({
 						</p>
 					</div>
 					<div class="log-cell">
-						<SmallAddress
-							addressBookEntry={ensEvent.logInformation.owner}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
+						<SmallAddress addressBookEntry={ensEvent.logInformation.owner} renameAddressCallBack={renameAddressCallBack} />
 					</div>
 				</div>
 			)
@@ -629,24 +483,11 @@ export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
 	return (
 		<>
 			{param.ensEvents
-				.filter(
-					(ensEvent) =>
-						ensEvent.subType !== 'ENSAddressChanged' &&
-						ensEvent.subType !== 'ENSBaseRegistrarNameRenewed',
-				)
+				.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed')
 				.map((ensEvent, index) => (
 					<div key={`${ensEvent.subType}-${index}`} class="vertical-center">
-						<div
-							class="box token-box vertical-center positive-box"
-							style="display: inline-block"
-						>
-							<VisualizeEnsEvent
-								ensEvent={ensEvent}
-								textColor={param.textColor}
-								editEnsNamedHashCallBack={param.editEnsNamedHashCallBack}
-								renameAddressCallBack={param.renameAddressCallBack}
-								rpcNetwork={param.rpcNetwork}
-							/>
+						<div class="box token-box vertical-center positive-box" style="display: inline-block">
+							<VisualizeEnsEvent ensEvent={ensEvent} textColor={param.textColor} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />
 						</div>
 					</div>
 				))}

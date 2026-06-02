@@ -1,18 +1,11 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { searchWebsiteAccess } from '../../app/ts/background/websiteAccessSearch.js'
-import type {
-	WebsiteAccess,
-	WebsiteAccessArray,
-} from '../../app/ts/types/websiteAccessTypes.js'
+import type { WebsiteAccess, WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 
-const createWebsiteAccess = (
-	title: string | undefined,
-	origin: string,
-	addresses: string[] = [],
-): WebsiteAccess => ({
+const createWebsiteAccess = (title: string | undefined, origin: string, addresses: string[] = []): WebsiteAccess => ({
 	website: { title, websiteOrigin: origin, icon: undefined },
 	addressAccess: addresses.length
 		? addresses.map((addr) => ({
@@ -23,22 +16,12 @@ const createWebsiteAccess = (
 })
 
 const testData: WebsiteAccessArray = [
-	createWebsiteAccess('Ethereum Foundation', 'ethereum.org', [
-		'0x0000000000000000000000000000000000000123',
-	]),
-	createWebsiteAccess('Uniswap', 'app.uniswap.org', [
-		'0x0000000000000000000000000000000000000789',
-	]),
-	createWebsiteAccess(undefined, 'etherscan.io', [
-		'0x0000000000000000000000000000000000000abc',
-	]),
+	createWebsiteAccess('Ethereum Foundation', 'ethereum.org', ['0x0000000000000000000000000000000000000123']),
+	createWebsiteAccess('Uniswap', 'app.uniswap.org', ['0x0000000000000000000000000000000000000789']),
+	createWebsiteAccess(undefined, 'etherscan.io', ['0x0000000000000000000000000000000000000abc']),
 	createWebsiteAccess('OpenSea', 'opensea.io'),
 	createWebsiteAccess('Lunaria', 'lunaria.dark.florist'),
-	createWebsiteAccess('MultiAddress DApp', 'multi.dapp', [
-		'0x0000000000000000000000000000000000001234',
-		'0x0000000000000000000000000000000000012345',
-		'0x0000000000000000000000000000000000789abc',
-	]),
+	createWebsiteAccess('MultiAddress DApp', 'multi.dapp', ['0x0000000000000000000000000000000000001234', '0x0000000000000000000000000000000000012345', '0x0000000000000000000000000000000000789abc']),
 ]
 
 describe('searchWebsiteAccess', () => {
@@ -80,10 +63,7 @@ describe('searchWebsiteAccess', () => {
 	})
 
 	test('ranks longer fuzzy matches ahead of shorter ones', () => {
-		const entries: WebsiteAccessArray = [
-			createWebsiteAccess('Swap', 'swap.org'),
-			createWebsiteAccess('Spread Letters', 'sxxwxxaxxpp.org'),
-		]
+		const entries: WebsiteAccessArray = [createWebsiteAccess('Swap', 'swap.org'), createWebsiteAccess('Spread Letters', 'sxxwxxaxxpp.org')]
 		const result = searchWebsiteAccess('swap', entries)
 		assert.deepEqual(
 			result.map((entry) => entry.website.websiteOrigin),
@@ -92,11 +72,7 @@ describe('searchWebsiteAccess', () => {
 	})
 
 	test('sorts multiple matches by descending fuzzy match length', () => {
-		const entries: WebsiteAccessArray = [
-			createWebsiteAccess('Shortest', 'swap.org'),
-			createWebsiteAccess('Middle', 'sxxwxxap.org'),
-			createWebsiteAccess('Longest', 'sxxwxxaxxpp.org'),
-		]
+		const entries: WebsiteAccessArray = [createWebsiteAccess('Shortest', 'swap.org'), createWebsiteAccess('Middle', 'sxxwxxap.org'), createWebsiteAccess('Longest', 'sxxwxxaxxpp.org')]
 		const result = searchWebsiteAccess('swap', entries)
 		assert.deepEqual(
 			result.map((entry) => entry.website.websiteOrigin),
@@ -106,9 +82,7 @@ describe('searchWebsiteAccess', () => {
 
 	test('matches non-sequential characters', () => {
 		assert.equal(
-			searchWebsiteAccess('usp', testData).some(
-				(entry) => entry.website.websiteOrigin === 'app.uniswap.org',
-			),
+			searchWebsiteAccess('usp', testData).some((entry) => entry.website.websiteOrigin === 'app.uniswap.org'),
 			true,
 		)
 	})
@@ -120,11 +94,7 @@ describe('searchWebsiteAccess', () => {
 			true,
 		)
 		assert.equal(
-			result.some((entry) =>
-				entry.addressAccess?.some((addr) =>
-					addressString(addr.address).endsWith('1234'),
-				),
-			),
+			result.some((entry) => entry.addressAccess?.some((addr) => addressString(addr.address).endsWith('1234'))),
 			true,
 		)
 	})
@@ -135,9 +105,7 @@ describe('searchWebsiteAccess', () => {
 
 	test('matches mixed-case patterns', () => {
 		assert.equal(
-			searchWebsiteAccess('UnIsWaP', testData).some(
-				(entry) => entry.website.websiteOrigin === 'app.uniswap.org',
-			),
+			searchWebsiteAccess('UnIsWaP', testData).some((entry) => entry.website.websiteOrigin === 'app.uniswap.org'),
 			true,
 		)
 	})
@@ -151,23 +119,10 @@ describe('searchWebsiteAccess', () => {
 	})
 
 	test('supports unicode characters', () => {
-		const unicodeTestData: WebsiteAccessArray = [
-			createWebsiteAccess('Café', 'café.org'),
-			createWebsiteAccess('München', 'münich.de'),
-			createWebsiteAccess('東京', '東京.jp'),
-		]
+		const unicodeTestData: WebsiteAccessArray = [createWebsiteAccess('Café', 'café.org'), createWebsiteAccess('München', 'münich.de'), createWebsiteAccess('東京', '東京.jp')]
 
-		assert.equal(
-			searchWebsiteAccess('café', unicodeTestData)[0]?.website.websiteOrigin,
-			'café.org',
-		)
-		assert.equal(
-			searchWebsiteAccess('münich', unicodeTestData)[0]?.website.websiteOrigin,
-			'münich.de',
-		)
-		assert.equal(
-			searchWebsiteAccess('東京', unicodeTestData)[0]?.website.websiteOrigin,
-			'東京.jp',
-		)
+		assert.equal(searchWebsiteAccess('café', unicodeTestData)[0]?.website.websiteOrigin, 'café.org')
+		assert.equal(searchWebsiteAccess('münich', unicodeTestData)[0]?.website.websiteOrigin, 'münich.de')
+		assert.equal(searchWebsiteAccess('東京', unicodeTestData)[0]?.website.websiteOrigin, '東京.jp')
 	})
 })

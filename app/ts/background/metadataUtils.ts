@@ -1,73 +1,29 @@
 import { addressString, addressStringWithout0x } from '../utils/bigint.js'
-import type {
-	AddressBookEntries,
-	AddressBookEntry,
-	Erc20TokenEntry,
-} from '../types/addressBookTypes.js'
-import type {
-	NamedTokenId,
-	SimulationStateInput,
-} from '../types/visualizer-types.js'
-import {
-	tokenMetadata,
-	contractMetadata,
-	erc721Metadata,
-	erc1155Metadata,
-} from '@darkflorist/address-metadata'
+import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
+import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
+import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { getAddress, keccak256, stringToBytes } from '../utils/viem.js'
-import {
-	ENS_ADDR_REVERSE_NODE,
-	ENS_TOKEN_WRAPPER,
-	ETHEREUM_COIN_ICON,
-	ETHEREUM_LOGS_LOGGER_ADDRESS,
-	MOCK_ADDRESS,
-} from '../utils/constants.js'
+import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import {
-	type IdentifiedAddress,
-	itentifyAddressViaOnChainInformation,
-} from '../utils/tokenIdentification.js'
+import { type IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import {
-	addEnsLabelHash,
-	addEnsNodeHash,
-	addUserAddressBookEntryIfItDoesNotExist,
-	getEnsLabelHashes,
-	getEnsNodeHashes,
-	getUserAddressBookEntries,
-	getUserAddressBookEntriesForChainIdMorePreciseFirst,
-} from './storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import {
-	getEnsReverseNodeHash,
-	getEthereumNameServiceNameFromTokenId,
-} from '../utils/ethereumNameService.js'
+import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
-import type {
-	EnrichedEthereumEventWithMetadata,
-	EnrichedEthereumEvents,
-	EnrichedEthereumInputData,
-	EnsEvent,
-	SolidityVariable,
-	TokenEvent,
-	TokenVisualizerResultWithMetadata,
-} from '../types/EnrichedEthereumData.js'
+import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 
-const pathJoin = (parts: string[], sep = '/') =>
-	parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
+const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
-export const getFullLogoUri = (logoURI: string) =>
-	pathJoin([LOGO_URI_PREFIX, logoURI])
+export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
-export async function getActiveAddressEntry(
-	address: bigint,
-): Promise<AddressBookEntry> {
+export async function getActiveAddressEntry(address: bigint): Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
 	if (identifiedAddress?.useAsActiveAddress) return identifiedAddress
 	return {
@@ -78,17 +34,11 @@ export async function getActiveAddressEntry(
 }
 
 export async function getActiveAddresses(): Promise<AddressBookEntries> {
-	const activeAddresses = (await getUserAddressBookEntries()).filter(
-		(entry) => entry.useAsActiveAddress,
-	)
-	return activeAddresses === undefined || activeAddresses.length === 0
-		? defaultActiveAddresses
-		: activeAddresses
+	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useAsActiveAddress)
+	return activeAddresses === undefined || activeAddresses.length === 0 ? defaultActiveAddresses : activeAddresses
 }
 
-export function getNativeTokenErc20(
-	rpcEntry: RpcNetwork | undefined,
-): Erc20TokenEntry {
+export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20TokenEntry {
 	return {
 		address: ETHEREUM_LOGS_LOGGER_ADDRESS,
 		name: rpcEntry?.currencyName ?? 'Ethereum',
@@ -96,28 +46,16 @@ export function getNativeTokenErc20(
 		entrySource: 'Interceptor',
 		symbol: rpcEntry?.currencyTicker ?? 'ETH',
 		decimals: 18n,
-		logoUri:
-			rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry
-				? rpcEntry.currencyLogoUri
-				: ETHEREUM_COIN_ICON,
+		logoUri: rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry ? rpcEntry.currencyLogoUri : ETHEREUM_COIN_ICON,
 		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 }
 
-async function identifyAddressWithoutNode(
-	address: bigint,
-	rpcEntry: RpcNetwork | undefined,
-	useLocalStorage = true,
-): Promise<AddressBookEntry | undefined> {
-	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS)
-		return getNativeTokenErc20(rpcEntry)
+async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true): Promise<AddressBookEntry | undefined> {
+	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
 	if (useLocalStorage) {
-		const userEntry = (
-			await getUserAddressBookEntriesForChainIdMorePreciseFirst(
-				rpcEntry?.chainId || 1n,
-			)
-		).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId || 1n)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
@@ -126,9 +64,7 @@ async function identifyAddressWithoutNode(
 		const { logoUri, ...rest } = addressData
 		return {
 			...rest,
-			...(logoUri !== undefined
-				? { logoUri: `${getFullLogoUri(logoUri)}` }
-				: {}),
+			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
 			address: address,
 			type: 'contract',
 			entrySource: 'DarkFloristMetadata',
@@ -141,9 +77,7 @@ async function identifyAddressWithoutNode(
 		const { logoUri, ...rest } = tokenData
 		return {
 			...rest,
-			...(logoUri !== undefined
-				? { logoUri: `${getFullLogoUri(logoUri)}` }
-				: {}),
+			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
 			address: address,
 			type: 'ERC20',
 			entrySource: 'DarkFloristMetadata',
@@ -156,9 +90,7 @@ async function identifyAddressWithoutNode(
 		const { logoUri, ...rest } = erc721TokenData
 		return {
 			...rest,
-			...(logoUri !== undefined
-				? { logoUri: `${getFullLogoUri(logoUri)}` }
-				: {}),
+			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
 			address: address,
 			type: 'ERC721',
 			entrySource: 'DarkFloristMetadata',
@@ -171,9 +103,7 @@ async function identifyAddressWithoutNode(
 		const { logoUri, ...rest } = erc1155TokenData
 		return {
 			...rest,
-			...(logoUri !== undefined
-				? { logoUri: `${getFullLogoUri(logoUri)}` }
-				: {}),
+			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
 			address: address,
 			type: 'ERC1155',
 			entrySource: 'DarkFloristMetadata',
@@ -202,28 +132,13 @@ async function identifyAddressWithoutNode(
 	return undefined
 }
 
-export async function identifyAddress(
-	ethereumClientService: EthereumClientService,
-	requestAbortController: AbortController | undefined,
-	address: bigint,
-	useLocalStorage = true,
-): Promise<AddressBookEntry> {
-	const identifiedAddress = await identifyAddressWithoutNode(
-		address,
-		ethereumClientService.getRpcEntry(),
-		useLocalStorage,
-	)
+export async function identifyAddress(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint, useLocalStorage = true): Promise<AddressBookEntry> {
+	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
-	const tokenIdentification = await itentifyAddressViaOnChainInformation(
-		ethereumClientService,
-		requestAbortController,
-		address,
-	)
+	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
 	const chainId = ethereumClientService.getChainId()
-	const getEntry = (
-		tokenIdentification: IdentifiedAddress,
-	): AddressBookEntry => {
+	const getEntry = (tokenIdentification: IdentifiedAddress): AddressBookEntry => {
 		switch (tokenIdentification.type) {
 			case 'ERC20':
 				return {
@@ -279,53 +194,25 @@ export async function identifyAddress(
 	return entry
 }
 
-export const getAddressesForSolidityTypes = (
-	variables: readonly SolidityVariable[],
-) => {
+export const getAddressesForSolidityTypes = (variables: readonly SolidityVariable[]) => {
 	return variables
 		.flatMap((argumentVariable) => {
-			if (argumentVariable.typeValue.type === 'address')
-				return argumentVariable.typeValue.value
-			if (argumentVariable.typeValue.type === 'address[]')
-				return argumentVariable.typeValue.value
+			if (argumentVariable.typeValue.type === 'address') return argumentVariable.typeValue.value
+			if (argumentVariable.typeValue.type === 'address[]') return argumentVariable.typeValue.value
 			return undefined
 		})
 		.filter((address): address is bigint => address !== undefined)
 }
 
-export function getAddressesToIdentifyForVisualiserFromTransactions(
-	events: EnrichedEthereumEvents,
-	inputData: readonly EnrichedEthereumInputData[],
-	simulationStateInput: SimulationStateInput,
-) {
-	const addressesToFetchMetadata = [
-		...events.flatMap((event) => [
-			event.address,
-			...(event.type === 'NonParsed'
-				? []
-				: getAddressesForSolidityTypes(event.args)),
-		]),
-		...getAddressesForSolidityTypes(
-			inputData.flatMap((event) =>
-				event.type !== 'NonParsed' ? event.args : [],
-			),
-		),
-	]
+export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
+	const addressesToFetchMetadata = [...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]), ...getAddressesForSolidityTypes(inputData.flatMap((event) => (event.type !== 'NonParsed' ? event.args : [])))]
 
-	for (const tx of simulationStateInput.flatMap(
-		(block) => block.transactions,
-	)) {
+	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
-		if (tx.signedTransaction.to !== null)
-			addressesToFetchMetadata.push(tx.signedTransaction.to)
+		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	}
 
-	return Array.from(
-		new Set<bigint>([
-			...addressesToFetchMetadata,
-			ETHEREUM_LOGS_LOGGER_ADDRESS,
-		]).values(),
-	)
+	return Array.from(new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS]).values())
 }
 
 export async function getAddressBookEntriesForVisualiserFromTransactions(
@@ -335,29 +222,15 @@ export async function getAddressBookEntriesForVisualiserFromTransactions(
 	inputData: readonly EnrichedEthereumInputData[],
 	simulationStateInput: SimulationStateInput,
 ): Promise<AddressBookEntry[]> {
-	const addressesToIdentify =
-		getAddressesToIdentifyForVisualiserFromTransactions(
-			events,
-			inputData,
-			simulationStateInput,
-		)
-	return await promiseAllMapAbortSafe(addressesToIdentify, (address) =>
-		identifyAddress(ethereumClientService, requestAbortController, address),
-	)
+	const addressesToIdentify = getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput)
+	return await promiseAllMapAbortSafe(addressesToIdentify, (address) => identifyAddress(ethereumClientService, requestAbortController, address))
 }
 
-export async function nameTokenIds(
-	ethereumClientService: EthereumClientService,
-	events: EnrichedEthereumEvents,
-) {
+export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {
 	type TokenAddressTokenIdPair = { tokenAddress: bigint; tokenId: bigint }
 	const tokenAddresses = events
 		.map((event) => {
-			if (
-				event.type !== 'TokenEvent' ||
-				event.logInformation.type !== 'ERC1155'
-			)
-				return undefined
+			if (event.type !== 'TokenEvent' || event.logInformation.type !== 'ERC1155') return undefined
 			return {
 				tokenAddress: event.logInformation.tokenAddress,
 				tokenId: event.logInformation.tokenId,
@@ -365,24 +238,12 @@ export async function nameTokenIds(
 		})
 		.filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
 
-	const pairs = getUniqueItemsByProperties(tokenAddresses, [
-		'tokenAddress',
-		'tokenId',
-	])
+	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
 	const namedPairs = (
 		await Promise.all(
 			pairs.map(async (pair) => {
-				if (
-					pair.tokenAddress === ENS_TOKEN_WRAPPER &&
-					ethereumClientService.getChainId() === 1n
-				) {
-					const tokenIdName = (
-						await getAndCacheEnsNodeHash(
-							ethereumClientService,
-							pair.tokenId,
-							[],
-						)
-					).name
+				if (pair.tokenAddress === ENS_TOKEN_WRAPPER && ethereumClientService.getChainId() === 1n) {
+					const tokenIdName = (await getAndCacheEnsNodeHash(ethereumClientService, pair.tokenId, [])).name
 					if (tokenIdName === undefined) return undefined
 					return { ...pair, tokenIdName }
 				}
@@ -393,91 +254,42 @@ export async function nameTokenIds(
 	return namedPairs
 }
 
-export const extractTokenEvents = (
-	events: readonly EnrichedEthereumEventWithMetadata[],
-): readonly TokenVisualizerResultWithMetadata[] => {
-	return events
-		.filter(
-			(tokenEvent): tokenEvent is TokenEvent =>
-				tokenEvent.type === 'TokenEvent',
-		)
-		.map((token) => token.logInformation)
+export const extractTokenEvents = (events: readonly EnrichedEthereumEventWithMetadata[]): readonly TokenVisualizerResultWithMetadata[] => {
+	return events.filter((tokenEvent): tokenEvent is TokenEvent => tokenEvent.type === 'TokenEvent').map((token) => token.logInformation)
 }
-export const extractEnsEvents = (
-	events: readonly EnrichedEthereumEventWithMetadata[],
-): readonly EnsEvent[] => {
-	return events.filter(
-		(tokenEvent): tokenEvent is EnsEvent => tokenEvent.type === 'ENS',
-	)
+export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetadata[]): readonly EnsEvent[] => {
+	return events.filter((tokenEvent): tokenEvent is EnsEvent => tokenEvent.type === 'ENS')
 }
 
-export const retrieveEnsNodeAndLabelHashes = async (
-	ethereumClientService: EthereumClientService,
-	events: EnrichedEthereumEvents,
-	addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[],
-) => {
-	const labelHashesToRetrieve = events
-		.map((event) =>
-			'logInformation' in event && 'labelHash' in event.logInformation
-				? event.logInformation.labelHash
-				: undefined,
-		)
-		.filter((labelHash): labelHash is bigint => labelHash !== undefined)
+export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) => {
+	const labelHashesToRetrieve = events.map((event) => ('logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined)).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions
 		.map((entry) => addressStringWithout0x(entry.address))
 		.map((label) => ({
 			label,
 			labelHash: BigInt(keccak256(stringToBytes(label))),
 		}))
-	const newLabels = [
-		...events
-			.map((event) =>
-				'logInformation' in event && 'name' in event.logInformation
-					? event.logInformation.name
-					: undefined,
-			)
-			.filter((label): label is string => label !== undefined),
-	]
+	const newLabels = [...events.map((event) => ('logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined)).filter((label): label is string => label !== undefined)]
 
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
-	await Promise.all(
-		deduplicatedLabels.map(async (label) =>
-			Promise.all([
-				await addEnsLabelHash(label),
-				await addEnsNodeHash(label.endsWith('.eth') ? label : `${label}.eth`),
-			]),
-		),
-	)
+	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(label.endsWith('.eth') ? label : `${label}.eth`)])))
 
 	// return the label hashes that we have now available
-	const currentLabelHashes = [
-		...reverseEnsLabelHashes,
-		...(await getEnsLabelHashes()),
-	]
-	const ensLabelHashes = Array.from(new Set(labelHashesToRetrieve)).map(
-		(labelHash) => {
-			const found = currentLabelHashes.find(
-				(entry) => entry.labelHash === labelHash,
-			)
-			if (found) addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
-			return { labelHash, label: found?.label }
-		},
-	)
+	const currentLabelHashes = [...reverseEnsLabelHashes, ...(await getEnsLabelHashes())]
+	const ensLabelHashes = Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
+		const found = currentLabelHashes.find((entry) => entry.labelHash === labelHash)
+		if (found) addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
+		return { labelHash, label: found?.label }
+	})
 
 	const hashes = new Set<bigint>()
 	for (const event of events) {
 		if (!('logInformation' in event && 'node' in event.logInformation)) continue
 		hashes.add(event.logInformation.node)
 	}
-	const reverseEnsNameHashes = addressBookEntriesToMatchReverseResolutions.map(
-		(addressBookEntry) => getEnsReverseNodeHash(addressBookEntry.address),
-	)
-	const ensNameHashes = await Promise.all(
-		[...hashes].map((hash) =>
-			getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsNameHashes),
-		),
-	)
+	const reverseEnsNameHashes = addressBookEntriesToMatchReverseResolutions.map((addressBookEntry) => getEnsReverseNodeHash(addressBookEntry.address))
+	const ensNameHashes = await Promise.all([...hashes].map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsNameHashes)))
 
 	return { ensNameHashes, ensLabelHashes }
 }
@@ -488,29 +300,19 @@ const addNewEnsNameEntry = async (name: string) => {
 	await addEnsNodeHash(name)
 }
 
-const getAndCacheEnsNodeHash = async (
-	ethereumClientService: EthereumClientService,
-	ensNameHash: EthereumBytes32,
-	extraNameHashes: ENSNameHashes,
-) => {
+const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientService, ensNameHash: EthereumBytes32, extraNameHashes: ENSNameHashes) => {
 	const currentHashes = [ENS_ADDR_REVERSE_NODE, ...(await getEnsNodeHashes())]
 	const entry = currentHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (entry !== undefined) return entry
 
-	const extraNameEntry = extraNameHashes.find(
-		(entry) => entry.nameHash === ensNameHash,
-	)
+	const extraNameEntry = extraNameHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (extraNameEntry !== undefined) {
 		// extra name entries do not exist in our localstorage, so if we find a match, lets add them there
 		await addNewEnsNameEntry(extraNameEntry.name)
 		return extraNameEntry
 	}
 
-	const name = await getEthereumNameServiceNameFromTokenId(
-		ethereumClientService,
-		undefined,
-		ensNameHash,
-	)
+	const name = await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, ensNameHash)
 	if (name !== undefined) await addNewEnsNameEntry(name)
 	return { nameHash: ensNameHash, name }
 }

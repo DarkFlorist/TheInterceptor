@@ -16,9 +16,7 @@ type PortMessage = {
 
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
-	;(
-		globalThis as typeof globalThis & { browser: typeof globalThis.browser }
-	).browser = {
+	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
 			lastError: null,
 			async sendMessage() {
@@ -38,27 +36,15 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys
-								.filter((key) => key in storageState)
-								.map((key) => [key, storageState[key]]),
-						)
-					if (typeof keys === 'string')
-						return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -118,9 +104,7 @@ function installBrowserMock() {
 			},
 		},
 	} as unknown as typeof globalThis.browser
-	;(
-		globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }
-	).chrome = { runtime: { id: 'test-extension' } }
+	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 	;(globalThis as typeof globalThis & { location: Location }).location = {
 		origin: '',
 	} as unknown as Location
@@ -135,10 +119,7 @@ async function loadModules() {
 	}
 }
 
-function createPort(
-	tabId: number,
-	onPostMessage?: (message: PortMessage) => void,
-) {
+function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void) {
 	const messages: PortMessage[] = []
 	const port = {
 		name: '0x0',
@@ -172,8 +153,7 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }) {
 		{
 			get(target, property, receiver) {
 				if (property === 'isBlockPolling') return () => true
-				if (property === 'setBlockPolling')
-					return (_enabled: boolean) => undefined
+				if (property === 'setBlockPolling') return (_enabled: boolean) => undefined
 				if (property === 'getBlock') {
 					return async () => {
 						getBlockCalls.count += 1
@@ -187,22 +167,14 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }) {
 	return {
 		ethereum,
 		tokenPriceService: new TokenPriceService(ethereum, 60_000),
-		resetSimulationServices: (() =>
-			undefined) satisfies ResetSimulationServices,
+		resetSimulationServices: (() => undefined) satisfies ResetSimulationServices,
 	}
 }
 
 describe('background eth_accounts', () => {
 	test('reject public calls to internal provider callback methods', async () => {
 		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			updateWebsiteAccess,
-			getTabState,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-		} = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		await changeSimulationMode({
@@ -211,9 +183,7 @@ describe('background eth_accounts', () => {
 			activeSigningAddress: undefined,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [
-			{ website, access: true, addressAccess: undefined },
-		])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -234,17 +204,9 @@ describe('background eth_accounts', () => {
 				},
 			],
 		])
-		const { ethereum, tokenPriceService, resetSimulationServices } =
-			createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		for (const [index, method] of [
-			'connected_to_signer',
-			'eth_accounts_reply',
-			'InterceptorError',
-			'signer_chainChanged',
-			'signer_reply',
-			'wallet_switchEthereumChain_reply',
-		].entries()) {
+		for (const [index, method] of ['connected_to_signer', 'eth_accounts_reply', 'InterceptorError', 'signer_chainChanged', 'signer_reply', 'wallet_switchEthereumChain_reply'].entries()) {
 			await handleInterceptedRequest(
 				port,
 				websiteOrigin,
@@ -276,14 +238,7 @@ describe('background eth_accounts', () => {
 
 	test('allow marked internal eth_accounts_reply callbacks', async () => {
 		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			updateWebsiteAccess,
-			getTabState,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-		} = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x3333333333333333333333333333333333333333n
@@ -293,9 +248,7 @@ describe('background eth_accounts', () => {
 			activeSigningAddress: undefined,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [
-			{ website, access: true, addressAccess: undefined },
-		])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -316,8 +269,7 @@ describe('background eth_accounts', () => {
 				},
 			],
 		])
-		const { ethereum, tokenPriceService, resetSimulationServices } =
-			createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		await handleInterceptedRequest(
 			port,
@@ -355,13 +307,7 @@ describe('background eth_accounts', () => {
 
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {
 		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-			updateWebsiteAccess,
-		} = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -371,9 +317,7 @@ describe('background eth_accounts', () => {
 			activeSigningAddress: undefined,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [
-			{ website, access: true, addressAccess: undefined },
-		])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -395,8 +339,7 @@ describe('background eth_accounts', () => {
 			],
 		])
 		const getBlockCalls = { count: 0 }
-		const { ethereum, tokenPriceService, resetSimulationServices } =
-			createEthereumWithGetBlockCounter(getBlockCalls)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter(getBlockCalls)
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -404,44 +347,20 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(
-			port,
-			websiteOrigin,
-			website,
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			socket,
-			request,
-			websiteTabConnections,
-		)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
 
 		assert.equal(getBlockCalls.count, 0)
 		assert.equal(
-			messages.some(
-				(message) => message.method === 'request_signer_to_eth_accounts',
-			),
+			messages.some((message) => message.method === 'request_signer_to_eth_accounts'),
 			false,
 		)
-		const ethAccountsReplies = messages.filter(
-			(message) => message.method === 'eth_accounts' && message.requestId === 1,
-		)
-		assert.deepEqual(ethAccountsReplies.at(-1)?.result, [
-			'0x1111111111111111111111111111111111111111',
-		])
+		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 1)
+		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x1111111111111111111111111111111111111111'])
 	})
 
 	test('refresh signer accounts for approved eth_accounts requests when the tab cache is empty', async () => {
 		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			sendInternalWindowMessage,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-			updateWebsiteAccess,
-			updateTabState,
-		} = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, sendInternalWindowMessage, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x2222222222222222222222222222222222222222n
@@ -451,9 +370,7 @@ describe('background eth_accounts', () => {
 			activeSigningAddress: undefined,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [
-			{ website, access: true, addressAccess: undefined },
-		])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId, (message) => {
@@ -487,8 +404,7 @@ describe('background eth_accounts', () => {
 				},
 			],
 		])
-		const { ethereum, tokenPriceService, resetSimulationServices } =
-			createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -496,48 +412,20 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(
-			port,
-			websiteOrigin,
-			website,
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			socket,
-			request,
-			websiteTabConnections,
-		)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
 
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(
-			messages.filter(
-				(message) => message.method === 'request_signer_to_eth_accounts',
-			).length,
-			1,
-		)
-		assert.equal(
-			messages.some(
-				(message) => message.method === 'request_signer_to_eth_requestAccounts',
-			),
+			messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'),
 			false,
 		)
-		const ethAccountsReplies = messages.filter(
-			(message) => message.method === 'eth_accounts' && message.requestId === 7,
-		)
-		assert.deepEqual(ethAccountsReplies.at(-1)?.result, [
-			'0x2222222222222222222222222222222222222222',
-		])
+		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 7)
+		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
 	test('resolves approved eth_requestAccounts when signer rejects the account request', async () => {
 		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-			updateWebsiteAccess,
-			getTabState,
-		} = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		await changeSimulationMode({
@@ -546,44 +434,39 @@ describe('background eth_accounts', () => {
 			activeSigningAddress: undefined,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [
-			{ website, access: true, addressAccess: undefined },
-		])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		let port: browser.runtime.Port
-		const { port: createdPort, messages } = createPort(
-			socket.tabId,
-			(message) => {
-				if (message.method !== 'request_signer_to_eth_requestAccounts') return
-				void (async () => {
-					await handleInterceptedRequest(
-						port,
-						websiteOrigin,
-						website,
-						ethereum,
-						tokenPriceService,
-						resetSimulationServices,
-						socket,
-						{
-							interceptorRequest: true,
-							interceptorInternalRequest: true,
-							usingInterceptorWithoutSigner: false,
-							uniqueRequestIdentifier: { requestId: 99, requestSocket: socket },
-							method: 'eth_accounts_reply',
-							params: [
-								{
-									type: 'error',
-									requestAccounts: true,
-									error: { code: 4001, message: 'User rejected the request.' },
-								},
-							],
-						},
-						websiteTabConnections,
-					)
-				})()
-			},
-		)
+		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			void (async () => {
+				await handleInterceptedRequest(
+					port,
+					websiteOrigin,
+					website,
+					ethereum,
+					tokenPriceService,
+					resetSimulationServices,
+					socket,
+					{
+						interceptorRequest: true,
+						interceptorInternalRequest: true,
+						usingInterceptorWithoutSigner: false,
+						uniqueRequestIdentifier: { requestId: 99, requestSocket: socket },
+						method: 'eth_accounts_reply',
+						params: [
+							{
+								type: 'error',
+								requestAccounts: true,
+								error: { code: 4001, message: 'User rejected the request.' },
+							},
+						],
+					},
+					websiteTabConnections,
+				)
+			})()
+		})
 		port = createdPort
 		const connectionKey = websiteSocketToString(socket)
 		const websiteTabConnections = new Map([
@@ -602,8 +485,7 @@ describe('background eth_accounts', () => {
 				},
 			],
 		])
-		const { ethereum, tokenPriceService, resetSimulationServices } =
-			createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -611,33 +493,12 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(
-			port,
-			websiteOrigin,
-			website,
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			socket,
-			request,
-			websiteTabConnections,
-		)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
 
-		assert.equal(
-			messages.filter(
-				(message) => message.method === 'request_signer_to_eth_requestAccounts',
-			).length,
-			1,
-		)
-		const requestAccountsReplies = messages.filter(
-			(message) =>
-				message.method === 'eth_requestAccounts' && message.requestId === 8,
-		)
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
+		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 8)
 		assert.equal(requestAccountsReplies.at(-1)?.error?.code, 4100)
-		assert.equal(
-			requestAccountsReplies.at(-1)?.error?.message,
-			'The requested method and/or account has not been authorized by the user.',
-		)
+		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'The requested method and/or account has not been authorized by the user.')
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [])
 	})
 })

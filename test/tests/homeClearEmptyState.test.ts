@@ -9,17 +9,9 @@ import { ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import type {
-	RpcConnectionStatus,
-	TabState,
-} from '../../app/ts/types/user-interface-types.js'
+import type { RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
 import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
-import type {
-	BlockTimeManipulation,
-	ResolvedSimulationResults,
-	SimulationAndVisualisationResults,
-	SimulatedAndVisualizedTransaction,
-} from '../../app/ts/types/visualizer-types.js'
+import type { BlockTimeManipulation, ResolvedSimulationResults, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -137,9 +129,7 @@ const createEmptySimulationResults = (): SimulationAndVisualisationResults => ({
 describe('Home popup clear empty state', () => {
 	test('rerenders to the empty-state dino when simulation results are cleared', async () => {
 		const dom = installDomMock()
-		const simVisResults = new Signal<ResolvedSimulationResults>(
-			toResolvedSimulationResults(createSimulationResults()),
-		)
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults()))
 		try {
 			await act(() => {
 				render(
@@ -148,9 +138,7 @@ describe('Home popup clear empty state', () => {
 						makeCurrentAddressRich: new Signal(false),
 						activeAddresses: new Signal([activeAddressEntry]),
 						tabState: new Signal<TabState | undefined>(undefined),
-						activeSimulationAddress: new Signal<bigint | undefined>(
-							ACTIVE_ADDRESS,
-						),
+						activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
 						activeSigningAddress: new Signal<bigint | undefined>(undefined),
 						useSignersAddressAsActiveAddress: new Signal(false),
 						simVisResults,
@@ -166,53 +154,27 @@ describe('Home popup clear empty state', () => {
 						editEnsNamedHashCallBack: () => undefined,
 						rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
 						rpcEntries: new Signal([rpcNetwork]),
-						simulationUpdatingState: new Signal<
-							'done' | 'updating' | 'failed' | undefined
-						>('done'),
-						simulationResultState: new Signal<
-							'done' | 'invalid' | 'corrupted' | undefined
-						>('done'),
+						simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
+						simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
 						interceptorDisabled: new Signal(false),
-						preSimulationBlockTimeManipulation: new Signal<
-							BlockTimeManipulation | undefined
-						>(undefined),
-						fixedAddressRichList: new Signal<
-							readonly EnrichedRichListElement[]
-						>([]),
+						preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
+						fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 						openImportSimulation: () => undefined,
 					}),
 					dom.document.body,
 				)
 			})
 
-			assert.equal(
-				dom.document.body.textContent?.includes('Simulation Outcome'),
-				true,
-			)
-			assert.equal(
-				dom.document.body.textContent?.includes(
-					'Give me some transactions to munch on!',
-				),
-				false,
-			)
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 
 			await act(() => {
-				simVisResults.value = toResolvedSimulationResults(
-					createEmptySimulationResults(),
-				)
+				simVisResults.value = toResolvedSimulationResults(createEmptySimulationResults())
 			})
 
 			assert.equal(simVisResults.value.kind, 'simulated')
-			assert.equal(
-				dom.document.body.textContent?.includes(
-					'Give me some transactions to munch on!',
-				),
-				true,
-			)
-			assert.equal(
-				dom.document.body.textContent?.includes('Simulation Outcome'),
-				false,
-			)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), false)
 		} finally {
 			dom.restore()
 		}
@@ -220,9 +182,7 @@ describe('Home popup clear empty state', () => {
 
 	test('treats a known signer account as connected even if the signerConnected flag is stale', async () => {
 		const dom = installDomMock()
-		const simVisResults = new Signal<ResolvedSimulationResults>(
-			toResolvedSimulationResults(createEmptySimulationResults()),
-		)
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
 		try {
 			await act(() => {
 				render(
@@ -249,9 +209,7 @@ describe('Home popup clear empty state', () => {
 							activeSigningAddress: ACTIVE_ADDRESS,
 						}),
 						activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-						activeSigningAddress: new Signal<bigint | undefined>(
-							ACTIVE_ADDRESS,
-						),
+						activeSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
 						useSignersAddressAsActiveAddress: new Signal(true),
 						simVisResults,
 						rpcNetwork: new Signal(rpcNetwork),
@@ -266,19 +224,11 @@ describe('Home popup clear empty state', () => {
 						editEnsNamedHashCallBack: () => undefined,
 						rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
 						rpcEntries: new Signal([rpcNetwork]),
-						simulationUpdatingState: new Signal<
-							'done' | 'updating' | 'failed' | undefined
-						>('done'),
-						simulationResultState: new Signal<
-							'done' | 'invalid' | 'corrupted' | undefined
-						>('done'),
+						simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
+						simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
 						interceptorDisabled: new Signal(false),
-						preSimulationBlockTimeManipulation: new Signal<
-							BlockTimeManipulation | undefined
-						>(undefined),
-						fixedAddressRichList: new Signal<
-							readonly EnrichedRichListElement[]
-						>([]),
+						preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
+						fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 						openImportSimulation: () => undefined,
 					}),
 					dom.document.body,
@@ -286,10 +236,7 @@ describe('Home popup clear empty state', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('CONNECTED'), true)
-			assert.equal(
-				dom.document.body.textContent?.includes('NOT CONNECTED'),
-				false,
-			)
+			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
 		} finally {
 			dom.restore()
 		}

@@ -19,9 +19,7 @@ type InlineCardProps = {
 export const InlineCard = (props: InlineCardProps) => {
 	const tooltip = useSignal<TooltipConfig | undefined>(undefined)
 
-	const copyTextToClipboard = async (
-		event: JSX.TargetedMouseEvent<HTMLButtonElement>,
-	) => {
+	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.currentTarget.blur()
 		await clipboardCopy(event.currentTarget.value || props.label)
 		tooltip.value = {
@@ -35,43 +33,22 @@ export const InlineCard = (props: InlineCardProps) => {
 	const Icon = props.icon
 
 	return (
-		<span
-			class="inline-card"
-			role="figure"
-			style={props.style}
-			title={props.label}
-		>
+		<span class="inline-card" role="figure" style={props.style} title={props.label}>
 			{props.warningMessage ? <WarningSign /> : <></>}
 			<span role="img">
 				<Icon />
 			</span>
-			<data
-				class="truncate text-legible"
-				style={props.style}
-				value={props.label}
-			>
+			<data class="truncate text-legible" style={props.style} value={props.label}>
 				{props.label}
 			</data>
-			<span
-				role="menu"
-				aria-label={props.noExpandButtons ? undefined : 'Spell-out actions'}
-			>
+			<span role="menu" aria-label={props.noExpandButtons ? undefined : 'Spell-out actions'}>
 				{!props.noCopy ? (
-					<button
-						type="button"
-						onClick={copyTextToClipboard}
-						value={props.copyValue}
-						tabIndex={1}
-					>
+					<button type="button" onClick={copyTextToClipboard} value={props.copyValue} tabIndex={1}>
 						<span role="img">
 							<Icon />
 						</span>
 						<span>
-							<data
-								class="truncate text-legible"
-								style={props.style}
-								value={props.label}
-							>
+							<data class="truncate text-legible" style={props.style} value={props.label}>
 								{props.label}
 							</data>
 						</span>
@@ -82,21 +59,12 @@ export const InlineCard = (props: InlineCardProps) => {
 					</button>
 				) : (
 					<>
-						<button
-							type="button"
-							value={props.copyValue}
-							tabIndex={1}
-							style={{ pointerEvents: 'none' }}
-						>
+						<button type="button" value={props.copyValue} tabIndex={1} style={{ pointerEvents: 'none' }}>
 							<span role="img">
 								<Icon />
 							</span>
 							<span>
-								<data
-									class="text-legible"
-									style={props.style}
-									value={props.label}
-								>
+								<data class="text-legible" style={props.style} value={props.label}>
 									{props.label}
 								</data>
 							</span>
@@ -104,12 +72,7 @@ export const InlineCard = (props: InlineCardProps) => {
 					</>
 				)}
 				{props.onEditClicked ? (
-					<button
-						type="button"
-						value={props.copyValue}
-						onClick={props.onEditClicked}
-						tabIndex={1}
-					>
+					<button type="button" value={props.copyValue} onClick={props.onEditClicked} tabIndex={1}>
 						<span title="Edit">
 							<EditIcon />
 							<span>edit</span>

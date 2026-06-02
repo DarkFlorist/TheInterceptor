@@ -1,13 +1,7 @@
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from './typescript.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import {
-	checkAndThrowRuntimeLastError,
-	safeGetTab,
-	safeGetWindow,
-	updateTabIfExists,
-	updateWindowIfExists,
-} from './requests.js'
+import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from './requests.js'
 
 export type PopupOrTab =
 	| {
@@ -21,9 +15,7 @@ export type PopupOrTab =
 			id: number
 	  }
 
-export async function openPopupOrTab(
-	createData: browser.windows._CreateCreateData & { url: string },
-): Promise<PopupOrTab | undefined> {
+export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }): Promise<PopupOrTab | undefined> {
 	if (await getUseTabsInsteadOfPopup()) {
 		const tab = await browser.tabs.create({ url: createData.url })
 		if (tab === undefined || tab.id === undefined) return undefined
@@ -34,9 +26,7 @@ export async function openPopupOrTab(
 	return { type: 'popup', id: window.id, window }
 }
 
-export async function getPopupOrTabById(
-	popupOrTabId: PopupOrTabId,
-): Promise<PopupOrTab | undefined> {
+export async function getPopupOrTabById(popupOrTabId: PopupOrTabId): Promise<PopupOrTab | undefined> {
 	switch (popupOrTabId.type) {
 		case 'tab': {
 			const tab = await safeGetTab(popupOrTabId.id)
@@ -71,24 +61,17 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 		}
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
-		if (error instanceof Error && error.message.startsWith('No tab with id'))
-			return
+		if (error instanceof Error && error.message.startsWith('No tab with id')) return
 		throw error
 	}
 }
 
-export function addWindowTabListeners(
-	onCloseWindow: (id: number) => void,
-	onCloseTab: (id: number) => void,
-) {
+export function addWindowTabListeners(onCloseWindow: (id: number) => void, onCloseTab: (id: number) => void) {
 	browser.windows.onRemoved.addListener(onCloseWindow)
 	browser.tabs.onRemoved.addListener(onCloseTab)
 }
 
-export function removeWindowTabListeners(
-	onCloseWindow: (id: number) => void,
-	onCloseTab: (id: number) => void,
-) {
+export function removeWindowTabListeners(onCloseWindow: (id: number) => void, onCloseTab: (id: number) => void) {
 	browser.windows.onRemoved.removeListener(onCloseWindow)
 	browser.tabs.onRemoved.removeListener(onCloseTab)
 }

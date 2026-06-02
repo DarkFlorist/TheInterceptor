@@ -32,27 +32,15 @@ function installBrowserMock() {
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys))
-							return Object.fromEntries(
-								keys
-									.filter((key) => key in storageState)
-									.map((key) => [key, storageState[key]]),
-							)
-						if (typeof keys === 'string')
-							return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(
-							Object.entries(keys).map(([key, defaultValue]) => [
-								key,
-								key in storageState ? storageState[key] : defaultValue,
-							]),
-						)
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 					},
 					async set(items: Record<string, unknown>) {
 						Object.assign(storageState, items)
 					},
 					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys])
-							delete storageState[key]
+						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 					},
 				},
 			},
@@ -129,12 +117,8 @@ function installBrowserMock() {
 describe('updateExtensionBadge', () => {
 	test('keeps the warning badge visible for a disconnected overdue retry', async () => {
 		const { badgeTextCalls, badgeColorCalls } = installBrowserMock()
-		const { setRpcConnectionStatus } = await import(
-			'../../app/ts/background/storageVariables.js'
-		)
-		const { updateExtensionBadge } = await import(
-			'../../app/ts/background/iconHandler.js'
-		)
+		const { setRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
+		const { updateExtensionBadge } = await import('../../app/ts/background/iconHandler.js')
 
 		await setRpcConnectionStatus({
 			isConnected: false,

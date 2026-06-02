@@ -42,24 +42,15 @@ function createBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys))
-						return Object.fromEntries(
-							keys.map((key) => [key, storageState[key]]),
-						)
+					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(
-						Object.entries(keys).map(([key, defaultValue]) => [
-							key,
-							key in storageState ? storageState[key] : defaultValue,
-						]),
-					)
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys])
-						delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
 			},
 		},
@@ -131,27 +122,13 @@ function createBrowserMock() {
 }
 
 async function loadModules() {
-	const [
-		popupMessageHandlers,
-		simulationModeEthereumClientService,
-		storageVariables,
-	] = await Promise.all([
-		import('../../app/ts/background/popupMessageHandlers.js'),
-		import(
-			'../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-		),
-		import('../../app/ts/background/storageVariables.js'),
-	])
+	const [popupMessageHandlers, simulationModeEthereumClientService, storageVariables] = await Promise.all([import('../../app/ts/background/popupMessageHandlers.js'), import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'), import('../../app/ts/background/storageVariables.js')])
 
 	return {
-		removeTransactionOrSignedMessage:
-			popupMessageHandlers.removeTransactionOrSignedMessage,
-		mockSignTransaction:
-			simulationModeEthereumClientService.mockSignTransaction,
-		getInterceptorTransactionStack:
-			storageVariables.getInterceptorTransactionStack,
-		updateInterceptorTransactionStack:
-			storageVariables.updateInterceptorTransactionStack,
+		removeTransactionOrSignedMessage: popupMessageHandlers.removeTransactionOrSignedMessage,
+		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
+		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
+		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 	}
 }
 
@@ -174,9 +151,7 @@ function makeBaseUnsignedTransaction() {
 }
 
 function makePreSimulationTransaction(
-	mockSignTransaction: (
-		transaction: ReturnType<typeof makeBaseUnsignedTransaction>,
-	) => unknown,
+	mockSignTransaction: (transaction: ReturnType<typeof makeBaseUnsignedTransaction>) => unknown,
 	params: {
 		transactionIdentifier: bigint
 		nonce: bigint
@@ -218,25 +193,19 @@ describe('removeTransactionOrSignedMessage', () => {
 			operations: [
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{
-							transactionIdentifier: 1n,
-							nonce: 0n,
-							method: 'eth_sendTransaction',
-						},
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, {
+						transactionIdentifier: 1n,
+						nonce: 0n,
+						method: 'eth_sendTransaction',
+					}),
 				},
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{
-							transactionIdentifier: 2n,
-							nonce: 0n,
-							method: 'eth_sendRawTransaction',
-						},
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, {
+						transactionIdentifier: 2n,
+						nonce: 0n,
+						method: 'eth_sendRawTransaction',
+					}),
 				},
 			],
 		}))
@@ -247,15 +216,9 @@ describe('removeTransactionOrSignedMessage', () => {
 		})
 
 		const stack = await modules.getInterceptorTransactionStack()
-		const [remaining] = stack.operations
-			.filter((operation) => operation.type === 'Transaction')
-			.map((operation) => operation.preSimulationTransaction)
-		if (remaining === undefined)
-			throw new Error('Expected remaining transaction')
-		assert.equal(
-			remaining.originalRequestParameters.method,
-			'eth_sendRawTransaction',
-		)
+		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
+		if (remaining === undefined) throw new Error('Expected remaining transaction')
+		assert.equal(remaining.originalRequestParameters.method, 'eth_sendRawTransaction')
 		assert.equal(remaining.signedTransaction.nonce, 0n)
 	})
 
@@ -266,17 +229,11 @@ describe('removeTransactionOrSignedMessage', () => {
 			operations: [
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{ transactionIdentifier: 1n, nonce: 0n },
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n }),
 				},
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{ transactionIdentifier: 2n, nonce: 1n },
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 2n, nonce: 1n }),
 				},
 			],
 		}))
@@ -287,15 +244,9 @@ describe('removeTransactionOrSignedMessage', () => {
 		})
 
 		const stack = await modules.getInterceptorTransactionStack()
-		const [remaining] = stack.operations
-			.filter((operation) => operation.type === 'Transaction')
-			.map((operation) => operation.preSimulationTransaction)
-		if (remaining === undefined)
-			throw new Error('Expected remaining transaction')
-		assert.equal(
-			remaining.originalRequestParameters.method,
-			'eth_sendTransaction',
-		)
+		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
+		if (remaining === undefined) throw new Error('Expected remaining transaction')
+		assert.equal(remaining.originalRequestParameters.method, 'eth_sendTransaction')
 		assert.equal(remaining.signedTransaction.nonce, 0n)
 	})
 
@@ -306,25 +257,19 @@ describe('removeTransactionOrSignedMessage', () => {
 			operations: [
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{
-							transactionIdentifier: 1n,
-							nonce: 0n,
-							from: 0x1111111111111111111111111111111111111111n,
-						},
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, {
+						transactionIdentifier: 1n,
+						nonce: 0n,
+						from: 0x1111111111111111111111111111111111111111n,
+					}),
 				},
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{
-							transactionIdentifier: 2n,
-							nonce: 5n,
-							from: 0x3333333333333333333333333333333333333333n,
-						},
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, {
+						transactionIdentifier: 2n,
+						nonce: 5n,
+						from: 0x3333333333333333333333333333333333333333n,
+					}),
 				},
 			],
 		}))
@@ -335,15 +280,9 @@ describe('removeTransactionOrSignedMessage', () => {
 		})
 
 		const stack = await modules.getInterceptorTransactionStack()
-		const [remaining] = stack.operations
-			.filter((operation) => operation.type === 'Transaction')
-			.map((operation) => operation.preSimulationTransaction)
-		if (remaining === undefined)
-			throw new Error('Expected remaining transaction')
-		assert.equal(
-			remaining.signedTransaction.from,
-			0x3333333333333333333333333333333333333333n,
-		)
+		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
+		if (remaining === undefined) throw new Error('Expected remaining transaction')
+		assert.equal(remaining.signedTransaction.from, 0x3333333333333333333333333333333333333333n)
 		assert.equal(remaining.signedTransaction.nonce, 5n)
 	})
 
@@ -354,17 +293,11 @@ describe('removeTransactionOrSignedMessage', () => {
 			operations: [
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{ transactionIdentifier: 1n, nonce: 0n },
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n }),
 				},
 				{
 					type: 'Transaction' as const,
-					preSimulationTransaction: makePreSimulationTransaction(
-						modules.mockSignTransaction,
-						{ transactionIdentifier: 2n, nonce: 0n },
-					),
+					preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 2n, nonce: 0n }),
 				},
 			],
 		}))
@@ -375,15 +308,9 @@ describe('removeTransactionOrSignedMessage', () => {
 		})
 
 		const stack = await modules.getInterceptorTransactionStack()
-		const [remaining] = stack.operations
-			.filter((operation) => operation.type === 'Transaction')
-			.map((operation) => operation.preSimulationTransaction)
-		if (remaining === undefined)
-			throw new Error('Expected remaining transaction')
-		assert.equal(
-			remaining.originalRequestParameters.method,
-			'eth_sendTransaction',
-		)
+		const [remaining] = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction)
+		if (remaining === undefined) throw new Error('Expected remaining transaction')
+		assert.equal(remaining.originalRequestParameters.method, 'eth_sendTransaction')
 		assert.equal(remaining.signedTransaction.nonce, 0n)
 	})
 })

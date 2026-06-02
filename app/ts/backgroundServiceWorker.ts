@@ -1,7 +1,4 @@
-import {
-	POPUP_PERFORMANCE_MARKS,
-	markPerformance,
-} from './utils/popupPerformance.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from './utils/popupPerformance.js'
 import './background/background-startup.js'
 import { getHtmlFile } from './background/backgroundUtils.js'
 import { clearTabStates } from './background/storageVariables.js'
@@ -12,12 +9,7 @@ markPerformance(POPUP_PERFORMANCE_MARKS.backgroundLoaded)
 
 const setPopupFile = async () => {
 	// see https://issues.chromium.org/issues/337214677
-	await (
-		browser.action.setPopup as unknown as (
-			details: browser.action._SetPopupDetails,
-			callback: () => void,
-		) => Promise<void>
-	)({ popup: getHtmlFile('popup') }, () => {
+	await (browser.action.setPopup as unknown as (details: browser.action._SetPopupDetails, callback: () => void) => Promise<void>)({ popup: getHtmlFile('popup') }, () => {
 		checkAndThrowRuntimeLastError()
 	})
 	checkAndThrowRuntimeLastError()

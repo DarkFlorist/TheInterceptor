@@ -1,164 +1,77 @@
-import {
-	getActiveAddress,
-	getActiveAddressesForAllTabs,
-	websiteSocketToString,
-} from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import type {
-	TabConnection,
-	WebsiteTabConnections,
-} from '../types/user-interface-types.js'
-import type {
-	InpageScriptCallBack,
-	Settings,
-} from '../types/interceptor-messages.js'
-import {
-	getSettings,
-	getWebsiteAccess,
-	updateWebsiteAccess,
-} from './settings.js'
+import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
+import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
-import type {
-	Website,
-	WebsiteAccessArray,
-	WebsiteAddressAccess,
-} from '../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
-import type {
-	AddressBookEntries,
-	AddressBookEntry,
-} from '../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import {
-	doWebsiteOriginsShareHostname,
-	getHostnameForWebsiteOrigin,
-} from '../utils/websiteOrigins.js'
+import { doWebsiteOriginsShareHostname, getHostnameForWebsiteOrigin } from '../utils/websiteOrigins.js'
 
-function getConnectionDetails(
-	websiteTabConnections: WebsiteTabConnections,
-	socket: WebsiteSocket,
-) {
+function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	return tabConnection?.connections[identifier]
 }
 
-function setWebsitePortApproval(
-	websiteTabConnections: WebsiteTabConnections,
-	socket: WebsiteSocket,
-	approved: boolean,
-) {
+function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
 }
 
-export type ApprovalState =
-	| 'hasAccess'
-	| 'noAccess'
-	| 'askAccess'
-	| 'interceptorDisabled'
-	| 'notFound'
+export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
 
-export function verifyAccess(
-	websiteTabConnections: WebsiteTabConnections,
-	socket: WebsiteSocket,
-	askAccessIfUnknown: boolean,
-	websiteOrigin: string,
-	requestAccessForAddress: AddressBookEntry | undefined,
-	settings: Settings,
-) {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection?.approved) return 'hasAccess'
-	const access =
-		requestAccessForAddress !== undefined
-			? hasAddressAccess(
-					settings.websiteAccess,
-					websiteOrigin,
-					requestAccessForAddress,
-				)
-			: hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess')
-		return connectToPort(
-			websiteTabConnections,
-			socket,
-			websiteOrigin,
-			settings,
-			requestAccessForAddress?.address,
-		)
-			? 'hasAccess'
-			: 'noAccess'
+	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
+	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress?.address) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
 
-export function sendMessageToApprovedWebsitePorts(
-	websiteTabConnections: WebsiteTabConnections,
-	message: InpageScriptCallBack,
-) {
+export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(
-				websiteTabConnections,
-				connection.socket,
-				{ type: 'result' as const, ...message },
-			)
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
 		}
 	}
 }
-export async function sendActiveAccountChangeToApprovedWebsitePorts(
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-) {
+export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
-			const activeAddress = await getActiveAddressForDomain(
-				connection.websiteOrigin,
-				settings,
-				connection.socket,
-			)
-			sendSubscriptionReplyOrCallBack(
-				websiteTabConnections,
-				connection.socket,
-				{
-					type: 'result' as const,
-					method: 'accountsChanged',
-					result: activeAddress !== undefined ? [activeAddress.address] : [],
-				},
-			)
+			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
+				type: 'result' as const,
+				method: 'accountsChanged',
+				result: activeAddress !== undefined ? [activeAddress.address] : [],
+			})
 		}
 	}
 }
 
-export function hasAccess(
-	websiteAccess: WebsiteAccessArray,
-	websiteOrigin: string,
-): ApprovalState {
-	if (
-		websiteAccess.some(
-			(web) =>
-				web.interceptorDisabled === true &&
-				doWebsiteOriginsShareHostname(web.website.websiteOrigin, websiteOrigin),
-		)
-	)
-		return 'interceptorDisabled'
+export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string): ApprovalState {
+	if (websiteAccess.some((web) => web.interceptorDisabled === true && doWebsiteOriginsShareHostname(web.website.websiteOrigin, websiteOrigin))) return 'interceptorDisabled'
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			return web.access ? 'hasAccess' : 'noAccess'
@@ -167,19 +80,8 @@ export function hasAccess(
 	return 'notFound'
 }
 
-export function hasAddressAccess(
-	websiteAccess: WebsiteAccessArray,
-	websiteOrigin: string,
-	address: AddressBookEntry,
-): ApprovalState {
-	if (
-		websiteAccess.some(
-			(web) =>
-				web.interceptorDisabled === true &&
-				doWebsiteOriginsShareHostname(web.website.websiteOrigin, websiteOrigin),
-		)
-	)
-		return 'interceptorDisabled'
+export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry): ApprovalState {
+	if (websiteAccess.some((web) => web.interceptorDisabled === true && doWebsiteOriginsShareHostname(web.website.websiteOrigin, websiteOrigin))) return 'interceptorDisabled'
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (!web.access) return 'noAccess'
@@ -197,10 +99,7 @@ export function hasAddressAccess(
 	return 'notFound'
 }
 
-function getAddressAccesses(
-	websiteAccess: WebsiteAccessArray,
-	websiteOrigin: string,
-): readonly WebsiteAddressAccess[] {
+function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string): readonly WebsiteAddressAccess[] {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			return web.addressAccess === undefined ? [] : web.addressAccess
@@ -208,85 +107,52 @@ function getAddressAccesses(
 	}
 	return []
 }
-function getAddressesThatDoNotNeedIndividualAccesses(
-	activeAddressEntries: AddressBookEntries,
-): AddressBookEntries {
+function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries): AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
-export async function setInterceptorDisabledForWebsite(
-	website: Website,
-	interceptorDisabled: boolean,
-) {
+export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
 	return await updateWebsiteAccess((previousWebsiteAccess) => {
 		let changed = false
 		const updatedWebsiteAccess = previousWebsiteAccess.map((entry) => {
-			if (
-				!doWebsiteOriginsShareHostname(
-					entry.website.websiteOrigin,
-					website.websiteOrigin,
-				)
-			)
-				return entry
+			if (!doWebsiteOriginsShareHostname(entry.website.websiteOrigin, website.websiteOrigin)) return entry
 			changed = true
 			return { ...entry, interceptorDisabled }
 		})
 		if (changed) return updatedWebsiteAccess
-		return [
-			...previousWebsiteAccess,
-			{ website, addressAccess: [], interceptorDisabled },
-		]
+		return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
 	})
 }
 
-export async function setAccess(
-	website: Website,
-	access: boolean,
-	address: bigint | undefined,
-) {
+export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
 	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find(
-			(entry) => entry.website.websiteOrigin === website.websiteOrigin,
-		)
+		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
 		if (foundEntry === undefined)
 			return [
 				...previousWebsiteAccess,
 				{
 					website,
 					access,
-					addressAccess:
-						address === undefined || !access
-							? undefined
-							: [{ address, access }],
+					addressAccess: address === undefined || !access ? undefined : [{ address, access }],
 				},
 			]
 		return previousWebsiteAccess.map((prevAccess) => {
 			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = mergeStoredWebsiteMetadata(
-					prevAccess.website,
-					website,
-				)
-				if (address === undefined)
-					return modifyObject(prevAccess, { website: websiteData, access })
+				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
+				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
 				const addressAccess = { address, access }
 				const updatedEntry = modifyObject(prevAccess, {
 					website: websiteData,
 					access: prevAccess.access ? prevAccess.access : access,
 				})
-				if (prevAccess.addressAccess === undefined)
-					return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
-				if (
-					prevAccess.addressAccess.find((x) => x.address === address) ===
-					undefined
-				) {
+				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
+				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
 					return modifyObject(updatedEntry, {
 						addressAccess: [...prevAccess.addressAccess, addressAccess],
 					})
 				}
 				return modifyObject(updatedEntry, {
-					addressAccess: prevAccess.addressAccess.map((x) =>
-						x.address === address ? addressAccess : x,
-					),
+					addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)),
 				})
 			}
 			return prevAccess
@@ -296,29 +162,15 @@ export async function setAccess(
 
 // gets active address if the website has been give access for it, otherwise returns undefined
 // this is to guard websites from seeing addresses without access
-async function getActiveAddressForDomain(
-	websiteOrigin: string,
-	settings: Settings,
-	socket: WebsiteSocket,
-) {
+async function getActiveAddressForDomain(websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	if (activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(
-		settings.websiteAccess,
-		websiteOrigin,
-		activeAddress,
-	)
+	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
 	if (hasAccess === 'hasAccess') return activeAddress
 	return undefined
 }
 
-function connectToPort(
-	websiteTabConnections: WebsiteTabConnections,
-	socket: WebsiteSocket,
-	websiteOrigin: string,
-	settings: Settings,
-	connectWithActiveAddress: bigint | undefined,
-): true {
+function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 
@@ -332,8 +184,7 @@ function connectToPort(
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, {
 		type: 'result' as const,
 		method: 'accountsChanged',
-		result:
-			connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [],
+		result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [],
 	})
 
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, {
@@ -344,11 +195,7 @@ function connectToPort(
 	return true
 }
 
-function disconnectFromPort(
-	websiteTabConnections: WebsiteTabConnections,
-	socket: WebsiteSocket,
-	websiteOrigin: string,
-): false {
+function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, {
@@ -359,23 +206,15 @@ function disconnectFromPort(
 	return false
 }
 
-export async function getAssociatedAddresses(
-	settings: Settings,
-	websiteOrigin: string,
-	activeAddress: AddressBookEntry | undefined,
-): Promise<AddressBookEntries> {
+export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry | undefined): Promise<AddressBookEntries> {
 	const addressAccess = await Promise.all(
 		getAddressAccesses(settings.websiteAccess, websiteOrigin)
 			.filter((x) => x.access)
 			.map((x) => x.address)
 			.map((x) => getActiveAddressEntry(x)),
 	)
-	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(
-		await getActiveAddresses(),
-	)
-	const all = allAccessAddresses
-		.concat(addressAccess)
-		.concat(activeAddress === undefined ? [] : [activeAddress])
+	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(await getActiveAddresses())
+	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress])
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
@@ -396,96 +235,33 @@ async function askUserForAccessOnConnectionUpdate(
 		websiteOrigin,
 		...(await retrieveWebsiteDetails(socket.tabId, websiteOrigin)),
 	}
-	await requestAccessFromUser(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
-		websiteTabConnections,
-		socket,
-		website,
-		undefined,
-		activeAddress,
-		settings,
-		activeAddress?.address,
-	)
+	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
-function addIconRefreshTarget(
-	iconRefreshTargets: Map<string, { tabId: number; websiteOrigin: string }>,
-	tabId: number,
-	websiteOrigin: string,
-) {
+function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number; websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
 	const key = `${tabId}-${websiteOrigin}`
 	if (iconRefreshTargets.has(key)) return
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
-async function updateTabConnections(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
-	websiteTabConnections: WebsiteTabConnections,
-	tabConnection: TabConnection,
-	promptForAccessesIfNeeded: boolean,
-	settings: Settings,
-) {
-	const iconRefreshTargets = new Map<
-		string,
-		{ tabId: number; websiteOrigin: string }
-	>()
+async function updateTabConnections(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+	const iconRefreshTargets = new Map<string, { tabId: number; websiteOrigin: string }>()
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
-		const currentActiveAddress = await getActiveAddress(
-			settings,
-			connection.socket.tabId,
-		)
-		addIconRefreshTarget(
-			iconRefreshTargets,
-			connection.socket.tabId,
-			connection.websiteOrigin,
-		)
-		const access = currentActiveAddress
-			? hasAddressAccess(
-					settings.websiteAccess,
-					connection.websiteOrigin,
-					currentActiveAddress,
-				)
-			: hasAccess(settings.websiteAccess, connection.websiteOrigin)
+		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
+		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
+		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(
-				websiteTabConnections,
-				connection.socket,
-				connection.websiteOrigin,
-			)
+			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(
-				websiteTabConnections,
-				connection.socket,
-				connection.websiteOrigin,
-				settings,
-				currentActiveAddress?.address,
-			)
+			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress?.address)
 		}
 
-		if (
-			access === 'notFound' &&
-			connection.wantsToConnect &&
-			promptForAccessesIfNeeded
-		) {
-			const activeAddress =
-				currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
-				websiteTabConnections,
-				connection.socket,
-				connection.websiteOrigin,
-				activeAddress,
-				settings,
-			)
+		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
+			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
+			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
 	for (const { tabId, websiteOrigin } of iconRefreshTargets.values()) {
@@ -506,66 +282,39 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	}
 	return approvedTabs
 }
-const getTabsAndAddressesToBlock = async (
-	websiteTabConnections: WebsiteTabConnections,
-) => {
+const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
-	const tabIdsToBlock = (
-		await getActiveAddressesForAllTabs(await getSettings())
-	)
+	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings()))
 		.filter((tabData) => approvedTabIds.has(tabData.tabId))
-		.filter(
-			(tabData) =>
-				tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all',
-		)
+		.filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all')
 		.map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess())
-		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
-		.map((access) => getHostnameForWebsiteOrigin(access.website.websiteOrigin))
+	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((access) => getHostnameForWebsiteOrigin(access.website.websiteOrigin))
 	return {
 		tabIdsToBlock,
 		sitesToBlock,
 	}
 }
 
-let webRequestListener: (
-	details: browser.webRequest._OnBeforeRequestDetails,
-) => void = () => undefined
+let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
 let previousDecralativeNetRequestBlockIdentifier = ''
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
-export async function updateDeclarativeNetRequestBlocks(
-	websiteTabConnections: WebsiteTabConnections,
-) {
+export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
-		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(
-			websiteTabConnections,
-		)
+		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 		// check if the rules would change, if not, just bail out
 		const decralativeNetRequestBlockIdentifier = `${tabIdsToBlock.join('|')}|a|${sitesToBlock.join('|')}`
-		if (
-			decralativeNetRequestBlockIdentifier ===
-			previousDecralativeNetRequestBlockIdentifier
-		)
-			return
-		previousDecralativeNetRequestBlockIdentifier =
-			decralativeNetRequestBlockIdentifier
+		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
+		previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 
 		if (browser.runtime.getManifest().manifest_version === 3) {
-			const dynamicRuleIds = (
-				await browser.declarativeNetRequest.getDynamicRules()
-			).map((rule) => rule.id)
-			const sessionRuleIds = (
-				await browser.declarativeNetRequest.getSessionRules()
-			).map((rule) => rule.id)
+			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
+			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
 			if (sitesToBlock.length !== 0) {
 				await browser.declarativeNetRequest.updateDynamicRules({
 					removeRuleIds: dynamicRuleIds,
 					addRules: [
 						{
-							id:
-								dynamicRuleIds.length === 0
-									? 1
-									: Math.max.apply(null, dynamicRuleIds) + 1,
+							id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 							priority: 1,
 							action: { type: 'block' as const },
 							condition: {
@@ -585,10 +334,7 @@ export async function updateDeclarativeNetRequestBlocks(
 					removeRuleIds: sessionRuleIds,
 					addRules: [
 						{
-							id:
-								sessionRuleIds.length === 0
-									? 1
-									: Math.max.apply(null, sessionRuleIds) + 1,
+							id: sessionRuleIds.length === 0 ? 1 : Math.max.apply(null, sessionRuleIds) + 1,
 							priority: 2,
 							action: { type: 'block' as const },
 							condition: {
@@ -607,117 +353,48 @@ export async function updateDeclarativeNetRequestBlocks(
 			// const a = (data: any) => { console.log(data) }
 		} else {
 			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
-			webRequestListener = (
-				details: browser.webRequest._OnBeforeRequestDetails,
-			) => {
-				if (
-					tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined
-				)
-					return { cancel: true }
+			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
+				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
 				const websiteOrigin = getHostWithPort(details.originUrl)
 				const websiteDomain = getHostnameForWebsiteOrigin(websiteOrigin)
 				const destinationHost = getHostWithPort(details.url)
-				if (doWebsiteOriginsShareHostname(destinationHost, websiteOrigin))
-					return {}
-				if (
-					sitesToBlock.find((blockUrl) => blockUrl === websiteDomain) !==
-					undefined
-				)
-					return { cancel: true }
+				if (doWebsiteOriginsShareHostname(destinationHost, websiteOrigin)) return {}
+				if (sitesToBlock.find((blockUrl) => blockUrl === websiteDomain) !== undefined) return { cancel: true }
 				return {}
 			}
 			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
-			browser.webRequest.onBeforeRequest.addListener(
-				webRequestListener,
-				{ urls: ['<all_urls>'] },
-				['blocking'],
-			)
+			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
 		}
 	})
 }
 
-export const areWeBlocking = async (
-	websiteTabConnections: WebsiteTabConnections,
-	tabId: number,
-	websiteOrigin: string,
-) => {
-	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(
-		websiteTabConnections,
-	)
-	if (
-		sitesToBlock.find(
-			(blockUrl) => blockUrl === getHostnameForWebsiteOrigin(websiteOrigin),
-		) !== undefined
-	)
-		return true
-	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined)
-		return true
+export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
+	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
+	if (sitesToBlock.find((blockUrl) => blockUrl === getHostnameForWebsiteOrigin(websiteOrigin)) !== undefined) return true
+	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
 
-export function updateWebsiteApprovalAccesses(
-	ethereum: EthereumClientService,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded?: boolean,
-): Promise<void>
-export function updateWebsiteApprovalAccesses(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded?: boolean,
-): Promise<void>
+export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): Promise<void>
+export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): Promise<void>
 export async function updateWebsiteApprovalAccesses(
 	ethereum: EthereumClientService,
-	tokenPriceServiceOrWebsiteTabConnections:
-		| TokenPriceService
-		| WebsiteTabConnections,
+	tokenPriceServiceOrWebsiteTabConnections: TokenPriceService | WebsiteTabConnections,
 	resetSimulationServicesOrSettings: ResetSimulationServices | Settings,
 	websiteTabConnectionsOrPrompt?: WebsiteTabConnections | boolean,
 	settingsOrPrompt?: Settings | boolean,
 	promptForAccessesIfNeeded = true,
 ) {
-	const usingLegacySignature =
-		tokenPriceServiceOrWebsiteTabConnections instanceof Map
-	const tokenPriceService = usingLegacySignature
-		? (undefined as never)
-		: tokenPriceServiceOrWebsiteTabConnections
-	const resetSimulationServices = usingLegacySignature
-		? (undefined as never)
-		: (resetSimulationServicesOrSettings as ResetSimulationServices)
-	const websiteTabConnections = usingLegacySignature
-		? tokenPriceServiceOrWebsiteTabConnections
-		: (websiteTabConnectionsOrPrompt as WebsiteTabConnections)
-	const settings = usingLegacySignature
-		? (resetSimulationServicesOrSettings as Settings)
-		: (settingsOrPrompt as Settings)
-	const promptForAccesses =
-		typeof (usingLegacySignature
-			? websiteTabConnectionsOrPrompt
-			: promptForAccessesIfNeeded) === 'boolean'
-			? usingLegacySignature
-				? (websiteTabConnectionsOrPrompt as boolean)
-				: promptForAccessesIfNeeded
-			: promptForAccessesIfNeeded
+	const usingLegacySignature = tokenPriceServiceOrWebsiteTabConnections instanceof Map
+	const tokenPriceService = usingLegacySignature ? (undefined as never) : tokenPriceServiceOrWebsiteTabConnections
+	const resetSimulationServices = usingLegacySignature ? (undefined as never) : (resetSimulationServicesOrSettings as ResetSimulationServices)
+	const websiteTabConnections = usingLegacySignature ? tokenPriceServiceOrWebsiteTabConnections : (websiteTabConnectionsOrPrompt as WebsiteTabConnections)
+	const settings = usingLegacySignature ? (resetSimulationServicesOrSettings as Settings) : (settingsOrPrompt as Settings)
+	const promptForAccesses = typeof (usingLegacySignature ? websiteTabConnectionsOrPrompt : promptForAccessesIfNeeded) === 'boolean' ? (usingLegacySignature ? (websiteTabConnectionsOrPrompt as boolean) : promptForAccessesIfNeeded) : promptForAccessesIfNeeded
 
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	// update port connections and disconnect from ports that should not have access anymore
-	await Promise.all(
-		Array.from(websiteTabConnections.values()).map(
-			async (tabConnection) =>
-				await updateTabConnections(
-					ethereum,
-					tokenPriceService,
-					resetSimulationServices,
-					websiteTabConnections,
-					tabConnection,
-					promptForAccesses,
-					settings,
-				),
-		),
-	)
+	await Promise.all(Array.from(websiteTabConnections.values()).map(async (tabConnection) => await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings)))
 }

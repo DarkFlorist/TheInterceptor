@@ -134,12 +134,7 @@ describe('NetworkErrors', () => {
 			)
 		})
 
-		assert.equal(
-			dom.document.body.textContent?.includes(
-				'Retrying resumes when the extension becomes active.',
-			),
-			true,
-		)
+		assert.equal(dom.document.body.textContent?.includes('Retrying resumes when the extension becomes active.'), true)
 		dom.restore()
 	})
 
@@ -164,10 +159,7 @@ describe('NetworkErrors', () => {
 			)
 		})
 
-		assert.equal(
-			dom.document.body.textContent?.includes('Retrying in 12s.'),
-			true,
-		)
+		assert.equal(dom.document.body.textContent?.includes('Retrying in 12s.'), true)
 		clock.restore()
 		dom.restore()
 	})

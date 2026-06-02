@@ -1,33 +1,14 @@
 import { useContext, useEffect, useRef } from 'preact/hooks'
-import {
-	Signal,
-	type ReadonlySignal,
-	useComputed,
-	useSignal,
-	useSignalEffect,
-} from '@preact/signals'
+import { Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { type ComponentChildren, createContext, type JSX } from 'preact'
-import type {
-	Website,
-	WebsiteAccess,
-	WebsiteAccessArray,
-	WebsiteAddressAccess,
-} from '../../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { Modal } from '../subcomponents/Modal.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import type {
-	AddressBookEntries,
-	AddressBookEntry,
-} from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import {
-	InterceptorDisabledIcon,
-	RequestBlockedIcon,
-	SearchIcon,
-	TrashIcon,
-} from '../subcomponents/icons.js'
+import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { createPortal } from 'preact/compat'
 import { useOptionalComputed } from '../../utils/OptionalSignal.js'
@@ -70,29 +51,15 @@ type WebsiteAccessViewState = {
 	readonly hostScopeDetails: HostScopeDetails | undefined
 }
 
-const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(
-	undefined,
-)
+const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
 
-const WebsiteAccessProvider = ({
-	children,
-}: {
-	children: ComponentChildren
-}) => {
+const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
 	const allWebsiteAccess = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
 	const addressAccessMetadata = useSignal<AddressBookEntries>([])
 	const hasLoadedWebsiteAccess = useSignal(false)
-	const selectedDomain = useSignal<string | undefined>(
-		getSelectedDomainFromHash(window.location.hash),
-	)
-	const viewState = useComputed(() =>
-		deriveWebsiteAccessViewState(
-			allWebsiteAccess.value,
-			searchQuery.value,
-			selectedDomain.value,
-		),
-	)
+	const selectedDomain = useSignal<string | undefined>(getSelectedDomainFromHash(window.location.hash))
+	const viewState = useComputed(() => deriveWebsiteAccessViewState(allWebsiteAccess.value, searchQuery.value, selectedDomain.value))
 
 	const retrieveWebsiteAccess = () => {
 		sendPopupMessageToBackgroundPage({
@@ -102,18 +69,12 @@ const WebsiteAccessProvider = ({
 	}
 
 	const clearSelectionWhenRemoved = () => {
-		if (!hasLoadedWebsiteAccess.value || selectedDomain.value === undefined)
-			return
-		const selectedStillExists = allWebsiteAccess.value.some(
-			(access) => access.website.websiteOrigin === selectedDomain.value,
-		)
+		if (!hasLoadedWebsiteAccess.value || selectedDomain.value === undefined) return
+		const selectedStillExists = allWebsiteAccess.value.some((access) => access.website.websiteOrigin === selectedDomain.value)
 		if (!selectedStillExists) window.location.hash = ''
 	}
 
-	const updateWebsiteAccessState = (
-		websiteAccess: WebsiteAccessArray,
-		metadata: AddressBookEntries,
-	) => {
+	const updateWebsiteAccessState = (websiteAccess: WebsiteAccessArray, metadata: AddressBookEntries) => {
 		allWebsiteAccess.value = websiteAccess
 		addressAccessMetadata.value = metadata
 		hasLoadedWebsiteAccess.value = true
@@ -131,10 +92,7 @@ const WebsiteAccessProvider = ({
 					break
 				case 'popup_websiteAccess_changed':
 				case 'popup_retrieveWebsiteAccessReply':
-					updateWebsiteAccessState(
-						parsed.data.websiteAccess,
-						parsed.data.addressAccessMetadata,
-					)
+					updateWebsiteAccessState(parsed.data.websiteAccess, parsed.data.addressAccessMetadata)
 					break
 			}
 			return false
@@ -177,67 +135,31 @@ const WebsiteAccessProvider = ({
 
 export function useWebsiteAccess() {
 	const context = useContext(WebsiteAccessContext)
-	if (!context)
-		throw new Error(
-			'useWebsiteAccess can only be used within children components of WebsiteAccessProvider',
-		)
+	if (!context) throw new Error('useWebsiteAccess can only be used within children components of WebsiteAccessProvider')
 	return context
 }
 
-export function getHostScopeDetails(
-	websiteAccessList: WebsiteAccessArray,
-	websiteOrigin: string,
-): HostScopeDetails {
+export function getHostScopeDetails(websiteAccessList: WebsiteAccessArray, websiteOrigin: string): HostScopeDetails {
 	const hostname = getHostnameForWebsiteOrigin(websiteOrigin)
-	const affectedOrigins = Array.from(
-		new Set(
-			websiteAccessList
-				.map((access) => access.website.websiteOrigin)
-				.filter((origin) => getHostnameForWebsiteOrigin(origin) === hostname),
-		),
-	)
+	const affectedOrigins = Array.from(new Set(websiteAccessList.map((access) => access.website.websiteOrigin).filter((origin) => getHostnameForWebsiteOrigin(origin) === hostname)))
 	return { hostname, selectedOrigin: websiteOrigin, affectedOrigins }
 }
 
-export function findWebsiteAccessByOrigin(
-	websiteAccessList: WebsiteAccessArray,
-	websiteOrigin: string | undefined,
-) {
+export function findWebsiteAccessByOrigin(websiteAccessList: WebsiteAccessArray, websiteOrigin: string | undefined) {
 	if (websiteOrigin === undefined) return undefined
-	return websiteAccessList.find(
-		(access) => access.website.websiteOrigin === websiteOrigin,
-	)
+	return websiteAccessList.find((access) => access.website.websiteOrigin === websiteOrigin)
 }
 
-export function deriveWebsiteAccessViewState(
-	allWebsiteAccess: WebsiteAccessArray,
-	searchQuery: string,
-	selectedDomain: string | undefined,
-): WebsiteAccessViewState {
+export function deriveWebsiteAccessViewState(allWebsiteAccess: WebsiteAccessArray, searchQuery: string, selectedDomain: string | undefined): WebsiteAccessViewState {
 	const websiteAccessList = searchWebsiteAccess(searchQuery, allWebsiteAccess)
-	const selectedWebsiteAccess = findWebsiteAccessByOrigin(
-		allWebsiteAccess,
-		selectedDomain,
-	)
-	const hostScopeDetails =
-		selectedWebsiteAccess === undefined
-			? undefined
-			: getHostScopeDetails(
-					allWebsiteAccess,
-					selectedWebsiteAccess.website.websiteOrigin,
-				)
+	const selectedWebsiteAccess = findWebsiteAccessByOrigin(allWebsiteAccess, selectedDomain)
+	const hostScopeDetails = selectedWebsiteAccess === undefined ? undefined : getHostScopeDetails(allWebsiteAccess, selectedWebsiteAccess.website.websiteOrigin)
 	return { websiteAccessList, selectedWebsiteAccess, hostScopeDetails }
 }
 
-const HostScopeSummary = ({
-	hostScopeDetails,
-}: {
-	hostScopeDetails: HostScopeDetails | undefined
-}) => {
+const HostScopeSummary = ({ hostScopeDetails }: { hostScopeDetails: HostScopeDetails | undefined }) => {
 	if (hostScopeDetails === undefined) return <></>
-	const siblingOrigins = hostScopeDetails.affectedOrigins.filter(
-		(origin) => origin !== hostScopeDetails.selectedOrigin,
-	)
+	const siblingOrigins = hostScopeDetails.affectedOrigins.filter((origin) => origin !== hostScopeDetails.selectedOrigin)
 	return (
 		<div
 			style={{
@@ -265,8 +187,7 @@ const HostScopeSummary = ({
 					marginTop: '0.375rem',
 				}}
 			>
-				Affected site{hostScopeDetails.affectedOrigins.length === 1 ? '' : 's'}:{' '}
-				{hostScopeDetails.affectedOrigins.join(', ')}
+				Affected site{hostScopeDetails.affectedOrigins.length === 1 ? '' : 's'}: {hostScopeDetails.affectedOrigins.join(', ')}
 			</p>
 			{siblingOrigins.length > 0 ? (
 				<p
@@ -277,9 +198,7 @@ const HostScopeSummary = ({
 						marginTop: '0.375rem',
 					}}
 				>
-					This includes sibling origin{siblingOrigins.length === 1 ? '' : 's'}{' '}
-					on other port{siblingOrigins.length === 1 ? '' : 's'} or scheme
-					variants.
+					This includes sibling origin{siblingOrigins.length === 1 ? '' : 's'} on other port{siblingOrigins.length === 1 ? '' : 's'} or scheme variants.
 				</p>
 			) : (
 				<></>
@@ -295,11 +214,7 @@ export const WebsiteAccessView = () => {
 				<div class="layout">
 					<header>
 						<h1>Manage Websites</h1>
-						<SearchForm
-							id="site_search"
-							name="search"
-							placeholder="Search website name, url or Ethereum address"
-						/>
+						<SearchForm id="site_search" name="search" placeholder="Search website name, url or Ethereum address" />
 					</header>
 					<article>
 						<WebsiteSettingsList />
@@ -322,9 +237,7 @@ const SearchForm = (props: SearchFormProps) => {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const { searchQuery } = useWebsiteAccess()
 
-	const updateSearchParameters = (
-		event: JSX.TargetedInputEvent<HTMLFormElement>,
-	) => {
+	const updateSearchParameters = (event: JSX.TargetedInputEvent<HTMLFormElement>) => {
 		const formData = new FormData(event.currentTarget)
 		const q = formData.get('search')
 		searchQuery.value = q?.toString() || ''
@@ -332,17 +245,9 @@ const SearchForm = (props: SearchFormProps) => {
 
 	const commitSelectionOrReset = (event: Event) => {
 		event.preventDefault()
-		if (
-			!(event instanceof SubmitEvent) ||
-			!(event.currentTarget instanceof HTMLFormElement) ||
-			!inputRef.current
-		)
-			return
+		if (!(event instanceof SubmitEvent) || !(event.currentTarget instanceof HTMLFormElement) || !inputRef.current) return
 
-		if (
-			event.submitter instanceof HTMLButtonElement &&
-			event.submitter.value === 'clear'
-		) {
+		if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'clear') {
 			event.currentTarget.reset()
 
 			const formData = new FormData(event.currentTarget)
@@ -360,39 +265,16 @@ const SearchForm = (props: SearchFormProps) => {
 	}
 
 	return (
-		<form
-			role="search"
-			onInput={updateSearchParameters}
-			onSubmit={commitSelectionOrReset}
-			onKeyDown={updateSelection}
-		>
+		<form role="search" onInput={updateSearchParameters} onSubmit={commitSelectionOrReset} onKeyDown={updateSelection}>
 			<fieldset>
 				<label for={props.id}>
 					<SearchIcon />
 				</label>
-				<input
-					{...props}
-					name={props.name}
-					ref={inputRef}
-					type="search"
-					value={searchQuery.value}
-					autoFocus
-					autoComplete="off"
-				/>
+				<input {...props} name={props.name} ref={inputRef} type="search" value={searchQuery.value} autoFocus autoComplete="off" />
 				<input type="submit" style={{ display: 'none' }} />
 				<button type="submit" value="clear">
-					<svg
-						width="1em"
-						height="1em"
-						viewBox="0 0 16 16"
-						fill="none"
-						xmlns="http://www.w3.org/2000/svg"
-					>
-						<path
-							d="M1 1L15 15M15 1L1 15"
-							stroke="currentColor"
-							stroke-width="2"
-						/>
+					<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+						<path d="M1 1L15 15M15 1L1 15" stroke="currentColor" stroke-width="2" />
 					</svg>
 				</button>
 			</fieldset>
@@ -422,11 +304,7 @@ const WebsiteSettingsList = () => {
 				<>
 					<ul role="listbox">
 						{websiteAccessList.map((access) => (
-							<WebsiteAccessOverview
-								key={access.website.websiteOrigin}
-								websiteAccess={access}
-								checked={selectedDomain.value === access.website.websiteOrigin}
-							/>
+							<WebsiteAccessOverview key={access.website.websiteOrigin} websiteAccess={access} checked={selectedDomain.value === access.website.websiteOrigin} />
 						))}
 					</ul>
 					<input type="submit" style={{ display: 'none' }} />
@@ -463,12 +341,7 @@ const EmptyAccessList = () => {
 			>
 				Did not find anything that matched your search query
 			</p>
-			<button
-				onClick={clearSearch}
-				type="button"
-				class="btn btn--outline btn--sm"
-				style={{ fontSize: '0.9rem' }}
-			>
+			<button onClick={clearSearch} type="button" class="btn btn--outline btn--sm" style={{ fontSize: '0.9rem' }}>
 				Clear Search
 			</button>
 		</div>
@@ -480,10 +353,7 @@ type WebsiteAccessOverviewProps = {
 	checked: boolean
 }
 
-const WebsiteAccessOverview = ({
-	websiteAccess,
-	checked,
-}: WebsiteAccessOverviewProps) => {
+const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
 	const handleChange = () => {
 		window.location.hash = `${URL_HASH_KEY}:${websiteAccess.website.websiteOrigin}`
 	}
@@ -491,26 +361,15 @@ const WebsiteAccessOverview = ({
 	const getWebsiteStatus = () => {
 		if (!websiteAccess.access) return
 		if (websiteAccess.interceptorDisabled) return 'disabled'
-		if (websiteAccess.declarativeNetRequestBlockMode === 'block-all')
-			return 'blocked'
+		if (websiteAccess.declarativeNetRequestBlockMode === 'block-all') return 'blocked'
 		return
 	}
 	const websiteIcon = sanitizeStoredWebsiteIcon(websiteAccess.website.icon)
 
 	return (
 		<li role="option">
-			<input
-				id={websiteAccess.website.websiteOrigin}
-				type="radio"
-				name={URL_HASH_KEY}
-				value={websiteAccess.website.websiteOrigin}
-				checked={checked}
-				onChange={handleChange}
-			/>
-			<label
-				for={websiteAccess.website.websiteOrigin}
-				style={{ cursor: 'pointer' }}
-			>
+			<input id={websiteAccess.website.websiteOrigin} type="radio" name={URL_HASH_KEY} value={websiteAccess.website.websiteOrigin} checked={checked} onChange={handleChange} />
+			<label for={websiteAccess.website.websiteOrigin} style={{ cursor: 'pointer' }}>
 				<div
 					style={{
 						display: 'grid',
@@ -520,24 +379,8 @@ const WebsiteAccessOverview = ({
 						paddingBlock: '0.5rem',
 					}}
 				>
-					{websiteIcon === undefined ? (
-						<span
-							style={{ width: '1.5rem', aspectRatio: 1, display: 'block' }}
-						/>
-					) : (
-						<img
-							role="img"
-							src={websiteIcon}
-							width="24"
-							height="24"
-							style={{ width: '1.5rem', aspectRatio: 1, maxWidth: 'none' }}
-							title="Website Icon"
-						/>
-					)}
-					<div
-						class="flexy"
-						style={{ textAlign: 'left', flex: '1', '--pad-y': 0 }}
-					>
+					{websiteIcon === undefined ? <span style={{ width: '1.5rem', aspectRatio: 1, display: 'block' }} /> : <img role="img" src={websiteIcon} width="24" height="24" style={{ width: '1.5rem', aspectRatio: 1, maxWidth: 'none' }} title="Website Icon" />}
+					<div class="flexy" style={{ textAlign: 'left', flex: '1', '--pad-y': 0 }}>
 						<div style={{ flex: 1 }}>
 							<h4
 								class="truncate"
@@ -570,31 +413,17 @@ const WebsiteAccessOverview = ({
 	)
 }
 
-const SiteStatusIndicator = ({
-	status,
-}: {
-	status?: 'disabled' | 'blocked'
-}) => {
+const SiteStatusIndicator = ({ status }: { status?: 'disabled' | 'blocked' }) => {
 	switch (status) {
 		case 'blocked':
 			return (
-				<span
-					class="status-warn"
-					role="img"
-					title="External Request Blocked"
-					aria-label="External Request Blocked"
-				>
+				<span class="status-warn" role="img" title="External Request Blocked" aria-label="External Request Blocked">
 					<RequestBlockedIcon />
 				</span>
 			)
 		case 'disabled':
 			return (
-				<span
-					class="status-danger"
-					role="img"
-					title="Protection Disabled"
-					aria-label="Protection Disabled"
-				>
+				<span class="status-danger" role="img" title="Protection Disabled" aria-label="Protection Disabled">
 					<InterceptorDisabledIcon />
 				</span>
 			)
@@ -606,21 +435,14 @@ const SiteStatusIndicator = ({
 }
 
 const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
-	return createPortal(
-		<div class="access-details">{children}</div>,
-		document.body,
-	)
+	return createPortal(<div class="access-details">{children}</div>, document.body)
 }
 
-type Modals =
-	| { page: 'noModal' }
-	| { page: 'ModifyAddress'; state: Signal<ModifyAddressWindowState> }
+type Modals = { page: 'noModal' } | { page: 'ModifyAddress'; state: Signal<ModifyAddressWindowState> }
 
 const WebsiteSettingsDetail = () => {
 	const { viewState } = useWebsiteAccess()
-	const selectedWebsiteAccess = useOptionalComputed(
-		() => viewState.value.selectedWebsiteAccess,
-	)
+	const selectedWebsiteAccess = useOptionalComputed(() => viewState.value.selectedWebsiteAccess)
 	const hostScopeDetails = useComputed(() => viewState.value.hostScopeDetails)
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
@@ -661,9 +483,7 @@ const WebsiteSettingsDetail = () => {
 	if (selectedWebsiteAccess.value === undefined) return <></>
 
 	return (
-		<div
-			class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}
-		>
+		<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
 			<FullFrameWindow>
 				<form method="dialog" class="layout" onSubmit={closeDetails}>
 					<header style={{ paddingBlock: '1rem' }}>
@@ -679,24 +499,12 @@ const WebsiteSettingsDetail = () => {
 						>
 							&larr; Show website access list
 						</button>
-						<DetailsHeader
-							websiteAccess={selectedWebsiteAccess}
-							hostScopeDetails={hostScopeDetails}
-						/>
+						<DetailsHeader websiteAccess={selectedWebsiteAccess} hostScopeDetails={hostScopeDetails} />
 					</header>
 					<article>
-						<NoAccessPrompt
-							websiteAccess={selectedWebsiteAccess}
-							hostScopeDetails={hostScopeDetails}
-						/>
-						<AddressAccessList
-							websiteAccess={selectedWebsiteAccess}
-							renameAddressCallBack={renameAddressCallBack}
-						/>
-						<AdvancedSettings
-							websiteAccess={selectedWebsiteAccess}
-							hostScopeDetails={hostScopeDetails}
-						/>
+						<NoAccessPrompt websiteAccess={selectedWebsiteAccess} hostScopeDetails={hostScopeDetails} />
+						<AddressAccessList websiteAccess={selectedWebsiteAccess} renameAddressCallBack={renameAddressCallBack} />
+						<AdvancedSettings websiteAccess={selectedWebsiteAccess} hostScopeDetails={hostScopeDetails} />
 					</article>
 				</form>
 			</FullFrameWindow>
@@ -717,17 +525,9 @@ const WebsiteSettingsDetail = () => {
 	)
 }
 
-const DetailsHeader = ({
-	websiteAccess,
-	hostScopeDetails,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined>
-}) => {
+const DetailsHeader = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>; hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	if (websiteAccess.deepValue === undefined) return <></>
-	const websiteIcon = sanitizeStoredWebsiteIcon(
-		websiteAccess.deepValue.website.icon,
-	)
+	const websiteIcon = sanitizeStoredWebsiteIcon(websiteAccess.deepValue.website.icon)
 	return (
 		<div class="flexy flexy-sm" style={{ '--gap-x': '1rem', flex: 1 }}>
 			{websiteIcon === undefined ? (
@@ -769,22 +569,12 @@ const DetailsHeader = ({
 	)
 }
 
-const NoAccessPrompt = ({
-	websiteAccess,
-	hostScopeDetails,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined>
-}) => {
+const NoAccessPrompt = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>; hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
 	// If the website has been granted access, don't show this message
-	if (
-		websiteAccess.deepValue === undefined ||
-		websiteAccess.deepValue.access === true
-	)
-		return <></>
+	if (websiteAccess.deepValue === undefined || websiteAccess.deepValue.access === true) return <></>
 
 	const confirmOrRejectRemoval = async (returnValue: string) => {
 		if (returnValue !== 'confirm' || !websiteAccess.deepValue) return
@@ -816,25 +606,14 @@ const NoAccessPrompt = ({
 			>
 				This host was denied access to The Interceptor.
 			</h4>
-			<p
-				style={{ fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' }}
-			>
-				Interceptor will automatically deny further requests from{' '}
-				<WebsiteCard website={website.value} /> and any other affected site on{' '}
-				<b>{hostScopeDetails.value?.hostname}</b> while this preference is set.
+			<p style={{ fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' }}>
+				Interceptor will automatically deny further requests from <WebsiteCard website={website.value} /> and any other affected site on <b>{hostScopeDetails.value?.hostname}</b> while this preference is set.
 			</p>
 			<Modal>
-				<Modal.Open
-					class="btn btn--outline"
-					style={{ display: 'inline-block' }}
-				>
+				<Modal.Open class="btn btn--outline" style={{ display: 'inline-block' }}>
 					Stop automatically denying access for host
 				</Modal.Open>
-				<Modal.Dialog
-					class="dialog"
-					style={{ textAlign: 'center', color: 'var(--disabled-text-color)' }}
-					onModalClose={confirmOrRejectRemoval}
-				>
+				<Modal.Dialog class="dialog" style={{ textAlign: 'center', color: 'var(--disabled-text-color)' }} onModalClose={confirmOrRejectRemoval}>
 					<h2
 						style={{
 							fontWeight: 600,
@@ -847,11 +626,7 @@ const NoAccessPrompt = ({
 					</h2>
 					<p></p>
 					<p style={{ marginBlock: '0.5rem', lineHeight: 1.5 }}>
-						After confirming this action, The Interceptor will stop
-						automatically denying access requests from{' '}
-						<WebsiteCard website={website.value} /> and every affected site on{' '}
-						<b>{hostScopeDetails.value?.hostname}</b>. You will be prompted
-						again the next time one of them tries to connect.
+						After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website={website.value} /> and every affected site on <b>{hostScopeDetails.value?.hostname}</b>. You will be prompted again the next time one of them tries to connect.
 					</p>
 					<div
 						style={{
@@ -875,23 +650,11 @@ const NoAccessPrompt = ({
 	)
 }
 
-const AddressAccessList = ({
-	websiteAccess,
-	renameAddressCallBack,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	renameAddressCallBack: RenameAddressCallBack
-}) => {
+const AddressAccessList = ({ websiteAccess, renameAddressCallBack }: { websiteAccess: OptionalSignal<WebsiteAccess>; renameAddressCallBack: RenameAddressCallBack }) => {
 	const access = websiteAccess.deepValue
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
-	if (
-		!access ||
-		access.addressAccess === undefined ||
-		access.addressAccess.length < 1 ||
-		website.value === undefined
-	)
-		return <></>
+	if (!access || access.addressAccess === undefined || access.addressAccess.length < 1 || website.value === undefined) return <></>
 
 	return (
 		<Collapsible summary="Address Access" defaultOpen>
@@ -921,27 +684,14 @@ const AddressAccessList = ({
 			</p>
 			<div style={{ display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' }}>
 				{access.addressAccess.map((addressAcces) => (
-					<AddressAccessCard
-						key={addressAcces.address.toString()}
-						website={website}
-						addressAccess={addressAcces}
-						renameAddressCallBack={renameAddressCallBack}
-					/>
+					<AddressAccessCard key={addressAcces.address.toString()} website={website} addressAccess={addressAcces} renameAddressCallBack={renameAddressCallBack} />
 				))}
 			</div>
 		</Collapsible>
 	)
 }
 
-const AddressAccessCard = ({
-	website,
-	addressAccess,
-	renameAddressCallBack,
-}: {
-	website: ReadonlySignal<Website | undefined>
-	addressAccess: WebsiteAddressAccess
-	renameAddressCallBack: RenameAddressCallBack
-}) => {
+const AddressAccessCard = ({ website, addressAccess, renameAddressCallBack }: { website: ReadonlySignal<Website | undefined>; addressAccess: WebsiteAddressAccess; renameAddressCallBack: RenameAddressCallBack }) => {
 	const { addressAccessMetadata } = useWebsiteAccess()
 
 	const setAddressAccess = (event: Event) => {
@@ -958,11 +708,7 @@ const AddressAccessCard = ({
 		})
 	}
 
-	const addressBookEntry = useOptionalComputed(() =>
-		addressAccessMetadata.value.find(
-			(entry) => entry.address === addressAccess.address,
-		),
-	)
+	const addressBookEntry = useOptionalComputed(() => addressAccessMetadata.value.find((entry) => entry.address === addressAccess.address))
 
 	if (addressBookEntry.deepValue === undefined) return <></>
 	return (
@@ -974,27 +720,14 @@ const AddressAccessCard = ({
 				alignItems: 'center',
 			}}
 		>
-			<BigAddress
-				addressBookEntry={addressBookEntry.deepValue}
-				noEditAddress={true}
-				renameAddressCallBack={renameAddressCallBack}
-			/>
-			<RemoveAddressConfirmation
-				website={website}
-				addressBookEntry={addressBookEntry.deepValue}
-			/>
+			<BigAddress addressBookEntry={addressBookEntry.deepValue} noEditAddress={true} renameAddressCallBack={renameAddressCallBack} />
+			<RemoveAddressConfirmation website={website} addressBookEntry={addressBookEntry.deepValue} />
 			<Switch checked={addressAccess.access} onChange={setAddressAccess} />
 		</div>
 	)
 }
 
-const RemoveAddressConfirmation = ({
-	website,
-	addressBookEntry,
-}: {
-	addressBookEntry: AddressBookEntry
-	website: ReadonlySignal<Website | undefined>
-}) => {
+const RemoveAddressConfirmation = ({ website, addressBookEntry }: { addressBookEntry: AddressBookEntry; website: ReadonlySignal<Website | undefined> }) => {
 	const removeAddressAccessForWebsite = async () => {
 		if (!addressBookEntry) return
 		const currentWebsite = website.value
@@ -1018,11 +751,7 @@ const RemoveAddressConfirmation = ({
 			<Modal.Open class="btn btn--ghost">
 				<TrashIcon />
 			</Modal.Open>
-			<Modal.Dialog
-				class="dialog"
-				style={{ textAlign: 'center', color: 'var(--disabled-text-color)' }}
-				onModalClose={confirmOrRejectRemoval}
-			>
+			<Modal.Dialog class="dialog" style={{ textAlign: 'center', color: 'var(--disabled-text-color)' }} onModalClose={confirmOrRejectRemoval}>
 				<h2
 					style={{
 						fontWeight: 600,
@@ -1034,16 +763,9 @@ const RemoveAddressConfirmation = ({
 					Removing Address
 				</h2>
 				<div style={{ marginBlock: '0.5rem' }}>
-					This will prevent <WebsiteCard website={website.value} /> from
-					accessing or using{' '}
-					<SmallAddress
-						addressBookEntry={addressBookEntry}
-						renameAddressCallBack={() => undefined}
-					/>
+					This will prevent <WebsiteCard website={website.value} /> from accessing or using <SmallAddress addressBookEntry={addressBookEntry} renameAddressCallBack={() => undefined} />
 				</div>
-				<p style={{ marginBlock: '1rem' }}>
-					Remove the website's access to this address anyway?
-				</p>
+				<p style={{ marginBlock: '1rem' }}>Remove the website's access to this address anyway?</p>
 				<div
 					style={{
 						display: 'flex',
@@ -1065,39 +787,18 @@ const RemoveAddressConfirmation = ({
 	)
 }
 
-const AdvancedSettings = ({
-	websiteAccess,
-	hostScopeDetails,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined>
-}) => {
+const AdvancedSettings = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>; hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	if (websiteAccess.deepValue === undefined) return <></>
 	return (
 		<Collapsible summary="Advanced Settings" defaultOpen>
-			<BlockRequestSetting
-				websiteAccess={websiteAccess}
-				hostScopeDetails={hostScopeDetails}
-			/>
-			<DisableProtectionSetting
-				websiteAccess={websiteAccess}
-				hostScopeDetails={hostScopeDetails}
-			/>
-			<RemoveWebsiteSetting
-				websiteAccess={websiteAccess}
-				hostScopeDetails={hostScopeDetails}
-			/>
+			<BlockRequestSetting websiteAccess={websiteAccess} hostScopeDetails={hostScopeDetails} />
+			<DisableProtectionSetting websiteAccess={websiteAccess} hostScopeDetails={hostScopeDetails} />
+			<RemoveWebsiteSetting websiteAccess={websiteAccess} hostScopeDetails={hostScopeDetails} />
 		</Collapsible>
 	)
 }
 
-const BlockRequestSetting = ({
-	websiteAccess,
-	hostScopeDetails,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined>
-}) => {
+const BlockRequestSetting = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>; hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const setWebsiteExternalRequestBlocking = async (shouldBlock: boolean) => {
 		if (!websiteAccess.deepValue) return
 		sendPopupMessageToBackgroundPage({
@@ -1106,9 +807,7 @@ const BlockRequestSetting = ({
 		})
 	}
 
-	const requestBlockMode = useComputed(
-		() => websiteAccess.deepValue?.declarativeNetRequestBlockMode,
-	)
+	const requestBlockMode = useComputed(() => websiteAccess.deepValue?.declarativeNetRequestBlockMode)
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
 	const confirmOrRejectRequestBlocking = (response: 'confirm' | 'reject') => {
@@ -1131,37 +830,25 @@ const BlockRequestSetting = ({
 						marginBottom: '0.5rem',
 					}}
 				>
-					<h1 style={{ color: 'var(--text-color)', whiteSpace: 'nowrap' }}>
-						Block External Requests For Host
-					</h1>
+					<h1 style={{ color: 'var(--text-color)', whiteSpace: 'nowrap' }}>Block External Requests For Host</h1>
 					<p
 						style={{
 							color: 'var(--disabled-text-color)',
 							fontSize: '0.875rem',
 						}}
 					>
-						The Interceptor can block network requests from every affected site
-						on <b>{hostScopeDetails.value?.hostname}</b>, preventing that host
-						from connecting to external domains and services.
+						The Interceptor can block network requests from every affected site on <b>{hostScopeDetails.value?.hostname}</b>, preventing that host from connecting to external domains and services.
 					</p>
 				</div>
 				<aside>
 					{requestBlockMode.value === 'block-all' ? (
-						<button
-							type="button"
-							class="btn btn--primary"
-							onClick={() => setWebsiteExternalRequestBlocking(false)}
-						>
-							<span style={{ whiteSpace: 'nowrap' }}>
-								Unblock Host Requests
-							</span>
+						<button type="button" class="btn btn--primary" onClick={() => setWebsiteExternalRequestBlocking(false)}>
+							<span style={{ whiteSpace: 'nowrap' }}>Unblock Host Requests</span>
 						</button>
 					) : (
 						<Modal>
 							<Modal.Open class="btn btn--destructive">
-								<span style={{ whiteSpace: 'nowrap' }}>
-									Block Host Requests
-								</span>
+								<span style={{ whiteSpace: 'nowrap' }}>Block Host Requests</span>
 							</Modal.Open>
 							<Modal.Dialog
 								class="dialog"
@@ -1183,16 +870,9 @@ const BlockRequestSetting = ({
 								</h2>
 								<p></p>
 								<p style={{ marginBlock: '0.5rem' }}>
-									This will prevent <WebsiteCard website={website.value} /> and
-									every affected site on{' '}
-									<b>{hostScopeDetails.value?.hostname}</b> from requesting
-									resources outside that host, which can lead to erratic
-									behavior or stop those sites from functioning entirely.
+									This will prevent <WebsiteCard website={website.value} /> and every affected site on <b>{hostScopeDetails.value?.hostname}</b> from requesting resources outside that host, which can lead to erratic behavior or stop those sites from functioning entirely.
 								</p>
-								<p style={{ marginBlock: '1rem' }}>
-									Are you sure you want to block external requests for this
-									host?
-								</p>
+								<p style={{ marginBlock: '1rem' }}>Are you sure you want to block external requests for this host?</p>
 								<div
 									style={{
 										display: 'flex',
@@ -1218,13 +898,7 @@ const BlockRequestSetting = ({
 	)
 }
 
-const DisableProtectionSetting = ({
-	websiteAccess,
-	hostScopeDetails,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined>
-}) => {
+const DisableProtectionSetting = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>; hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const disableWebsiteProtection = async (shouldDisable = true) => {
 		if (!websiteAccess.deepValue) return
 		sendPopupMessageToBackgroundPage({
@@ -1241,9 +915,7 @@ const DisableProtectionSetting = ({
 		disableWebsiteProtection()
 	}
 
-	const isInterceptorDisabled = useComputed(() =>
-		Boolean(websiteAccess.deepValue?.interceptorDisabled),
-	)
+	const isInterceptorDisabled = useComputed(() => Boolean(websiteAccess.deepValue?.interceptorDisabled))
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
 	return (
@@ -1261,37 +933,25 @@ const DisableProtectionSetting = ({
 						marginBottom: '0.5rem',
 					}}
 				>
-					<h1 style={{ color: 'var(--text-color)', whiteSpace: 'nowrap' }}>
-						Disable Protection For Host
-					</h1>
+					<h1 style={{ color: 'var(--text-color)', whiteSpace: 'nowrap' }}>Disable Protection For Host</h1>
 					<p
 						style={{
 							color: 'var(--disabled-text-color)',
 							fontSize: '0.875rem',
 						}}
 					>
-						Turn protection and simulation off for every affected site on{' '}
-						<b>{hostScopeDetails.value?.hostname}</b> and forward all requests
-						directly to the default wallet.
+						Turn protection and simulation off for every affected site on <b>{hostScopeDetails.value?.hostname}</b> and forward all requests directly to the default wallet.
 					</p>
 				</div>
 				<aside>
 					{isInterceptorDisabled.value ? (
-						<button
-							type="button"
-							class="btn btn--primary"
-							onClick={() => disableWebsiteProtection(false)}
-						>
-							<span style={{ whiteSpace: 'nowrap' }}>
-								Enable Host Protection
-							</span>
+						<button type="button" class="btn btn--primary" onClick={() => disableWebsiteProtection(false)}>
+							<span style={{ whiteSpace: 'nowrap' }}>Enable Host Protection</span>
 						</button>
 					) : (
 						<Modal>
 							<Modal.Open class="btn btn--destructive">
-								<span style={{ whiteSpace: 'nowrap' }}>
-									Disable Host Protection
-								</span>
+								<span style={{ whiteSpace: 'nowrap' }}>Disable Host Protection</span>
 							</Modal.Open>
 							<Modal.Dialog
 								class="dialog"
@@ -1313,15 +973,9 @@ const DisableProtectionSetting = ({
 								</h2>
 								<p></p>
 								<p style={{ marginBlock: '0.5rem' }}>
-									Interceptor will no longer be able to simulate transactions
-									from <WebsiteCard website={website.value} /> or any other
-									affected site on <b>{hostScopeDetails.value?.hostname}</b>,
-									which could potentially lead to loss of assets. Please
-									exercise caution.
+									Interceptor will no longer be able to simulate transactions from <WebsiteCard website={website.value} /> or any other affected site on <b>{hostScopeDetails.value?.hostname}</b>, which could potentially lead to loss of assets. Please exercise caution.
 								</p>
-								<p style={{ marginBlock: '1rem' }}>
-									Are you sure you want to disable protection for this host?
-								</p>
+								<p style={{ marginBlock: '1rem' }}>Are you sure you want to disable protection for this host?</p>
 								<div
 									style={{
 										display: 'flex',
@@ -1347,13 +1001,7 @@ const DisableProtectionSetting = ({
 	)
 }
 
-const RemoveWebsiteSetting = ({
-	websiteAccess,
-	hostScopeDetails,
-}: {
-	websiteAccess: OptionalSignal<WebsiteAccess>
-	hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined>
-}) => {
+const RemoveWebsiteSetting = ({ websiteAccess, hostScopeDetails }: { websiteAccess: OptionalSignal<WebsiteAccess>; hostScopeDetails: ReadonlySignal<HostScopeDetails | undefined> }) => {
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
@@ -1387,18 +1035,14 @@ const RemoveWebsiteSetting = ({
 						marginBottom: '0.5rem',
 					}}
 				>
-					<h1 style={{ color: 'var(--text-color)', whiteSpace: 'nowrap' }}>
-						Remove Host Access
-					</h1>
+					<h1 style={{ color: 'var(--text-color)', whiteSpace: 'nowrap' }}>Remove Host Access</h1>
 					<p
 						style={{
 							color: 'var(--disabled-text-color)',
 							fontSize: '0.875rem',
 						}}
 					>
-						Revoke all permissions granted to every affected site on{' '}
-						<b>{hostScopeDetails.value?.hostname}</b>, including wallet access
-						and network request blocking.
+						Revoke all permissions granted to every affected site on <b>{hostScopeDetails.value?.hostname}</b>, including wallet access and network request blocking.
 					</p>
 				</div>
 				<aside>
@@ -1426,14 +1070,9 @@ const RemoveWebsiteSetting = ({
 							</h2>
 							<p></p>
 							<p style={{ marginBlock: '0.5rem' }}>
-								You are about to remove <WebsiteCard website={website.value} />{' '}
-								and every affected site on{' '}
-								<b>{hostScopeDetails.value?.hostname}</b> from the access list.
-								Those sites will no longer have access to your wallet addresses.
+								You are about to remove <WebsiteCard website={website.value} /> and every affected site on <b>{hostScopeDetails.value?.hostname}</b> from the access list. Those sites will no longer have access to your wallet addresses.
 							</p>
-							<p style={{ marginBlock: '1rem' }}>
-								Are you sure you want to remove access for this host?
-							</p>
+							<p style={{ marginBlock: '1rem' }}>Are you sure you want to remove access for this host?</p>
 							<div
 								style={{
 									display: 'flex',
@@ -1473,19 +1112,8 @@ const WebsiteCard = ({ website }: { website: Website | undefined }) => {
 				verticalAlign: 'bottom',
 			}}
 		>
-			{websiteIcon === undefined ? (
-				<></>
-			) : (
-				<img
-					style={{ inlineSize: '1rem' }}
-					width="16"
-					height="16"
-					src={websiteIcon}
-				/>
-			)}
-			<div style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>
-				{website.websiteOrigin}
-			</div>
+			{websiteIcon === undefined ? <></> : <img style={{ inlineSize: '1rem' }} width="16" height="16" src={websiteIcon} />}
+			<div style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>{website.websiteOrigin}</div>
 		</div>
 	)
 }

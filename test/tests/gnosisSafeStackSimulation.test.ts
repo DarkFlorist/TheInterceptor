@@ -1,16 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { encodeAbiParameters, encodeFunctionResult, hexToBytes } from 'viem'
-import type {
-	SafeTx,
-	VisualizedPersonalSignRequestSafeTx,
-} from '../../app/ts/types/personal-message-definitions.js'
+import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import {
-	EthereumBlockHeader,
-	EthereumQuantity,
-} from '../../app/ts/types/wire-types.js'
+import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 
@@ -36,9 +30,7 @@ type BrowserMockGlobals = {
 	}
 	storage: {
 		local: {
-			get: (
-				keys?: string | string[] | Record<string, unknown> | null,
-			) => Promise<Record<string, unknown>>
+			get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>
 			set: (items: Record<string, unknown>) => Promise<void>
 			remove: (keys: string | string[]) => Promise<void>
 		}
@@ -79,28 +71,17 @@ type BrowserMock = {
 	sentMessages: RuntimeMessage[]
 }
 
-const serializeForRpc = (
-	runtype: { serialize: (value: unknown) => unknown },
-	value: unknown,
-) => runtype.serialize(value)
+const serializeForRpc = (runtype: { serialize: (value: unknown) => unknown }, value: unknown) => runtype.serialize(value)
 
 function createBrowserMock(): BrowserMock {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 
-	const getItems = (
-		keys?: string | string[] | Record<string, unknown> | null,
-	) => {
+	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys))
-			return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
+		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(
-			Object.entries(keys).map(([key, defaultValue]) => [
-				key,
-				key in storageState ? storageState[key] : defaultValue,
-			]),
-		)
+		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
 
 	const removeItems = (keys: string | string[]) => {
@@ -224,18 +205,10 @@ function createBrowserMock(): BrowserMock {
 const browserMock = createBrowserMock()
 
 async function loadModules() {
-	const simulationUpdating = await import(
-		'../../app/ts/background/simulationUpdating.js'
-	)
-	const ethereumClientService = await import(
-		'../../app/ts/simulation/services/EthereumClientService.js'
-	)
-	const simulationModeEthereumClientService = await import(
-		'../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-	)
-	const priceEstimator = await import(
-		'../../app/ts/simulation/services/priceEstimator.js'
-	)
+	const simulationUpdating = await import('../../app/ts/background/simulationUpdating.js')
+	const ethereumClientService = await import('../../app/ts/simulation/services/EthereumClientService.js')
+	const simulationModeEthereumClientService = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const settings = await import('../../app/ts/background/settings.js')
 
@@ -243,8 +216,7 @@ async function loadModules() {
 		...simulationUpdating,
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
-		mockSignTransaction:
-			simulationModeEthereumClientService.mockSignTransaction,
+		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 	}
@@ -282,10 +254,7 @@ function makeFakeBlock(number: bigint) {
 	}
 }
 
-function makeEthSimulateBlocks(
-	callCount: number,
-	lastReturnData = new Uint8Array(),
-) {
+function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Array()) {
 	return serializeForRpc(
 		EthSimulateV1Result,
 		Array.from({ length: callCount }, (_, index) => ({
@@ -298,8 +267,7 @@ function makeEthSimulateBlocks(
 			calls: [
 				{
 					status: 'success',
-					returnData:
-						index === callCount - 1 ? lastReturnData : new Uint8Array(),
+					returnData: index === callCount - 1 ? lastReturnData : new Uint8Array(),
 					gasUsed: 21_000n,
 					logs: [],
 				},
@@ -308,11 +276,7 @@ function makeEthSimulateBlocks(
 	)
 }
 
-function createSafeMessage(
-	fakeRpcNetwork: RpcEntry,
-	activeAddress: TestModules['defaultActiveAddresses'][number],
-	recipient: TestModules['defaultActiveAddresses'][number],
-) {
+function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules['defaultActiveAddresses'][number], recipient: TestModules['defaultActiveAddresses'][number]) {
 	const zeroAddressEntry = {
 		address: 0n,
 		name: '0x0 Address',
@@ -399,8 +363,7 @@ describe('Gnosis Safe stack simulation', () => {
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
 		const stackRecipient = modules.defaultActiveAddresses[1]
-		if (activeAddress === undefined || stackRecipient === undefined)
-			throw new Error('missing default test addresses')
+		if (activeAddress === undefined || stackRecipient === undefined) throw new Error('missing default test addresses')
 
 		const fakeRpcNetwork: RpcEntry = {
 			name: 'Test Chain',
@@ -420,10 +383,7 @@ describe('Gnosis Safe stack simulation', () => {
 			clearCache() {
 				return undefined
 			},
-			async jsonRpcRequest(rpcRequest: {
-				method: string
-				params?: readonly unknown[]
-			}) {
+			async jsonRpcRequest(rpcRequest: { method: string; params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':
 						return serializeForRpc(EthereumBlockHeader, fakeBlock)
@@ -431,36 +391,17 @@ describe('Gnosis Safe stack simulation', () => {
 						return serializeForRpc(EthereumQuantity, fakeBlock.number)
 					case 'eth_simulateV1': {
 						const firstParam = rpcRequest.params?.[0]
-						if (
-							typeof firstParam !== 'object' ||
-							firstParam === null ||
-							!('blockStateCalls' in firstParam) ||
-							!Array.isArray(firstParam.blockStateCalls)
-						) {
-							throw new Error(
-								'Missing blockStateCalls in eth_simulateV1 request',
-							)
+						if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !Array.isArray(firstParam.blockStateCalls)) {
+							throw new Error('Missing blockStateCalls in eth_simulateV1 request')
 						}
 						const callCount = firstParam.blockStateCalls.length
 						const lastBlock = firstParam.blockStateCalls[callCount - 1]
-						if (
-							typeof lastBlock !== 'object' ||
-							lastBlock === null ||
-							!('calls' in lastBlock) ||
-							!Array.isArray(lastBlock.calls)
-						) {
+						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) {
 							throw new Error('Missing calls in eth_simulateV1 block')
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const isAggregate3BalanceCall =
-							typeof lastCall === 'object' &&
-							lastCall !== null &&
-							'to' in lastCall &&
-							lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall)
-							throw new Error(
-								`Unexpected eth_simulateV1 payload with ${String(callCount)} blockStateCalls`,
-							)
+						const isAggregate3BalanceCall = typeof lastCall === 'object' && lastCall !== null && 'to' in lastCall && lastCall.to === MULTICALL3
+						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${String(callCount)} blockStateCalls`)
 						aggregate3BlockStateCallCount = callCount
 
 						const aggregate3ReturnData = encodeFunctionResult({
@@ -473,10 +414,7 @@ describe('Gnosis Safe stack simulation', () => {
 								},
 							],
 						})
-						return makeEthSimulateBlocks(
-							callCount,
-							hexToBytes(aggregate3ReturnData),
-						)
+						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
 					}
 					default:
 						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
@@ -565,38 +503,18 @@ describe('Gnosis Safe stack simulation', () => {
 			transactionIdentifier: 2n,
 		} as const
 
-		const governanceExecutionSimulationInput =
-			modules.getGovernanceExecutionSimulationInput(
-				simulationInput,
-				executionTransaction,
-				executionTimestamp,
-				executionStateOverrides,
-			)
+		const governanceExecutionSimulationInput = modules.getGovernanceExecutionSimulationInput(simulationInput, executionTransaction, executionTimestamp, executionStateOverrides)
 
-		const tokenBalancesAfter =
-			await modules.getGovernanceExecutionTokenBalancesAfter(
-				ethereum,
-				simulationInput,
-				executionTransaction,
-				executionTimestamp,
-				executionStateOverrides,
-				{
-					status: 'success',
-					returnData: new Uint8Array(),
-					gasUsed: 21_000n,
-					logs: [],
-				},
-			)
+		const tokenBalancesAfter = await modules.getGovernanceExecutionTokenBalancesAfter(ethereum, simulationInput, executionTransaction, executionTimestamp, executionStateOverrides, {
+			status: 'success',
+			returnData: new Uint8Array(),
+			gasUsed: 21_000n,
+			logs: [],
+		})
 
 		assert.equal(governanceExecutionSimulationInput.length, 2)
-		assert.deepStrictEqual(
-			governanceExecutionSimulationInput[1]?.stateOverrides,
-			executionStateOverrides,
-		)
-		assert.deepStrictEqual(
-			governanceExecutionSimulationInput[1]?.blockTimeManipulation,
-			{ type: 'SetTimetamp', timeToSet: 1704153600n },
-		)
+		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.stateOverrides, executionStateOverrides)
+		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.blockTimeManipulation, { type: 'SetTimetamp', timeToSet: 1704153600n })
 		assert.equal(aggregate3BlockStateCallCount, 3)
 		assert.equal(tokenBalancesAfter.length, 1)
 		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
@@ -607,8 +525,7 @@ describe('Gnosis Safe stack simulation', () => {
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
 		const stackRecipient = modules.defaultActiveAddresses[1]
-		if (activeAddress === undefined || stackRecipient === undefined)
-			throw new Error('missing default test addresses')
+		if (activeAddress === undefined || stackRecipient === undefined) throw new Error('missing default test addresses')
 
 		const fakeRpcNetwork: RpcEntry = {
 			name: 'Test Chain',
@@ -627,10 +544,7 @@ describe('Gnosis Safe stack simulation', () => {
 			clearCache() {
 				return undefined
 			},
-			async jsonRpcRequest(rpcRequest: {
-				method: string
-				params?: readonly unknown[]
-			}) {
+			async jsonRpcRequest(rpcRequest: { method: string; params?: readonly unknown[] }) {
 				switch (rpcRequest.method) {
 					case 'eth_getBlockByNumber':
 						return serializeForRpc(EthereumBlockHeader, fakeBlock)
@@ -646,36 +560,18 @@ describe('Gnosis Safe stack simulation', () => {
 						return serializeForRpc(EthereumQuantity, fakeBlock.number)
 					case 'eth_simulateV1': {
 						const firstParam = rpcRequest.params?.[0]
-						if (
-							typeof firstParam !== 'object' ||
-							firstParam === null ||
-							!('blockStateCalls' in firstParam) ||
-							!Array.isArray(firstParam.blockStateCalls)
-						) {
-							throw new Error(
-								'Missing blockStateCalls in eth_simulateV1 request',
-							)
+						if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !Array.isArray(firstParam.blockStateCalls)) {
+							throw new Error('Missing blockStateCalls in eth_simulateV1 request')
 						}
 						const callCount = firstParam.blockStateCalls.length
-						if (callCount !== 1 && callCount !== 2 && callCount !== 3)
-							throw new Error(`Unexpected call count: ${String(callCount)}`)
+						if (callCount !== 1 && callCount !== 2 && callCount !== 3) throw new Error(`Unexpected call count: ${String(callCount)}`)
 						const lastBlock = firstParam.blockStateCalls[callCount - 1]
-						if (
-							typeof lastBlock !== 'object' ||
-							lastBlock === null ||
-							!('calls' in lastBlock) ||
-							!Array.isArray(lastBlock.calls)
-						) {
+						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) {
 							throw new Error('Missing calls in eth_simulateV1 block')
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const isAggregate3BalanceCall =
-							typeof lastCall === 'object' &&
-							lastCall !== null &&
-							'to' in lastCall &&
-							lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall)
-							return makeEthSimulateBlocks(callCount)
+						const isAggregate3BalanceCall = typeof lastCall === 'object' && lastCall !== null && 'to' in lastCall && lastCall.to === MULTICALL3
+						if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
 
 						const aggregate3ReturnData = encodeFunctionResult({
 							abi: Multicall3ABI,
@@ -687,10 +583,7 @@ describe('Gnosis Safe stack simulation', () => {
 								},
 							],
 						})
-						return makeEthSimulateBlocks(
-							callCount,
-							hexToBytes(aggregate3ReturnData),
-						)
+						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
 					}
 					default:
 						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
@@ -747,53 +640,23 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		})
 
-		const safeMessage = createSafeMessage(
-			fakeRpcNetwork,
-			activeAddress,
-			stackRecipient,
-		)
+		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient)
 		const simulationInput = await modules.getCurrentSimulationInput()
 		assert.equal(simulationInput.length, 1)
 		assert.equal(simulationInput[0]?.transactions.length, 1)
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction(
-			safeMessage,
-			simulationInput,
-			ethereum,
-			tokenPriceService,
-		)
+		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, simulationInput, ethereum, tokenPriceService)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
 
-		assert.equal(
-			reply.result.simulationState.rpcNetwork.chainId,
-			fakeRpcNetwork.chainId,
-		)
+		assert.equal(reply.result.simulationState.rpcNetwork.chainId, fakeRpcNetwork.chainId)
 		assert.equal(reply.result.simulationState.simulationStateInput.length, 2)
-		assert.equal(
-			reply.result.simulationState.simulationStateInput[0]?.transactions.length,
-			1,
-		)
-		assert.equal(
-			reply.result.simulationState.simulationStateInput[1]?.transactions.length,
-			1,
-		)
+		assert.equal(reply.result.simulationState.simulationStateInput[0]?.transactions.length, 1)
+		assert.equal(reply.result.simulationState.simulationStateInput[1]?.transactions.length, 1)
 		assert.equal(reply.result.visualizedSimulationState.success, true)
-		if (!reply.result.visualizedSimulationState.success)
-			throw new Error('unexpected Safe visualization failure')
-		assert.equal(
-			reply.result.visualizedSimulationState.visualizedBlocks.length,
-			2,
-		)
-		assert.equal(
-			reply.result.visualizedSimulationState.visualizedBlocks[0]
-				?.simulatedAndVisualizedTransactions.length,
-			1,
-		)
-		assert.equal(
-			reply.result.visualizedSimulationState.visualizedBlocks[1]
-				?.simulatedAndVisualizedTransactions.length,
-			1,
-		)
+		if (!reply.result.visualizedSimulationState.success) throw new Error('unexpected Safe visualization failure')
+		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks.length, 2)
+		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions.length, 1)
+		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[1]?.simulatedAndVisualizedTransactions.length, 1)
 	})
 })

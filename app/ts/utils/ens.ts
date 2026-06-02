@@ -7,5 +7,4 @@ export const normalizeEnsNameOrUndefined = (name: string) =>
 		(error) => error instanceof Error,
 	)
 
-export const isValidEnsName = (name: string) =>
-	normalizeEnsNameOrUndefined(name) !== undefined
+export const isValidEnsName = (name: string) => normalizeEnsNameOrUndefined(name) !== undefined

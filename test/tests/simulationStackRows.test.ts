@@ -2,12 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { normalizeSimulationStackRows } from '../../app/ts/components/simulationExplaining/simulationStackRows.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import type {
-	PreSimulationTransaction,
-	SignedMessageTransaction,
-	SimulationStateInput,
-	VisualizedSimulationState,
-} from '../../app/ts/types/visualizer-types.js'
+import type { PreSimulationTransaction, SignedMessageTransaction, SimulationStateInput, VisualizedSimulationState } from '../../app/ts/types/visualizer-types.js'
 
 describe('simulation stack rows', () => {
 	test('message-only input produces a message row', () => {
@@ -52,10 +47,7 @@ describe('simulation stack rows', () => {
 				},
 			],
 		}
-		const blocks = normalizeSimulationStackRows(
-			simulationStateInput,
-			visualizedSimulationState,
-		)
+		const blocks = normalizeSimulationStackRows(simulationStateInput, visualizedSimulationState)
 
 		assert.equal(blocks.length, 1)
 		assert.equal(blocks[0]?.rows.length, 1)
@@ -140,10 +132,7 @@ describe('simulation stack rows', () => {
 				},
 			],
 		}
-		const blocks = normalizeSimulationStackRows(
-			simulationStateInput,
-			visualizedSimulationState,
-		)
+		const blocks = normalizeSimulationStackRows(simulationStateInput, visualizedSimulationState)
 
 		assert.equal(blocks.length, 1)
 		assert.equal(blocks[0]?.rows.length, 2)

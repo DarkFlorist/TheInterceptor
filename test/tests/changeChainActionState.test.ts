@@ -26,8 +26,7 @@ describe('change chain action state', () => {
 			}),
 			{
 				approveButtonText: 'Change chain unavailable',
-				errorText:
-					'This chain is not supported by The Interceptor in Simulation mode. Switch to Signing mode and try again if you want to continue without simulation protection.',
+				errorText: 'This chain is not supported by The Interceptor in Simulation mode. Switch to Signing mode and try again if you want to continue without simulation protection.',
 				approveDisabled: true,
 			},
 		)
@@ -41,8 +40,7 @@ describe('change chain action state', () => {
 			}),
 			{
 				approveButtonText: 'Change chain unavailable',
-				errorText:
-					'This chain is not supported by The Interceptor. This dialog cannot disable it for you. If you want to continue without its protection, disable The Interceptor from the main popup and retry the chain change in your wallet.',
+				errorText: 'This chain is not supported by The Interceptor. This dialog cannot disable it for you. If you want to continue without its protection, disable The Interceptor from the main popup and retry the chain change in your wallet.',
 				approveDisabled: true,
 			},
 		)

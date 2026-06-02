@@ -2,8 +2,7 @@ import type { JSX } from 'preact/jsx-runtime'
 import { batch, type Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { OptionalSignal } from '../../utils/OptionalSignal.js'
 
-interface BaseInputModel
-	extends Omit<JSX.HTMLAttributes<HTMLInputElement>, 'value' | 'onInput'> {
+interface BaseInputModel extends Omit<JSX.HTMLAttributes<HTMLInputElement>, 'value' | 'onInput'> {
 	readonly rawValue?: Signal<string>
 }
 
@@ -17,16 +16,13 @@ interface UnparsedInputModel extends BaseInputModel {
 interface ParsedInputModel<T> extends BaseInputModel {
 	readonly value: OptionalSignal<T>
 	readonly sanitize: (input: string) => string
-	readonly tryParse: (
-		input: string,
-	) => { ok: true; value: T | undefined } | { ok: false }
+	readonly tryParse: (input: string) => { ok: true; value: T | undefined } | { ok: false }
 	readonly serialize: (input: T | undefined) => string
 }
 
 function ParsedInput<T>(model: ParsedInputModel<T>) {
 	const pendingOnChange = useSignal(false)
-	const internalValue =
-		model.rawValue || useSignal(model.serialize(model.value.deepPeek()))
+	const internalValue = model.rawValue || useSignal(model.serialize(model.value.deepPeek()))
 
 	// internalValue changed or signal/hook referenced by sanitize/tryParse changed
 	useSignalEffect(() => {
@@ -43,11 +39,8 @@ function ParsedInput<T>(model: ParsedInputModel<T>) {
 	// model value changed or signal/hook referenced by sanitize/tryParse/serialize changed
 	useSignalEffect(() => {
 		batch(() => {
-			const parsedInternal = model.tryParse(
-				model.sanitize(internalValue.peek()),
-			)
-			if (parsedInternal.ok && parsedInternal.value === model.value.deepValue)
-				return
+			const parsedInternal = model.tryParse(model.sanitize(internalValue.peek()))
+			if (parsedInternal.ok && parsedInternal.value === model.value.deepValue) return
 			internalValue.value = model.serialize(model.value.deepValue)
 		})
 	})
@@ -75,9 +68,7 @@ function ParsedInput<T>(model: ParsedInputModel<T>) {
 	)
 }
 
-function isParsedInputModel<T>(
-	model: UnparsedInputModel | ParsedInputModel<T>,
-): model is ParsedInputModel<T> {
+function isParsedInputModel<T>(model: UnparsedInputModel | ParsedInputModel<T>): model is ParsedInputModel<T> {
 	return 'tryParse' in model && 'serialize' in model
 }
 
@@ -85,96 +76,51 @@ function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
 	if (isParsedInputModel(model)) {
 		return <ParsedInput {...model} />
 	}
-	return (
-		<ParsedInput
-			{...model}
-			value={new OptionalSignal(model.value)}
-			sanitize={model.sanitize || ((x) => x)}
-			tryParse={(value) => ({ ok: true, value })}
-			serialize={(x) => x || ''}
-		/>
-	)
+	return <ParsedInput {...model} value={new OptionalSignal(model.value)} sanitize={model.sanitize || ((x) => x)} tryParse={(value) => ({ ok: true, value })} serialize={(x) => x || ''} />
 }
 
-interface BaseAutosizingInputModel
-	extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>,
-		Pick<
-			UnparsedInputModel,
-			| 'key'
-			| 'type'
-			| 'pattern'
-			| 'placeholder'
-			| 'required'
-			| 'onChange'
-			| 'autocomplete'
-		> {
+interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>, Pick<UnparsedInputModel, 'key' | 'type' | 'pattern' | 'placeholder' | 'required' | 'onChange' | 'autocomplete'> {
 	readonly dataList?: string[]
 	readonly rawValue?: Signal<string>
 }
-interface UnparsedAutosizingInputModel
-	extends BaseAutosizingInputModel,
-		Pick<UnparsedInputModel, 'value' | 'sanitize'> {
+interface UnparsedAutosizingInputModel extends BaseAutosizingInputModel, Pick<UnparsedInputModel, 'value' | 'sanitize'> {
 	readonly tryParse?: never
 	readonly serialize?: never
 }
-interface ParsedAutosizingInputModel<T>
-	extends BaseAutosizingInputModel,
-		Pick<
-			ParsedInputModel<T>,
-			'value' | 'sanitize' | 'tryParse' | 'serialize'
-		> {}
+interface ParsedAutosizingInputModel<T> extends BaseAutosizingInputModel, Pick<ParsedInputModel<T>, 'value' | 'sanitize' | 'tryParse' | 'serialize'> {}
 
-function isParsedAutosizingInputModel<T>(
-	model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>,
-): model is ParsedAutosizingInputModel<T> {
+function isParsedAutosizingInputModel<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>): model is ParsedAutosizingInputModel<T> {
 	return 'tryParse' in model && 'serialize' in model
 }
 
-function AutosizingInput<T>(
-	model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>,
-) {
-	const internalValue =
-		model.rawValue ||
-		useSignal(
-			isParsedAutosizingInputModel(model)
-				? model.serialize(model.value.deepPeek())
-				: model.value.peek(),
-		)
+function AutosizingInput<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>) {
+	const internalValue = model.rawValue || useSignal(isParsedAutosizingInputModel(model) ? model.serialize(model.value.deepPeek()) : model.value.peek())
 	const baseInputModel = {
 		rawValue: internalValue,
 		...(model.type !== undefined ? { type: model.type } : {}),
 		...(model.pattern !== undefined ? { pattern: model.pattern } : {}),
 		...(model.required !== undefined ? { required: model.required } : {}),
-		...(model.placeholder !== undefined
-			? { placeholder: model.placeholder }
-			: {}),
-		...(model.autocomplete !== undefined
-			? { autocomplete: model.autocomplete }
-			: {}),
+		...(model.placeholder !== undefined ? { placeholder: model.placeholder } : {}),
+		...(model.autocomplete !== undefined ? { autocomplete: model.autocomplete } : {}),
 		...(model.onChange !== undefined ? { onChange: model.onChange } : {}),
 		list: 'datalist',
 		size: 1,
 	}
-	const inputModel: UnparsedInputModel | ParsedInputModel<T> =
-		isParsedAutosizingInputModel(model)
-			? {
-					...baseInputModel,
-					value: model.value,
-					sanitize: model.sanitize,
-					tryParse: model.tryParse,
-					serialize: model.serialize,
-				}
-			: {
-					...baseInputModel,
-					value: model.value,
-					...(model.sanitize !== undefined ? { sanitize: model.sanitize } : {}),
-				}
+	const inputModel: UnparsedInputModel | ParsedInputModel<T> = isParsedAutosizingInputModel(model)
+		? {
+				...baseInputModel,
+				value: model.value,
+				sanitize: model.sanitize,
+				tryParse: model.tryParse,
+				serialize: model.serialize,
+			}
+		: {
+				...baseInputModel,
+				value: model.value,
+				...(model.sanitize !== undefined ? { sanitize: model.sanitize } : {}),
+			}
 	return (
-		<span
-			class="autosizing-span"
-			style={model.style}
-			data-value={model.placeholder}
-		>
+		<span class="autosizing-span" style={model.style} data-value={model.placeholder}>
 			<label class="autosizing-label" data-value={internalValue.value}>
 				<Input {...inputModel} />
 			</label>
@@ -189,10 +135,7 @@ export interface IntegerInput {
 	readonly value: OptionalSignal<bigint>
 	readonly autoSize?: boolean
 	readonly className?: string | JSX.SignalLike<string | undefined>
-	readonly style?:
-		| string
-		| JSX.CSSProperties
-		| JSX.SignalLike<string | JSX.CSSProperties>
+	readonly style?: string | JSX.CSSProperties | JSX.SignalLike<string | JSX.CSSProperties>
 	readonly type?: string | JSX.SignalLike<string>
 	readonly placeholder?: string | JSX.SignalLike<string>
 	readonly required?: boolean | JSX.SignalLike<boolean>
@@ -205,14 +148,8 @@ export function IntegerInput(model: IntegerInput) {
 		value: model.value,
 		pattern: regexp.source,
 		sanitize: (input: string) => input.replaceAll(sanitizationRegexp, ''),
-		tryParse: (input: string) =>
-			input === ''
-				? { ok: true, value: undefined }
-				: regexp.test(input)
-					? { ok: true, value: BigInt(input) }
-					: ({ ok: false } as const),
-		serialize: (input: bigint | undefined) =>
-			input === undefined ? '' : input.toString(10),
+		tryParse: (input: string) => (input === '' ? { ok: true, value: undefined } : regexp.test(input) ? { ok: true, value: BigInt(input) } : ({ ok: false } as const)),
+		serialize: (input: bigint | undefined) => (input === undefined ? '' : input.toString(10)),
 		onChange: model.onChange,
 		...(model.className ? { className: model.className } : {}),
 		...(model.style ? { style: model.style } : {}),
@@ -221,12 +158,6 @@ export function IntegerInput(model: IntegerInput) {
 		...(model.required ? { required: model.required } : {}),
 		...(model.dataList ? { dataList: model.dataList } : {}),
 		disabled: model.disabled,
-	} satisfies
-		| (UnparsedInputModel & UnparsedAutosizingInputModel)
-		| (ParsedAutosizingInputModel<bigint> & ParsedInputModel<bigint>)
-	return model.autoSize ? (
-		<AutosizingInput {...properties} />
-	) : (
-		<Input {...properties} />
-	)
+	} satisfies (UnparsedInputModel & UnparsedAutosizingInputModel) | (ParsedAutosizingInputModel<bigint> & ParsedInputModel<bigint>)
+	return model.autoSize ? <AutosizingInput {...properties} /> : <Input {...properties} />
 }

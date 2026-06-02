@@ -43,12 +43,7 @@ Object.defineProperty(globalThis, 'fetch', {
 	configurable: true,
 	writable: true,
 	value: async (input: RequestInfo | URL) => {
-		const url =
-			typeof input === 'string'
-				? input
-				: input instanceof URL
-					? input.toString()
-					: input.url
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
 		return await fetchImplementation(url)
 	},
 })
@@ -171,10 +166,7 @@ describe('imageToUri', () => {
 				headers: { 'content-type': 'image/png', 'content-length': '7' },
 			})
 
-		const result = await imageToUri(
-			'https://example.test/stream-too-big.png',
-			5,
-		)
+		const result = await imageToUri('https://example.test/stream-too-big.png', 5)
 
 		assert.equal(result.data, undefined)
 		assert.equal(result.failureReason, 'image data exceeded 5 bytes')

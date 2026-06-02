@@ -1,29 +1,14 @@
-import {
-	getInterceptorDisabledSites,
-	getSettings,
-} from '../background/settings.js'
+import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort } from './requests.js'
-import {
-	doWebsiteOriginsShareHostname,
-	getDomainMatchPatternsForHostname,
-	getHostnameForWebsiteOrigin,
-} from './websiteOrigins.js'
+import { doWebsiteOriginsShareHostname, getDomainMatchPatternsForHostname, getHostnameForWebsiteOrigin } from './websiteOrigins.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = [
-		...new Set(
-			getInterceptorDisabledSites(await getSettings()).map((origin) =>
-				getHostnameForWebsiteOrigin(origin),
-			),
-		),
-	].flatMap((hostname) => getDomainMatchPatternsForHostname(hostname))
+	const excludeMatches = [...new Set(getInterceptorDisabledSites(await getSettings()).map((origin) => getHostnameForWebsiteOrigin(origin)))].flatMap((hostname) => getDomainMatchPatternsForHostname(hostname))
 	try {
-		type RegisteredContentScript = Parameters<
-			typeof browser.scripting.registerContentScripts
-		>[0][0]
+		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
 		type FixedRegisterContentScripts = (
 			scripts: (RegisteredContentScript & {
@@ -31,8 +16,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 				matchOriginAsFallback: boolean
 			})[],
 		) => Promise<void>
-		const fixedRegisterContentScripts = browser.scripting
-			.registerContentScripts as unknown as FixedRegisterContentScripts
+		const fixedRegisterContentScripts = browser.scripting.registerContentScripts as unknown as FixedRegisterContentScripts
 		await browser.scripting.unregisterContentScripts()
 		await fixedRegisterContentScripts([
 			{
@@ -40,10 +24,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 				allFrames: true,
 				matches: injectableSitesWildcard,
 				excludeMatches,
-				js: [
-					'/vendor/webextension-polyfill/dist/browser-polyfill.js',
-					'/inpage/js/listenContentScript.js',
-				],
+				js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js'],
 				runAt: 'document_start',
 				matchOriginAsFallback: true,
 			},
@@ -63,28 +44,14 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	}
 }
 
-const injectLogic = async (
-	content: browser.webNavigation._OnCommittedDetails,
-) => {
-	if (
-		!injectableSitesRegexp.some((regexpPattern) =>
-			regexpPattern.test(content.url),
-		)
-	)
-		return false
+const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
+	if (!injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(content.url))) return false
 	const allTabs = await browser.tabs.query({})
 	const thisTab = allTabs.find((tab) => tab.id === content.tabId)
-	const urls = [
-		content.url,
-		...(thisTab?.url === undefined ? [] : [thisTab.url]),
-	]
+	const urls = [content.url, ...(thisTab?.url === undefined ? [] : [thisTab.url])]
 	const hostnames = urls.map((url) => getHostWithPort(url))
 	const disabledSites = getInterceptorDisabledSites(await getSettings())
-	const noMatches = disabledSites.every((excludeMatch) =>
-		hostnames.every(
-			(hostname) => !doWebsiteOriginsShareHostname(excludeMatch, hostname),
-		),
-	)
+	const noMatches = disabledSites.every((excludeMatch) => hostnames.every((hostname) => !doWebsiteOriginsShareHostname(excludeMatch, hostname)))
 	if (!noMatches) return false
 	try {
 		await browser.tabs.executeScript(content.tabId, {
@@ -99,8 +66,7 @@ const injectLogic = async (
 		})
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
-		if (error instanceof Error && error.message.startsWith('No tab with id'))
-			return false
+		if (error instanceof Error && error.message.startsWith('No tab with id')) return false
 		console.error(error)
 	}
 	return false

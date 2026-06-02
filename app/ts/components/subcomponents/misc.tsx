@@ -1,7 +1,4 @@
-export function insertBetweenElements<T>(
-	array: readonly T[],
-	elementToInsert: T,
-): readonly T[] {
+export function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): readonly T[] {
 	if (array[0] === undefined) return []
 	const newArray: T[] = [array[0]]
 	for (let i = 1; i < array.length; ++i) {

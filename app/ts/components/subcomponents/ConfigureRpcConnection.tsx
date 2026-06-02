@@ -1,10 +1,7 @@
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
-import {
-	type AsyncStates,
-	useAsyncState,
-} from '../../utils/preact-utilities.js'
+import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -12,10 +9,7 @@ import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
-import {
-	type EthSimulateV1Params,
-	EthSimulateV1Result,
-} from '../../types/ethSimulate-types.js'
+import { type EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { XMarkIcon } from './icons.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
@@ -30,34 +24,21 @@ type ConfigureRpcContext = {
 	resetRpcQuery: () => void
 }
 
-const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(
-	undefined,
-)
+const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undefined)
 
 const throwImprovedError = (error: Error, url: string) => {
-	if (error.message.startsWith('unsupported protocol'))
-		throw new Error(`Unsupported protocol, did you mean https://${url}?`)
-	if (error.message.startsWith('Failed to fetch'))
-		throw new Error('Failed to connect to the RPC.')
+	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${url}?`)
+	if (error.message.startsWith('Failed to fetch')) throw new Error('Failed to connect to the RPC.')
 	throw error
 }
 
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
-	const {
-		value: rpcQuery,
-		waitFor,
-		reset: resetRpcQuery,
-	} = useAsyncState<RpcProbeResult>()
+	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<RpcProbeResult>()
 
 	const checkServerAvailability = async (url: string) => {
 		try {
 			const requestHandler = new EthereumJSONRpcRequestHandler(url)
-			const chainId = await requestHandler.jsonRpcRequest(
-				{ method: 'eth_chainId' },
-				undefined,
-				false,
-				10000,
-			)
+			const chainId = await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }, undefined, false, 10000)
 			return { chainId: EthereumQuantity.parse(chainId) }
 		} catch (error: unknown) {
 			if (error instanceof Error) return throwImprovedError(error, url)
@@ -100,35 +81,18 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 				params: [ethSimulateV1ParamObject, 'latest'],
 			})
 
-			function resultContainsLog(
-				result: ReturnType<typeof EthSimulateV1Result.safeParse>,
-			) {
-				return Boolean(
-					result.success &&
-						result.value &&
-						result.value[0] &&
-						result.value[0].calls[0] &&
-						result.value[0].calls[0].status === 'success' &&
-						result.value[0].calls[0].logs.length === 1,
-				)
+			function resultContainsLog(result: ReturnType<typeof EthSimulateV1Result.safeParse>) {
+				return Boolean(result.success && result.value && result.value[0] && result.value[0].calls[0] && result.value[0].calls[0].status === 'success' && result.value[0].calls[0].logs.length === 1)
 			}
 
 			const parsedResult = EthSimulateV1Result.safeParse(serializedResult)
 
-			if (!resultContainsLog(parsedResult))
-				throw new Error(
-					`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`,
-				)
+			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error: unknown) {
-			if (error instanceof JsonRpcResponseError)
-				throw new Error(
-					`The RPC server does not have a support for eth_simulateV1 ("${error.message}"). The Interceptor requires this feature to function.`,
-				)
+			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${error.message}"). The Interceptor requires this feature to function.`)
 			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC eth_simulateV1 validation error', error)
-			throw new Error(
-				'The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.',
-			)
+			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
 		}
 	}
 
@@ -139,21 +103,12 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			return network
 		})
 
-	return (
-		<ConfigureRpcContext.Provider
-			value={{ queryRpcInfo, rpcQuery, resetRpcQuery }}
-		>
-			{children}
-		</ConfigureRpcContext.Provider>
-	)
+	return <ConfigureRpcContext.Provider value={{ queryRpcInfo, rpcQuery, resetRpcQuery }}>{children}</ConfigureRpcContext.Provider>
 }
 
 function useQueryRpc() {
 	const context = useContext(ConfigureRpcContext)
-	if (!context)
-		throw new Error(
-			'useQueryRpc can only be used within children of RpcQueryProvider',
-		)
+	if (!context) throw new Error('useQueryRpc can only be used within children of RpcQueryProvider')
 	return context
 }
 
@@ -170,17 +125,11 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: [rpcEntry].concat(
-				rpcEntries.value.filter(
-					(entry) => entry.httpsRpc !== rpcEntry.httpsRpc,
-				),
-			),
+			data: [rpcEntry].concat(rpcEntries.value.filter((entry) => entry.httpsRpc !== rpcEntry.httpsRpc)),
 		})
 
 		if (activeRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
-		console.warn(
-			`Automatically switched to recently added or modified RPC (${rpcEntry.httpsRpc})`,
-		)
+		console.warn(`Automatically switched to recently added or modified RPC (${rpcEntry.httpsRpc})`)
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_changeActiveRpc',
 			data: rpcEntry,
@@ -190,9 +139,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const removeRpcEntryByUrl = async (url: string) => {
 		const { activeRpcNetwork } = await getSettings()
 
-		const reducedRpcEntries = rpcEntries.value.filter(
-			(entry) => entry.httpsRpc !== url,
-		)
+		const reducedRpcEntries = rpcEntries.value.filter((entry) => entry.httpsRpc !== url)
 
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
@@ -200,17 +147,11 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 		})
 
 		// switch rpc when the active one is being removed
-		if (url !== activeRpcNetwork.httpsRpc || reducedRpcEntries[0] === undefined)
-			return
-		console.warn(
-			'Switching RPC as a result of the removal of the currently active connection',
-		)
+		if (url !== activeRpcNetwork.httpsRpc || reducedRpcEntries[0] === undefined) return
+		console.warn('Switching RPC as a result of the removal of the currently active connection')
 
 		// at least find a connection of the same chainId
-		const rpcToSwitchTo =
-			reducedRpcEntries.find(
-				(entry) => entry.chainId === activeRpcNetwork.chainId,
-			) || reducedRpcEntries[0]
+		const rpcToSwitchTo = reducedRpcEntries.find((entry) => entry.chainId === activeRpcNetwork.chainId) || reducedRpcEntries[0]
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_changeActiveRpc',
 			data: rpcToSwitchTo,
@@ -220,32 +161,16 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	return (
 		<RpcQueryProvider>
 			{rpcInfo ? (
-				<button
-					type="button"
-					onClick={showConfigurationModal}
-					class="btn btn--outline"
-				>
+				<button type="button" onClick={showConfigurationModal} class="btn btn--outline">
 					Edit
 				</button>
 			) : (
-				<button
-					type="button"
-					onClick={showConfigurationModal}
-					class="btn btn--outline"
-					style="border-style: dashed"
-				>
+				<button type="button" onClick={showConfigurationModal} class="btn btn--outline" style="border-style: dashed">
 					+ New RPC Connection
 				</button>
 			)}
 			<dialog class="dialog" ref={modalRef}>
-				<ConfigureRpcForm
-					defaultValues={rpcInfo}
-					onCancel={cancelAndCloseModal}
-					onSave={saveRpcEntry}
-					onRemove={
-						rpcEntries.value.length > 1 ? removeRpcEntryByUrl : undefined
-					}
-				/>
+				<ConfigureRpcForm defaultValues={rpcInfo} onCancel={cancelAndCloseModal} onSave={saveRpcEntry} onRemove={rpcEntries.value.length > 1 ? removeRpcEntryByUrl : undefined} />
 			</dialog>
 		</RpcQueryProvider>
 	)
@@ -258,12 +183,7 @@ type ConfigureRpcFormProps = {
 	onRemove?: (rpcUrl: string) => void
 }
 
-const ConfigureRpcForm = ({
-	defaultValues,
-	onCancel,
-	onSave,
-	onRemove,
-}: ConfigureRpcFormProps) => {
+const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
 	const confirmRemoval = useSignal(false)
 	const { rpcQuery, resetRpcQuery } = useQueryRpc()
 
@@ -300,24 +220,12 @@ const ConfigureRpcForm = ({
 
 	const parseRpcFormData = (formData: FormData) => {
 		const chainIdFromForm = formData.get('chainId')?.toString().trim()
-		const blockExplorerUrlForm = formData
-			.get('blockExplorerUrl')
-			?.toString()
-			.trim()
-		const blockExplorerApiKeyForm = formData
-			.get('blockExplorerApiKey')
-			?.toString()
-			.trim()
-		const isBlockExplorerDefined =
-			blockExplorerUrlForm !== undefined &&
-			blockExplorerApiKeyForm !== undefined &&
-			blockExplorerUrlForm.length > 0 &&
-			blockExplorerApiKeyForm.length > 0
+		const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString().trim()
+		const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString().trim()
+		const isBlockExplorerDefined = blockExplorerUrlForm !== undefined && blockExplorerApiKeyForm !== undefined && blockExplorerUrlForm.length > 0 && blockExplorerApiKeyForm.length > 0
 		const newRpcEntry = {
 			name: formData.get('name')?.toString().trim() || '',
-			chainId: chainIdFromForm
-				? `0x${BigInt(chainIdFromForm).toString(16)}`
-				: '',
+			chainId: chainIdFromForm ? `0x${BigInt(chainIdFromForm).toString(16)}` : '',
 			httpsRpc: formData.get('httpsRpc')?.toString().trim() || '',
 			currencyName: formData.get('currencyName')?.toString().trim() || '',
 			currencyTicker: formData.get('currencyTicker')?.toString().trim() || '',
@@ -336,8 +244,7 @@ const ConfigureRpcForm = ({
 	}
 
 	const chainIdDefault = useComputed(() => {
-		if (rpcQuery.value.state === 'resolved')
-			return BigInt(rpcQuery.value.value.chainId).toString()
+		if (rpcQuery.value.state === 'resolved') return BigInt(rpcQuery.value.value.chainId).toString()
 		return defaultValues?.chainId?.toString() || ''
 	})
 
@@ -347,42 +254,23 @@ const ConfigureRpcForm = ({
 	})
 
 	const currencyTickerDefault = useComputed(() => {
-		if (rpcQuery.value.state === 'resolved')
-			return defaultValues?.currencyTicker || 'ETH'
+		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyTicker || 'ETH'
 		return defaultValues?.currencyTicker || ''
 	})
 
 	const currencyNameDefault = useComputed(() => {
-		if (rpcQuery.value.state === 'resolved')
-			return defaultValues?.currencyName || 'Ether'
+		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyName || 'Ether'
 		return defaultValues?.currencyName || ''
 	})
 
-	const blockExplorerUrlDefault = useComputed(
-		() => defaultValues?.blockExplorer?.apiUrl || '',
-	)
-	const blockExplorerApiKeyDefault = useComputed(
-		() => defaultValues?.blockExplorer?.apiKey || '',
-	)
+	const blockExplorerUrlDefault = useComputed(() => defaultValues?.blockExplorer?.apiUrl || '')
+	const blockExplorerApiKeyDefault = useComputed(() => defaultValues?.blockExplorer?.apiKey || '')
 
 	return (
-		<form
-			method="dialog"
-			class="grid"
-			style="--gap-y: 1.5rem"
-			onSubmit={handleFormSubmit}
-		>
+		<form method="dialog" class="grid" style="--gap-y: 1.5rem" onSubmit={handleFormSubmit}>
 			<header class="grid" style="--grid-cols: 1fr auto">
-				<span style={{ fontWeight: 'bold', color: 'white' }}>
-					Configure RPC Connection
-				</span>
-				<button
-					type="submit"
-					value="cancel"
-					class="btn btn--ghost"
-					aria-label="close"
-					formNoValidate
-				>
+				<span style={{ fontWeight: 'bold', color: 'white' }}>Configure RPC Connection</span>
+				<button type="submit" value="cancel" class="btn btn--ghost" aria-label="close" formNoValidate>
 					<span class="button-icon" style={{ fontSize: '1.5em' }}>
 						&times;
 					</span>
@@ -390,79 +278,23 @@ const ConfigureRpcForm = ({
 			</header>
 
 			<main class="grid" style="--gap-y: 0.5rem">
-				<p>
-					Interceptor will automatically verify the RPC URL you provide and
-					attempt to fill relevant information. Adjust the pre-populated details
-					to your liking.
-				</p>
-				<div
-					class="grid"
-					style="--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0"
-				>
-					<RpcUrlField
-						{...(defaultValues?.httpsRpc !== undefined
-							? { defaultValue: defaultValues.httpsRpc }
-							: {})}
-					/>
-					<TextInput
-						label="RPC Connection Name *"
-						name="name"
-						defaultValue={networkNameDefault.value}
-						style="--area: 5 / span 1"
-						required
-						autoFocus
-					/>
-					<TextInput
-						label="Chain ID"
-						name="chainId"
-						style="--area: 5 / span 1"
-						defaultValue={chainIdDefault.value}
-						required
-						readOnly
-					/>
-					<TextInput
-						label="Currency Name *"
-						name="currencyName"
-						defaultValue={currencyNameDefault.value}
-						style="--area: 7 / span 1"
-						required
-					/>
-					<TextInput
-						label="Currency Ticker *"
-						name="currencyTicker"
-						defaultValue={currencyTickerDefault.value}
-						style="--area: 7 / span 1"
-						required
-					/>
-					<TextInput
-						label="Block Explorer Url"
-						name="blockExplorerUrl"
-						defaultValue={blockExplorerUrlDefault.value}
-						style="--area: 8 / span 1"
-					/>
-					<TextInput
-						label="Block Explorer Api Key"
-						name="blockExplorerApiKey"
-						defaultValue={blockExplorerApiKeyDefault.value}
-						style="--area: 8 / span 1"
-					/>
+				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
+				<div class="grid" style="--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0">
+					<RpcUrlField {...(defaultValues?.httpsRpc !== undefined ? { defaultValue: defaultValues.httpsRpc } : {})} />
+					<TextInput label="RPC Connection Name *" name="name" defaultValue={networkNameDefault.value} style="--area: 5 / span 1" required autoFocus />
+					<TextInput label="Chain ID" name="chainId" style="--area: 5 / span 1" defaultValue={chainIdDefault.value} required readOnly />
+					<TextInput label="Currency Name *" name="currencyName" defaultValue={currencyNameDefault.value} style="--area: 7 / span 1" required />
+					<TextInput label="Currency Ticker *" name="currencyTicker" defaultValue={currencyTickerDefault.value} style="--area: 7 / span 1" required />
+					<TextInput label="Block Explorer Url" name="blockExplorerUrl" defaultValue={blockExplorerUrlDefault.value} style="--area: 8 / span 1" />
+					<TextInput label="Block Explorer Api Key" name="blockExplorerApiKey" defaultValue={blockExplorerApiKeyDefault.value} style="--area: 8 / span 1" />
 				</div>
 			</main>
 
-			<footer
-				class="grid"
-				style="--grid-cols: max-content 1fr max-content max-content; --gap-x: 1rem; --btn-text-size: 0.9rem"
-			>
+			<footer class="grid" style="--grid-cols: max-content 1fr max-content max-content; --gap-x: 1rem; --btn-text-size: 0.9rem">
 				{confirmRemoval.value ? (
-					<div
-						class="grid disclosure"
-						style="--gap-x: 1rem; --area: 2 / span 4"
-					>
+					<div class="grid disclosure" style="--gap-x: 1rem; --area: 2 / span 4">
 						<div style="--area: 1 / span 3">
-							<p>
-								You are about to remove this server permanently. Are you sure
-								you want to proceed?
-							</p>
+							<p>You are about to remove this server permanently. Are you sure you want to proceed?</p>
 						</div>
 						<button
 							type="button"
@@ -474,33 +306,16 @@ const ConfigureRpcForm = ({
 						>
 							No
 						</button>
-						<button
-							type="submit"
-							value="remove"
-							class="btn btn--destructive"
-							style="--area: 2 / 3"
-							formNoValidate
-						>
+						<button type="submit" value="remove" class="btn btn--destructive" style="--area: 2 / 3" formNoValidate>
 							Yes, Confirm Remove
 						</button>
 					</div>
 				) : (
 					<>
-						<button
-							type="submit"
-							value="cancel"
-							class="btn btn--ghost"
-							style="--area: 1 / 3"
-							formNoValidate
-						>
+						<button type="submit" value="cancel" class="btn btn--ghost" style="--area: 1 / 3" formNoValidate>
 							Cancel
 						</button>
-						<button
-							type="submit"
-							value="save"
-							class="btn btn--primary"
-							style="--area: 1 / 4"
-						>
+						<button type="submit" value="save" class="btn btn--primary" style="--area: 1 / 4">
 							Save RPC Connection
 						</button>
 						{defaultValues && onRemove ? (
@@ -512,10 +327,7 @@ const ConfigureRpcForm = ({
 									confirmRemoval.value = true
 								}}
 							>
-								<span
-									class="grid"
-									style="--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)"
-								>
+								<span class="grid" style="--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)">
 									<Trash /> Remove
 								</span>
 							</button>
@@ -534,9 +346,7 @@ const RPC_URL_FETCH_DEBOUNCE = 600
 const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
-	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(
-		undefined,
-	)
+	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)
 
 	const deferredQueryAnRpcUrl = (url: string) => {
 		if (timeout.value) clearTimeout(timeout.value)
@@ -601,56 +411,20 @@ const StatusIcon = ({ state }: { state: AsyncStates }) => {
 }
 
 const SpinnerIcon = () => (
-	<svg
-		class="spin"
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
-		<circle
-			cx="8"
-			cy="8"
-			r="6.5"
-			stroke="var(--text-color, currentColor)"
-			stroke-opacity=".5"
-			stroke-width="3"
-		/>
-		<path
-			d="M8 0a8 8 0 1 0 8 8h-3a5 5 0 1 1-5-5z"
-			fill="var(--text-color, currentColor)"
-			fill-opacity=".4"
-		/>
+	<svg class="spin" width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<circle cx="8" cy="8" r="6.5" stroke="var(--text-color, currentColor)" stroke-opacity=".5" stroke-width="3" />
+		<path d="M8 0a8 8 0 1 0 8 8h-3a5 5 0 1 1-5-5z" fill="var(--text-color, currentColor)" fill-opacity=".4" />
 	</svg>
 )
 
 const CheckIcon = () => (
-	<svg
-		width="1em"
-		height="1em"
-		viewBox="0 0 16 16"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg"
-	>
-		<path
-			d="M15 3L5.64686 12.5524L1 7.84615"
-			stroke="var(--positive-color, currentColor)"
-			strokeWidth={2}
-		/>
+	<svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M15 3L5.64686 12.5524L1 7.84615" stroke="var(--positive-color, currentColor)" strokeWidth={2} />
 	</svg>
 )
 
 const Trash = () => (
-	<svg
-		xmlns="http://www.w3.org/2000/svg"
-		width="1em"
-		height="1em"
-		viewBox="0 0 32 32"
-	>
-		<path
-			fill="currentColor"
-			d="M15 4c-.522 0-1.06.185-1.438.563S13 5.478 13 6v1H7v2h1v16c0 1.645 1.355 3 3 3h12c1.645 0 3-1.355 3-3V9h1V7h-6V6c0-.522-.185-1.06-.563-1.438C20.06 4.186 19.523 4 19 4zm0 2h4v1h-4zm-5 3h14v16c0 .555-.445 1-1 1H11c-.555 0-1-.445-1-1zm2 3v11h2V12zm4 0v11h2V12zm4 0v11h2V12z"
-		/>
+	<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 32 32">
+		<path fill="currentColor" d="M15 4c-.522 0-1.06.185-1.438.563S13 5.478 13 6v1H7v2h1v16c0 1.645 1.355 3 3 3h12c1.645 0 3-1.355 3-3V9h1V7h-6V6c0-.522-.185-1.06-.563-1.438C20.06 4.186 19.523 4 19 4zm0 2h4v1h-4zm-5 3h14v16c0 .555-.445 1-1 1H11c-.555 0-1-.445-1-1zm2 3v11h2V12zm4 0v11h2V12zm4 0v11h2V12z" />
 	</svg>
 )

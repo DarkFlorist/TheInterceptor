@@ -22,13 +22,7 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 
 	function rand() {
 		// based on Java's String.hashCode(), expanded to 4 32bit values
-		if (
-			randseed[0] === undefined ||
-			randseed[1] === undefined ||
-			randseed[2] === undefined ||
-			randseed[3] === undefined
-		)
-			throw new Error('Buffer overflow')
+		if (randseed[0] === undefined || randseed[1] === undefined || randseed[2] === undefined || randseed[3] === undefined) throw new Error('Buffer overflow')
 		const t = randseed[0] ^ (randseed[0] << 11)
 
 		randseed[0] = randseed[1]
@@ -100,33 +94,14 @@ type SVGBlockieProps = {
 // SVGBlockie component can be resized through CSS font size
 export function Blockie({ address, style }: SVGBlockieProps) {
 	const pixelDensity = 8
-	const { imageData, color, spotcolor, bgcolor } = useMemo(
-		() => generateIdenticon({ address, size: pixelDensity }),
-		[address],
-	)
+	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ address, size: pixelDensity }), [address])
 	return (
-		<svg
-			width="1em"
-			height="1em"
-			viewBox="0 0 64 64"
-			xmlns="http://www.w3.org/2000/svg"
-			{...(style ? { style } : {})}
-		>
+		<svg width="1em" height="1em" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" {...(style ? { style } : {})}>
 			{imageData.map((data, index) => {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity
 
-				return (
-					<rect
-						key={index}
-						width={pixelSize}
-						height={pixelSize}
-						x={((index % pixelDensity) * 64) / pixelDensity}
-						y={Math.floor(index / pixelDensity) * pixelSize}
-						fill={fill}
-						shape-rendering="crispEdges"
-					/>
-				)
+				return <rect key={index} width={pixelSize} height={pixelSize} x={((index % pixelDensity) * 64) / pixelDensity} y={Math.floor(index / pixelDensity) * pixelSize} fill={fill} shape-rendering="crispEdges" />
 			})}
 		</svg>
 	)

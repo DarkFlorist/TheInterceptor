@@ -1,9 +1,4 @@
-import {
-	type Signal,
-	useComputed,
-	useSignal,
-	useSignalEffect,
-} from '@preact/signals'
+import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import type { ComponentChild } from 'preact'
 import { useRef } from 'preact/hooks'
 
@@ -12,10 +7,7 @@ interface DynamicScrollerProps<T extends {}> {
 	renderItem: (item: T) => ComponentChild
 }
 
-export const DynamicScroller = <T extends {}>({
-	items,
-	renderItem,
-}: DynamicScrollerProps<T>) => {
+export const DynamicScroller = <T extends {}>({ items, renderItem }: DynamicScrollerProps<T>) => {
 	const startIndex = useSignal(0)
 	const maxItems = useSignal(0)
 	const itemHeight = useSignal(0)
@@ -24,29 +16,17 @@ export const DynamicScroller = <T extends {}>({
 
 	const recalculateStartIndex = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLDivElement)) return
-		startIndex.value = Math.floor(
-			event.currentTarget.scrollTop / itemHeight.value,
-		)
+		startIndex.value = Math.floor(event.currentTarget.scrollTop / itemHeight.value)
 	}
 
 	const scrollViewHeight = useComputed(() => itemHeight.value * maxItems.value)
-	const scrollAreaHeight = useComputed(
-		() => items.value.length * itemHeight.value,
-	)
-	const visibleItems = useComputed(() =>
-		items.value.slice(startIndex.value, startIndex.value + maxItems.value + 1),
-	)
-	const scrollOffset = useComputed(() =>
-		Math.min(
-			startIndex.value * itemHeight.value,
-			scrollAreaHeight.value - scrollViewHeight.value,
-		),
-	)
+	const scrollAreaHeight = useComputed(() => items.value.length * itemHeight.value)
+	const visibleItems = useComputed(() => items.value.slice(startIndex.value, startIndex.value + maxItems.value + 1))
+	const scrollOffset = useComputed(() => Math.min(startIndex.value * itemHeight.value, scrollAreaHeight.value - scrollViewHeight.value))
 
 	// calculate item height
 	useSignalEffect(() => {
-		if (!itemRef.current || itemHeight.value > itemRef.current.clientHeight)
-			return
+		if (!itemRef.current || itemHeight.value > itemRef.current.clientHeight) return
 		const { height } = itemRef.current.getBoundingClientRect()
 		itemHeight.value = height
 	})
@@ -64,11 +44,7 @@ export const DynamicScroller = <T extends {}>({
 	})
 
 	return (
-		<div
-			ref={scrollViewRef}
-			style={{ overflowY: 'scroll', maxHeight: '100%' }}
-			onScroll={recalculateStartIndex}
-		>
+		<div ref={scrollViewRef} style={{ overflowY: 'scroll', maxHeight: '100%' }} onScroll={recalculateStartIndex}>
 			<div
 				style={{
 					height: `${scrollAreaHeight}px`,

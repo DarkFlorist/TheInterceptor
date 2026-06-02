@@ -19,11 +19,7 @@ function installBrowserMock() {
 				lastError: null,
 				async sendMessage(message: unknown) {
 					sentMessages.push(message)
-					if (
-						typeof message === 'object' &&
-						message !== null &&
-						'method' in message
-					) {
+					if (typeof message === 'object' && message !== null && 'method' in message) {
 						const typedMessage = message as { method?: string }
 						if (typedMessage.method === 'popup_isMainPopupWindowOpen') {
 							return {
@@ -59,27 +55,15 @@ function installBrowserMock() {
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys))
-							return Object.fromEntries(
-								keys
-									.filter((key) => key in storageState)
-									.map((key) => [key, storageState[key]]),
-							)
-						if (typeof keys === 'string')
-							return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(
-							Object.entries(keys).map(([key, defaultValue]) => [
-								key,
-								key in storageState ? storageState[key] : defaultValue,
-							]),
-						)
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 					},
 					async set(items: Record<string, unknown>) {
 						Object.assign(storageState, items)
 					},
 					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys])
-							delete storageState[key]
+						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 					},
 				},
 			},
@@ -250,15 +234,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 	test('includes rpcConnectionStatus in the initial payload and renders the warning before later push events', async () => {
 		const browser = installBrowserMock()
 		const dom = installDomMock()
-		const [
-			{ browserStorageLocalSet, browserStorageLocalSet2 },
-			{ defaultActiveAddresses, defaultRpcs },
-			{ setRpcConnectionStatus },
-			{ updateConfirmTransactionView },
-			{ ConfirmTransaction },
-			{ EthereumClientService },
-			{ TokenPriceService },
-		] = await Promise.all([
+		const [{ browserStorageLocalSet, browserStorageLocalSet2 }, { defaultActiveAddresses, defaultRpcs }, { setRpcConnectionStatus }, { updateConfirmTransactionView }, { ConfirmTransaction }, { EthereumClientService }, { TokenPriceService }] = await Promise.all([
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/settings.js'),
 			import('../../app/ts/background/storageVariables.js'),
@@ -313,30 +289,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 
-		const initialMessage = browser.sentMessages.find(
-			(message) =>
-				typeof message === 'object' &&
-				message !== null &&
-				'method' in message &&
-				message.method === 'popup_update_confirm_transaction_dialog',
-		)
-		if (
-			initialMessage === undefined ||
-			typeof initialMessage !== 'object' ||
-			initialMessage === null ||
-			!('data' in initialMessage)
-		) {
+		const initialMessage = browser.sentMessages.find((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_confirm_transaction_dialog')
+		if (initialMessage === undefined || typeof initialMessage !== 'object' || initialMessage === null || !('data' in initialMessage)) {
 			throw new Error('missing initial confirm transaction dialog message')
 		}
 
-		assert.equal(
-			typeof initialMessage.data === 'object' &&
-				initialMessage.data !== null &&
-				'rpcConnectionStatus' in initialMessage.data &&
-				initialMessage.data.rpcConnectionStatus !== undefined &&
-				initialMessage.data.rpcConnectionStatus.retrying === false,
-			true,
-		)
+		assert.equal(typeof initialMessage.data === 'object' && initialMessage.data !== null && 'rpcConnectionStatus' in initialMessage.data && initialMessage.data.rpcConnectionStatus !== undefined && initialMessage.data.rpcConnectionStatus.retrying === false, true)
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -346,12 +304,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			browser.dispatch(initialMessage)
 		})
 
-		assert.equal(
-			dom.document.body.textContent?.includes(
-				'Retrying resumes when the extension becomes active.',
-			),
-			true,
-		)
+		assert.equal(dom.document.body.textContent?.includes('Retrying resumes when the extension becomes active.'), true)
 		dom.restore()
 	})
 })

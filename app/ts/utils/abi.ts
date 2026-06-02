@@ -550,5 +550,4 @@ export const extractFunctionArgumentTypes = (signature: string) => {
 	return args === undefined || args.length === 0 ? [] : args.split(',')
 }
 
-export const removeTextBetweenBrackets = (inputString: string) =>
-	inputString.replace(/\[.*?\]/g, '')
+export const removeTextBetweenBrackets = (inputString: string) => inputString.replace(/\[.*?\]/g, '')

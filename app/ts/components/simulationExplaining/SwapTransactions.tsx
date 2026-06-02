@@ -1,22 +1,9 @@
-import {
-	type SimulatedAndVisualizedTransaction,
-	TokenPriceEstimate,
-} from '../../types/visualizer-types.js'
+import { type SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../types/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { addressString } from '../../utils/bigint.js'
-import {
-	TokenAmount,
-	TokenOrEthValue,
-	TokenPrice,
-	TokenSymbol,
-} from '../subcomponents/coins.js'
-import {
-	AddressBookEntry,
-	Erc1155Entry,
-	Erc20TokenEntry,
-	Erc721Entry,
-} from '../../types/addressBookTypes.js'
+import { TokenAmount, TokenOrEthValue, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever } from '../../utils/typescript.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
@@ -28,9 +15,7 @@ const BeforeAfterBalance = funtypes.ReadonlyObject({
 	afterBalance: EthereumQuantity,
 })
 
-const getUniqueSwapAssetIdentifier = (
-	metadata: TokenVisualizerResultWithMetadata,
-) => {
+const getUniqueSwapAssetIdentifier = (metadata: TokenVisualizerResultWithMetadata) => {
 	return `${metadata.token.type}|${metadata.token.address}|${'tokenId' in metadata.token ? metadata.token.tokenId : 'noTokenid'}`
 }
 
@@ -57,17 +42,12 @@ const SwapAsset = funtypes.Union(
 		amount: EthereumQuantity,
 		tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
 		beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
-		tokenPriceEstimateQuoteToken: funtypes.Union(
-			Erc20TokenEntry,
-			funtypes.Undefined,
-		),
+		tokenPriceEstimateQuoteToken: funtypes.Union(Erc20TokenEntry, funtypes.Undefined),
 		tokenPriceEstimate: funtypes.Union(TokenPriceEstimate, funtypes.Undefined),
 	}),
 )
 
-export type IdentifiedSwapWithMetadata = funtypes.Static<
-	typeof IdentifiedSwapWithMetadata
->
+export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
 export const IdentifiedSwapWithMetadata = funtypes.Union(
 	funtypes.Literal(false), // not a swap
 	funtypes.ReadonlyObject({
@@ -82,47 +62,31 @@ interface SwapVisualizationParams {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-export function identifySwap(
-	simTransaction: SimulatedAndVisualizedTransaction,
-): IdentifiedSwapWithMetadata {
+export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
 	const sender = simTransaction.transaction.from.address
 	const tokenEvents = extractTokenEvents(simTransaction.events)
 	// aggregate sent and received assets
 	const aggregatedAssets = new Map<string, SwapAsset>()
-	const aggregate = (
-		logEntry: TokenVisualizerResultWithMetadata,
-		toUs: boolean,
-	) => {
-		if (logEntry.isApproval)
-			throw new Error(
-				'the log entry included an approval even thought it never should as we check it before',
-			)
+	const aggregate = (logEntry: TokenVisualizerResultWithMetadata, toUs: boolean) => {
+		if (logEntry.isApproval) throw new Error('the log entry included an approval even thought it never should as we check it before')
 		const identifier = getUniqueSwapAssetIdentifier(logEntry)
 		const perviousAmount = aggregatedAssets.get(identifier)?.amount ?? 0n
 		const multiplier = toUs ? 1n : -1n
 		if (logEntry.type === 'ERC20') {
 			aggregatedAssets.set(identifier, {
 				...logEntry,
-				amount:
-					perviousAmount +
-					('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
+				amount: perviousAmount + ('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
 				tokenId: undefined,
 				beforeAfterBalance: undefined,
-				tokenPriceEstimate: simTransaction.tokenPriceEstimates.find(
-					(tokenPrice) => tokenPrice.token.address === logEntry.token.address,
-				),
+				tokenPriceEstimate: simTransaction.tokenPriceEstimates.find((tokenPrice) => tokenPrice.token.address === logEntry.token.address),
 				tokenPriceEstimateQuoteToken: simTransaction.tokenPriceQuoteToken,
 			})
 		} else {
 			aggregatedAssets.set(identifier, {
 				...logEntry,
-				amount:
-					perviousAmount +
-					('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
+				amount: perviousAmount + ('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
 				tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
-				...(logEntry.type === 'ERC1155'
-					? { tokenIdName: logEntry.tokenIdName }
-					: {}),
+				...(logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {}),
 				beforeAfterBalance: undefined,
 			})
 		}
@@ -152,21 +116,10 @@ export function identifySwap(
 	if (sentAssets.length !== 1 || receivedAssets.length !== 1) return false // its not a pure 1 to 1 swap if we receive or send multiple assets
 	const sentToken = sentAssets[0]
 	const receiveToken = receivedAssets[0]
-	if (sentToken === undefined || receiveToken === undefined)
-		throw new Error('sent token or receive token was undefined')
+	if (sentToken === undefined || receiveToken === undefined) throw new Error('sent token or receive token was undefined')
 	if (sentToken.identifier !== receiveToken.identifier) {
-		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find(
-			(balance) =>
-				balance.owner === simTransaction.transaction.from.address &&
-				balance.token === sentToken.value.token?.address &&
-				balance.tokenId === sentToken.value.tokenId,
-		)?.balance
-		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find(
-			(balance) =>
-				balance.owner === simTransaction.transaction.from.address &&
-				balance.token === receiveToken.value.token?.address &&
-				balance.tokenId === receiveToken.value.tokenId,
-		)?.balance
+		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
+		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
 		return {
 			sender: simTransaction.transaction.from,
 			sendAsset: {
@@ -195,10 +148,7 @@ export function identifySwap(
 	return false
 }
 
-type Graph = Map<
-	string,
-	Map<string | undefined, { to: string; tokenResultIndex: number | undefined }>
-> // from, tokenaddress (undefined for ether), to
+type Graph = Map<string, Map<string | undefined, { to: string; tokenResultIndex: number | undefined }>> // from, tokenaddress (undefined for ether), to
 interface State {
 	fromAddress: string
 	toAddress: string
@@ -206,17 +156,9 @@ interface State {
 	tokenResultIndex: number | undefined
 }
 
-function* findSwapRoutes(
-	graph: Graph,
-	currentState: State,
-	goalState: State,
-	path: State[] = [],
-): IterableIterator<State[]> {
+function* findSwapRoutes(graph: Graph, currentState: State, goalState: State, path: State[] = []): IterableIterator<State[]> {
 	if (path.length > 10) return
-	if (
-		currentState.toAddress === goalState.toAddress &&
-		currentState.currentTokenAddress === goalState.currentTokenAddress
-	) {
+	if (currentState.toAddress === goalState.toAddress && currentState.currentTokenAddress === goalState.currentTokenAddress) {
 		yield path.concat(goalState)
 	} else {
 		const neighbours = graph.get(currentState.toAddress)
@@ -241,14 +183,9 @@ function* findSwapRoutes(
 	return
 }
 
-export function identifyRoutes(
-	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
-	identifiedSwap: IdentifiedSwapWithMetadata,
-): false | TokenVisualizerResultWithMetadata[] {
+export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction, identifiedSwap: IdentifiedSwapWithMetadata): false | TokenVisualizerResultWithMetadata[] {
 	if (identifiedSwap === false) return false
-	const tokenEvents = extractTokenEvents(
-		simulatedAndVisualizedTransaction.events,
-	)
+	const tokenEvents = extractTokenEvents(simulatedAndVisualizedTransaction.events)
 	if (tokenEvents.length > 10) return false // too complex
 
 	const graph: Graph = new Map()
@@ -276,23 +213,14 @@ export function identifyRoutes(
 	// traverse chain
 	const startToken = addressString(identifiedSwap.sendAsset.token.address)
 	const endToken = addressString(identifiedSwap.receiveAsset.token.address)
-	const lastIndex =
-		endToken !== undefined
-			? tokenEvents.findIndex(
-					(x) =>
-						x.to.address === identifiedSwap.sender.address &&
-						addressString(x.token.address) === endToken,
-				)
-			: -1
+	const lastIndex = endToken !== undefined ? tokenEvents.findIndex((x) => x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken) : -1
 	const routes = [
 		...findSwapRoutes(
 			graph,
 			{
 				fromAddress: addressString(identifiedSwap.sender.address),
 				toAddress: addressString(identifiedSwap.sender.address),
-				tokenResultIndex: graph
-					.get(addressString(identifiedSwap.sender.address))
-					?.get(startToken)?.tokenResultIndex,
+				tokenResultIndex: graph.get(addressString(identifiedSwap.sender.address))?.get(startToken)?.tokenResultIndex,
 				currentTokenAddress: startToken,
 			},
 			{
@@ -316,25 +244,10 @@ export function identifyRoutes(
 
 	if (route.length === 0) return false
 
-	function sortAccordingArrayIfNotMaintainOrder(
-		a: TokenVisualizerResultWithMetadata,
-		b: TokenVisualizerResultWithMetadata,
-	) {
-		const indexOfA = route.findIndex(
-			(x) =>
-				a.from.address === BigInt(x.fromAddress) &&
-				BigInt(x.toAddress) === a.to.address &&
-				addressString(a.token.address) === x.currentTokenAddress,
-		)
-		const indexOfB = route.findIndex(
-			(x) =>
-				b.from.address === BigInt(x.fromAddress) &&
-				BigInt(x.toAddress) === b.to.address &&
-				addressString(b.token.address) === x.currentTokenAddress,
-		)
-		const v =
-			(indexOfA >= 0 ? indexOfA : route.length + tokenEvents.indexOf(a)) -
-			(indexOfB >= 0 ? indexOfB : route.length + tokenEvents.indexOf(b))
+	function sortAccordingArrayIfNotMaintainOrder(a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) {
+		const indexOfA = route.findIndex((x) => a.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to.address && addressString(a.token.address) === x.currentTokenAddress)
+		const indexOfB = route.findIndex((x) => b.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to.address && addressString(b.token.address) === x.currentTokenAddress)
+		const v = (indexOfA >= 0 ? indexOfA : route.length + tokenEvents.indexOf(a)) - (indexOfB >= 0 ? indexOfB : route.length + tokenEvents.indexOf(b))
 		return v
 	}
 
@@ -350,13 +263,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 	return `Swap ${sent} for ${to}`
 }
 
-function VisualizeSwapAsset({
-	swapAsset,
-	renameAddressCallBack,
-}: {
-	swapAsset: SwapAsset
-	renameAddressCallBack: RenameAddressCallBack
-}) {
+function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset; renameAddressCallBack: RenameAddressCallBack }) {
 	const tokenStyle = { 'font-weight': '500' }
 	const balanceTextStyle = {
 		'font-size': '14px',
@@ -367,18 +274,8 @@ function VisualizeSwapAsset({
 		case 'ERC721': {
 			return (
 				<span class="grid swap-grid-1">
-					<div
-						class="log-cell-flexless"
-						style="justify-content: center; display: flex;"
-					>
-						<TokenSymbol
-							tokenEntry={swapAsset.token}
-							tokenId={swapAsset.tokenId}
-							useFullTokenName={false}
-							style={tokenStyle}
-							renameAddressCallBack={renameAddressCallBack}
-							fontSize="big"
-						/>
+					<div class="log-cell-flexless" style="justify-content: center; display: flex;">
+						<TokenSymbol tokenEntry={swapAsset.token} tokenId={swapAsset.tokenId} useFullTokenName={false} style={tokenStyle} renameAddressCallBack={renameAddressCallBack} fontSize="big" />
 					</div>
 				</span>
 			)
@@ -387,19 +284,8 @@ function VisualizeSwapAsset({
 			return (
 				<>
 					<span class="grid swap-grid-1">
-						<div
-							class="log-cell-flexless"
-							style="justify-content: center; display: flex;"
-						>
-							<TokenSymbol
-								tokenEntry={swapAsset.token}
-								tokenId={swapAsset.tokenId}
-								tokenIdName={swapAsset.tokenIdName}
-								useFullTokenName={false}
-								style={tokenStyle}
-								renameAddressCallBack={renameAddressCallBack}
-								fontSize="big"
-							/>
+						<div class="log-cell-flexless" style="justify-content: center; display: flex;">
+							<TokenSymbol tokenEntry={swapAsset.token} tokenId={swapAsset.tokenId} tokenIdName={swapAsset.tokenIdName} useFullTokenName={false} style={tokenStyle} renameAddressCallBack={renameAddressCallBack} fontSize="big" />
 						</div>
 					</span>
 					<span class="grid swap-grid">
@@ -409,21 +295,11 @@ function VisualizeSwapAsset({
 								<p class="paragraph" style={balanceTextStyle}>
 									Balance:&nbsp;
 								</p>
-								<TokenOrEthValue
-									tokenEntry={swapAsset.token}
-									amount={swapAsset.beforeAfterBalance?.beforeBalance}
-									style={balanceTextStyle}
-									fontSize="normal"
-								/>
+								<TokenOrEthValue tokenEntry={swapAsset.token} amount={swapAsset.beforeAfterBalance?.beforeBalance} style={balanceTextStyle} fontSize="normal" />
 								<p class="paragraph" style={balanceTextStyle}>
 									&nbsp;{'->'}&nbsp;
 								</p>
-								<TokenOrEthValue
-									tokenEntry={swapAsset.token}
-									amount={swapAsset.beforeAfterBalance?.afterBalance}
-									style={balanceTextStyle}
-									fontSize="normal"
-								/>
+								<TokenOrEthValue tokenEntry={swapAsset.token} amount={swapAsset.beforeAfterBalance?.afterBalance} style={balanceTextStyle} fontSize="normal" />
 							</div>
 						) : (
 							<></>
@@ -437,36 +313,18 @@ function VisualizeSwapAsset({
 				<>
 					<span class="grid swap-grid">
 						<div class="log-cell" style="justify-content: left;">
-							<TokenAmount
-								amount={swapAsset.amount}
-								tokenEntry={swapAsset.token}
-								style={tokenStyle}
-								fontSize="big"
-							/>
+							<TokenAmount amount={swapAsset.amount} tokenEntry={swapAsset.token} style={tokenStyle} fontSize="big" />
 						</div>
 						<div class="log-cell" style="justify-content: right;">
-							<TokenSymbol
-								tokenEntry={swapAsset.token}
-								useFullTokenName={false}
-								style={tokenStyle}
-								renameAddressCallBack={renameAddressCallBack}
-								fontSize="big"
-							/>
+							<TokenSymbol tokenEntry={swapAsset.token} useFullTokenName={false} style={tokenStyle} renameAddressCallBack={renameAddressCallBack} fontSize="big" />
 						</div>
 					</span>
 					<span class="grid swap-grid">
 						<div style={{ display: 'flex', justifyContent: 'left' }}>
-							{swapAsset.tokenPriceEstimate !== undefined &&
-							swapAsset.tokenPriceEstimateQuoteToken !== undefined ? (
+							{swapAsset.tokenPriceEstimate !== undefined && swapAsset.tokenPriceEstimateQuoteToken !== undefined ? (
 								<>
 									<p style={balanceTextStyle}>(</p>
-									<TokenPrice
-										amount={swapAsset.amount}
-										tokenPriceEstimate={swapAsset.tokenPriceEstimate}
-										style={balanceTextStyle}
-										quoteTokenEntry={swapAsset.tokenPriceEstimateQuoteToken}
-										renameAddressCallBack={renameAddressCallBack}
-									/>
+									<TokenPrice amount={swapAsset.amount} tokenPriceEstimate={swapAsset.tokenPriceEstimate} style={balanceTextStyle} quoteTokenEntry={swapAsset.tokenPriceEstimateQuoteToken} renameAddressCallBack={renameAddressCallBack} />
 									<p style={balanceTextStyle}>)</p>
 								</>
 							) : (
@@ -478,21 +336,11 @@ function VisualizeSwapAsset({
 								<p class="paragraph" style={balanceTextStyle}>
 									Balance:&nbsp;
 								</p>
-								<TokenOrEthValue
-									tokenEntry={swapAsset.token}
-									amount={swapAsset.beforeAfterBalance?.beforeBalance}
-									style={balanceTextStyle}
-									fontSize="normal"
-								/>
+								<TokenOrEthValue tokenEntry={swapAsset.token} amount={swapAsset.beforeAfterBalance?.beforeBalance} style={balanceTextStyle} fontSize="normal" />
 								<p class="paragraph" style={balanceTextStyle}>
 									&nbsp;{'->'}&nbsp;
 								</p>
-								<TokenOrEthValue
-									tokenEntry={swapAsset.token}
-									amount={swapAsset.beforeAfterBalance?.afterBalance}
-									style={balanceTextStyle}
-									fontSize="normal"
-								/>
+								<TokenOrEthValue tokenEntry={swapAsset.token} amount={swapAsset.beforeAfterBalance?.afterBalance} style={balanceTextStyle} fontSize="normal" />
 							</div>
 						) : (
 							<></>
@@ -514,17 +362,11 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 			<div style="display: grid; grid-template-rows: max-content max-content max-content max-content;">
 				<p class="paragraph"> Swap </p>
 				<div class="box swap-box">
-					<VisualizeSwapAsset
-						swapAsset={param.identifiedSwap.sendAsset}
-						renameAddressCallBack={param.renameAddressCallBack}
-					/>
+					<VisualizeSwapAsset swapAsset={param.identifiedSwap.sendAsset} renameAddressCallBack={param.renameAddressCallBack} />
 				</div>
 				<p class="paragraph"> For </p>
 				<div class="box swap-box">
-					<VisualizeSwapAsset
-						swapAsset={param.identifiedSwap.receiveAsset}
-						renameAddressCallBack={param.renameAddressCallBack}
-					/>
+					<VisualizeSwapAsset swapAsset={param.identifiedSwap.receiveAsset} renameAddressCallBack={param.renameAddressCallBack} />
 				</div>
 			</div>
 		</div>
