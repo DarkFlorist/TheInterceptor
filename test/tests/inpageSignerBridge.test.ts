@@ -167,7 +167,7 @@ function createLockedCompatibilitySigner() {
 				case 'eth_chainId':
 					return '0x1'
 				default:
-					throw new Error(`Unexpected signer request: ${ method }`)
+					throw new Error(`Unexpected signer request: ${method}`)
 			}
 		},
 		on: () => baseSigner,
@@ -192,7 +192,7 @@ function createConfigurableGetterOnlyCompatibilitySigner() {
 				case 'eth_chainId':
 					return '0x1'
 				default:
-					throw new Error(`Unexpected signer request: ${ method }`)
+					throw new Error(`Unexpected signer request: ${method}`)
 			}
 		},
 		on: () => baseSigner,
@@ -392,7 +392,9 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow()
 		const warnings: unknown[] = []
 		fakeWindow.ethereum = createLockedCompatibilitySigner()
-		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		console.warn = (...args: unknown[]) => {
+			warnings.push(args)
+		}
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -401,7 +403,9 @@ describe('inpage signer bridge', () => {
 					super(type)
 					this.detail = init?.detail as T
 				}
-				public initCustomEvent(): void { return undefined }
+				public initCustomEvent(): void {
+					return undefined
+				}
 			}
 		}
 
@@ -428,7 +432,9 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow()
 		const warnings: unknown[] = []
 		fakeWindow.ethereum = createConfigurableGetterOnlyCompatibilitySigner()
-		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		console.warn = (...args: unknown[]) => {
+			warnings.push(args)
+		}
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -437,7 +443,9 @@ describe('inpage signer bridge', () => {
 					super(type)
 					this.detail = init?.detail as T
 				}
-				public initCustomEvent(): void { return undefined }
+				public initCustomEvent(): void {
+					return undefined
+				}
 			}
 		}
 
@@ -461,7 +469,7 @@ describe('inpage signer bridge', () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 		const previousWarn = console.warn
-		let fakeWindowWithSigner: { ethereum: { isMetamask?: boolean, [key: string]: unknown } } | undefined
+		let fakeWindowWithSigner: { ethereum: { isMetamask?: boolean; [key: string]: unknown } } | undefined
 		const { fakeWindow } = createFakeWindow({
 			onConnectedToSignerRequest: () => {
 				if (fakeWindowWithSigner === undefined) return
@@ -471,7 +479,9 @@ describe('inpage signer bridge', () => {
 		})
 		fakeWindowWithSigner = fakeWindow
 		const warnings: string[] = []
-		console.warn = (...args: unknown[]) => { warnings.push(String(args[0])) }
+		console.warn = (...args: unknown[]) => {
+			warnings.push(String(args[0]))
+		}
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -480,7 +490,9 @@ describe('inpage signer bridge', () => {
 					super(type)
 					this.detail = init?.detail as T
 				}
-				public initCustomEvent(): void { return undefined }
+				public initCustomEvent(): void {
+					return undefined
+				}
 			}
 		}
 
