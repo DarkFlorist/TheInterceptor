@@ -25,8 +25,8 @@ const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeT
 	})
 
 const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
-	const errorText = useComputed(() => (simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined))
-	const rpcErrorText = useComputed(() => (simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined))
+	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
+	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
 	const simTx = useComputed(() => {
 		if (simulateExecutionReply.value?.data.success !== true) return undefined
 		const visualizedBlocks = simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks

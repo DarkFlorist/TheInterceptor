@@ -24,7 +24,7 @@ export function isJSON(text: string) {
 }
 
 export function jsonParserWithNumbersAsStringsConverter(jsonString: string) {
-	const reviver = (_key: string, value: unknown, context: { source: string }) => (typeof value === 'number' && context !== undefined ? context.source : value)
+	const reviver = (_key: string, value: unknown, context: { source: string }) => typeof value === 'number' && context !== undefined ? context.source : value
 	// cast necessary until this is fixed: https://github.com/microsoft/TypeScript/issues/61330
 	return JSON.parse(jsonString, reviver as (this: unknown, key: string, value: unknown) => unknown)
 }

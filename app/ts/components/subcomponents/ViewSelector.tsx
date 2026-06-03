@@ -70,12 +70,10 @@ const Triggers = () => {
 
 	return (
 		<fieldset onChange={handleChange}>
-			{views.value.map((view) => (
-				<label key={view.value}>
+			{views.value.map((view) => <label key={view.value}>
 					<input type="radio" name={id} value={view.value} defaultChecked={view.isActive} />
 					<span>{view.title}</span>
-				</label>
-			))}
+				</label>)}
 		</fieldset>
 	)
 }

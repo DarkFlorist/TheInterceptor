@@ -10,14 +10,11 @@ import { insertBetweenElements } from './misc.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
-export const StringElement = ({ text }: { text: string }) => (
-	<p class="paragraph" style={textStyle}>
+export const StringElement = ({ text }: { text: string }) => <p class="paragraph" style={textStyle}>
 		{text}
 	</p>
-)
 
-const JsxArray = ({ array }: { array: JSX.Element[] }) => (
-	<>
+const JsxArray = ({ array }: { array: JSX.Element[] }) => <>
 		<StringElement text="[" />
 		{insertBetweenElements(
 			array,
@@ -27,7 +24,6 @@ const JsxArray = ({ array }: { array: JSX.Element[] }) => (
 		)}
 		<StringElement text="]" />
 	</>
-)
 
 function PureSolidityTypeComponent({ valueType }: { valueType: PureGroupedSolidityType }) {
 	switch (valueType.type) {
@@ -52,16 +48,14 @@ function PureSolidityTypeComponent({ valueType }: { valueType: PureGroupedSolidi
 		case 'address[]':
 			return <StringElement text={`[${ valueType.value.map((value) => checksummedAddress(value)).toString() }]`} />
 		case 'bool[]':
-			return <StringElement text={`[${ valueType.value.map((a) => (a === true ? 'True' : 'False')).toString() }]`} />
+			return <StringElement text={`[${ valueType.value.map((a) => a === true ? 'True' : 'False').toString() }]`} />
 		case 'bytes[]':
 			return (
 				<JsxArray
-					array={valueType.value.map((value, index) => (
-						<div key={index} class="textbox" style="white-space: normal;">
+					array={valueType.value.map((value, index) => <div key={index} class="textbox" style="white-space: normal;">
 							{' '}
 							<p class="paragraph">{dataStringWith0xStart(value)}</p>{' '}
-						</div>
-					))}
+						</div>)}
 				/>
 			)
 		case 'fixedBytes[]':

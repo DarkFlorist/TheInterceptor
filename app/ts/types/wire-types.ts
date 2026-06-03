@@ -216,8 +216,8 @@ const OptionalBytesParser: funtypes.ParsedValue<funtypes.Union<[funtypes.String,
 
 export const LiteralConverterParserFactory: <TInput, TOutput>(input: TInput, output: TOutput) => funtypes.ParsedValue<funtypes.Runtype<TInput>, TOutput>['config'] = (input, output) => {
 	return {
-		parse: (value) => (value === input ? { success: true, value: output } : { success: false, message: `${ value } was expected to be literal.` }),
-		serialize: (value) => (value === output ? { success: true, value: input } : { success: false, message: `${ value } was expected to be literal.` }),
+		parse: (value) => value === input ? { success: true, value: output } : { success: false, message: `${ value } was expected to be literal.` },
+		serialize: (value) => value === output ? { success: true, value: input } : { success: false, message: `${ value } was expected to be literal.` },
 	}
 }
 

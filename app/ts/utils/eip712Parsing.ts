@@ -39,7 +39,7 @@ function validateEIP712TypesSubset(
 		if (currentType === undefined) return false
 		const jsonEncodeableArray = JSONEncodeableObjectArray.safeParse(subMessage)
 		if (jsonEncodeableArray.success) {
-			if (jsonEncodeableArray.value.map((arrayElement) => (JSONEncodeableObject.test(arrayElement) ? validateEIP712TypesSubset(depth, arrayElement, currentType, types) : false)).every((v) => v === true) === false) {
+			if (jsonEncodeableArray.value.map((arrayElement) => JSONEncodeableObject.test(arrayElement) ? validateEIP712TypesSubset(depth, arrayElement, currentType, types) : false).every((v) => v === true) === false) {
 				return false
 			}
 		} else {

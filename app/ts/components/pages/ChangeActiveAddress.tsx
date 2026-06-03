@@ -81,8 +81,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						{param.activeAddresses === undefined ? (
 							<></>
 						) : (
-							param.activeAddresses.value.map((activeAddress) => (
-								<li key={activeAddress.address.toString()}>
+							param.activeAddresses.value.map((activeAddress) => <li key={activeAddress.address.toString()}>
 									<div
 										class="card hoverable"
 										onClick={() => {
@@ -100,8 +99,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 											)}
 										</div>
 									</div>
-								</li>
-							))
+								</li>)
 						)}
 					</ul>
 				</section>

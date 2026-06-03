@@ -265,8 +265,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 							{' '}
 							Addresses being made rich
 						</p>
-						{visibleRichList.value.map((richListElement) => (
-							<label class="form-control" style="gap: 1em;" key={richListElement.addressBookEntry.address.toString()}>
+						{visibleRichList.value.map((richListElement) => <label class="form-control" style="gap: 1em;" key={richListElement.addressBookEntry.address.toString()}>
 								<input
 									type="checkbox"
 									checked={richListElement.makingRich}
@@ -277,8 +276,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 									}}
 								/>
 								<SmallAddress addressBookEntry={richListElement.addressBookEntry} renameAddressCallBack={renameAddressCallBack} />
-							</label>
-						))}
+							</label>)}
 					</div>
 				</div>
 			)}
@@ -460,7 +458,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return isEmptySimulation(param.simulationAndVisualisationResults.value.value)
 	})
 
-	const computedAddressBookEntries = useComputed(() => (param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : []))
+	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
@@ -538,9 +536,9 @@ export function Home(param: HomeParams) {
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 
-	const activeSimulationAddress = useComputed(() => (param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined))
-	const activeSigningAddress = useComputed(() => (param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined))
-	const currentActiveAddress = useComputed(() => (param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value))
+	const activeSimulationAddress = useComputed(() => param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined)
+	const activeSigningAddress = useComputed(() => param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined)
+	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
 
 	useEffect(() => {
 		if (!param.simulationMode.value || activeSimulationAddress.value === undefined) {

@@ -159,7 +159,7 @@ const vendorTypeShims = [
 	},
 ] as const
 
-const getPackageRoot = (packageName: string) => (packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0]!)
+const getPackageRoot = (packageName: string) => packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0]!
 
 const vendoredPackageRoots = [...new Set([...vendoredDependencies.map(getPackageRoot), ...extraPackageRoots])]
 

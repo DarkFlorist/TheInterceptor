@@ -73,11 +73,9 @@ type TextNodeProps = {
 	value: string
 }
 
-const TextNode = ({ displayText, value }: TextNodeProps) => (
-	<data class="truncate text-legible" value={value || displayText}>
+const TextNode = ({ displayText, value }: TextNodeProps) => <data class="truncate text-legible" value={value || displayText}>
 		{displayText}
 	</data>
-)
 
 export type ActionableTextProps =
 	| {

@@ -378,7 +378,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 		try {
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(
 				promiseAllMapAbortSafe(prevState.simulationState.value.simulatedBlocks, async (block) =>
-					promiseAllMapAbortSafe(block.simulatedTransactions, async (simulatedTransaction) => (simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController))),
+					promiseAllMapAbortSafe(block.simulatedTransactions, async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)),
 				),
 			)
 			const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(
@@ -529,7 +529,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 
 	const eventsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulatedBlocks,
-		async (block) => await promiseAllMapAbortSafe(block.simulatedTransactions, async (simulatedTransaction) => (simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController))),
+		async (block) => await promiseAllMapAbortSafe(block.simulatedTransactions, async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)),
 	)
 	const protectorsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block, blockIndex) => {
 		const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)

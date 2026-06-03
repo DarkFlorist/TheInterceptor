@@ -147,7 +147,7 @@ function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx 
 	if (!(simTx.transaction.value === 0n && tokenResults.length === 1 && tokenResult.isApproval === true && tokenResult.from.address !== tokenResult.to.address && tokenResult.from === simTx.transaction.from)) return false
 	return true
 }
-const getSimpleTokenApprovalOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleApprovalTransaction>((simTx) => (isSimpleTokenApproval(simTx) ? simTx : undefined))
+const getSimpleTokenApprovalOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleApprovalTransaction>((simTx) => isSimpleTokenApproval(simTx) ? simTx : undefined)
 
 export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
 export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
@@ -165,7 +165,7 @@ function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): 
 	if (tokenResults.length === 1 && tokenResult.isApproval === false && tokenResult.from.address !== tokenResult.to.address && tokenResult.from.address === transaction.transaction.from.address && !BURN_ADDRESSES.includes(tokenResult.from.address) && !BURN_ADDRESSES.includes(tokenResult.to.address)) return true
 	return false
 }
-const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => (isSimpleTokenTransfer(simTx) ? simTx : undefined))
+const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
 
 type EntryAmount = funtypes.Static<typeof EntryAmount>
 const EntryAmount = funtypes.ReadonlyObject({
@@ -221,7 +221,7 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	// only one token of specific address is being transacted in the logs
 	if (tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
 	// only one token id (or undefined) is mentioned inte the logs
-	if (new Set(tokenResults.map((result) => ('tokenId' in result ? result.tokenId : undefined))).size !== 1) return false
+	if (new Set(tokenResults.map((result) => 'tokenId' in result ? result.tokenId : undefined)).size !== 1) return false
 	// can find a path
 	const edges = tokenResults.map((tokenResult) => ({
 		from: tokenResult.from.address,
@@ -241,7 +241,7 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	if (netSums.get(transaction.transaction.from.address) !== -deadEndSum) return false
 	return true
 }
-const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => (isProxyTokenTransfer(simTx) ? simTx : undefined))
+const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isProxyTokenTransfer(simTx) ? simTx : undefined)
 
 export function identifyTransaction(simTx: MaybeSimulatedTransaction): IdentifiedTransaction {
 	if (simTx.transactionStatus === 'Transaction Succeeded') {

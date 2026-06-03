@@ -115,9 +115,9 @@ export function bytesToUnsigned(bytes: Uint8Array): bigint {
 	return value
 }
 
-export const min = (left: bigint, right: bigint) => (left < right ? left : right)
-export const max = (left: bigint, right: bigint) => (left > right ? left : right)
-export const abs = (x: bigint) => (x < 0n ? -1n * x : x)
+export const min = (left: bigint, right: bigint) => left < right ? left : right
+export const max = (left: bigint, right: bigint) => left > right ? left : right
+export const abs = (x: bigint) => x < 0n ? -1n * x : x
 
 export function isHexEncodedNumber(input: string): boolean {
 	const hexNumberRegex = /^(0x)?[0-9a-fA-F]+$/
@@ -127,7 +127,7 @@ export function isHexEncodedNumber(input: string): boolean {
 export function calculateWeightedPercentile(data: readonly { dataPoint: bigint; weight: bigint }[], percentile: bigint): bigint {
 	if (data.length === 0) return 0n
 	if (percentile < 0 || percentile > 100 || data.map((point) => point.weight).some((weight) => weight < 0)) throw new Error('Invalid input')
-	const sortedData = [...data].sort((a, b) => (a.dataPoint < b.dataPoint ? -1 : a.dataPoint > b.dataPoint ? 1 : 0))
+	const sortedData = [...data].sort((a, b) => a.dataPoint < b.dataPoint ? -1 : a.dataPoint > b.dataPoint ? 1 : 0)
 	const cumulativeWeights = sortedData.map((point) => point.weight).reduce((acc, w, i) => [...acc, (acc[i] ?? 0n) + w], [0n])
 	const totalWeight = cumulativeWeights[cumulativeWeights.length - 1]
 	if (totalWeight === undefined) throw new Error('Invalid input')

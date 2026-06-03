@@ -299,7 +299,7 @@ function stringifyForwardedThrownValue(value: unknown) {
 	if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
 	if (typeof value === 'bigint') return value.toString()
 	try {
-		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue))
+		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
 		if (stringified !== undefined) return stringified
 	} catch (error: unknown) {
 		const fallbackValue = stringifyForwardedFallbackValue(value)

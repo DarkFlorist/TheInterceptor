@@ -51,8 +51,7 @@ export const DynamicScroller = <T extends {}>({ items, renderItem }: DynamicScro
 					'--virtual-scroll-offset': `${ scrollOffset }px`,
 				}}
 			>
-				{visibleItems.value.map((item, index) => (
-					<div
+				{visibleItems.value.map((item, index) => <div
 						key={startIndex.value + index}
 						ref={itemRef}
 						style={{
@@ -61,8 +60,7 @@ export const DynamicScroller = <T extends {}>({ items, renderItem }: DynamicScro
 						}}
 					>
 						{renderItem(item)}
-					</div>
-				))}
+					</div>)}
 			</div>
 		</div>
 	)

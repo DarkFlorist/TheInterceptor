@@ -386,7 +386,6 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						)}
 					</ul>
 				</section>
-
 				<footer class="modal-card-foot window-footer" style="border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;">
 					<button class="button is-primary" style="background-color: var(--negative-color)" onClick={param.goHome}>
 						Cancel

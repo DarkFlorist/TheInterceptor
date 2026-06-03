@@ -64,8 +64,7 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 	return (
 		<>
 			{' '}
-			{quarantineReasons.map((quarantineReason, index) => (
-				<ErrorComponent
+			{quarantineReasons.map((quarantineReason, index) => <ErrorComponent
 					key={`${ quarantineReason }-${ index }`}
 					text={quarantineReason}
 					containerStyle={{
@@ -73,8 +72,7 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 						'margin-top': '10px',
 						'margin-bottom': '10px',
 					}}
-				/>
-			))}{' '}
+				/>)}{' '}
 		</>
 	)
 }
@@ -513,8 +511,7 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 			{' '}
 			{transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
 				const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || ({ type: 'No Delay' } as const)
-				return block.rows.map((stackRow, transactionIndex) => (
-					<li key={stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }`}>
+				return block.rows.map((stackRow, transactionIndex) => <li key={stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }`}>
 						<TransactionOrMessageWithBlockTimeManipulator
 							simulationAndVisualisationResults={param.simulationAndVisualisationResults}
 							stackRow={stackRow}
@@ -526,8 +523,7 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 							blockTimeManipulation={transactionIndex === block.rows.length - 1 ? nextBlockManipulator : ({ type: 'No Delay' } as const)}
 							showTimePicker={param.showTimePicker !== false}
 						/>
-					</li>
-				))
+					</li>)
 			})}{' '}
 		</ul>
 	)
@@ -618,12 +614,10 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 					</p>
 				</div>
 				<div class="log-cell" style={'grid-column: 2 / 4; display: flex; flex-wrap: wrap;'}>
-					{params.nonTokenLog.topics.map((topic, index) => (
-						<p key={`${ bytes32String(topic) }-${ index }`} class="paragraph" style={textStyle}>
+					{params.nonTokenLog.topics.map((topic, index) => <p key={`${ bytes32String(topic) }-${ index }`} class="paragraph" style={textStyle}>
 							{' '}
 							{bytes32String(topic)}{' '}
-						</p>
-					))}
+						</p>)}
 				</div>
 			</>
 		)
@@ -712,9 +706,7 @@ export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class="paragraph"> No non-token events </p>
 	return (
 		<span class="nontoken-log-table" style="justify-content: center; column-gap: 5px; row-gap: 5px;">
-			{param.nonTokenLogs.map((nonTokenLog, index) => (
-				<NonTokenLogEvent key={index} nonTokenLog={nonTokenLog} addressMetaData={param.addressMetaData} renameAddressCallBack={param.renameAddressCallBack} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} />
-			))}
+			{param.nonTokenLogs.map((nonTokenLog, index) => <NonTokenLogEvent key={index} nonTokenLog={nonTokenLog} addressMetaData={param.addressMetaData} renameAddressCallBack={param.renameAddressCallBack} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} />)}
 		</span>
 	)
 }

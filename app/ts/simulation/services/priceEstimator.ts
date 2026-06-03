@@ -59,7 +59,7 @@ export class TokenPriceService {
 			token,
 			quoteToken,
 			// Use pool with most TVL
-			price: prices.reduce((highestLiq, p) => (p.liquidity > highestLiq.liquidity ? p : highestLiq)).price,
+			price: prices.reduce((highestLiq, p) => p.liquidity > highestLiq.liquidity ? p : highestLiq).price,
 		}
 	}
 

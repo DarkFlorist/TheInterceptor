@@ -181,13 +181,11 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 						</p>
 					</div>
 					<div class="log-cell" style="display: block;">
-						{ensEvent.logInformation.fuses.map((fuse) => (
-							<>
+						{ensEvent.logInformation.fuses.map((fuse) => <>
 								<div class="textbox" style="white-space: nowrap; background-color: var(--alpha-015); margin: 5px">
 									<p class="paragraph"> {fuse}</p>
 								</div>
-							</>
-						))}
+							</>)}
 					</div>
 				</div>
 			)
@@ -255,13 +253,11 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 						</p>
 					</div>
 					<div class="log-cell">
-						{ensEvent.logInformation.fuses.map((fuse) => (
-							<>
+						{ensEvent.logInformation.fuses.map((fuse) => <>
 								<div class="textbox" style="white-space: nowrap; background-color: var(--alpha-015); margin: 5px">
 									<p class="paragraph"> {fuse}</p>
 								</div>
-							</>
-						))}
+							</>)}
 					</div>
 				</div>
 			)
@@ -484,13 +480,11 @@ export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
 		<>
 			{param.ensEvents
 				.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed')
-				.map((ensEvent, index) => (
-					<div key={`${ ensEvent.subType }-${ index }`} class="vertical-center">
+				.map((ensEvent, index) => <div key={`${ ensEvent.subType }-${ index }`} class="vertical-center">
 						<div class="box token-box vertical-center positive-box" style="display: inline-block">
 							<VisualizeEnsEvent ensEvent={ensEvent} textColor={param.textColor} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />
 						</div>
-					</div>
-				))}
+					</div>)}
 		</>
 	)
 }

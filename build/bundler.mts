@@ -57,11 +57,11 @@ const isInsideDirectory = (candidatePath: string, directoryPath: string) => {
 	return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
 const forbiddenRuntimeModules = new Set([path.join(vendorDirectory, 'viem', '_esm', 'utils', 'index.js'), path.join(vendorDirectory, 'viem', '_esm', 'ens', 'index.js'), path.join(vendorDirectory, 'viem', '_esm', 'accounts', 'index.js')])
-const getResolverBasePath = (filePath: string) => (filePath.startsWith(`${ vendorDirectory }${ path.sep }`) ? path.join(nodeModulesDirectory, path.relative(vendorDirectory, filePath)) : filePath)
+const getResolverBasePath = (filePath: string) => filePath.startsWith(`${ vendorDirectory }${ path.sep }`) ? path.join(nodeModulesDirectory, path.relative(vendorDirectory, filePath)) : filePath
 
-const getPackageRootName = (specifier: string) => (specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : (specifier.split('/')[0] ?? specifier))
+const getPackageRootName = (specifier: string) => specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : (specifier.split('/')[0] ?? specifier)
 
-const getPackageSubpath = (specifier: string, packageRootName: string) => (specifier === packageRootName ? '.' : `./${ specifier.slice(packageRootName.length + 1) }`)
+const getPackageSubpath = (specifier: string, packageRootName: string) => specifier === packageRootName ? '.' : `./${ specifier.slice(packageRootName.length + 1) }`
 
 function getVendoredLocationForNodeModulesPath(resolvedPath: string) {
 	if (!isInsideDirectory(resolvedPath, nodeModulesDirectory)) return undefined

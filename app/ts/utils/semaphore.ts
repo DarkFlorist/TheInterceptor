@@ -18,7 +18,7 @@ export class Semaphore {
 	/**
 	 * Creates a semaphore.
 	 * @param permits The number of permits, i.e. strands of execution being allowed to run in parallel. This number can be initialized with a negative integer.
-	 */
+	*/
 	constructor(permits: number) {
 		this.permits = permits
 	}
@@ -26,7 +26,7 @@ export class Semaphore {
 	/**
 	 * Returns the number of available permits.
 	 * @returns The number of available permits.
-	 */
+	*/
 	public getPermits(): number {
 		return this.permits
 	}
@@ -34,7 +34,7 @@ export class Semaphore {
 	/**
 	 * Returns a promise used to wait for a permit to become available. This method should be awaited on.
 	 * @returns A promise that gets resolved when execution is allowed to proceed.
-	 */
+	*/
 	public async wait(): Promise<boolean> {
 		if (this.permits > 0) {
 			this.permits -= 1
@@ -48,7 +48,7 @@ export class Semaphore {
 	/**
 	 * Alias for {@linkcode Semaphore.wait}.
 	 * @returns  A promise that gets resolved when execution is allowed to proceed.
-	 */
+	*/
 	public async acquire(): Promise<boolean> {
 		return this.wait()
 	}
@@ -57,7 +57,7 @@ export class Semaphore {
 	 * Same as {@linkcode Semaphore.wait} except the promise returned gets resolved with false if no permit becomes available in time.
 	 * @param milliseconds  The time spent waiting before the wait is aborted. This is a lower bound, you shouldn't rely on it being precise.
 	 * @returns A promise that gets resolved to true when execution is allowed to proceed or false if the time given elapses before a permit becomes available.
-	 */
+	*/
 	public async waitFor(milliseconds: number): Promise<boolean> {
 		if (this.permits > 0) {
 			this.permits -= 1
@@ -93,7 +93,7 @@ export class Semaphore {
 	/**
 	 * Synchronous function that tries to acquire a permit and returns true if successful, false otherwise.
 	 * @returns Whether a permit could be acquired.
-	 */
+	*/
 	public tryAcquire(): boolean {
 		if (this.permits > 0) {
 			this.permits -= 1
@@ -106,7 +106,7 @@ export class Semaphore {
 	/**
 	 * Acquires all permits that are currently available and returns the number of acquired permits.
 	 * @returns Number of acquired permits.
-	 */
+	*/
 	public drainPermits(): number {
 		if (this.permits > 0) {
 			const permitCount = this.permits
@@ -119,7 +119,7 @@ export class Semaphore {
 
 	/**
 	 * Increases the number of permits by one. If there are other functions waiting, one of them will continue to execute in a future iteration of the event loop.
-	 */
+	*/
 	public signal(): void {
 		this.permits += 1
 
@@ -138,7 +138,7 @@ export class Semaphore {
 
 	/**
 	 * Alias for {@linkcode Semaphore.signal}.
-	 */
+	*/
 	public release(): void {
 		this.signal()
 	}
@@ -149,7 +149,7 @@ export class Semaphore {
 	 * @typeparam T The return type of func.
 	 * @param func The function to be executed.
 	 * @return A promise that gets resolved with the return value of the function.
-	 */
+	*/
 	public async execute<T>(func: () => T | PromiseLike<T>): Promise<T> {
 		await this.wait()
 		try {
