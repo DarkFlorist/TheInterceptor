@@ -329,8 +329,36 @@ function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'docum
 
 function setCompatibilityProperty(target: object, property: PropertyKey, value: unknown, propertyLabel: string) {
 	try {
-		if (Reflect.set(target, property, value) === false) {
+		const ownDescriptor = Object.getOwnPropertyDescriptor(target, property)
+		if (ownDescriptor !== undefined) {
+			if ('value' in ownDescriptor && ownDescriptor.writable === false) {
+				if (ownDescriptor.configurable !== true) return
+				Object.defineProperty(target, property, {
+					configurable: ownDescriptor.configurable,
+					enumerable: ownDescriptor.enumerable,
+					value,
+					writable: true,
+				})
+				return
+			}
+			if ('set' in ownDescriptor && ownDescriptor.set === undefined) {
+				if (ownDescriptor.configurable !== true) return
+				Object.defineProperty(target, property, {
+					configurable: ownDescriptor.configurable,
+					enumerable: ownDescriptor.enumerable,
+					value,
+					writable: true,
+				})
+				return
+			}
+		}
+		if (Reflect.set(target, property, value) === true) return
+		if (!Object.isExtensible(target)) {
 			console.warn(`Interceptor compatibility assignment was rejected for ${ propertyLabel }.`)
+			return
+		}
+		if (Object.isExtensible(target)) {
+			Object.defineProperty(target, property, { configurable: true, enumerable: true, writable: true, value })
 		}
 	} catch (error: unknown) {
 		console.warn(`Interceptor compatibility assignment failed for ${ propertyLabel }.`, error)
