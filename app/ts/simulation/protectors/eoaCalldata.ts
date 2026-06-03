@@ -11,3 +11,4 @@ export async function eoaCalldata(transaction: EthereumUnsignedTransaction, ethe
 	if (code.getCodeReturn.length > 0) return
 	return 'Transaction to an Externally Owned Account contains calldata.'
 }
+

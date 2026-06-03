@@ -7,9 +7,12 @@ export const ErrorWithCodeAndOptionalData = funtypes.Intersect(
 		message: funtypes.String,
 	}),
 	funtypes.Partial({
-		data: funtypes.String,
-	}),
+		data: funtypes.String
+	})
 )
 
 export type DecodedError = funtypes.Static<typeof DecodedError>
-export const DecodedError = funtypes.Intersect(ErrorWithCodeAndOptionalData, funtypes.ReadonlyObject({ decodedErrorMessage: funtypes.String }))
+export const DecodedError = funtypes.Intersect(
+	ErrorWithCodeAndOptionalData,
+	funtypes.ReadonlyObject({ decodedErrorMessage: funtypes.String })
+)

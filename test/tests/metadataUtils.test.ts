@@ -16,12 +16,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(
-	requestHandler,
-	async () => undefined,
-	async () => undefined,
-	rpcEntry,
-)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
 
 describe('getAddressMetaData', () => {
 	test('contain USDC Coin', async () => {

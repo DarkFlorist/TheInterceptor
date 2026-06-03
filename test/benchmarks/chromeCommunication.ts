@@ -37,32 +37,20 @@ async function getCommunicationPageState(connection: CdpConnection): Promise<Com
 }
 
 async function waitForCommunicationPagePhase(connection: CdpConnection, phase: CommunicationPageState['phase'], timeoutMs: number) {
-	await waitForCondition(
-		async () => {
-			const state = await getCommunicationPageState(connection)
-			if (state?.phase === 'error') throw new Error(`Communication page failed: ${ state.error ?? 'unknown error' }`)
-			return state?.phase === phase
-		},
-		timeoutMs,
-		`communication page phase ${ phase }`,
-	)
+	await waitForCondition(async () => {
+		const state = await getCommunicationPageState(connection)
+		if (state?.phase === 'error') throw new Error(`Communication page failed: ${ state.error ?? 'unknown error' }`)
+		return state?.phase === phase
+	}, timeoutMs, `communication page phase ${ phase }`)
 }
 
 async function waitForButtonEnabled(connection: CdpConnection, selector: string, timeoutMs: number) {
-	await waitForCondition(
-		async () => {
-			return Boolean(
-				await connection
-					.evaluate<boolean>(`(() => {
+	await waitForCondition(async () => {
+		return Boolean(await connection.evaluate<boolean>(`(() => {
 			const element = document.querySelector(${ JSON.stringify(selector) })
 			return element instanceof HTMLButtonElement && element.disabled === false
-		})()`)
-					.catch(() => false),
-			)
-		},
-		timeoutMs,
-		`button ${ selector } to be enabled`,
-	)
+		})()`).catch(() => false))
+	}, timeoutMs, `button ${ selector } to be enabled`)
 }
 
 async function clickButton(connection: CdpConnection, selector: string) {
@@ -107,17 +95,11 @@ async function main() {
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
 			const finalState = await getCommunicationPageState(pageConnection)
 			console.warn(`Interceptor Chrome communication smoke test passed for extension ${ extensionId }.`)
-			console.warn(
-				JSON.stringify(
-					{
-						ok: true,
-						extensionId,
-						finalState,
-					},
-					null,
-					2,
-				),
-			)
+			console.warn(JSON.stringify({
+				ok: true,
+				extensionId,
+				finalState,
+			}, null, 2))
 		} finally {
 			pageConnection.close()
 		}

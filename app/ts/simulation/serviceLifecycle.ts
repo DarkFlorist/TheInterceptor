@@ -13,15 +13,35 @@ export type SimulationServices = {
 	tokenPriceService: TokenPriceService
 }
 
-export function createSimulationServices(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockAttemptCallback, onErrorBlockCallback: OnErrorBlockCallback, tokenPriceCacheAge = 60000): SimulationServices {
-	const ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true), newBlockAttemptCallback, onErrorBlockCallback, rpcNetwork)
+export function createSimulationServices(
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockAttemptCallback,
+	onErrorBlockCallback: OnErrorBlockCallback,
+	tokenPriceCacheAge = 60000,
+): SimulationServices {
+	const ethereum = new EthereumClientService(
+		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
+		newBlockAttemptCallback,
+		onErrorBlockCallback,
+		rpcNetwork,
+	)
 	return {
 		ethereum,
 		tokenPriceService: new TokenPriceService(ethereum, tokenPriceCacheAge),
 	}
 }
 
-export function resetSimulationServices(currentServices: SimulationServices, rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockAttemptCallback, onErrorBlockCallback: OnErrorBlockCallback): SimulationServices {
+export function resetSimulationServices(
+	currentServices: SimulationServices,
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockAttemptCallback,
+	onErrorBlockCallback: OnErrorBlockCallback,
+): SimulationServices {
 	currentServices.ethereum.cleanup()
-	return createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, currentServices.tokenPriceService.cacheAge)
+	return createSimulationServices(
+		rpcNetwork,
+		newBlockAttemptCallback,
+		onErrorBlockCallback,
+		currentServices.tokenPriceService.cacheAge,
+	)
 }

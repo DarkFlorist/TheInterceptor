@@ -74,12 +74,7 @@ const requestHandler: IEthereumJSONRpcRequestHandler = {
 	},
 }
 
-const ethereum = new EthereumClientService(
-	requestHandler,
-	async () => undefined,
-	async () => undefined,
-	rpcEntry,
-)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
 
 const simulationState: SimulationState = {
 	success: false,

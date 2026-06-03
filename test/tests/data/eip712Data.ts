@@ -817,6 +817,7 @@ export const chainIdOverFlow = `{
 	}
 }`
 
+
 export const missingChainId = `{
 	"types": {
 		"EIP712Domain": [
@@ -1826,3 +1827,4 @@ export const d3ArrayFixed = `{
 		"contents": [[["Hello, Bob!"]]]
 	}
 }`
+

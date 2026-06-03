@@ -16,13 +16,10 @@ function normalizeRpcNetworkForFingerprint(rpcNetwork: RpcNetwork) {
 		currencyName: rpcNetwork.currencyName,
 		currencyTicker: rpcNetwork.currencyTicker,
 		currencyLogoUri: 'currencyLogoUri' in rpcNetwork ? rpcNetwork.currencyLogoUri : undefined,
-		blockExplorer:
-			'blockExplorer' in rpcNetwork && rpcNetwork.blockExplorer !== undefined
-				? {
-						apiUrl: rpcNetwork.blockExplorer.apiUrl,
-						apiKey: rpcNetwork.blockExplorer.apiKey,
-					}
-				: undefined,
+		blockExplorer: 'blockExplorer' in rpcNetwork && rpcNetwork.blockExplorer !== undefined ? {
+			apiUrl: rpcNetwork.blockExplorer.apiUrl,
+			apiKey: rpcNetwork.blockExplorer.apiKey,
+		} : undefined,
 		primary: rpcNetwork.primary,
 		minimized: rpcNetwork.minimized,
 	}

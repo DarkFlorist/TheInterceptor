@@ -27,7 +27,7 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 	return encodedData.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${ part }`))).join('.')
 }
 
-export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint): Promise<string | undefined> => {
+export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint) : Promise<string | undefined> => {
 	if (ethereumMainnet.getChainId() !== 1n) return undefined
 	const wrappedEthereumNameService1155TokenAbi = [
 		{
@@ -63,7 +63,18 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	return name
 }
 
-type EnsFuseName = 'Cannot Unwrap Name' | 'Cannot Burn Fuses' | 'Cannot Transfer' | 'Cannot Set Resolver' | 'Cannot Set Time To Live' | 'Cannot Create Subdomain' | 'Parent Domain Cannot Control' | 'Cannot Approve' | 'Is .eth domain' | 'Can Extend Expiry' | 'Can Do Everything'
+type EnsFuseName =
+  | 'Cannot Unwrap Name'
+  | 'Cannot Burn Fuses'
+  | 'Cannot Transfer'
+  | 'Cannot Set Resolver'
+  | 'Cannot Set Time To Live'
+  | 'Cannot Create Subdomain'
+  | 'Parent Domain Cannot Control'
+  | 'Cannot Approve'
+  | 'Is .eth domain'
+  | 'Can Extend Expiry'
+  | 'Can Do Everything'
 
 type EnsFuseFlag = {
 	name: EnsFuseName

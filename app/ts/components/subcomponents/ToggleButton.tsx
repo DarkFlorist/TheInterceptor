@@ -14,9 +14,9 @@ export const ToggleButton = ({ id, checked, checkedLabel, uncheckedLabel, onChan
 	}
 
 	return (
-		<form onChange={onToggle}>
-			<label for={id}>{checked ? checkedLabel : uncheckedLabel}</label>
-			<input id={id} type="checkbox" checked={checked} onChange={() => onChange(!checked)} />
+		<form onChange = { onToggle }>
+			<label for = { id }>{ checked ? checkedLabel : uncheckedLabel }</label>
+			<input id = { id } type = 'checkbox' checked = { checked } onChange = { () => onChange(!checked) } />
 		</form>
 	)
 }

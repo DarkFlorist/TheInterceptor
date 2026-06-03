@@ -35,61 +35,53 @@ const lerpHueFn = (optionNum: number, direction: number) => {
 	const option = optionNum % 4
 	const multiplier = direction ? 1 : -1
 	switch (option) {
-		case 0:
-			return (hue: number, pct: number) => {
-				const endHue = hue + multiplier * 10
-				return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
-			}
-		case 1:
-			return (hue: number, pct: number) => {
-				const endHue = hue + multiplier * 30
-				return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
-			}
-		case 2:
-			return (hue: number, pct: number) => {
-				const endHue = hue + multiplier * 50
-				const lerpPercent = cubicInOut(pct)
-				return clampHue(linear(1.0 - lerpPercent) * hue + lerpPercent * endHue)
-			}
+		case 0: return (hue: number, pct: number) => {
+			const endHue = hue + multiplier * 10
+			return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
+		}
+		case 1: return (hue: number, pct: number) => {
+			const endHue = hue + multiplier * 30
+			return clampHue(linear(1.0 - pct) * hue + linear(pct) * endHue)
+		}
+		case 2: return (hue: number, pct: number) => {
+			const endHue = hue + multiplier * 50
+			const lerpPercent = cubicInOut(pct)
+			return clampHue(linear(1.0 - lerpPercent) * hue + lerpPercent * endHue)
+		}
 		case 3:
-		default:
-			return (hue: number, pct: number) => {
-				const endHue = hue + multiplier * 60 * bscale(optionNum, 1.0) + 30
-				const lerpPercent = cubicInOut(pct)
-				return clampHue((1.0 - lerpPercent) * hue + lerpPercent * endHue)
-			}
+		default: return (hue: number, pct: number) => {
+			const endHue = hue + multiplier * 60 * bscale(optionNum, 1.0) + 30
+			const lerpPercent = cubicInOut(pct)
+			return clampHue((1.0 - lerpPercent) * hue + lerpPercent * endHue)
+		}
 	}
 }
 
 const lerpLightnessFn = (optionNum: number) => {
 	switch (optionNum) {
-		case 0:
-			return (start: number, end: number, pct: number) => {
-				const lerpPercent = quintIn(pct)
-				return (1.0 - lerpPercent) * start + lerpPercent * end
-			}
+		case 0: return (start: number, end: number, pct: number) => {
+			const lerpPercent = quintIn(pct)
+			return (1.0 - lerpPercent) * start + lerpPercent * end
+		}
 		case 1:
-		default:
-			return (start: number, end: number, pct: number) => {
-				const lerpPercent = cubicIn(pct)
-				return (1.0 - lerpPercent) * start + lerpPercent * end
-			}
+		default: return (start: number, end: number, pct: number) => {
+			const lerpPercent = cubicIn(pct)
+			return (1.0 - lerpPercent) * start + lerpPercent * end
+		}
 	}
 }
 
 const lerpSaturationFn = (optionNum: number) => {
 	switch (optionNum) {
-		case 0:
-			return (start: number, end: number, pct: number) => {
-				const lerpPercent = quintIn(pct)
-				return (1.0 - lerpPercent) * start + lerpPercent * end
-			}
+		case 0: return (start: number, end: number, pct: number) => {
+			const lerpPercent = quintIn(pct)
+			return (1.0 - lerpPercent) * start + lerpPercent * end
+		}
 		case 1:
-		default:
-			return (start: number, end: number, pct: number) => {
-				const lerpPercent = linear(pct)
-				return (1.0 - lerpPercent) * start + lerpPercent * end
-			}
+		default: return (start: number, end: number, pct: number) => {
+			const lerpPercent = linear(pct)
+			return (1.0 - lerpPercent) * start + lerpPercent * end
+		}
 	}
 }
 
