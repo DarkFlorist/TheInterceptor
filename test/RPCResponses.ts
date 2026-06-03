@@ -451,8 +451,8 @@ export const eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d
 
 `
 
-const zeroBytes32 = (suffix: string) => `0x${suffix.padStart(64, '0')}`
-const zeroBytes256 = `0x${'0'.repeat(512)}`
+const zeroBytes32 = (suffix: string) => `0x${ suffix.padStart(64, '0') }`
+const zeroBytes256 = `0x${ '0'.repeat(512) }`
 
 export const eth_getBlockByNumber_7702_invalid_auth_yParity_true = JSON.stringify(
 	{

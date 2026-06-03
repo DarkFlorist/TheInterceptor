@@ -124,7 +124,7 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	const parsedValue = await browserStorageLocalSafeParseGet(key)
 	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
 	if (rawValue === undefined) return defaultValue
-	console.warn(`${key} was corrupt:`)
+	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
 	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
 	return defaultValue

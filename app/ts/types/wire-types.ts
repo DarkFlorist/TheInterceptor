@@ -7,18 +7,18 @@ const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded number.`,
+				message: `${ value } is not a hex string encoded number.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n)
 			return {
 				success: false,
-				message: `${typeof value} is not a non negative bigint.`,
+				message: `${ typeof value } is not a non negative bigint.`,
 			}
-		return { success: true, value: `0x${value.toString(16)}` }
+		return { success: true, value: `0x${ value.toString(16) }` }
 	},
 }
 
@@ -27,12 +27,12 @@ const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded number.`,
+				message: `${ value } is not a hex string encoded number.`,
 			}
 		if (BigInt(value) >= 2n ** 64n)
 			return {
 				success: false,
-				message: `${value} must be smaller than 2^64.`,
+				message: `${ value } must be smaller than 2^64.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
@@ -40,15 +40,15 @@ const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 		if (value >= 2n ** 64n)
 			return {
 				success: false,
-				message: `${value} must be smaller than 2^64.`,
+				message: `${ value } must be smaller than 2^64.`,
 			}
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n)
 			return {
 				success: false,
-				message: `${typeof value} is not a non negative bigint.`,
+				message: `${ typeof value } is not a non negative bigint.`,
 			}
-		return { success: true, value: `0x${value.toString(16)}` }
+		return { success: true, value: `0x${ value.toString(16) }` }
 	},
 }
 
@@ -57,20 +57,20 @@ const AddressParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		if (!/^0x([a-fA-F0-9]{40})$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded address.`,
+				message: `${ value } is not a hex string encoded address.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n)
 			return {
 				success: false,
-				message: `${typeof value} is not a non negative bigint.`,
+				message: `${ typeof value } is not a non negative bigint.`,
 			}
 		return {
 			success: true,
-			value: `0x${value.toString(16).padStart(40, '0')}`,
+			value: `0x${ value.toString(16).padStart(40, '0') }`,
 		}
 	},
 }
@@ -80,20 +80,20 @@ const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		if (!/^0x([a-fA-F0-9]{64})$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded 32 byte value.`,
+				message: `${ value } is not a hex string encoded 32 byte value.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n)
 			return {
 				success: false,
-				message: `${typeof value} is not a non negative bigint.`,
+				message: `${ typeof value } is not a non negative bigint.`,
 			}
 		return {
 			success: true,
-			value: `0x${value.toString(16).padStart(64, '0')}`,
+			value: `0x${ value.toString(16).padStart(64, '0') }`,
 		}
 	},
 }
@@ -103,20 +103,20 @@ const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 		if (!/^0x([a-fA-F0-9]{512})$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded 256 byte value.`,
+				message: `${ value } is not a hex string encoded 256 byte value.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n)
 			return {
 				success: false,
-				message: `${typeof value} is not a non negative bigint.`,
+				message: `${ typeof value } is not a non negative bigint.`,
 			}
 		return {
 			success: true,
-			value: `0x${value.toString(16).padStart(512, '0')}`,
+			value: `0x${ value.toString(16).padStart(512, '0') }`,
 		}
 	},
 }
@@ -125,20 +125,20 @@ const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		if (!/^0x([a-fA-F0-9]{16})$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded 256 byte value.`,
+				message: `${ value } is not a hex string encoded 256 byte value.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n)
 			return {
 				success: false,
-				message: `${typeof value} is not a non negative bigint.`,
+				message: `${ typeof value } is not a non negative bigint.`,
 			}
 		return {
 			success: true,
-			value: `0x${value.toString(16).padStart(16, '0')}`,
+			value: `0x${ value.toString(16).padStart(16, '0') }`,
 		}
 	},
 }
@@ -149,13 +149,13 @@ export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['con
 		if (match === null)
 			return {
 				success: false,
-				message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${value}`,
+				message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }`,
 			}
 		const normalized = match[1]
 		if (normalized === undefined)
 			return {
 				success: false,
-				message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${value}`,
+				message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }`,
 			}
 		if (normalized.length % 2)
 			return {
@@ -164,7 +164,7 @@ export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['con
 			}
 		const bytes = new Uint8Array(normalized.length / 2)
 		for (let i = 0; i < normalized.length; i += 2) {
-			bytes[i / 2] = Number.parseInt(`${normalized[i]}${normalized[i + 1]}`, 16)
+			bytes[i / 2] = Number.parseInt(`${ normalized[i] }${ normalized[i + 1] }`, 16)
 		}
 		return { success: true, value: new Uint8Array(bytes) }
 	},
@@ -172,7 +172,7 @@ export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['con
 		if (!(value instanceof Uint8Array))
 			return {
 				success: false,
-				message: `${typeof value} is not a Uint8Array.`,
+				message: `${ typeof value } is not a Uint8Array.`,
 			}
 		let result = ''
 		for (let i = 0; i < value.length; ++i) {
@@ -180,11 +180,11 @@ export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['con
 			if (val === undefined)
 				return {
 					success: false,
-					message: `${typeof value} is not a Uint8Array.`,
+					message: `${ typeof value } is not a Uint8Array.`,
 				}
 			result += ('0' + val.toString(16)).slice(-2)
 		}
-		return { success: true, value: `0x${result}` }
+		return { success: true, value: `0x${ result }` }
 	},
 }
 
@@ -193,7 +193,7 @@ const TimestampParser: funtypes.ParsedValue<funtypes.String, Date>['config'] = {
 		if (!/^0x([a-fA-F0-9]*)$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded timestamp.`,
+				message: `${ value } is not a hex string encoded timestamp.`,
 			}
 		return {
 			success: true,
@@ -201,10 +201,10 @@ const TimestampParser: funtypes.ParsedValue<funtypes.String, Date>['config'] = {
 		}
 	},
 	serialize: (value) => {
-		if (!(value instanceof Date)) return { success: false, message: `${typeof value} is not a Date.` }
+		if (!(value instanceof Date)) return { success: false, message: `${ typeof value } is not a Date.` }
 		return {
 			success: true,
-			value: `0x${Math.floor(value.valueOf() / 1000).toString(16)}`,
+			value: `0x${ Math.floor(value.valueOf() / 1000).toString(16) }`,
 		}
 	},
 }
@@ -216,8 +216,8 @@ const OptionalBytesParser: funtypes.ParsedValue<funtypes.Union<[funtypes.String,
 
 export const LiteralConverterParserFactory: <TInput, TOutput>(input: TInput, output: TOutput) => funtypes.ParsedValue<funtypes.Runtype<TInput>, TOutput>['config'] = (input, output) => {
 	return {
-		parse: (value) => (value === input ? { success: true, value: output } : { success: false, message: `${value} was expected to be literal.` }),
-		serialize: (value) => (value === output ? { success: true, value: input } : { success: false, message: `${value} was expected to be literal.` }),
+		parse: (value) => (value === input ? { success: true, value: output } : { success: false, message: `${ value } was expected to be literal.` }),
+		serialize: (value) => (value === output ? { success: true, value: input } : { success: false, message: `${ value } was expected to be literal.` }),
 	}
 }
 
@@ -231,7 +231,7 @@ const EthereumSignatureParityParser: funtypes.ParsedValue<funtypes.String, 'even
 			default:
 				return {
 					success: false,
-					message: `${value} is not a supported signature parity.`,
+					message: `${ value } is not a supported signature parity.`,
 				}
 		}
 	},
@@ -244,7 +244,7 @@ const EthereumSignatureParityParser: funtypes.ParsedValue<funtypes.String, 'even
 			default:
 				return {
 					success: false,
-					message: `${value} is not a supported signature parity.`,
+					message: `${ value } is not a supported signature parity.`,
 				}
 		}
 	},
@@ -260,7 +260,7 @@ const EthereumTypedTransactionVParser: funtypes.ParsedValue<funtypes.String, big
 			default:
 				return {
 					success: false,
-					message: `${value} is not a supported typed transaction v value.`,
+					message: `${ value } is not a supported typed transaction v value.`,
 				}
 		}
 	},
@@ -273,7 +273,7 @@ const EthereumTypedTransactionVParser: funtypes.ParsedValue<funtypes.String, big
 			default:
 				return {
 					success: false,
-					message: `${value} is not a supported typed transaction v value.`,
+					message: `${ value } is not a supported typed transaction v value.`,
 				}
 		}
 	},
@@ -284,13 +284,13 @@ const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'
 		if (!/^[0-9]+$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a string encoded number.`,
+				message: `${ value } is not a string encoded number.`,
 			}
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
-		return { success: true, value: `${value.toString()}` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
+		return { success: true, value: `${ value.toString() }` }
 	},
 }
 

@@ -146,7 +146,7 @@ export function FetchSimulationStack() {
 	return (
 		<main>
 			<Hint>
-				<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
+				<div class={`modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }`}>
 					{modalState.value.page === 'modifyAddress' ? (
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt={undefined}

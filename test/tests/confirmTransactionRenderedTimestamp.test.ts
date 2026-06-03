@@ -367,7 +367,7 @@ describe('ConfirmTransaction', () => {
 						)
 					}
 					default:
-						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				}
 			},
 		}

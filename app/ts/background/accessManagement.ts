@@ -239,7 +239,7 @@ async function askUserForAccessOnConnectionUpdate(
 }
 
 function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number; websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
-	const key = `${tabId}-${websiteOrigin}`
+	const key = `${ tabId }-${ websiteOrigin }`
 	if (iconRefreshTargets.has(key)) return
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
@@ -302,7 +302,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 		// check if the rules would change, if not, just bail out
-		const decralativeNetRequestBlockIdentifier = `${tabIdsToBlock.join('|')}|a|${sitesToBlock.join('|')}`
+		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
 		previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 

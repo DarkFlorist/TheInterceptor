@@ -56,12 +56,12 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			}
 		case 'EIP712': {
 			const { name: domainName } = data.message.domain
-			const name = domainName?.type === 'string' ? `${domainName.value} - ${data.message.primaryType}` : 'Arbitrary EIP712 message'
+			const name = domainName?.type === 'string' ? `${ domainName.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'
 			return {
-				title: `${name} signing request`,
-				rejectAction: `Reject ${name}`,
-				simulationAction: `Simulate ${name}`,
-				signingAction: `Sign ${name}`,
+				title: `${ name } signing request`,
+				rejectAction: `Reject ${ name }`,
+				simulationAction: `Simulate ${ name }`,
+				signingAction: `Sign ${ name }`,
 			}
 		}
 		case 'NotParsed':
@@ -74,20 +74,20 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 		case 'Permit': {
 			const symbol = data.verifyingContract
 			return {
-				title: `${symbol} Permit`,
-				signingAction: `Sign ${symbol} Permit`,
-				simulationAction: `Simulate ${symbol} Permit`,
-				rejectAction: `Reject ${symbol} Permit`,
+				title: `${ symbol } Permit`,
+				signingAction: `Sign ${ symbol } Permit`,
+				simulationAction: `Simulate ${ symbol } Permit`,
+				rejectAction: `Reject ${ symbol } Permit`,
 				to: data.spender,
 			}
 		}
 		case 'Permit2': {
 			const symbol = 'symbol' in data.token ? data.token.symbol : '???'
 			return {
-				title: `${symbol} Permit`,
-				signingAction: `Sign ${symbol} Permit`,
-				simulationAction: `Simulate ${symbol} Permit`,
-				rejectAction: `Reject ${symbol} Permit`,
+				title: `${ symbol } Permit`,
+				signingAction: `Sign ${ symbol } Permit`,
+				simulationAction: `Simulate ${ symbol } Permit`,
+				rejectAction: `Reject ${ symbol } Permit`,
 				to: data.spender,
 			}
 		}
@@ -108,7 +108,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 			<p class="card-header-title" style="white-space: nowrap;">
 				{identifySignature(params.visualizedPersonalSignRequest).title}
 			</p>
-			<p class="card-header-icon unsetcursor" style={`margin-left: auto; margin-right: 0; overflow: hidden; ${params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}`}>
+			<p class="card-header-icon unsetcursor" style={`margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : '' }`}>
 				<WebsiteOriginText website={params.visualizedPersonalSignRequest.website} />
 			</p>
 			{removeSignedMessage !== undefined ? (
@@ -244,7 +244,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 		if (entry.type === 'record[]') {
 			return (
 				<>
-					<CellElement text={`${name}: `} />
+					<CellElement text={`${ name }: `} />
 					<CellElement text={entry.value.map((value, index) => <EIP712Table key={index} enrichedEIP712Message={value} renameAddressCallBack={renameAddressCallBack} isSubTable={true} />)} />
 				</>
 			)
@@ -252,14 +252,14 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 		if (entry.type === 'record') {
 			return (
 				<>
-					<CellElement text={`${name}: `} />
+					<CellElement text={`${ name }: `} />
 					<CellElement text={<EIP712Table enrichedEIP712Message={entry.value} renameAddressCallBack={renameAddressCallBack} isSubTable={true} />} />
 				</>
 			)
 		}
 		return (
 			<>
-				<CellElement text={`${name}: `} />
+				<CellElement text={`${ name }: `} />
 				<CellElement text={<EnrichedSolidityTypeComponent valueType={entry} renameAddressCallBack={renameAddressCallBack} />} />
 			</>
 		)
@@ -301,7 +301,7 @@ function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignReque
 				text={
 					<>
 						<SomeTimeAgo priorTimestamp={bigintSecondsToDate(permit2.message.message.details.expiration)} countBackwards={true} />
-						{` (until ${humanReadableDateFromSeconds(permit2.message.message.details.expiration)})`}
+						{` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })`}
 					</>
 				}
 			/>
@@ -536,7 +536,7 @@ const HALF_HEADER_HEIGHT = 48 / 2
 
 export function SignatureCard(params: SignatureCardParams) {
 	return (
-		<div class="card" style={`top: ${params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT}px`}>
+		<div class="card" style={`top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px`}>
 			<SignatureHeader {...params} />
 			<div class="card-content" style="padding-bottom: 5px;">
 				<div class="container">

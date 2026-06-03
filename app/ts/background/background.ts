@@ -287,7 +287,7 @@ async function handleRPCRequest(
 			type: 'result' as const,
 			method: request.method,
 			error: {
-				message: `Failed to parse RPC request: ${JSON.stringify(serialize(InterceptedRequest, request))}`,
+				message: `Failed to parse RPC request: ${ JSON.stringify(serialize(InterceptedRequest, request)) }`,
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			},
 		}
@@ -571,7 +571,7 @@ function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabCon
 		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 		error: {
 			code: JSON_RPC_METHOD_NOT_FOUND,
-			message: `Method not found: ${request.method}`,
+			message: `Method not found: ${ request.method }`,
 		},
 	})
 }

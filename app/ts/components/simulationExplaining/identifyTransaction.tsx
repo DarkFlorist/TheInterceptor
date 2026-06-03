@@ -55,28 +55,28 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 			case 'ERC20':
 				return {
 					type: 'SimpleTokenApproval' as const,
-					title: `${symbol} Approval`,
-					signingAction: `Approve ${symbol}`,
-					simulationAction: `Simulate ${symbol} Approval`,
-					rejectAction: `Reject ${symbol} Approval`,
+					title: `${ symbol } Approval`,
+					signingAction: `Approve ${ symbol }`,
+					simulationAction: `Simulate ${ symbol } Approval`,
+					rejectAction: `Reject ${ symbol } Approval`,
 					identifiedTransaction: simTx,
 				}
 			case 'NFT All approval': {
 				if (tokenResult.allApprovalAdded) {
 					return {
 						type: 'SimpleTokenApproval' as const,
-						title: `${symbol} ALL Approval`,
-						signingAction: `Approve ALL ${symbol}`,
-						simulationAction: `Simulate ${symbol} ALL Approval`,
-						rejectAction: `Reject ${symbol} ALL Approval`,
+						title: `${ symbol } ALL Approval`,
+						signingAction: `Approve ALL ${ symbol }`,
+						simulationAction: `Simulate ${ symbol } ALL Approval`,
+						rejectAction: `Reject ${ symbol } ALL Approval`,
 						identifiedTransaction: simTx,
 					}
 				}
 				return {
 					type: 'SimpleTokenApproval' as const,
-					title: `Remove ${symbol} All Approval`,
-					signingAction: `Remove ALL Approval Removal for ${symbol}`,
-					simulationAction: `Simulate Removal of All Approval for ${symbol}`,
+					title: `Remove ${ symbol } All Approval`,
+					signingAction: `Remove ALL Approval Removal for ${ symbol }`,
+					simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
 					rejectAction: 'Reject All Approval Removal',
 					identifiedTransaction: simTx,
 				}
@@ -84,19 +84,19 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 			case 'ERC721':
 				return {
 					type: 'SimpleTokenApproval' as const,
-					title: `#${tokenResult.tokenId} ${symbol} Approval`,
-					signingAction: `Approve #${tokenResult.tokenId} ${symbol}`,
-					simulationAction: `Simulate #${tokenResult.tokenId} ${symbol} Approval`,
-					rejectAction: `Reject #${tokenResult.tokenId} ${symbol} Approval`,
+					title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
+					signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
+					simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
+					rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
 					identifiedTransaction: simTx,
 				}
 			case 'ERC1155':
 				return {
 					type: 'SimpleTokenApproval' as const,
-					title: `#${tokenResult.tokenId} ${symbol} Approval`,
-					signingAction: `Approve #${tokenResult.tokenId} ${symbol}`,
-					simulationAction: `Simulate #${tokenResult.tokenId} ${symbol} Approval`,
-					rejectAction: `Reject #${tokenResult.tokenId} ${symbol} Approval`,
+					title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
+					signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
+					simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
+					rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
 					identifiedTransaction: simTx,
 				}
 			default:
@@ -264,10 +264,10 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 			const symbol = tokenResult.token.symbol
 			return {
 				type: 'SimpleTokenTransfer',
-				title: `${symbol} Transfer`,
-				signingAction: `Transfer ${symbol}`,
-				simulationAction: `Simulate ${symbol} Transfer`,
-				rejectAction: `Reject ${symbol} Transfer`,
+				title: `${ symbol } Transfer`,
+				signingAction: `Transfer ${ symbol }`,
+				simulationAction: `Simulate ${ symbol } Transfer`,
+				rejectAction: `Reject ${ symbol } Transfer`,
 				identifiedTransaction: simTx,
 			}
 		}
@@ -293,16 +293,16 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 			const texts =
 				deadEnds.size > 1
 					? {
-							title: `${symbol} Transfer to many via Proxy`,
-							signingAction: `Transfer ${symbol} to many via Proxy`,
-							simulationAction: `Simulate ${symbol} Transfer to many via Proxy`,
-							rejectAction: `Reject ${symbol} Transfer via to many Proxy`,
+							title: `${ symbol } Transfer to many via Proxy`,
+							signingAction: `Transfer ${ symbol } to many via Proxy`,
+							simulationAction: `Simulate ${ symbol } Transfer to many via Proxy`,
+							rejectAction: `Reject ${ symbol } Transfer via to many Proxy`,
 						}
 					: {
-							title: `${symbol} Transfer via Proxy`,
-							signingAction: `Transfer ${symbol} via Proxy`,
-							simulationAction: `Simulate ${symbol} Transfer via Proxy`,
-							rejectAction: `Reject ${symbol} Transfer via Proxy`,
+							title: `${ symbol } Transfer via Proxy`,
+							signingAction: `Transfer ${ symbol } via Proxy`,
+							simulationAction: `Simulate ${ symbol } Transfer via Proxy`,
+							rejectAction: `Reject ${ symbol } Transfer via Proxy`,
 						}
 			return {
 				type: 'ProxyTokenTransfer',
@@ -364,8 +364,8 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 	return {
 		type: 'ArbitraryContractExecution',
 		title: explanation === undefined ? 'Contract Execution' : explanation,
-		signingAction: `Sign ${explanation}`,
-		simulationAction: `Simulate ${explanation}`,
-		rejectAction: `Reject ${explanation}`,
+		signingAction: `Sign ${ explanation }`,
+		simulationAction: `Simulate ${ explanation }`,
+		rejectAction: `Reject ${ explanation }`,
 	}
 }

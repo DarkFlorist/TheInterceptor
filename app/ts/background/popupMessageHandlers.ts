@@ -730,7 +730,7 @@ export async function setNewRpcList(resetSimulationServices: ResetSimulationServ
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
-	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${request.data.transactionIdentifier}`)
+	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
 	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
 	await sendPopupMessageToOpenWindows(
 		serialize(SimulateExecutionReply, {
@@ -760,7 +760,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 	// check for duplicates
 	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name, incompleteAddressBookEntry.chainId)
 	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
-		return `There already exists ${duplicateEntry.type} with ${'symbol' in duplicateEntry ? `the symbol "${duplicateEntry.symbol}" and` : ''} the name "${duplicateEntry.name}".`
+		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
 	}
 
 	// check that address is valid
@@ -1043,7 +1043,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		} catch (error) {
 			const address = checksummedAddress(element.address)
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-			await handleUnexpectedError(new Error(`Failed to identify rich list address ${address}: ${errorMessage}`))
+			await handleUnexpectedError(new Error(`Failed to identify rich list address ${ address }: ${ errorMessage }`))
 			return {
 				...element,
 				addressBookEntry: {
@@ -1211,7 +1211,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	if (parsedRequest.data.interceptorSimulateStack.operations.length === 0) return importSimulationStackSuccess()
 
 	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
-	console.info(`[simulation-stack import] received ${parsedRequest.data.interceptorSimulateStack.operations.length} operations (${formatEstimatedBytes(importedStackBytes)}).`)
+	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
 
 	const websiteAccess = await getWebsiteAccess()
 	const updateWebsiteDetails = (website: Website) => {
@@ -1252,19 +1252,19 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 			}
 		})
 	} catch (error) {
-		return importSimulationStackFailure(`Failed to store the imported simulation stack (${formatEstimatedBytes(importedStackBytes)}): ${getErrorMessage(error)}`)
+		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ getErrorMessage(error) }`)
 	}
 
 	const updatedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, updatedStack)
-	console.info(`[simulation-stack import] persisted transaction stack at ${formatEstimatedBytes(updatedStackBytes)}.`)
+	console.info(`[simulation-stack import] persisted transaction stack at ${ formatEstimatedBytes(updatedStackBytes) }.`)
 
 	try {
 		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
 		const popupVisualisation = await getPopupVisualisationState()
 		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
-		console.info(`[simulation-stack import] persisted popup visualisation at ${formatEstimatedBytes(popupVisualisationBytes)}.`)
+		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)
 	} catch (error) {
-		return importSimulationStackFailure(`Imported stack was stored (${formatEstimatedBytes(updatedStackBytes)}), but updating the visualized simulation failed: ${getErrorMessage(error)}`)
+		return importSimulationStackFailure(`Imported stack was stored (${ formatEstimatedBytes(updatedStackBytes) }), but updating the visualized simulation failed: ${ getErrorMessage(error) }`)
 	}
 
 	return importSimulationStackSuccess()

@@ -13,7 +13,7 @@ const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 function generateId(len: number) {
 	const arr = new Uint8Array((len || 40) / 2)
 	globalThis.crypto.getRandomValues(arr)
-	return `0x${Array.from(arr, dec2hex).join('')}`
+	return `0x${ Array.from(arr, dec2hex).join('') }`
 }
 
 export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionOrFilterId: string) {

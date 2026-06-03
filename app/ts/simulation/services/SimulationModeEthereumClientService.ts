@@ -154,7 +154,7 @@ const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | Sim
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 
 const getHashOfSimulatedBlockFromInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, blockDelta: number) => {
-	return BigInt(keccak256(stringToBytes(`${getSimulationInputHash(simulationStateInput)}:${blockDelta}`)))
+	return BigInt(keccak256(stringToBytes(`${ getSimulationInputHash(simulationStateInput) }:${ blockDelta }`)))
 }
 
 const createPreparedSimulationExecutionContext = async (
@@ -780,7 +780,7 @@ const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: 
 }
 
 export const getDeployedContractAddress = (from: EthereumAddress, nonce: EthereumQuantity): EthereumAddress => {
-	return BigInt(`0x${keccak256(rlpEncode([stripLeadingZeros(bigintToUint8Array(from, 20)), stripLeadingZeros(bigintToUint8Array(nonce, 32))])).slice(26)}`)
+	return BigInt(`0x${ keccak256(rlpEncode([stripLeadingZeros(bigintToUint8Array(from, 20)), stripLeadingZeros(bigintToUint8Array(nonce, 32))])).slice(26) }`)
 }
 
 export const getSimulatedTransactionReceipt = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState, hash: bigint): Promise<EthTransactionReceiptResponse> => {
@@ -1349,7 +1349,7 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	const toBlock = 'toBlock' in logFilter && logFilter.toBlock !== undefined ? logFilter.toBlock : 'latest'
 	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter, requestAbortController)
-	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock)) throw new Error(`From block '${fromBlock}' is later than to block '${toBlock}' `)
+	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock)) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
 
 	if (toBlock === 'finalized' || fromBlock === 'finalized') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	const simulatedHead = currentState.blockNumber + BigInt(executionBlocks.length)
@@ -1536,7 +1536,7 @@ type BalanceQuery =
 
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInputMinimalData, balanceQueries: BalanceQuery[]): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
-	const deduplicatedBalanceQueries = deduplicateByFunction(balanceQueries, (query: BalanceQuery) => `${query.type}-${query.token}-${query.owner}${query.type === 'ERC1155' ? `${query.tokenId}` : ''}`)
+	const deduplicatedBalanceQueries = deduplicateByFunction(balanceQueries, (query: BalanceQuery) => `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : '' }`)
 	const tokenAndEthBalancesInputData = stringToUint8Array(
 		encodeFunctionCall(Multicall3ABI, 'aggregate3', [
 			deduplicatedBalanceQueries.map((balanceQuery) => {
@@ -1639,7 +1639,7 @@ const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { t
 				break
 			}
 			default:
-				throw new Error(`wrong name: ${parsed.name}`)
+				throw new Error(`wrong name: ${ parsed.name }`)
 		}
 	}
 	return tokenOwners
@@ -1690,7 +1690,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 				break
 			}
 			default:
-				throw new Error(`wrong name: ${parsed.name}`)
+				throw new Error(`wrong name: ${ parsed.name }`)
 		}
 	}
 	return tokenOwners

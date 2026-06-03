@@ -93,24 +93,24 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	silenceChromeUnCaughtPromise(blockingWebsitePromise)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => ((await blockingWebsitePromise) && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon)
-	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), (await blockingWebsitePromise) ? `${iconReason} The Interceptor is blocking external requests made by the website.` : iconReason)
+	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), (await blockingWebsitePromise) ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)
 
 	const settings = await getSettings()
-	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${websiteOrigin} by user request.`)
+	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 	const activeAddress = await getActiveAddress(settings, tabId)
 	if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
-	if (addressAccess === 'notFound') return setIcon(ICON_NOT_ACTIVE, `${websiteOrigin} has PENDING access request for ${activeAddress.name}!`)
+	if (addressAccess === 'notFound') return setIcon(ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
 	if (addressAccess !== 'hasAccess') {
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
-			return setIcon(ICON_ACCESS_DENIED, `The access for ${websiteOrigin} has been DENIED!`)
+			return setIcon(ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setIcon(ICON_ACCESS_DENIED, `The access to ${activeAddress.name} for ${websiteOrigin} has been DENIED!`)
+		return setIcon(ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
 	if (settings.activeRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, `The Interceptor is disabled while it's on an unsupported network`)
 	const tabState = await getTabState(tabId)
-	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${getPrettySignerName(tabState.signerName)} once sent.`)
+	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }
 
 export async function updateExtensionBadge() {
@@ -128,7 +128,7 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	try {
 		loadedTab = await waitForLoadedTab(tabId)
 	} catch (error) {
-		console.warn(`Failed to load tab ${tabId} before reading website details`, error)
+		console.warn(`Failed to load tab ${ tabId } before reading website details`, error)
 		return { title: undefined, icon: undefined }
 	}
 
@@ -152,7 +152,7 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	const tab = await safeGetTab(tabId)
 	const pageUrl = tab?.url ?? 'unknown'
 	const failToLoadFavicon = (reason: string) => {
-		console.warn(`Failed to load favicon for tab ${tabId} (${pageUrl}): ${reason}`)
+		console.warn(`Failed to load favicon for tab ${ tabId } (${ pageUrl }): ${ reason }`)
 		return { title: tab?.title, icon: undefined }
 	}
 	const faviconUrl = tab?.favIconUrl
@@ -162,12 +162,12 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	try {
 		parsedFaviconUrl = tab?.url === undefined ? new URL(faviconUrl) : new URL(faviconUrl, tab.url)
 	} catch (error) {
-		const reason = error instanceof Error ? `${error.message}: ${faviconUrl}` : `invalid favicon URL ${faviconUrl}`
+		const reason = error instanceof Error ? `${ error.message }: ${ faviconUrl }` : `invalid favicon URL ${ faviconUrl }`
 		return failToLoadFavicon(reason)
 	}
 
 	if (!ALLOWED_FAVICON_PROTOCOLS.has(parsedFaviconUrl.protocol)) {
-		return failToLoadFavicon(`unsupported URL scheme ${parsedFaviconUrl.protocol}`)
+		return failToLoadFavicon(`unsupported URL scheme ${ parsedFaviconUrl.protocol }`)
 	}
 	if (parsedFaviconUrl.protocol === 'data:') {
 		const icon = sanitizeStoredWebsiteIcon(parsedFaviconUrl.toString())
@@ -180,7 +180,7 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	if (tab?.url === undefined) return failToLoadFavicon('page URL was unavailable for favicon validation')
 	const pageOrigin = new URL(tab.url).origin
 	if (parsedFaviconUrl.origin !== pageOrigin) {
-		return failToLoadFavicon(`favicon origin ${parsedFaviconUrl.origin} did not match page origin ${pageOrigin}`)
+		return failToLoadFavicon(`favicon origin ${ parsedFaviconUrl.origin } did not match page origin ${ pageOrigin }`)
 	}
 	const faviconResult = await imageToUri(parsedFaviconUrl.toString())
 	if (faviconResult.failureReason !== undefined || faviconResult.data === undefined) return failToLoadFavicon(faviconResult.failureReason ?? 'favicon conversion failed')

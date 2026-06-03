@@ -27,7 +27,7 @@ type ConfigureRpcContext = {
 const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undefined)
 
 const throwImprovedError = (error: Error, url: string) => {
-	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${url}?`)
+	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
 	if (error.message.startsWith('Failed to fetch')) throw new Error('Failed to connect to the RPC.')
 	throw error
 }
@@ -89,7 +89,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 
 			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error: unknown) {
-			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${error.message}"). The Interceptor requires this feature to function.`)
+			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
 			if (error instanceof Error) return throwImprovedError(error, url)
 			console.warn('RPC eth_simulateV1 validation error', error)
 			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
@@ -129,7 +129,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 		})
 
 		if (activeRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
-		console.warn(`Automatically switched to recently added or modified RPC (${rpcEntry.httpsRpc})`)
+		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_changeActiveRpc',
 			data: rpcEntry,
@@ -225,7 +225,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 		const isBlockExplorerDefined = blockExplorerUrlForm !== undefined && blockExplorerApiKeyForm !== undefined && blockExplorerUrlForm.length > 0 && blockExplorerApiKeyForm.length > 0
 		const newRpcEntry = {
 			name: formData.get('name')?.toString().trim() || '',
-			chainId: chainIdFromForm ? `0x${BigInt(chainIdFromForm).toString(16)}` : '',
+			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
 			httpsRpc: formData.get('httpsRpc')?.toString().trim() || '',
 			currencyName: formData.get('currencyName')?.toString().trim() || '',
 			currencyTicker: formData.get('currencyTicker')?.toString().trim() || '',

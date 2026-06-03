@@ -10,11 +10,11 @@ import { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from './services/Simu
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
-	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${checksummedAddress(governanceContract.address)} to be able to proceed :()`)
+	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 
 	for (const functionName of requiredFunctions) {
-		if (!hasFunctionLoose(governanceContract.abi, functionName)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${functionName}\`).`)
+		if (!hasFunctionLoose(governanceContract.abi, functionName)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${ functionName }\`).`)
 	}
 
 	const txBase = {

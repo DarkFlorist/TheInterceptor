@@ -15,7 +15,7 @@ export function RpcSelector(params: RpcSelectorParams) {
 	const selected = useComputed(() => params.rpcNetwork.value?.name || 'No RPC Selected')
 	const onChangedCallBack = (rpcName: string) => {
 		const newEntry = params.rpcEntries.value.find((rpcEntry) => rpcEntry.name === rpcName)
-		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${rpcName}`)
+		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${ rpcName }`)
 		params.changeRpc(newEntry)
 	}
 	return <DropDownMenu selected={selected} dropDownOptions={options} onChangedCallBack={onChangedCallBack} buttonClassses="btn btn--outline is-small" />
@@ -34,7 +34,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 	const selected = useComputed(() => chains.value.find((chainEntry) => chainEntry.chainId === params.chainId.value)?.name || 'No Chain Selected')
 	const onChangedCallBack = (rpcName: string) => {
 		const newEntry = params.rpcEntries.value.find((rpcEntry) => rpcEntry.name === rpcName)
-		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${rpcName}`)
+		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ rpcName }`)
 		params.changeChain(newEntry)
 	}
 	return <DropDownMenu selected={selected} dropDownOptions={options} onChangedCallBack={onChangedCallBack} buttonClassses={params.buttonClassses} />

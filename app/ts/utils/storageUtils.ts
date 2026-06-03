@@ -149,7 +149,7 @@ export async function browserStorageLocalSet(items: LocalStorageItems) {
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }
 
-const getTabStateKey = (tabId: number): `tabState_${number}` => `tabState_${tabId}`
+const getTabStateKey = (tabId: number): `tabState_${number}` => `tabState_${ tabId }`
 
 type TabStateItems = funtypes.Static<typeof TabStateItems>
 export const TabStateItems = funtypes.Record(funtypes.String, TabState)

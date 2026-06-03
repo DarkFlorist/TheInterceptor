@@ -9,12 +9,12 @@ function listenContentScript(connectionName: string | undefined) {
 		readonly requestId?: number
 		readonly requestMethod?: string
 	}
-	const stringifyForwardedFallbackError = (error: unknown) => (error instanceof Error ? `${error.name}: ${error.message}` : `Unexpected thrown value: ${String(error)}`)
+	const stringifyForwardedFallbackError = (error: unknown) => (error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`)
 	const stringifyForwardedFallbackValue = (value: unknown) => {
 		try {
 			return String(value)
 		} catch (error: unknown) {
-			return `[failed to stringify value: ${stringifyForwardedFallbackError(error)}]`
+			return `[failed to stringify value: ${ stringifyForwardedFallbackError(error) }]`
 		}
 	}
 
@@ -29,7 +29,7 @@ function listenContentScript(connectionName: string | undefined) {
 	function generateId(len: number) {
 		const arr = new Uint8Array((len || 40) / 2)
 		globalThis.crypto.getRandomValues(arr)
-		return `0x${Array.from(arr, dec2hex).join('')}`
+		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
 	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
 	let pageHidden = false
@@ -67,14 +67,14 @@ function listenContentScript(connectionName: string | undefined) {
 		return true
 	}
 	const stringifyForwardedThrownValue = (value: unknown) => {
-		if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`
+		if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
 		if (typeof value === 'bigint') return value.toString()
 		try {
 			const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue))
 			if (stringified !== undefined) return stringified
 		} catch (error: unknown) {
 			const fallbackValue = stringifyForwardedFallbackValue(value)
-			return `${fallbackValue}\n\n[serialization fallback: ${stringifyForwardedFallbackError(error)}]`
+			return `${ fallbackValue }\n\n[serialization fallback: ${ stringifyForwardedFallbackError(error) }]`
 		}
 		return stringifyForwardedFallbackValue(value)
 	}
@@ -98,7 +98,7 @@ function listenContentScript(connectionName: string | undefined) {
 		}
 	}
 	const formatForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => {
-		return [`${source}: ${summary}`, `phase: ${phase}`, ...(context.requestMethod !== undefined ? [`requestMethod: ${context.requestMethod}`] : []), ...(context.requestId !== undefined ? [`requestId: ${context.requestId}`] : []), `thrown:\n${stringifyForwardedThrownValue(thrown)}`].join('\n\n')
+		return [`${ source }: ${ summary }`, `phase: ${ phase }`, ...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []), ...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []), `thrown:\n${ stringifyForwardedThrownValue(thrown) }`].join('\n\n')
 	}
 	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script' | 'document-start', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, message, raw, context)

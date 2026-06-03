@@ -70,7 +70,7 @@ async function waitForCondition(condition: () => Promise<boolean> | boolean, tim
 	const start = Date.now()
 	while (true) {
 		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${label} after ${timeoutMs}ms`)
+		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
 		await sleep(50)
 	}
 }
@@ -97,20 +97,20 @@ export class CdpConnection {
 				this.socket = socket
 				socket.onmessage = (event) => this.handleMessage(event)
 				socket.onerror = () => {
-					reject(new Error(`Failed to connect to CDP websocket ${this.url}`))
+					reject(new Error(`Failed to connect to CDP websocket ${ this.url }`))
 				}
 				socket.onclose = () => {
 					const pending = this.pending
 					this.pending = new Map()
 					for (const { reject: rejectPending } of pending.values()) {
-						rejectPending(new Error(`CDP websocket closed for ${this.url}`))
+						rejectPending(new Error(`CDP websocket closed for ${ this.url }`))
 					}
 					this.socket = undefined
 				}
 				resolve()
 			}
 			socket.onerror = () => {
-				reject(new Error(`Failed to open CDP websocket ${this.url}`))
+				reject(new Error(`Failed to open CDP websocket ${ this.url }`))
 			}
 		})
 	}
@@ -129,7 +129,7 @@ export class CdpConnection {
 			if (pending === undefined) return
 			this.pending.delete(message.id)
 			if (message.error !== undefined) {
-				pending.reject(new Error(message.error.message ?? `CDP call failed with code ${message.error.code ?? 'unknown'}`))
+				pending.reject(new Error(message.error.message ?? `CDP call failed with code ${ message.error.code ?? 'unknown' }`))
 				return
 			}
 			pending.resolve(message.result)
@@ -144,7 +144,7 @@ export class CdpConnection {
 	public async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
 		await this.connect()
 		const socket = this.socket
-		if (socket === undefined) throw new Error(`CDP websocket ${this.url} is not connected`)
+		if (socket === undefined) throw new Error(`CDP websocket ${ this.url } is not connected`)
 		const id = this.nextId
 		this.nextId += 1
 		const promise = new Promise<T>((resolve, reject) => {
@@ -201,8 +201,8 @@ export class CdpConnection {
 }
 
 async function readTargets(browserDebugPort: number) {
-	const response = await fetch(`http://127.0.0.1:${browserDebugPort}/json/list`)
-	if (!response.ok) throw new Error(`Failed to query Chrome targets on port ${browserDebugPort}: ${response.status} ${response.statusText}`)
+	const response = await fetch(`http://127.0.0.1:${ browserDebugPort }/json/list`)
+	if (!response.ok) throw new Error(`Failed to query Chrome targets on port ${ browserDebugPort }: ${ response.status } ${ response.statusText }`)
 	const parsed = (await response.json()) as readonly (TargetInfo & {
 		targetId?: string
 	})[]
@@ -210,8 +210,8 @@ async function readTargets(browserDebugPort: number) {
 }
 
 async function readVersion(browserDebugPort: number) {
-	const response = await fetch(`http://127.0.0.1:${browserDebugPort}/json/version`)
-	if (!response.ok) throw new Error(`Failed to query Chrome version on port ${browserDebugPort}: ${response.status} ${response.statusText}`)
+	const response = await fetch(`http://127.0.0.1:${ browserDebugPort }/json/version`)
+	if (!response.ok) throw new Error(`Failed to query Chrome version on port ${ browserDebugPort }: ${ response.status } ${ response.statusText }`)
 	return (await response.json()) as { webSocketDebuggerUrl?: string }
 }
 
@@ -219,7 +219,7 @@ async function waitForTarget(browserDebugPort: number, predicate: (target: Targe
 	await waitForCondition(async () => (await readTargets(browserDebugPort)).some(predicate), timeoutMs, label)
 	const targets = await readTargets(browserDebugPort)
 	const target = targets.find(predicate)
-	if (target === undefined) throw new Error(`Target not found: ${label}`)
+	if (target === undefined) throw new Error(`Target not found: ${ label }`)
 	return target
 }
 
@@ -240,7 +240,7 @@ async function waitForDevToolsActivePort(profileDir: string, timeoutMs: number) 
 	const contents = await readFile(portFile, 'utf8')
 	const [portLine] = contents.trim().split('\n')
 	const browserDebugPort = Number(portLine)
-	if (!Number.isFinite(browserDebugPort)) throw new Error(`Chrome wrote an invalid remote debugging port: ${portLine}`)
+	if (!Number.isFinite(browserDebugPort)) throw new Error(`Chrome wrote an invalid remote debugging port: ${ portLine }`)
 	return browserDebugPort
 }
 
@@ -260,7 +260,7 @@ export async function findChromeBinary() {
 
 function buildChromeArgs(profileDir: string, extensionDir: string) {
 	return [
-		`--user-data-dir=${profileDir}`,
+		`--user-data-dir=${ profileDir }`,
 		'--remote-debugging-port=0',
 		'--no-first-run',
 		'--no-default-browser-check',
@@ -283,8 +283,8 @@ function buildChromeArgs(profileDir: string, extensionDir: string) {
 		'--no-sandbox',
 		'--password-store=basic',
 		'--use-mock-keychain',
-		`--disable-extensions-except=${extensionDir}`,
-		`--load-extension=${extensionDir}`,
+		`--disable-extensions-except=${ extensionDir }`,
+		`--load-extension=${ extensionDir }`,
 		'about:blank',
 	]
 }
@@ -319,8 +319,8 @@ function killChromeProcessGroup(chromeProcess: ReturnType<typeof spawnChrome>, s
 }
 
 export async function connectTarget(browserDebugPort: number, targetId: string) {
-	const target = await waitForTarget(browserDebugPort, (item) => item.id === targetId, 15_000, `target ${targetId}`)
-	if (target.webSocketDebuggerUrl === undefined) throw new Error(`Target ${targetId} does not expose a websocket debugger URL`)
+	const target = await waitForTarget(browserDebugPort, (item) => item.id === targetId, 15_000, `target ${ targetId }`)
+	if (target.webSocketDebuggerUrl === undefined) throw new Error(`Target ${ targetId } does not expose a websocket debugger URL`)
 	const connection = new CdpConnection(target.webSocketDebuggerUrl)
 	await connection.connect()
 	return connection
@@ -331,15 +331,15 @@ export async function waitForAnyExtensionServiceWorker(browserDebugPort: number,
 }
 
 export async function waitForTargetByUrl(browserDebugPort: number, urlPrefix: string, timeoutMs = 15_000) {
-	return await waitForTarget(browserDebugPort, (target) => target.url.startsWith(urlPrefix), timeoutMs, `target url ${urlPrefix}`)
+	return await waitForTarget(browserDebugPort, (target) => target.url.startsWith(urlPrefix), timeoutMs, `target url ${ urlPrefix }`)
 }
 
 export async function waitForServiceWorker(browserDebugPort: number, extensionId: string, timeoutMs = 15_000) {
-	return await waitForTarget(browserDebugPort, (target) => target.type === 'service_worker' && target.url.startsWith(`chrome-extension://${extensionId}/`), timeoutMs, `service worker for extension ${extensionId}`)
+	return await waitForTarget(browserDebugPort, (target) => target.type === 'service_worker' && target.url.startsWith(`chrome-extension://${ extensionId }/`), timeoutMs, `service worker for extension ${ extensionId }`)
 }
 
 export async function waitForPopupTarget(browserDebugPort: number, extensionId: string, timeoutMs = 15_000) {
-	return await waitForTarget(browserDebugPort, (target) => target.url.startsWith(`chrome-extension://${extensionId}/html3/popupV3.html`), timeoutMs, `popup target for extension ${extensionId}`)
+	return await waitForTarget(browserDebugPort, (target) => target.url.startsWith(`chrome-extension://${ extensionId }/html3/popupV3.html`), timeoutMs, `popup target for extension ${ extensionId }`)
 }
 
 export async function getExtensionIdFromTargets(browserDebugPort: number) {
@@ -409,7 +409,7 @@ export async function waitForPerformanceMark(connection: CdpConnection, markName
 			return snapshot.marks.some((mark) => mark.name === markName)
 		},
 		timeoutMs,
-		`performance mark ${markName}`,
+		`performance mark ${ markName }`,
 	)
 }
 
@@ -422,7 +422,7 @@ export async function waitForPerformanceMarks(connection: CdpConnection, markNam
 			return missing.size === 0
 		},
 		timeoutMs,
-		`performance marks ${markNames.join(', ')}`,
+		`performance marks ${ markNames.join(', ') }`,
 	)
 }
 
@@ -435,13 +435,13 @@ export async function waitForRegisteredContentScripts(connection: CdpConnection,
 			return expectedIds.every((expectedId) => scripts.some((script) => script.id === expectedId))
 		},
 		timeoutMs,
-		`registered content scripts ${expectedIds.join(', ')}`,
+		`registered content scripts ${ expectedIds.join(', ') }`,
 	)
 }
 
 export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation'): Promise<T | undefined> {
 	return await connection.evaluate<T | undefined>(`(async () => {
-		const key = ${JSON.stringify(key)}
+		const key = ${ JSON.stringify(key) }
 		if (typeof indexedDB !== 'undefined') {
 			const indexedDbValue = await new Promise((resolve, reject) => {
 				const request = indexedDB.open('interceptorLargeState', 1)
@@ -498,18 +498,18 @@ export function makeLaunchDelta(launchEpochMs: number, snapshot: PerformanceMark
 }
 
 export function makePopupUrl(extensionId: string) {
-	return `chrome-extension://${extensionId}/html3/popupV3.html`
+	return `chrome-extension://${ extensionId }/html3/popupV3.html`
 }
 
 export function makeBackgroundWorkerUrl(extensionId: string) {
-	return `chrome-extension://${extensionId}/js/backgroundServiceWorker.js`
+	return `chrome-extension://${ extensionId }/js/backgroundServiceWorker.js`
 }
 
 export async function ensureExtensionDirReady(extensionDir = EXTENSION_DIR) {
 	try {
 		await access(path.join(extensionDir, 'manifest.json'), fsConstants.constants.R_OK)
 	} catch {
-		throw new Error(`Missing ${path.join(extensionDir, 'manifest.json')}. Run \`bun run setup-chrome\` before the Chrome benchmark.`)
+		throw new Error(`Missing ${ path.join(extensionDir, 'manifest.json') }. Run \`bun run setup-chrome\` before the Chrome benchmark.`)
 	}
 }
 
@@ -541,7 +541,7 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise
 	let stderr = ''
 	const capture = (chunk: Buffer, buffer: string) => {
 		const text = chunk.toString('utf8')
-		const combined = `${buffer}${text}`
+		const combined = `${ buffer }${ text }`
 		return combined.length > 8_192 ? combined.slice(-8_192) : combined
 	}
 	process.stdout.on('data', (chunk: Buffer) => {
@@ -555,8 +555,8 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise
 		await sleep(1_000)
 		if (process.exitCode === null && process.signalCode === null) killChromeProcessGroup(process, 'SIGKILL')
 		await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
-		const extra = [`stdout:\n${stdout}`, `stderr:\n${stderr}`].filter((line) => line.length > 0).join('\n')
-		throw new Error(`${error instanceof Error ? error.message : String(error)}${extra.length > 0 ? `\n${extra}` : ''}`)
+		const extra = [`stdout:\n${ stdout }`, `stderr:\n${ stderr }`].filter((line) => line.length > 0).join('\n')
+		throw new Error(`${ error instanceof Error ? error.message : String(error) }${ extra.length > 0 ? `\n${ extra }` : '' }`)
 	})
 	const browserVersion = await readVersion(browserDebugPort)
 	if (browserVersion.webSocketDebuggerUrl === undefined) throw new Error('Chrome did not expose a browser websocket debugger URL')

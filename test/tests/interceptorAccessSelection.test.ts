@@ -6,9 +6,9 @@ import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 function createPendingAccessRequest(accessRequestId: string, signerAccount: bigint): PendingAccessRequest {
 	return {
 		website: {
-			websiteOrigin: `https://${accessRequestId}.example`,
+			websiteOrigin: `https://${ accessRequestId }.example`,
 			icon: undefined,
-			title: `Website ${accessRequestId}`,
+			title: `Website ${ accessRequestId }`,
 		},
 		requestAccessToAddress: undefined,
 		originalRequestAccessToAddress: undefined,

@@ -278,7 +278,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 				},
 				async jsonRpcRequest(rpcRequest: { method: string }) {
 					if (rpcRequest.method === 'eth_blockNumber') return '0x7b'
-					throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+					throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				},
 			},
 			async () => undefined,

@@ -49,7 +49,7 @@ const hasComponents = (
 } => 'components' in parameter
 
 const toHex = (value: Hex | Uint8Array): Hex => (value instanceof Uint8Array ? bytesToHex(value) : value)
-const sliceHex = (value: Hex, start: number): Hex => (value.length <= start ? '0x' : `0x${value.slice(start)}`)
+const sliceHex = (value: Hex, start: number): Hex => (value.length <= start ? '0x' : `0x${ value.slice(start) }`)
 const functionSelectorFromData = (data: Hex) => data.slice(0, 10)
 
 const normalizeAbiArray = (abiEntries: readonly unknown[]): Abi => {
@@ -71,7 +71,7 @@ const normalizeAbiParametersInput = (params: readonly AbiParameterLike[]): reado
 			continue
 		}
 		const parsed = parseAbiParameters(param)
-		if (parsed.length !== 1) throw new Error(`Expected a single ABI parameter, got ${parsed.length}`)
+		if (parsed.length !== 1) throw new Error(`Expected a single ABI parameter, got ${ parsed.length }`)
 		const [first] = parsed
 		if (first === undefined) throw new Error('Failed to parse ABI parameter')
 		normalized.push(first)
@@ -136,7 +136,7 @@ const decodeValues = (params: readonly AbiParameter[], data: Hex): readonly unkn
 const decodeFunctionOutputValuesLoose = (abiLike: AbiLike, functionName: string, data: Hex | Uint8Array) => {
 	const abi = normalizeAbi(abiLike)
 	const fragment = getFunctionFragmentInternal(abi, functionName)
-	if (fragment === undefined) throw new Error(`Unknown function ${functionName}`)
+	if (fragment === undefined) throw new Error(`Unknown function ${ functionName }`)
 	const decoded = decodeValues(fragment.outputs, toHex(data))
 	if (fragment.outputs.length === 1) return [decoded[0]]
 	return decoded
@@ -144,21 +144,21 @@ const decodeFunctionOutputValuesLoose = (abiLike: AbiLike, functionName: string,
 
 const encodeFunctionCallUnchecked = (abi: Abi, functionName: string, args: readonly unknown[] = []): Hex => {
 	const fragment = getFunctionFragmentInternal(abi, functionName, args.length)
-	if (fragment === undefined) throw new Error(`Unknown function ${functionName}`)
+	if (fragment === undefined) throw new Error(`Unknown function ${ functionName }`)
 	const encodedArgs = encodeAbiParameters(fragment.inputs, encodeValuesForParameters(fragment.inputs, args))
 	return concat([toFunctionSelector(formatAbiItem(fragment)), encodedArgs])
 }
 
 const encodeFunctionReturnUnchecked = (abi: Abi, functionName: string, values: readonly unknown[]): Hex => {
 	const fragment = getFunctionFragmentInternal(abi, functionName)
-	if (fragment === undefined) throw new Error(`Unknown function ${functionName}`)
+	if (fragment === undefined) throw new Error(`Unknown function ${ functionName }`)
 	const normalizedValues = fragment.outputs.length === 1 && values.length === 1 ? [values[0]] : values
 	return encodeAbiParameters(fragment.outputs, encodeValuesForParameters(fragment.outputs, normalizedValues))
 }
 
 const decodeFunctionOutputUnchecked = (abi: Abi, functionName: string, data: Hex | Uint8Array) => {
 	const fragment = getFunctionFragmentInternal(abi, functionName)
-	if (fragment === undefined) throw new Error(`Unknown function ${functionName}`)
+	if (fragment === undefined) throw new Error(`Unknown function ${ functionName }`)
 	const decoded = decodeValues(fragment.outputs, toHex(data))
 	return fragment.outputs.length === 1 ? decoded[0] : decoded
 }
@@ -238,7 +238,7 @@ export const decodeFunctionOutputLoose = (abiLike: AbiLike, functionName: string
 export const decodeFunctionOutputObjectLoose = (abiLike: AbiLike, functionName: string, data: Hex | Uint8Array) => {
 	const abi = normalizeAbi(abiLike)
 	const fragment = getFunctionFragmentInternal(abi, functionName)
-	if (fragment === undefined) throw new Error(`Unknown function ${functionName}`)
+	if (fragment === undefined) throw new Error(`Unknown function ${ functionName }`)
 	const values = decodeFunctionOutputValuesLoose(abi, functionName, data)
 	return toNamedArgs(fragment.outputs, values)
 }

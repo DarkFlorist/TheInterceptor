@@ -147,12 +147,12 @@ export function parseSolidityValueByTypePure(type: SolidityType, value: unknown,
 		switch (categorized) {
 			case 'address':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes.ReadonlyArray(EthereumAddress).parse(value),
 				}
 			case 'bool':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes
 						.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Boolean))
 						.parse(value)
@@ -160,17 +160,17 @@ export function parseSolidityValueByTypePure(type: SolidityType, value: unknown,
 				}
 			case 'bytes':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes.ReadonlyArray(EthereumData).parse(value),
 				}
 			case 'fixedBytes':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes.ReadonlyArray(EthereumData).parse(value),
 				}
 			case 'signedInteger':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes
 						.ReadonlyArray(SignedIntegerType)
 						.parse(value)
@@ -178,7 +178,7 @@ export function parseSolidityValueByTypePure(type: SolidityType, value: unknown,
 				}
 			case 'unsignedInteger':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes
 						.ReadonlyArray(UnsignedIntegerType)
 						.parse(value)
@@ -186,7 +186,7 @@ export function parseSolidityValueByTypePure(type: SolidityType, value: unknown,
 				}
 			case 'string':
 				return {
-					type: `${categorized}[]`,
+					type: `${ categorized }[]`,
 					value: funtypes.ReadonlyArray(funtypes.String).parse(value),
 				}
 			default:

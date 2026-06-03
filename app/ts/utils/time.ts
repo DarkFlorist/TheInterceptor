@@ -2,5 +2,5 @@ export function getCurrentTimestampString(currentDate: Date = new Date()): strin
 	const hours = currentDate.getHours().toString().padStart(2, '0')
 	const minutes = currentDate.getMinutes().toString().padStart(2, '0')
 	const seconds = currentDate.getSeconds().toString().padStart(2, '0')
-	return `[${hours}:${minutes}:${seconds}]`
+	return `[${ hours }:${ minutes }:${ seconds }]`
 }

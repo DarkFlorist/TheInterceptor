@@ -46,7 +46,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		if (param.editEnsNamedHashWindowState.type === 'labelHash') {
 			const hash = BigInt(keccak256(stringToBytes(nameInput)))
 			if (hash !== param.editEnsNamedHashWindowState.nameHash) {
-				errorString.value = `The label corresponds to a hash: ${bytes32String(hash)} which doesn't match!`
+				errorString.value = `The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`
 				return
 			}
 			errorString.value = 'Correct label found!'
@@ -57,7 +57,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 			}
 			const hash = BigInt(namehash(nameInput))
 			if (hash !== param.editEnsNamedHashWindowState.nameHash) {
-				errorString.value = `The name corresponds to a hash: ${bytes32String(hash)} which doesn't match!`
+				errorString.value = `The name corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`
 				return
 			}
 			errorString.value = 'Correct name found!'

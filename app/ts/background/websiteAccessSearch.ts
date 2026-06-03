@@ -8,9 +8,9 @@ type SearchMatch = {
 }
 
 const createSearchPattern = (searchString: string) => {
-	const unicodeEscapeString = (stringToEscape: string) => `\\u{${stringToEscape.charCodeAt(0).toString(16)}}`
+	const unicodeEscapeString = (stringToEscape: string) => `\\u{${ stringToEscape.charCodeAt(0).toString(16) }}`
 	const segments = searchString.trim().split('')
-	return segments.length ? new RegExp(`(?=(${segments.map(unicodeEscapeString).join('.*?')}))`, 'ui') : undefined
+	return segments.length ? new RegExp(`(?=(${ segments.map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
 }
 
 function computeSearchMatch(searchQuery: string, searchAgainst: string): SearchMatch | undefined {

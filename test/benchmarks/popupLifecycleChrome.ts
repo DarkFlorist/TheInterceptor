@@ -113,38 +113,38 @@ function stats(values: readonly (number | undefined)[]): Stats | undefined {
 }
 
 function formatStats(label: string, result: Stats | undefined) {
-	if (result === undefined) return `${label}: n/a`
-	return `${label}: avg ${roundToTwoDecimals(result.averageMs)} ms, median ${roundToTwoDecimals(result.medianMs)} ms, min/max ${roundToTwoDecimals(result.minMs)} / ${roundToTwoDecimals(result.maxMs)} ms`
+	if (result === undefined) return `${ label }: n/a`
+	return `${ label }: avg ${ roundToTwoDecimals(result.averageMs) } ms, median ${ roundToTwoDecimals(result.medianMs) } ms, min/max ${ roundToTwoDecimals(result.minMs) } / ${ roundToTwoDecimals(result.maxMs) } ms`
 }
 
 function printStatsGroup(title: string, entries: readonly (readonly [string, Stats | undefined])[]) {
 	console.warn(title)
 	for (const [label, result] of entries) {
-		console.warn(formatStats(`    ${label}`, result))
+		console.warn(formatStats(`    ${ label }`, result))
 	}
 }
 
 function requireStats(result: Stats | undefined, label: string) {
-	if (result === undefined) throw new Error(`Missing ${label} statistics`)
+	if (result === undefined) throw new Error(`Missing ${ label } statistics`)
 	return result
 }
 
 function requireRpcMethodStats(result: RpcMethodStats | undefined, label: string) {
-	if (result === undefined) throw new Error(`Missing ${label} rpc statistics`)
+	if (result === undefined) throw new Error(`Missing ${ label } rpc statistics`)
 	return result
 }
 
 function extractExtensionId(url: string) {
 	const match = /^chrome-extension:\/\/([^/]+)/.exec(url)
-	if (match?.[1] === undefined) throw new Error(`Could not determine extension id from ${url}`)
+	if (match?.[1] === undefined) throw new Error(`Could not determine extension id from ${ url }`)
 	return match[1]
 }
 
 function requiredTiming(launchEpochMs: number, snapshot: PerformanceMarkSnapshot, markName: string) {
 	const absolute = absoluteTime(snapshot, markName)
-	if (absolute === undefined) throw new Error(`Missing performance mark: ${markName}`)
+	if (absolute === undefined) throw new Error(`Missing performance mark: ${ markName }`)
 	const delta = absolute - launchEpochMs
-	if (delta < -50) throw new Error(`Performance mark ${markName} was stale for the measured popup open`)
+	if (delta < -50) throw new Error(`Performance mark ${ markName } was stale for the measured popup open`)
 	return delta
 }
 
@@ -180,8 +180,8 @@ function stackedSampleTiming(samples: readonly Sample[], selector: (sample: Samp
 }
 
 function formatRpcMethodStats(label: string, result: RpcMethodStats | undefined) {
-	if (result === undefined) return `${label}: n/a`
-	return `${label}: ${result.count} call${result.count === 1 ? '' : 's'}, avg ${roundToTwoDecimals(result.averageMs)} ms, median ${roundToTwoDecimals(result.medianMs)} ms, min/max ${roundToTwoDecimals(result.minMs)} / ${roundToTwoDecimals(result.maxMs)} ms`
+	if (result === undefined) return `${ label }: n/a`
+	return `${ label }: ${ result.count } call${ result.count === 1 ? '' : 's' }, avg ${ roundToTwoDecimals(result.averageMs) } ms, median ${ roundToTwoDecimals(result.medianMs) } ms, min/max ${ roundToTwoDecimals(result.minMs) } / ${ roundToTwoDecimals(result.maxMs) } ms`
 }
 
 function aggregateRpcRequests(rpcRequests: readonly BenchmarkRpcRequestSample[]) {
@@ -195,7 +195,7 @@ function aggregateRpcRequests(rpcRequests: readonly BenchmarkRpcRequestSample[])
 	}
 	const methods = [...grouped.entries()].map(([method, durations]) => {
 		const result = stats(durations)
-		if (result === undefined) throw new Error(`Missing rpc method durations for ${method}`)
+		if (result === undefined) throw new Error(`Missing rpc method durations for ${ method }`)
 		return {
 			method,
 			count: durations.length,
@@ -210,12 +210,12 @@ function aggregateRpcRequests(rpcRequests: readonly BenchmarkRpcRequestSample[])
 }
 
 function rpcRequestCollectorExpression() {
-	return `(() => globalThis[${JSON.stringify(BENCHMARK_RPC_REQUESTS_GLOBAL)}] ?? [])()`
+	return `(() => globalThis[${ JSON.stringify(BENCHMARK_RPC_REQUESTS_GLOBAL) }] ?? [])()`
 }
 
 function rpcRequestCollectorResetExpression() {
 	return `(() => {
-		globalThis[${JSON.stringify(BENCHMARK_RPC_REQUESTS_GLOBAL)}] = []
+		globalThis[${ JSON.stringify(BENCHMARK_RPC_REQUESTS_GLOBAL) }] = []
 		return true
 	})()`
 }
@@ -231,7 +231,7 @@ async function waitForCondition(condition: () => Promise<boolean> | boolean, tim
 	const start = Date.now()
 	while (true) {
 		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${label} after ${timeoutMs}ms`)
+		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
 		await new Promise<void>((resolve) => {
 			setTimeout(resolve, 50)
 		})
@@ -239,7 +239,7 @@ async function waitForCondition(condition: () => Promise<boolean> | boolean, tim
 }
 
 async function getTransactionPageState(connection: CdpConnection): Promise<TransactionStackPageState | undefined> {
-	const state = await connection.evaluate<TransactionStackPageState | undefined>(`(() => globalThis[${JSON.stringify(BENCHMARK_TRANSACTION_PAGE_STATE_GLOBAL)}] ?? undefined)()`)
+	const state = await connection.evaluate<TransactionStackPageState | undefined>(`(() => globalThis[${ JSON.stringify(BENCHMARK_TRANSACTION_PAGE_STATE_GLOBAL) }] ?? undefined)()`)
 	return state
 }
 
@@ -247,11 +247,11 @@ async function waitForTransactionPagePhase(connection: CdpConnection, phase: Tra
 	await waitForCondition(
 		async () => {
 			const state = await getTransactionPageState(connection)
-			if (state?.phase === 'error') throw new Error(`Transaction page failed: ${state.error ?? 'unknown error'}`)
+			if (state?.phase === 'error') throw new Error(`Transaction page failed: ${ state.error ?? 'unknown error' }`)
 			return state?.phase === phase
 		},
 		timeoutMs,
-		`transaction page phase ${phase}`,
+		`transaction page phase ${ phase }`,
 	)
 }
 
@@ -261,21 +261,21 @@ async function waitForButtonEnabled(connection: CdpConnection, selector: string,
 			return Boolean(
 				await connection
 					.evaluate<boolean>(`(() => {
-			const element = document.querySelector(${JSON.stringify(selector)})
+			const element = document.querySelector(${ JSON.stringify(selector) })
 			return element instanceof HTMLButtonElement && element.disabled === false
 		})()`)
 					.catch(() => false),
 			)
 		},
 		timeoutMs,
-		`button ${selector} to be enabled`,
+		`button ${ selector } to be enabled`,
 	)
 }
 
 async function clickButton(connection: CdpConnection, selector: string) {
 	await connection.evaluate(`(() => {
-		const element = document.querySelector(${JSON.stringify(selector)})
-		if (!(element instanceof HTMLButtonElement)) throw new Error('Could not find button ${selector}')
+		const element = document.querySelector(${ JSON.stringify(selector) })
+		if (!(element instanceof HTMLButtonElement)) throw new Error('Could not find button ${ selector }')
 		element.click()
 		return true
 	})()`)
@@ -409,10 +409,10 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 	let confirmTargetId: string | undefined
 	try {
 		await waitForTransactionPagePhase(pageConnection, 'requesting-access', 30_000)
-		const accessTarget = await waitForTargetByUrl(context.chrome.browserDebugPort, `chrome-extension://${context.extensionId}/html3/interceptorAccessV3.html`, 30_000).catch(async (error) => {
+		const accessTarget = await waitForTargetByUrl(context.chrome.browserDebugPort, `chrome-extension://${ context.extensionId }/html3/interceptorAccessV3.html`, 30_000).catch(async (error) => {
 			const targets = await waitForBrowserTargets(context.chrome.browserDebugPort)
 			const state = await getTransactionPageState(pageConnection)
-			throw new Error(`${error instanceof Error ? error.message : String(error)}\ntransaction page state: ${JSON.stringify(state)}\ncurrent targets:\n${targets.map((target) => `- ${target.type} ${target.url} (${target.id})`).join('\n')}`)
+			throw new Error(`${ error instanceof Error ? error.message : String(error) }\ntransaction page state: ${ JSON.stringify(state) }\ncurrent targets:\n${ targets.map((target) => `- ${ target.type } ${ target.url } (${ target.id })`).join('\n') }`)
 		})
 		accessTargetId = accessTarget.id
 		const accessConnection = await connectTarget(context.chrome.browserDebugPort, accessTarget.id)
@@ -424,7 +424,7 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 		}
 		await waitForTransactionPagePhase(pageConnection, 'requesting-transaction', 30_000)
 
-		const confirmTarget = await waitForTargetByUrl(context.chrome.browserDebugPort, `chrome-extension://${context.extensionId}/html3/confirmTransactionV3.html`, 30_000)
+		const confirmTarget = await waitForTargetByUrl(context.chrome.browserDebugPort, `chrome-extension://${ context.extensionId }/html3/confirmTransactionV3.html`, 30_000)
 		confirmTargetId = confirmTarget.id
 		await waitForTargetGone(context.chrome.browserDebugPort, (target) => target.id === accessTargetId, 30_000, 'interceptor access popup to close')
 		const confirmConnection = await connectTarget(context.chrome.browserDebugPort, confirmTarget.id)
@@ -467,7 +467,7 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 
 async function runStackedScenario(context: BenchmarkContext, transactionPageUrl: string) {
 	const { stackLength, setupRpcRequests, stackedSetup } = await prepareStackedTransaction(context, transactionPageUrl)
-	console.warn(`  transaction stack prepared with ${stackLength} operation${stackLength === 1 ? '' : 's'}`)
+	console.warn(`  transaction stack prepared with ${ stackLength } operation${ stackLength === 1 ? '' : 's' }`)
 	const sample = await openPopupAndCollect(context, 'stacked')
 	return { ...sample, setupRpcRequests, stackedSetup }
 }
@@ -495,7 +495,7 @@ async function runScenarioManyTimes(scenario: ScenarioName, iterations: number, 
 async function main() {
 	const scenarioFilter = (process.env.BENCH_SCENARIO ?? 'all').toLowerCase()
 	const iterations = Number(process.env.BENCH_ITERATIONS ?? '1')
-	if (!Number.isFinite(iterations) || iterations <= 0) throw new Error(`Invalid BENCH_ITERATIONS value: ${process.env.BENCH_ITERATIONS ?? '1'}`)
+	if (!Number.isFinite(iterations) || iterations <= 0) throw new Error(`Invalid BENCH_ITERATIONS value: ${ process.env.BENCH_ITERATIONS ?? '1' }`)
 	const transactionPageServer = scenarioFilter === 'all' || scenarioFilter === 'stacked' ? await startTransactionStackPageServer() : undefined
 	try {
 		const scenarios: ScenarioName[] =
@@ -504,7 +504,7 @@ async function main() {
 				: scenarioFilter === 'cold' || scenarioFilter === 'warm' || scenarioFilter === 'stacked'
 					? [scenarioFilter]
 					: (() => {
-							throw new Error(`Unknown BENCH_SCENARIO value: ${scenarioFilter}`)
+							throw new Error(`Unknown BENCH_SCENARIO value: ${ scenarioFilter }`)
 						})()
 
 		const runs: { scenario: ScenarioName; samples: Sample[] }[] = []
@@ -544,7 +544,7 @@ async function main() {
 				rpcTotalDurationMs: rpcSummary.totalDurationMs,
 				rpcMethods: rpcMethodStats,
 			}
-			console.warn(`${summary.name} (${summary.iterations} run${summary.iterations === 1 ? '' : 's'}, ${summary.launchMode}):`)
+			console.warn(`${ summary.name } (${ summary.iterations } run${ summary.iterations === 1 ? '' : 's' }, ${ summary.launchMode }):`)
 			if (stackedSetups.length > 0) {
 				console.warn('  note: the next three groups start when the transaction test page loads, before the main popup is opened.')
 				printStatsGroup('  send transaction path / page load -> page milestones:', [
@@ -596,21 +596,21 @@ async function main() {
 				['background refresh end', summary.workerRefreshEnd],
 			])
 			if (setupRpcRequests.length > 0) {
-				console.warn(`  rpc / setup (${setupRpcSummary.totalRequests} request${setupRpcSummary.totalRequests === 1 ? '' : 's'}, ${roundToTwoDecimals(setupRpcSummary.totalDurationMs)} ms cumulative):`)
+				console.warn(`  rpc / setup (${ setupRpcSummary.totalRequests } request${ setupRpcSummary.totalRequests === 1 ? '' : 's' }, ${ roundToTwoDecimals(setupRpcSummary.totalDurationMs) } ms cumulative):`)
 				if (setupRpcMethodStats.length === 0) {
 					console.warn('    n/a')
 				} else {
 					for (const methodStats of setupRpcMethodStats) {
-						console.warn(formatRpcMethodStats(`    ${methodStats.method}`, requireRpcMethodStats(methodStats, methodStats.method)))
+						console.warn(formatRpcMethodStats(`    ${ methodStats.method }`, requireRpcMethodStats(methodStats, methodStats.method)))
 					}
 				}
 			}
-			console.warn(`  rpc / popup (${summary.rpcTotalRequests} request${summary.rpcTotalRequests === 1 ? '' : 's'}, ${roundToTwoDecimals(summary.rpcTotalDurationMs)} ms cumulative):`)
+			console.warn(`  rpc / popup (${ summary.rpcTotalRequests } request${ summary.rpcTotalRequests === 1 ? '' : 's' }, ${ roundToTwoDecimals(summary.rpcTotalDurationMs) } ms cumulative):`)
 			if (summary.rpcMethods.length === 0) {
 				console.warn('    n/a')
 			} else {
 				for (const methodStats of summary.rpcMethods) {
-					console.warn(formatRpcMethodStats(`    ${methodStats.method}`, requireRpcMethodStats(methodStats, methodStats.method)))
+					console.warn(formatRpcMethodStats(`    ${ methodStats.method }`, requireRpcMethodStats(methodStats, methodStats.method)))
 				}
 			}
 			if (summary.popupRefreshComplete === undefined) {

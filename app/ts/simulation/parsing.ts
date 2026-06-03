@@ -272,10 +272,10 @@ export const parseInputData = async (
 			const solidityType = argTypes[index]
 			const paramName = functionFragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
-			if (solidityType === undefined) throw new Error(`unknown solidity type: ${solidityType}`)
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
 			const isArray = solidityType.includes('[')
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
-			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${solidityType}`)
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
 			if (typeof value === 'object' && value !== null && 'hash' in value) {
 				return {
 					paramName,
@@ -324,10 +324,10 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 			const solidityType = argTypes[index]
 			const paramName = eventFragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error('missing parameter name')
-			if (solidityType === undefined) throw new Error(`unknown solidity type: ${solidityType}`)
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
 			const isArray = solidityType.includes('[')
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
-			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${solidityType}`)
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
 			if (typeof value === 'object' && value !== null && 'hash' in value) {
 				return {
 					paramName,

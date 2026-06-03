@@ -16,14 +16,14 @@ const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 
 const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: (value) => {
-		if (!isJSON(value) || !EIP712MessageUnderlying.test(jsonParserWithNumbersAsStringsConverter(value))) return { success: false, message: `${value} is not EIP712 message` }
+		if (!isJSON(value) || !EIP712MessageUnderlying.test(jsonParserWithNumbersAsStringsConverter(value))) return { success: false, message: `${ value } is not EIP712 message` }
 		return {
 			success: true,
 			value: EIP712MessageUnderlying.parse(jsonParserWithNumbersAsStringsConverter(value)),
 		}
 	},
 	serialize: (value) => {
-		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${value} is not a EIP712 message.` }
+		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.` }
 		return {
 			success: true,
 			value: JSON.stringify(serialize(EIP712MessageUnderlying, value)),
@@ -73,13 +73,13 @@ export const EnrichedEIP712 = funtypes.ReadonlyObject({
 
 const numberAsBigIntParser: funtypes.ParsedValue<funtypes.Number, bigint>['config'] = {
 	parse: (value) => {
-		if (!Number.isInteger(value)) return { success: false, message: `${value} is not integer.` }
-		if (value < Number.MIN_SAFE_INTEGER || value > Number.MAX_SAFE_INTEGER) return { success: false, message: `${value} is out of bounds` }
+		if (!Number.isInteger(value)) return { success: false, message: `${ value } is not integer.` }
+		if (value < Number.MIN_SAFE_INTEGER || value > Number.MAX_SAFE_INTEGER) return { success: false, message: `${ value } is out of bounds` }
 		return { success: true, value: BigInt(value) }
 	},
 	serialize: (value) => {
-		if (!Number.isInteger(value)) return { success: false, message: `${value} is not integer.` }
-		if (value < Number.MIN_SAFE_INTEGER || value > Number.MAX_SAFE_INTEGER) return { success: false, message: `${value} is out of bounds` }
+		if (!Number.isInteger(value)) return { success: false, message: `${ value } is not integer.` }
+		if (value < Number.MIN_SAFE_INTEGER || value > Number.MAX_SAFE_INTEGER) return { success: false, message: `${ value } is out of bounds` }
 		return { success: true, value: Number(value) }
 	},
 }

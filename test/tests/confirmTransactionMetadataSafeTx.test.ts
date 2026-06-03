@@ -482,7 +482,7 @@ describe('SafeTx confirm transaction metadata', () => {
 					case 'eth_blockNumber':
 						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
 					default:
-						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				}
 			},
 		}
@@ -534,7 +534,7 @@ describe('SafeTx confirm transaction metadata', () => {
 					case 'eth_blockNumber':
 						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
 					default:
-						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				}
 			},
 		}

@@ -60,7 +60,7 @@ export const InterceptedRequest = funtypes.Intersect(
 export type ProviderMessage = InterceptedRequest
 
 export const getUniqueRequestIdentifierString = (uniqueRequestIdentifier: UniqueRequestIdentifier) => {
-	return `${uniqueRequestIdentifier.requestSocket.tabId}-${uniqueRequestIdentifier.requestSocket.connectionName}-${uniqueRequestIdentifier.requestId}`
+	return `${ uniqueRequestIdentifier.requestSocket.tabId }-${ uniqueRequestIdentifier.requestSocket.connectionName }-${ uniqueRequestIdentifier.requestId }`
 }
 
 export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b: UniqueRequestIdentifier) => {
@@ -140,7 +140,7 @@ export const checkAndPrintRuntimeLastError = () => {
 
 export const getHostWithPort = (urlString: string): string => {
 	const url = new URL(urlString)
-	return url.port ? `${url.hostname}:${url.port}` : url.hostname
+	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
 export const getDomain = (urlString: string): string => new URL(urlString).hostname

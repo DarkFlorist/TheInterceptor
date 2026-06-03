@@ -70,7 +70,7 @@ const requestHandler: IEthereumJSONRpcRequestHandler = {
 		return rpcEntry.chainId
 	},
 	async jsonRpcRequest(request: EthereumJsonRpcRequest) {
-		throw new Error(`Unexpected RPC method: ${request.method}`)
+		throw new Error(`Unexpected RPC method: ${ request.method }`)
 	},
 }
 

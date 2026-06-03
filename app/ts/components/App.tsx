@@ -464,7 +464,7 @@ export function App() {
 					decimals: undefined,
 					logoUri: undefined,
 					type: 'contact',
-					name: `Pasted ${truncateAddr(addressString)}`,
+					name: `Pasted ${ truncateAddr(addressString) }`,
 					address: checksummedAddress(bigIntReprentation),
 					askForAddressAccess: true,
 					entrySource: 'FilledIn',
@@ -576,14 +576,14 @@ export function App() {
 		<main>
 			<Hint>
 				<PasteCatcher enabled={appPage.value.page === 'Unknown' || appPage.value.page === 'Home'} onPaste={addressPaste} />
-				<div style={`background-color: var(--bg-color); width: 520px; height: 600px; ${appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden'}`}>
+				<div style={`background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }`}>
 					<nav class="navbar window-header" role="navigation" aria-label="main navigation">
 						<div class="navbar-brand">
 							<a class="navbar-item" style="cursor: unset">
 								<img src="../img/LOGOA.svg" alt="Logo" width="32" height="32" />
 								<p style="color: var(--text-color); padding-left: 5px;">
 									THE INTERCEPTOR
-									<span style="color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;"> {`${version} - ${gitCommitSha.slice(0, 8)}`} </span>
+									<span style="color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;"> {`${ version } - ${ gitCommitSha.slice(0, 8) }`} </span>
 								</p>
 							</a>
 							<a class="navbar-item" style="margin-left: auto; margin-right: 0;">
@@ -634,7 +634,7 @@ export function App() {
 						</>
 					)}
 
-					<div class={`modal ${appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}`}>
+					<div class={`modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : '' }`}>
 						{appPage.value.page === 'EditEnsNamedHash' ? (
 							<ErrorBoundary key={boundaryResetKey.value} onError={onRenderError}>
 								<LazyEditEnsLabelHash close={goHome} editEnsNamedHashWindowState={appPage.value.state} />

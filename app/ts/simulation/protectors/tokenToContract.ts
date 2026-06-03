@@ -14,5 +14,5 @@ export async function tokenToContract(transaction: EthereumUnsignedTransaction, 
 	if (code.getCodeReturn.length === 0) return
 	if (transaction.to === null) return
 	const to = await identifyAddress(ethereum, requestAbortController, transferInfo.arguments.to)
-	return `Attempt to send tokens directly to a contract (${to.name})`
+	return `Attempt to send tokens directly to a contract (${ to.name })`
 }

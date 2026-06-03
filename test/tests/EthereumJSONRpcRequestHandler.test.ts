@@ -15,7 +15,7 @@ function installFetchMock(responses: Response[]) {
 	globalThis.fetch = async () => {
 		const response = responses[calls]
 		calls += 1
-		if (response === undefined) throw new Error(`Unexpected fetch call ${calls}`)
+		if (response === undefined) throw new Error(`Unexpected fetch call ${ calls }`)
 		return response
 	}
 	return {

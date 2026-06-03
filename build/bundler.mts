@@ -46,7 +46,7 @@ type PackageJson = {
 function getRelativePath(from: string, to: string) {
 	let relativePath = path.relative(from, to)
 	if (relativePath === '' || (!relativePath.startsWith('../') && !relativePath.startsWith('/'))) {
-		relativePath = `./${relativePath || '.'}`
+		relativePath = `./${ relativePath || '.' }`
 	}
 	return relativePath
 }
@@ -57,11 +57,11 @@ const isInsideDirectory = (candidatePath: string, directoryPath: string) => {
 	return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
 const forbiddenRuntimeModules = new Set([path.join(vendorDirectory, 'viem', '_esm', 'utils', 'index.js'), path.join(vendorDirectory, 'viem', '_esm', 'ens', 'index.js'), path.join(vendorDirectory, 'viem', '_esm', 'accounts', 'index.js')])
-const getResolverBasePath = (filePath: string) => (filePath.startsWith(`${vendorDirectory}${path.sep}`) ? path.join(nodeModulesDirectory, path.relative(vendorDirectory, filePath)) : filePath)
+const getResolverBasePath = (filePath: string) => (filePath.startsWith(`${ vendorDirectory }${ path.sep }`) ? path.join(nodeModulesDirectory, path.relative(vendorDirectory, filePath)) : filePath)
 
 const getPackageRootName = (specifier: string) => (specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : (specifier.split('/')[0] ?? specifier))
 
-const getPackageSubpath = (specifier: string, packageRootName: string) => (specifier === packageRootName ? '.' : `./${specifier.slice(packageRootName.length + 1)}`)
+const getPackageSubpath = (specifier: string, packageRootName: string) => (specifier === packageRootName ? '.' : `./${ specifier.slice(packageRootName.length + 1) }`)
 
 function getVendoredLocationForNodeModulesPath(resolvedPath: string) {
 	if (!isInsideDirectory(resolvedPath, nodeModulesDirectory)) return undefined
@@ -145,7 +145,7 @@ function resolvePackageExportsTarget(packageJson: PackageJson | undefined, subpa
 }
 
 function resolveExistingModuleFile(candidatePath: string) {
-	const candidates = [candidatePath, `${candidatePath}.js`, `${candidatePath}.mjs`, `${candidatePath}.cjs`, path.join(candidatePath, 'index.js'), path.join(candidatePath, 'index.mjs'), path.join(candidatePath, 'index.cjs')]
+	const candidates = [candidatePath, `${ candidatePath }.js`, `${ candidatePath }.mjs`, `${ candidatePath }.cjs`, path.join(candidatePath, 'index.js'), path.join(candidatePath, 'index.mjs'), path.join(candidatePath, 'index.cjs')]
 	return candidates.find((candidate) => fs.existsSync(candidate))
 }
 
@@ -177,7 +177,7 @@ function getPackageDirectoryCandidates(baseFilePath: string, packageRootName: st
 
 function resolvePackageTarget(packageDirectory: string, packageTarget: string, baseFilePath: string) {
 	if (isBareSpecifier(packageTarget)) return resolvePackageSpecifierFromNodeModules(packageTarget, baseFilePath)
-	const normalizedTarget = packageTarget.startsWith('./') || packageTarget.startsWith('../') ? packageTarget : `./${packageTarget}`
+	const normalizedTarget = packageTarget.startsWith('./') || packageTarget.startsWith('../') ? packageTarget : `./${ packageTarget }`
 	return resolveExistingModuleFile(path.resolve(packageDirectory, normalizedTarget))
 }
 
@@ -235,7 +235,7 @@ function getModuleSpecifierOccurrences(filePath: string, text: string): readonly
 const getVendoredImportPath = (filePath: string, specifier: string) => {
 	if (!isBareSpecifier(specifier)) return undefined
 	try {
-		const cacheKey = `${filePath}\0${specifier}`
+		const cacheKey = `${ filePath }\0${ specifier }`
 		const cachedPath = resolvedImportCache.get(cacheKey)
 		if (cachedPath !== undefined || resolvedImportCache.has(cacheKey)) return cachedPath
 		const basePath = getResolverBasePath(filePath)
@@ -288,7 +288,7 @@ export function replaceImport(filePath: string, text: string) {
 		const vendoredImportPath = getVendoredImportPath(filePath, occurrence.specifier) ?? getRewrittenRelativeImportPath(filePath, occurrence.specifier)
 		if (vendoredImportPath === undefined) continue
 		const quote = text[occurrence.start]
-		replaced = `${replaced.slice(0, occurrence.start)}${quote}${vendoredImportPath}${quote}${replaced.slice(occurrence.end)}`
+		replaced = `${ replaced.slice(0, occurrence.start) }${ quote }${ vendoredImportPath }${ quote }${ replaced.slice(occurrence.end) }`
 	}
 	return replaced
 }
@@ -351,17 +351,17 @@ async function bundleChromeRuntimeEntrypoints() {
 		sourcemap: 'external',
 	})
 	if (!buildResult.success) {
-		throw new Error(`Failed to bundle Chrome runtime entrypoints with Bun:\n${formatBunBuildLogs(buildResult.logs)}`)
+		throw new Error(`Failed to bundle Chrome runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
 	}
 	for (const entrypointPath of existingEntrypoints) {
 		const relativeEntrypointPath = path.relative(appDirectory, entrypointPath)
 		const bundledEntrypointPath = path.join(bundledOutputDirectory, relativeEntrypointPath)
-		const bundledEntrypointMapPath = `${bundledEntrypointPath}.map`
+		const bundledEntrypointMapPath = `${ bundledEntrypointPath }.map`
 		if (!fs.existsSync(bundledEntrypointPath)) {
-			throw new Error(`Bundled entrypoint was not written by Bun: ${relativeEntrypointPath.replace(/\\/g, '/')}`)
+			throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
 		}
 		fs.copyFileSync(bundledEntrypointPath, entrypointPath)
-		if (fs.existsSync(bundledEntrypointMapPath)) fs.copyFileSync(bundledEntrypointMapPath, `${entrypointPath}.map`)
+		if (fs.existsSync(bundledEntrypointMapPath)) fs.copyFileSync(bundledEntrypointMapPath, `${ entrypointPath }.map`)
 	}
 	fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 }
@@ -376,11 +376,11 @@ function resolveRuntimeImportedFilePath(filePath: string, specifier: string) {
 }
 
 function formatBareImportIssues(bareImportIssues: readonly BareImportIssue[]) {
-	return bareImportIssues.map(({ filePath, specifier }) => `${path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/')}: ${specifier}`).join('\n')
+	return bareImportIssues.map(({ filePath, specifier }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: ${ specifier }`).join('\n')
 }
 
 function formatMissingRuntimeImportIssues(missingRuntimeImportIssues: readonly MissingRuntimeImportIssue[]) {
-	return missingRuntimeImportIssues.map(({ filePath, specifier }) => `${path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/')}: ${specifier}`).join('\n')
+	return missingRuntimeImportIssues.map(({ filePath, specifier }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: ${ specifier }`).join('\n')
 }
 
 function collectRuntimeDependencyGraph() {
@@ -397,7 +397,7 @@ function collectRuntimeDependencyGraph() {
 			if (!occurrence.specifier.startsWith('.') && !occurrence.specifier.startsWith('/')) continue
 			const importedFilePath = resolveRuntimeImportedFilePath(filePath, occurrence.specifier)
 			if (importedFilePath === undefined) {
-				const issueKey = `${filePath}\0${occurrence.specifier}`
+				const issueKey = `${ filePath }\0${ occurrence.specifier }`
 				if (!missingRuntimeImportIssues.has(issueKey)) {
 					missingRuntimeImportIssues.set(issueKey, {
 						filePath,
@@ -433,7 +433,7 @@ export function isBrowserIncompatibleRuntimeModule(filePath: string) {
 }
 
 function formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues: readonly ForbiddenRuntimeModuleIssue[]) {
-	return forbiddenRuntimeModuleIssues.map(({ filePath }) => `${path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/')}: do not import the viem barrel entrypoint in MV3 runtime code`).join('\n')
+	return forbiddenRuntimeModuleIssues.map(({ filePath }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: do not import the viem barrel entrypoint in MV3 runtime code`).join('\n')
 }
 
 export function findForbiddenRuntimeModulesInRuntimeFiles() {
@@ -456,13 +456,13 @@ export async function replaceImportsInJSFiles() {
 	const bareImportIssues = findBareImportsInRuntimeFiles()
 	const forbiddenRuntimeModuleIssues = findForbiddenRuntimeModulesInRuntimeFiles()
 	if (missingRuntimeImportIssues.length > 0) {
-		throw new Error(`Runtime modules import missing files after bundling:\n${formatMissingRuntimeImportIssues(missingRuntimeImportIssues)}`)
+		throw new Error(`Runtime modules import missing files after bundling:\n${ formatMissingRuntimeImportIssues(missingRuntimeImportIssues) }`)
 	}
 	if (bareImportIssues.length > 0) {
-		throw new Error(`Unresolved bare module specifiers remain after bundling:\n${formatBareImportIssues(bareImportIssues)}`)
+		throw new Error(`Unresolved bare module specifiers remain after bundling:\n${ formatBareImportIssues(bareImportIssues) }`)
 	}
 	if (forbiddenRuntimeModuleIssues.length > 0) {
-		throw new Error(`Browser-incompatible runtime modules remain after bundling:\n${formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues)}`)
+		throw new Error(`Browser-incompatible runtime modules remain after bundling:\n${ formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues) }`)
 	}
 }
 

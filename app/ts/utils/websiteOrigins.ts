@@ -12,7 +12,7 @@ type ParsedWebsiteOrigin = {
 function parseWebsiteOrigin(origin: string): ParsedWebsiteOrigin | undefined {
 	return tryOrUndefined(
 		() => {
-			const url = new URL(`https://${origin}`)
+			const url = new URL(`https://${ origin }`)
 			return {
 				hostname: url.hostname,
 				port: url.port,
@@ -45,8 +45,8 @@ export function doWebsiteOriginsShareHostname(leftOrigin: string, rightOrigin: s
 
 export function getDomainMatchPatternsForHostname(hostname: string) {
 	if (hostname === '') return []
-	if (!canMatchSubdomains(hostname)) return [`*://${hostname}/*`]
-	return [`*://${hostname}/*`, `*://*.${hostname}/*`]
+	if (!canMatchSubdomains(hostname)) return [`*://${ hostname }/*`]
+	return [`*://${ hostname }/*`, `*://*.${ hostname }/*`]
 }
 
 export function getDomainMatchPatterns(origin: string) {

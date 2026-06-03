@@ -66,7 +66,7 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 			{' '}
 			{quarantineReasons.map((quarantineReason, index) => (
 				<ErrorComponent
-					key={`${quarantineReason}-${index}`}
+					key={`${ quarantineReason }-${ index }`}
 					text={quarantineReason}
 					containerStyle={{
 						margin: '0px',
@@ -91,7 +91,7 @@ export type TransactionImportanceBlockParams = {
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
 	if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text={'Failed to simulate this transaction.'} containerStyle={{ margin: '0px' }} />
-	if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text={`The transaction fails with an error: '${param.simTx.error.decodedErrorMessage}' ${param.simTx.error.data !== undefined ? ` (data: '${param.simTx.error.data}')` : ''}`} containerStyle={{ margin: '0px' }} />
+	if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text={`The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }`} containerStyle={{ margin: '0px' }} />
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
 		case 'SimpleTokenTransfer':
@@ -267,7 +267,7 @@ function TransactionPreviewDetails({
 						<dt>To</dt>
 						<dd>{to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry={to} renameAddressCallBack={renameAddressCallBack} />}</dd>
 						<dt>Value</dt>
-						<dd>{`${signedTransaction.value.toString(10)} wei`}</dd>
+						<dd>{`${ signedTransaction.value.toString(10) } wei`}</dd>
 						<dt>Nonce</dt>
 						<dd>{signedTransaction.nonce.toString(10)}</dd>
 						<dt>Chain ID</dt>
@@ -514,7 +514,7 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 			{transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
 				const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || ({ type: 'No Delay' } as const)
 				return block.rows.map((stackRow, transactionIndex) => (
-					<li key={stackRow.type === 'Message' ? `message-${stackRow.signedMessageTransaction.messageIdentifier.toString()}` : `transaction-${stackRow.preSimulationTransaction.transactionIdentifier.toString()}`}>
+					<li key={stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }`}>
 						<TransactionOrMessageWithBlockTimeManipulator
 							simulationAndVisualisationResults={param.simulationAndVisualisationResults}
 							stackRow={stackRow}
@@ -553,7 +553,7 @@ function TokenLogEvent(params: TokenLogEventParams) {
 					<>
 						{' '}
 						{'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= 2n ** 96n - 1n && params.tokenVisualizerResult.isApproval ? (
-							<p class="ellipsis" style={`color: ${style.color}`}>
+							<p class="ellipsis" style={`color: ${ style.color }`}>
 								<b>ALL</b>
 							</p>
 						) : 'amount' in params.tokenVisualizerResult ? (
@@ -619,7 +619,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 				</div>
 				<div class="log-cell" style={'grid-column: 2 / 4; display: flex; flex-wrap: wrap;'}>
 					{params.nonTokenLog.topics.map((topic, index) => (
-						<p key={`${bytes32String(topic)}-${index}`} class="paragraph" style={textStyle}>
+						<p key={`${ bytes32String(topic) }-${ index }`} class="paragraph" style={textStyle}>
 							{' '}
 							{bytes32String(topic)}{' '}
 						</p>
@@ -645,7 +645,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 			>
 				<p class="paragraph" style={textStyle}>
 					{' '}
-					{`${params.nonTokenLog.name}(`}{' '}
+					{`${ params.nonTokenLog.name }(`}{' '}
 				</p>
 				{insertBetweenElements(
 					params.nonTokenLog.args.map((arg) => {
@@ -654,7 +654,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 								<>
 									<p style={textStyle} class="paragraph">
 										{' '}
-										{`${arg.paramName} =`}&nbsp;
+										{`${ arg.paramName } =`}&nbsp;
 									</p>
 									<EnsNamedHashComponent type="nameHash" nameHash={params.nonTokenLog.logInformation.node.nameHash} name={params.nonTokenLog.logInformation.node.name} editEnsNamedHashCallBack={params.editEnsNamedHashCallBack} />
 								</>
@@ -665,7 +665,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 								<>
 									<p style={textStyle} class="paragraph">
 										{' '}
-										{`${arg.paramName} =`}&nbsp;
+										{`${ arg.paramName } =`}&nbsp;
 									</p>
 									<EnsNamedHashComponent type="labelHash" nameHash={params.nonTokenLog.logInformation.labelHash.labelHash} name={params.nonTokenLog.logInformation.labelHash.label} editEnsNamedHashCallBack={params.editEnsNamedHashCallBack} />
 								</>
@@ -676,7 +676,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 								<>
 									<p style={textStyle} class="paragraph">
 										{' '}
-										{`${arg.paramName} = [`}
+										{`${ arg.paramName } = [`}
 									</p>
 									<StringElement text={params.nonTokenLog.logInformation.fuses.join(', ')} />
 									<p style={textStyle} class="paragraph">
@@ -689,7 +689,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 							<>
 								<p style={textStyle} class="paragraph">
 									{' '}
-									{`${arg.paramName} =`}&nbsp;
+									{`${ arg.paramName } =`}&nbsp;
 								</p>
 								<EnrichedSolidityTypeComponentWithAddressBook valueType={arg.typeValue} addressMetaData={params.addressMetaData} renameAddressCallBack={params.renameAddressCallBack} />
 							</>
@@ -749,7 +749,7 @@ export function ParsedInputData(params: ParsedInputDataParams) {
 			>
 				<p class="paragraph" style={textStyle}>
 					{' '}
-					{`${params.inputData.name}(`}{' '}
+					{`${ params.inputData.name }(`}{' '}
 				</p>
 				{insertBetweenElements(
 					params.inputData.args.map((arg) => {
@@ -757,7 +757,7 @@ export function ParsedInputData(params: ParsedInputDataParams) {
 							<>
 								<p style={textStyle} class="paragraph">
 									{' '}
-									{`${arg.paramName} =`}&nbsp;
+									{`${ arg.paramName } =`}&nbsp;
 								</p>
 								<EnrichedSolidityTypeComponentWithAddressBook valueType={arg.typeValue} addressMetaData={params.addressMetaData} renameAddressCallBack={params.renameAddressCallBack} />
 							</>

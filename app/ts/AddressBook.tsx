@@ -66,7 +66,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 						</span>
 					</div>
 					<div class="card-header-title">
-						<p class="paragraph"> {`Remove ${filterDefs[param.category]}`} </p>
+						<p class="paragraph"> {`Remove ${ filterDefs[param.category] }`} </p>
 					</div>
 					<button class="card-header-icon" aria-label="close" onClick={param.close}>
 						<XMarkIcon />
@@ -132,7 +132,7 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 									addressBookEntry={{
 										...entry,
 										...{
-											name: `${entry.name}${'symbol' in entry ? ` (${entry.symbol})` : ''}`,
+											name: `${ entry.name }${ 'symbol' in entry ? ` (${ entry.symbol })` : '' }`,
 										},
 									}}
 									noCopying={false}
@@ -143,7 +143,7 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 
 						{entry.category === 'ERC20 Tokens' ? (
 							<div>
-								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top;">{`Decimals: ${'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING'}`}</p>
+								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top;">{`Decimals: ${ 'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING' }`}</p>
 							</div>
 						) : (
 							<></>
@@ -152,7 +152,7 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 						{entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts' ? (
 							<div>
 								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top;">
-									{`Protocol: ${'protocol' in entry ? entry.protocol : ''} `}
+									{`Protocol: ${ 'protocol' in entry ? entry.protocol : '' } `}
 								</p>
 							</div>
 						) : (
@@ -167,13 +167,13 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 						) : (
 							<div>
 								<p class="paragraph" style="display: inline-block; font-size: 13px; vertical-align: top; width: 420px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-									{`ABI: ${'abi' in entry && entry.abi !== undefined ? entry.abi : 'No ABI available'} `}
+									{`ABI: ${ 'abi' in entry && entry.abi !== undefined ? entry.abi : 'No ABI available' } `}
 								</p>
 							</div>
 						)}
 						<div>
 							<p class="paragraph" style="display: inline-block; font-size: 13px; color: var(--subtitle-text-color);">
-								{`Source: ${'entrySource' in entry ? entry.entrySource : ''}`}
+								{`Source: ${ 'entrySource' in entry ? entry.entrySource : '' }`}
 							</p>
 						</div>
 					</div>
@@ -307,7 +307,7 @@ export function AddressBook() {
 
 	function GetNoResultsError() {
 		const errorMessage =
-			viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 ? `No entries found for "${viewFilter.value.searchString}" in ${viewFilter.value.activeFilter} on ${viewFilter.value.chain?.name}` : `No cute dinosaurs in ${viewFilter.value.activeFilter} on ${viewFilter.value.chain?.name}`
+			viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 ? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }` : `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
 		return <div style={{ width: 500, padding: '0 1rem', margin: '0 1rem' }}>{errorMessage}</div>
 	}
 
@@ -444,7 +444,7 @@ export function AddressBook() {
 						>
 							<input class="input" type="text" placeholder="Search In Category" value={viewFilter.value.searchString} onInput={(e) => search(e.currentTarget.value)} />
 							<button class="button is-primary" onClick={() => openNewAddress(viewFilter.value.activeFilter)}>
-								{`Add New ${filterDefs[viewFilter.value.activeFilter]}`}
+								{`Add New ${ filterDefs[viewFilter.value.activeFilter] }`}
 							</button>
 						</div>
 						<div style={{ minHeight: 0 }}>
@@ -472,7 +472,7 @@ export function AddressBook() {
 					</div>
 				</div>
 
-				<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
+				<div class={`modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }`}>
 					{modalState.value.page === 'addNewAddress' ? (
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt={undefined}

@@ -133,7 +133,7 @@ function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
 	return (
 		<CopyToClipboard content={param.tokenId.toString()} copyMessage="Token identifier copied!">
 			<p class="noselect nopointer" style={style}>
-				{`#${truncate(param.tokenId.toString(), 9)}`}&nbsp;
+				{`#${ truncate(param.tokenId.toString(), 9) }`}&nbsp;
 			</p>
 		</CopyToClipboard>
 	)
@@ -186,9 +186,9 @@ export function TokenAmount(param: TokenAmountParams) {
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
 		return (
 			<>
-				<CopyToClipboard content={`${abs(param.amount)} (decimals unknown)`} copyMessage="Token amount copied!">
+				<CopyToClipboard content={`${ abs(param.amount) } (decimals unknown)`} copyMessage="Token amount copied!">
 					<p class="noselect nopointer" style={style}>
-						{`${sign}${abs(param.amount).toString()}`}&nbsp;{' '}
+						{`${ sign }${ abs(param.amount).toString() }`}&nbsp;{' '}
 					</p>
 				</CopyToClipboard>
 			</>
@@ -252,7 +252,7 @@ export function TokenOrEthValue(param: TokenAmountParams | EtherAmountParams) {
 }
 
 function truncate(str: string, n: number) {
-	return str.length > n ? `${str.slice(0, n - 1)}…` : str
+	return str.length > n ? `${ str.slice(0, n - 1) }…` : str
 }
 
 type AllApprovalParams = {

@@ -64,7 +64,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const { logoUri, ...rest } = addressData
 		return {
 			...rest,
-			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 			address: address,
 			type: 'contract',
 			entrySource: 'DarkFloristMetadata',
@@ -77,7 +77,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const { logoUri, ...rest } = tokenData
 		return {
 			...rest,
-			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 			address: address,
 			type: 'ERC20',
 			entrySource: 'DarkFloristMetadata',
@@ -90,7 +90,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const { logoUri, ...rest } = erc721TokenData
 		return {
 			...rest,
-			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 			address: address,
 			type: 'ERC721',
 			entrySource: 'DarkFloristMetadata',
@@ -103,7 +103,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const { logoUri, ...rest } = erc1155TokenData
 		return {
 			...rest,
-			...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 			address: address,
 			type: 'ERC1155',
 			entrySource: 'DarkFloristMetadata',
@@ -273,7 +273,7 @@ export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: Ether
 
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
-	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(label.endsWith('.eth') ? label : `${label}.eth`)])))
+	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(label.endsWith('.eth') ? label : `${ label }.eth`)])))
 
 	// return the label hashes that we have now available
 	const currentLabelHashes = [...reverseEnsLabelHashes, ...(await getEnsLabelHashes())]

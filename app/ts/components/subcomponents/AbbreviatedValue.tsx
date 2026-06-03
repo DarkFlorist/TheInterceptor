@@ -7,7 +7,7 @@ export const AbbreviatedValue = ({ amount, decimals = 18n }: { amount: bigint; d
 
 	for (const [type, value] of numberParts) {
 		if (type === 'fraction') {
-			const significantDigits = `${Number(value)}`
+			const significantDigits = `${ Number(value) }`
 			const zeroPad = value.replace(significantDigits, '')
 			if (zeroPad.length) {
 				domElement.push(

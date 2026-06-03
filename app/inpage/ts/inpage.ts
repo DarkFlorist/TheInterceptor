@@ -284,26 +284,26 @@ function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, u
 }
 
 function stringifyForwardedFallbackError(error: unknown) {
-	return error instanceof Error ? `${error.name}: ${error.message}` : `Unexpected thrown value: ${String(error)}`
+	return error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`
 }
 
 function stringifyForwardedFallbackValue(value: unknown) {
 	try {
 		return String(value)
 	} catch (error: unknown) {
-		return `[failed to stringify value: ${stringifyForwardedFallbackError(error)}]`
+		return `[failed to stringify value: ${ stringifyForwardedFallbackError(error) }]`
 	}
 }
 
 function stringifyForwardedThrownValue(value: unknown) {
-	if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`
+	if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
 	if (typeof value === 'bigint') return value.toString()
 	try {
 		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue))
 		if (stringified !== undefined) return stringified
 	} catch (error: unknown) {
 		const fallbackValue = stringifyForwardedFallbackValue(value)
-		return `${fallbackValue}\n\n[serialization fallback: ${stringifyForwardedFallbackError(error)}]`
+		return `${ fallbackValue }\n\n[serialization fallback: ${ stringifyForwardedFallbackError(error) }]`
 	}
 	return stringifyForwardedFallbackValue(value)
 }
@@ -330,7 +330,7 @@ function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnos
 }
 
 function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
-	return [`${source}: ${summary}`, `phase: ${phase}`, ...(context.requestMethod !== undefined ? [`requestMethod: ${context.requestMethod}`] : []), ...(context.requestId !== undefined ? [`requestId: ${context.requestId}`] : []), `thrown:\n${stringifyForwardedThrownValue(thrown)}`].join('\n\n')
+	return [`${ source }: ${ summary }`, `phase: ${ phase }`, ...(context.requestMethod !== undefined ? [`requestMethod: ${ context.requestMethod }`] : []), ...(context.requestId !== undefined ? [`requestId: ${ context.requestId }`] : []), `thrown:\n${ stringifyForwardedThrownValue(thrown) }`].join('\n\n')
 }
 
 function setCompatibilityProperty(target: object, property: PropertyKey, value: unknown, propertyLabel: string) {
@@ -360,12 +360,12 @@ function setCompatibilityProperty(target: object, property: PropertyKey, value: 
 		}
 		if (Reflect.set(target, property, value) === true) return
 		if (!Object.isExtensible(target)) {
-			console.warn(`Interceptor compatibility assignment was rejected for ${propertyLabel}.`)
+			console.warn(`Interceptor compatibility assignment was rejected for ${ propertyLabel }.`)
 			return
 		}
 		Object.defineProperty(target, property, { configurable: true, enumerable: true, writable: true, value })
 	} catch (error: unknown) {
-		console.warn(`Interceptor compatibility assignment failed for ${propertyLabel}.`, error)
+		console.warn(`Interceptor compatibility assignment failed for ${ propertyLabel }.`, error)
 	}
 }
 
@@ -462,7 +462,7 @@ class InterceptorMessageListener {
 	// sends a message to interceptors background script
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string; readonly params?: readonly unknown[] }) => {
 		try {
-			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${methodAndParams.method}`)
+			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
@@ -514,7 +514,7 @@ class InterceptorMessageListener {
 						result: inpageWindow.ethereum.chainId,
 					}
 				default:
-					throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${fullPayload.method}`)
+					throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ fullPayload.method }`)
 			}
 		}
 		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
@@ -1061,7 +1061,7 @@ class InterceptorMessageListener {
 
 	private readonly unsupportedMethods = (windowEthereum: (WindowEthereum & UnsupportedWindowEthereumMethods) | undefined) => {
 		const unsupportedError = (method: string) => {
-			return console.error(`The application tried to call a deprecated or non-standard method: '${method}'. Please contact the application developer to fix this issue.`)
+			return console.error(`The application tried to call a deprecated or non-standard method: '${ method }'. Please contact the application developer to fix this issue.`)
 		}
 		return {
 			once: (() => {
@@ -1148,7 +1148,7 @@ class InterceptorMessageListener {
 		})
 		inpageWindow.ethereum.on('chainChanged', (chainId: string) => {
 			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
+			const params = /\d/.test(chainId) ? [`0x${ parseInt(chainId).toString(16) }`] : [chainId]
 			this.sendInternalMessageToBackgroundPage({
 				method: 'signer_chainChanged',
 				params,

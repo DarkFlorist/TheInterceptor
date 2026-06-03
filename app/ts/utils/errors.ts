@@ -53,14 +53,14 @@ export function isFailedToFetchError(error: Error) {
 export const isNewBlockAbort = (error: Error) => error.message?.includes(NEW_BLOCK_ABORT)
 
 function summarizeUnknownData(value: unknown): string {
-	if (typeof value === 'string') return `[redacted string length=${value.length}]`
-	if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return `[redacted ${typeof value}]`
+	if (typeof value === 'string') return `[redacted string length=${ value.length }]`
+	if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return `[redacted ${ typeof value }]`
 	if (value === undefined) return '[undefined]'
-	if (value instanceof Uint8Array) return `[redacted Uint8Array length=${value.length}]`
-	if (Array.isArray(value)) return `[redacted array length=${value.length}]`
+	if (value instanceof Uint8Array) return `[redacted Uint8Array length=${ value.length }]`
+	if (Array.isArray(value)) return `[redacted array length=${ value.length }]`
 	if (typeof value === 'object') {
 		const keys = Object.keys(value ?? {})
-		return `[redacted object keys=${keys.slice(0, 8).join(',')}${keys.length > 8 ? ',…' : ''}]`
+		return `[redacted object keys=${ keys.slice(0, 8).join(',') }${ keys.length > 8 ? ',…' : '' }]`
 	}
 	return '[redacted]'
 }

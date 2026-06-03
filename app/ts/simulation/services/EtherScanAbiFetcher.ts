@@ -13,7 +13,7 @@ async function fetchJson(url: string): Promise<{ success: true; result: unknown 
 	if (!response.ok)
 		return {
 			success: false,
-			error: `Ethercan returned error: ${response.status}.`,
+			error: `Ethercan returned error: ${ response.status }.`,
 		}
 	return { success: true, result: await response.json() }
 }
@@ -40,15 +40,15 @@ async function fetchAbi(contractAddress: EthereumAddress, maybeExplorer: BlockEx
 	try {
 		if (maybeExplorer !== undefined) {
 			try {
-				const result = await fetch(`${maybeExplorer.apiUrl}?chainId=${chainId.toString()}&module=contract&action=getsourcecode&address=${normalizedAddressString}&apiKey=${maybeExplorer.apiKey}`)
+				const result = await fetch(`${ maybeExplorer.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getsourcecode&address=${ normalizedAddressString }&apiKey=${ maybeExplorer.apiKey }`)
 				bestResult = EtherscanSourceCodeResult.safeParse(await result.json())
 				if (bestResult.success) return bestResult
 			} catch (error: unknown) {
-				console.error(`Failed to retrieve ABI for ${normalizedAddressString} from ${maybeExplorer.apiUrl}`)
+				console.error(`Failed to retrieve ABI for ${ normalizedAddressString } from ${ maybeExplorer.apiUrl }`)
 				console.error(error)
 			}
 		}
-		const result = await fetch(`https://repo.sourcify.dev/contracts/full_match/${chainId.toString(10)}/${normalizedAddressString}/metadata.json`)
+		const result = await fetch(`https://repo.sourcify.dev/contracts/full_match/${ chainId.toString(10) }/${ normalizedAddressString }/metadata.json`)
 		if (result.status === 404) return { success: false, message: 'No source available' } as const
 		const parsed = SourcifyMetadataResult.safeParse(await result.json())
 		if (parsed.success) {
@@ -86,11 +86,11 @@ export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress
 		}
 
 	if (api !== undefined && parsedSourceCode.value.result[0].Proxy === 'yes' && parsedSourceCode.value.result[0].Implementation !== '') {
-		const implReq = await fetchJson(`${api.apiUrl}?chainId=${chainId.toString()}&module=contract&action=getabi&address=${addressString(parsedSourceCode.value.result[0].Implementation)}&apiKey=${api.apiKey}`)
+		const implReq = await fetchJson(`${ api.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)
 		if (!implReq.success) return implReq
 		const implResult = EtherscanGetABIResult.safeParse(implReq.result)
 
-		const sourceCodeResult = await fetchJson(`${api.apiUrl}?chainId=${chainId.toString()}&module=contract&action=getsourcecode&address=${addressString(parsedSourceCode.value.result[0].Implementation)}&apiKey=${api.apiKey}`)
+		const sourceCodeResult = await fetchJson(`${ api.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)
 		if (!sourceCodeResult.success) return sourceCodeResult
 		const implementationName = EtherscanSourceCodeResult.safeParse(sourceCodeResult.result)
 
@@ -108,7 +108,7 @@ export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress
 			success: true as const,
 			address: contractAddress,
 			abi: implResult.value.result,
-			contractName: `Proxy: ${implementationName.value.result[0].ContractName}`,
+			contractName: `Proxy: ${ implementationName.value.result[0].ContractName }`,
 		}
 	}
 	const abi = parsedSourceCode.value.result[0].ABI
@@ -127,6 +127,6 @@ export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress
 	}
 	return {
 		success: false as const,
-		error: `Etherscan has No ABI available for ${checksummedAddress(contractAddress)}.`,
+		error: `Etherscan has No ABI available for ${ checksummedAddress(contractAddress) }.`,
 	}
 }

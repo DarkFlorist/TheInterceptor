@@ -47,8 +47,8 @@ async function runIndexedDbRequest<T>(mode: IDBTransactionMode, operation: (stor
 		const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
 		const request = operation(store)
 		request.onsuccess = () => resolve({ kind: 'available', value: request.result })
-		request.onerror = () => reject(request.error ?? new Error(`Large state IndexedDB ${mode} request failed`))
-		transaction.onabort = () => reject(transaction.error ?? new Error(`Large state IndexedDB ${mode} transaction aborted`))
+		request.onerror = () => reject(request.error ?? new Error(`Large state IndexedDB ${ mode } request failed`))
+		transaction.onabort = () => reject(transaction.error ?? new Error(`Large state IndexedDB ${ mode } transaction aborted`))
 	})
 }
 
@@ -107,7 +107,7 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 			await setIndexedDbValue(key, legacyLocalValue)
 			await removeLegacyLocalValue(key)
 		} catch (error) {
-			console.warn(`Failed to migrate ${key} to IndexedDB.`)
+			console.warn(`Failed to migrate ${ key } to IndexedDB.`)
 			console.warn(error)
 		}
 		return parsedLegacyValue
@@ -142,7 +142,7 @@ export function estimateSerializedStateBytes<T>(codec: funtypes.Codec<T>, value:
 }
 
 export function formatEstimatedBytes(bytes: number) {
-	if (bytes < 1024) return `${bytes} B`
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
-	return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`
+	if (bytes < 1024) return `${ bytes } B`
+	if (bytes < 1024 * 1024) return `${ (bytes / 1024).toFixed(1) } KiB`
+	return `${ (bytes / (1024 * 1024)).toFixed(2) } MiB`
 }

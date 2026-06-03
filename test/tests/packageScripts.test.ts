@@ -20,7 +20,7 @@ function getPackageScripts() {
 
 function getScript(scripts: Record<string, unknown>, scriptName: string) {
 	const script = scripts[scriptName]
-	if (typeof script !== 'string') throw new Error(`Missing package script: ${scriptName}`)
+	if (typeof script !== 'string') throw new Error(`Missing package script: ${ scriptName }`)
 	return script
 }
 
@@ -29,5 +29,13 @@ describe('package scripts', () => {
 		const scripts = getPackageScripts()
 
 		assert.deepEqual(getScript(scripts, 'build-firefox').split(' && '), ['bun run clean-js-output', 'bun --bun tsc --project tsconfig.json', 'bun run bundle', 'bun run firefox'])
+	})
+
+	test('lint runs the custom template interpolation spacing check', () => {
+		const scripts = getPackageScripts()
+
+		assert.equal(getScript(scripts, 'lint:template-interpolation-spacing'), 'bun ./scripts/check-template-interpolation-spacing.mts')
+		assert.equal(getScript(scripts, 'lint:template-interpolation-spacing:fix'), 'bun ./scripts/check-template-interpolation-spacing.mts --write')
+		assert.equal(getScript(scripts, 'lint'), 'bun run biome:lint && bun run lint:catches && bun run lint:template-interpolation-spacing')
 	})
 })

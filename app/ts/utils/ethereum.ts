@@ -163,14 +163,14 @@ function calculateV(transaction: DistributiveOmit<ITransactionSignatureLegacy, '
 function parityFromV(v: bigint): 'even' | 'odd' {
 	if (v === 0n) return 'even'
 	if (v === 1n) return 'odd'
-	throw new Error(`Unsupported transaction v for typed transaction: ${v}`)
+	throw new Error(`Unsupported transaction v for typed transaction: ${ v }`)
 }
 
 type RlpEncodeableData = Uint8Array | RlpEncodeableData[]
 type RlpValue = `0x${string}` | readonly RlpValue[]
 export function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
 	function rlpEncodeArray(data: RlpEncodeableData): RlpValue {
-		if (!Array.isArray(data)) return `0x${dataString(data)}`
+		if (!Array.isArray(data)) return `0x${ dataString(data) }`
 		return data.map((x) => rlpEncodeArray(x))
 	}
 	return stringToUint8Array(
@@ -433,5 +433,5 @@ export function EthereumSignedTransactionToSignedTransaction(transaction: Ethere
 }
 
 export function truncateAddr(address: string, charactersFromEachEnd = 7) {
-	return `0x${address.substring(2, 2 + charactersFromEachEnd)}…${address.substring(address.length - charactersFromEachEnd, address.length)}`
+	return `0x${ address.substring(2, 2 + charactersFromEachEnd) }…${ address.substring(address.length - charactersFromEachEnd, address.length) }`
 }

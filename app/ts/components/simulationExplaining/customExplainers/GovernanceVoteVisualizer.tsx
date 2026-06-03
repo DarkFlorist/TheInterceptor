@@ -44,7 +44,7 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 		if (support === true || support === 1n) return 'For'
 		if (support === false || support === 0n) return 'Against'
 		if (support === 2n) return 'Abstain'
-		return `Support: ${support}`
+		return `Support: ${ support }`
 	}
 
 	return (
@@ -53,7 +53,7 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 				<div style="display: flex; justify-content: center;">
 					<p style={{ 'font-size': 'var(--big-font-size)' }}>
 						Vote&nbsp;<b>{interpretSupport(resolvedInputParams.support)}</b>
-						&nbsp;{`for proposal: ${resolvedInputParams.proposalId} `}
+						&nbsp;{`for proposal: ${ resolvedInputParams.proposalId } `}
 					</p>
 				</div>
 			</div>

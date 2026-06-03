@@ -20,7 +20,7 @@ function SimulationInput({ input, disabled, isValid }: SimulationInputParams) {
 	}, [])
 	return (
 		<textarea
-			class={`simulation-stack-import-input${isValid.value ? '' : ' simulation-stack-import-input-invalid'}`}
+			class={`simulation-stack-import-input${ isValid.value ? '' : ' simulation-stack-import-input-invalid' }`}
 			value={input.value}
 			onInput={(e) => {
 				input.value = e.currentTarget.value
@@ -51,7 +51,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 		if (!isJSON(trimmed)) return 'not a valid JSON'
 		const parseResult = InterceptorSimulationExport.safeParse(JSON.parse(trimmed))
 		if (parseResult.success) return undefined
-		return `The input needs to be valid Interceptor Simulation Stack Export: ${parseResult.message}`
+		return `The input needs to be valid Interceptor Simulation Stack Export: ${ parseResult.message }`
 	})
 
 	const Text = (param: { text: ComponentChildren }) => {

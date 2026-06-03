@@ -407,7 +407,7 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 			status: 'complete',
 			title: 'Oversized favicon',
 			url: 'https://oversized-icon.test/page',
-			favIconUrl: `data:image/png;base64,${'a'.repeat(1_048_576)}`,
+			favIconUrl: `data:image/png;base64,${ 'a'.repeat(1_048_576) }`,
 		})
 
 		const result = await retrieveWebsiteDetails(10)

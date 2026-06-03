@@ -140,7 +140,7 @@ const gradientForBytes = (data: Uint8Array) => {
 		},
 	]
 
-	return inputs.map((input: HSL) => `hsl(${Math.round(input.h)}, ${Math.round(input.s)}%, ${Math.round(input.l)}%)`)
+	return inputs.map((input: HSL) => `hsl(${ Math.round(input.h) }, ${ Math.round(input.s) }%, ${ Math.round(input.l) }%)`)
 }
 
 const zorbImageSVG = (bytes: Uint8Array) => {
@@ -150,11 +150,11 @@ const zorbImageSVG = (bytes: Uint8Array) => {
 		<defs>
 			<linearGradient id="gzr" x1="106.975" y1="136.156" x2="-12.9815" y2="13.5347" gradientUnits="userSpaceOnUse">
 				gradientTransform="translate(131.638 129.835) rotate(-141.194) scale(185.582)">
-				<stop offset="0.1562" stop-color="${gradientInfo[0]}" />
-				<stop offset="0.3958" stop-color="${gradientInfo[1]}" />
-				<stop offset="0.7292" stop-color="${gradientInfo[2]}" />
-				<stop offset="0.9063" stop-color="${gradientInfo[3]}" />
-				<stop offset="1" stop-color="${gradientInfo[4]}" />
+				<stop offset="0.1562" stop-color="${ gradientInfo[0] }" />
+				<stop offset="0.3958" stop-color="${ gradientInfo[1] }" />
+				<stop offset="0.7292" stop-color="${ gradientInfo[2] }" />
+				<stop offset="0.9063" stop-color="${ gradientInfo[3] }" />
+				<stop offset="1" stop-color="${ gradientInfo[4] }" />
 			</linearGradient>
 		</defs>
 		<path
@@ -164,5 +164,5 @@ const zorbImageSVG = (bytes: Uint8Array) => {
 	`
 }
 
-const makeBase64Svg = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`
+const makeBase64Svg = (svg: string) => `data:image/svg+xml;base64,${ btoa(svg) }`
 export const zorbImageDataURI = (input: Uint8Array) => makeBase64Svg(zorbImageSVG(input))

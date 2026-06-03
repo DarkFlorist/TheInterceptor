@@ -101,7 +101,7 @@ const customErrorResult = ({ data, reason, fragment, args, selector, name, signa
 	const resolvedSelector = selector ?? data?.slice(0, 10)
 	return baseErrorResult({
 		type: ErrorType.CustomError,
-		reason: formatReason(reason, `No ABI for custom error ${resolvedSelector}`),
+		reason: formatReason(reason, `No ABI for custom error ${ resolvedSelector }`),
 		data,
 		fragment,
 		args,
@@ -148,7 +148,7 @@ const handleEmptyError = (error: ErrorWithCodeAndOptionalData) => emptyErrorResu
 
 const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
-	const encodedReason = `0x${error.data.slice(ERROR_STRING_PREFIX.length)}` as const
+	const encodedReason = `0x${ error.data.slice(ERROR_STRING_PREFIX.length) }` as const
 	const fragment = getErrorAbiItem(ErrorStringABI)
 	if (fragment === undefined)
 		return unknownErrorResult({
@@ -178,7 +178,7 @@ const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 
 const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
-	const encodedReason = `0x${error.data.slice(PANIC_CODE_PREFIX.length)}` as const
+	const encodedReason = `0x${ error.data.slice(PANIC_CODE_PREFIX.length) }` as const
 	const fragment = getErrorAbiItem(PanicABI)
 	if (fragment === undefined)
 		return unknownErrorResult({
@@ -242,7 +242,7 @@ export const decodeEthereumError = (errorAbis: readonly AbiLike[], error: ErrorW
 		printError(decodingError)
 		return unknownErrorResult({
 			data: error.data,
-			reason: `Failed to decode error: ${error.message}`,
+			reason: `Failed to decode error: ${ error.message }`,
 			name: 'unknown',
 		})
 	}

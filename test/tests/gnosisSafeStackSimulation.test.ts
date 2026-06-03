@@ -401,7 +401,7 @@ describe('Gnosis Safe stack simulation', () => {
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
 						const isAggregate3BalanceCall = typeof lastCall === 'object' && lastCall !== null && 'to' in lastCall && lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${String(callCount)} blockStateCalls`)
+						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
 						aggregate3BlockStateCallCount = callCount
 
 						const aggregate3ReturnData = encodeFunctionResult({
@@ -417,7 +417,7 @@ describe('Gnosis Safe stack simulation', () => {
 						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
 					}
 					default:
-						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				}
 			},
 		}
@@ -564,7 +564,7 @@ describe('Gnosis Safe stack simulation', () => {
 							throw new Error('Missing blockStateCalls in eth_simulateV1 request')
 						}
 						const callCount = firstParam.blockStateCalls.length
-						if (callCount !== 1 && callCount !== 2 && callCount !== 3) throw new Error(`Unexpected call count: ${String(callCount)}`)
+						if (callCount !== 1 && callCount !== 2 && callCount !== 3) throw new Error(`Unexpected call count: ${ String(callCount) }`)
 						const lastBlock = firstParam.blockStateCalls[callCount - 1]
 						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) {
 							throw new Error('Missing calls in eth_simulateV1 block')
@@ -586,7 +586,7 @@ describe('Gnosis Safe stack simulation', () => {
 						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
 					}
 					default:
-						throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				}
 			},
 		}

@@ -12,7 +12,7 @@ interface ErrorProps {
 export function ErrorText(props: ErrorProps) {
 	const textColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
 	return (
-		<p class="paragraph" style={`color: ${textColor}`}>
+		<p class="paragraph" style={`color: ${ textColor }`}>
 			{' '}
 			{resolveSignal(props.text)}{' '}
 		</p>
@@ -29,11 +29,11 @@ export function ErrorComponent(props: ErrorProps) {
 	}
 	return (
 		<div style={containerStyle}>
-			<div class="notification" style={`background-color: ${boxColor}; display: flex; align-items: flex-start; gap: 10px; padding: 10px;`}>
+			<div class="notification" style={`background-color: ${ boxColor }; display: flex; align-items: flex-start; gap: 10px; padding: 10px;`}>
 				<span class="icon" style="margin-left: 0px; margin-right: 0px; width: 2em; height: 2em; min-width: 2em; min-height: 2em; flex: 0 0 auto;">
 					<img src="../img/warning-sign-black.svg" width="32" height="32" style="width: 2em; height: 2em;" />
 				</span>
-				<p class="paragraph" style={`margin: 0px; min-width: 0; flex: 1; color: ${textColor}; white-space: normal; overflow-wrap: anywhere; word-break: break-word;`}>
+				<p class="paragraph" style={`margin: 0px; min-width: 0; flex: 1; color: ${ textColor }; white-space: normal; overflow-wrap: anywhere; word-break: break-word;`}>
 					{' '}
 					{resolveSignal(props.text)}{' '}
 				</p>
@@ -66,8 +66,8 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'
 	return (
 		<div>
-			<div class="notification" style={`background-color: ${boxColor}; padding: 10px;`}>
-				<label class="form-control" style={`color: ${textColor}; font-size: 1em;`}>
+			<div class="notification" style={`background-color: ${ boxColor }; padding: 10px;`}>
+				<label class="form-control" style={`color: ${ textColor }; font-size: 1em;`}>
 					<input
 						type="checkbox"
 						checked={props.checked.value}
@@ -77,7 +77,7 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 							}
 						}}
 					/>
-					<p class="paragraph checkbox-text" style={`color: ${textColor};`}>
+					<p class="paragraph checkbox-text" style={`color: ${ textColor };`}>
 						{' '}
 						{resolveSignal(props.text)}{' '}
 					</p>

@@ -123,13 +123,13 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 		if (!Array.isArray(value))
 			return {
 				valid: false,
-				reason: `invalid array: ${JSON.stringify(value)}`,
+				reason: `invalid array: ${ JSON.stringify(value) }`,
 			}
 
 		if (expectedLength !== undefined && value.length > expectedLength)
 			return {
 				valid: false,
-				reason: `expected array of length ${expectedLength}, got ${value.length}`,
+				reason: `expected array of length ${ expectedLength }, got ${ value.length }`,
 			}
 		for (const elem of value) {
 			const valid = validateTypeValue(innerType, elem, solidityTypeTree)
@@ -145,7 +145,7 @@ const getBaseType = (typeStr: string): string => typeStr.match(/^([^\[]+)/)?.[1]
 
 const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, solidityTypeTree: SolidityTypeTree): { valid: true } | { valid: false; reason: string } => {
 	const identifierPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/
-	if (!identifierPattern.test(typeStr)) return { valid: false, reason: `invalid type: ${typeStr}` }
+	if (!identifierPattern.test(typeStr)) return { valid: false, reason: `invalid type: ${ typeStr }` }
 
 	// Check for integer types, e.g. uint128 or int256
 	const intRegex = /^(u?)int(\d+)$/
@@ -158,12 +158,12 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		if (bitWidth < 8 || bitWidth > 256)
 			return {
 				valid: false,
-				reason: `${typeStr} is not a valid type, number widths must be in range [8,256]`,
+				reason: `${ typeStr } is not a valid type, number widths must be in range [8,256]`,
 			}
 		if (!Number.isInteger(bitWidth / 8))
 			return {
 				valid: false,
-				reason: `${typeStr} is not a valid type, number widths must be divisible by 8.`,
+				reason: `${ typeStr } is not a valid type, number widths must be divisible by 8.`,
 			}
 		// For unsigned: range is 0 to 2^width - 1
 		// For signed: range is -2^(width-1) to 2^(width-1) - 1
@@ -175,7 +175,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 			if (!Number.isInteger(value))
 				return {
 					valid: false,
-					reason: `${JSON.stringify(value)} wasn't integer`,
+					reason: `${ JSON.stringify(value) } wasn't integer`,
 				}
 			bigValue = BigInt(value)
 		} else if (typeof value === 'string') {
@@ -183,13 +183,13 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 			if (!parsed.success)
 				return {
 					valid: false,
-					reason: `${JSON.stringify(value)} wasn't integer`,
+					reason: `${ JSON.stringify(value) } wasn't integer`,
 				}
 			bigValue = parsed.value
 		} else {
 			return {
 				valid: false,
-				reason: `${JSON.stringify(value)} wasn't integer`,
+				reason: `${ JSON.stringify(value) } wasn't integer`,
 			}
 		}
 		const valid = bigValue >= min && bigValue <= max
@@ -197,7 +197,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 			? { valid: true }
 			: {
 					valid: false,
-					reason: `${JSON.stringify(value)} is out of bounds of ${typeStr}`,
+					reason: `${ JSON.stringify(value) } is out of bounds of ${ typeStr }`,
 				}
 	}
 
@@ -210,24 +210,24 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		if (expectedSize < 1 || expectedSize > 32)
 			return {
 				valid: false,
-				reason: `Only 'bytes1' through 'bytes32' are valid, '${typeStr}' is not in that range`,
+				reason: `Only 'bytes1' through 'bytes32' are valid, '${ typeStr }' is not in that range`,
 			}
 		// Value must be a hex string with 2 + 2*expectedSize characters (0x + hex digits)
 		const valid = typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) && value.length === 2 + expectedSize * 2
-		return valid ? { valid: true } : { valid: false, reason: `${value} is invalid bytes string` }
+		return valid ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
 	}
 
 	// Check for bytes type
 	const bytesRegex = /^bytes$/
 	const bytesMatch = typeStr.match(bytesRegex)
 	if (bytesMatch) {
-		return typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) ? { valid: true } : { valid: false, reason: `${value} is invalid bytes string` }
+		return typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
 	}
 
 	// Other built-in types
-	if (typeStr === 'bool') return typeof value === 'boolean' ? { valid: true } : { valid: false, reason: `${value} is not boolean` }
-	if (typeStr === 'string') return typeof value === 'string' ? { valid: true } : { valid: false, reason: `${value} is not string` }
-	if (typeStr === 'address') return typeof value === 'string' && /^0x[a-fA-F0-9]{40}$/.test(value) ? { valid: true } : { valid: false, reason: `${value} is not address` }
+	if (typeStr === 'bool') return typeof value === 'boolean' ? { valid: true } : { valid: false, reason: `${ value } is not boolean` }
+	if (typeStr === 'string') return typeof value === 'string' ? { valid: true } : { valid: false, reason: `${ value } is not string` }
+	if (typeStr === 'address') return typeof value === 'string' && /^0x[a-fA-F0-9]{40}$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is not address` }
 	if (typeStr === 'function') return { valid: false, reason: 'cannot decode function type' }
 
 	// For custom struct types, the type must be in validStructNames and the value must be an object (but not an array or null)
@@ -241,7 +241,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 				if (typeDefinition === undefined)
 					return {
 						valid: false,
-						reason: `did not find type for: ${entryName}`,
+						reason: `did not find type for: ${ entryName }`,
 					}
 				if (typeDefinition.primaryType) {
 					const valid = validateTypeValue(typeDefinition.type, entryValue, {})
@@ -257,17 +257,17 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		}
 		return {
 			valid: false,
-			reason: `value ${JSON.stringify(value)} not matching type object`,
+			reason: `value ${ JSON.stringify(value) } not matching type object`,
 		}
 	}
 
 	// If typeStr starts with a reserved built-in prefix but wasn't caught by above rules, reject it
-	if (/^(u?int|bytes|u?fixed|address|bool|string|function)/.test(typeStr)) return { valid: false, reason: `${typeStr} is invalid type` }
+	if (/^(u?int|bytes|u?fixed|address|bool|string|function)/.test(typeStr)) return { valid: false, reason: `${ typeStr } is invalid type` }
 
 	// Otherwise, unknown type: reject
 	return {
 		valid: false,
-		reason: `type not recognized: ${JSON.stringify(typeStr)}`,
+		reason: `type not recognized: ${ JSON.stringify(typeStr) }`,
 	}
 }
 
@@ -291,7 +291,7 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 		if (!areNamesUnique(rootType)) return { valid: false, reason: 'not unique type names' }
 		const extractedTypes: TypeDefinition[] = []
 		for (const currentType of rootType) {
-			if (!isValidSolidityType(currentType.type, structNames)) return { valid: false, reason: `unknown type: ${currentType.type}` }
+			if (!isValidSolidityType(currentType.type, structNames)) return { valid: false, reason: `unknown type: ${ currentType.type }` }
 			const baseType = getBaseType(currentType.type)
 			const struct = nonExtractedTypesArray.find(([typeName, _rest]) => typeName === baseType)
 			if (struct === undefined) {
@@ -376,7 +376,7 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 		if (entry !== undefined && entry.type !== expectedEntry.type) {
 			return {
 				valid: false,
-				reason: `EIP712Domain type error: expected entry ${expectedEntry.name} to be type ${expectedEntry.type} but got type ${entry.type}`,
+				reason: `EIP712Domain type error: expected entry ${ expectedEntry.name } to be type ${ expectedEntry.type } but got type ${ entry.type }`,
 			}
 		}
 	}
@@ -419,13 +419,13 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 			if (field[0] === undefined) return { valid: false, reason: 'Field was invalid' }
 			if (field[1] === undefined) return { valid: false, reason: 'Field was invalid' }
 			const type = extractedPrimary.find((type) => type.name === field[0])
-			if (type === undefined) return { valid: false, reason: `Failed to find type for ${field[0]}` }
+			if (type === undefined) return { valid: false, reason: `Failed to find type for ${ field[0] }` }
 			if (type.primaryType) {
 				const valid = validateTypeValue(type.type, field[1], {})
 				if (valid.valid === false)
 					return {
 						valid: false,
-						reason: `${field[0]}: ${JSON.stringify(field[1])} is invalid: ${valid.reason}`,
+						reason: `${ field[0] }: ${ JSON.stringify(field[1]) } is invalid: ${ valid.reason }`,
 					}
 			} else {
 				const valid = validateTypeValue(type.typeName, field[1], {
@@ -434,7 +434,7 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 				if (valid.valid === false)
 					return {
 						valid: false,
-						reason: `${field[0]}: ${JSON.stringify(field[1])} is invalid ${valid.reason}`,
+						reason: `${ field[0] }: ${ JSON.stringify(field[1]) } is invalid ${ valid.reason }`,
 					}
 			}
 		}
@@ -446,14 +446,14 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 	if (!validDomain.valid)
 		return {
 			valid: false,
-			reason: `EIP712Domain was invalid: ${validDomain.reason}`,
+			reason: `EIP712Domain was invalid: ${ validDomain.reason }`,
 		}
 	// validate message
 	const validMessage = validateTypes(maybeEip712Message.message, maybeEip712Message.primaryType, maybeEip712Message.types)
 	if (!validMessage.valid)
 		return {
 			valid: false,
-			reason: `Message was invalid: ${validMessage.reason}`,
+			reason: `Message was invalid: ${ validMessage.reason }`,
 		}
 	return { valid: true }
 }

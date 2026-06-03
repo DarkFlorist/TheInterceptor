@@ -24,7 +24,7 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 		}
 	}
 	if (encodedData.length === 0) return undefined
-	return encodedData.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${part}`))).join('.')
+	return encodedData.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${ part }`))).join('.')
 }
 
 export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint): Promise<string | undefined> => {
@@ -57,7 +57,7 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	const normalizedName = normalizeEnsNameOrUndefined(name)
 	if (normalizedName === undefined) return name
 	if (tokenId !== BigInt(namehash(normalizedName))) {
-		console.error(`Querying RPC ${ethereumMainnet.getRpcEntry().httpsRpc} returned invalid name for hash: ${tokenId}.`)
+		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
 		return undefined
 	}
 	return name
@@ -96,6 +96,6 @@ export const extractENSFuses = (uint: bigint): readonly EnsFuseName[] => {
 }
 
 export const getEnsReverseNodeHash = (address: EthereumAddress) => {
-	const name = `${addressStringWithout0x(address)}.addr.reverse`
+	const name = `${ addressStringWithout0x(address) }.addr.reverse`
 	return { nameHash: BigInt(namehash(name)), name }
 }

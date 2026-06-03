@@ -13,7 +13,7 @@ import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
+	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
 	return jsonRpcResponse.result as T
 }
 
@@ -110,7 +110,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber':
-				return `0x${blockNumber.toString(16)}`
+				return `0x${ blockNumber.toString(16) }`
 			case 'eth_getBlockByNumber': {
 				if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
@@ -131,7 +131,7 @@ class MockEthereumJSONRpcRequestHandler {
 				return createMockEthSimulateV1Result(rpcRequest.params[0]?.blockStateCalls.length ?? 0, aggregate3BalanceQueryCount)
 			}
 			default:
-				throw new Error(`unsupported method ${rpcRequest.method}`)
+				throw new Error(`unsupported method ${ rpcRequest.method }`)
 		}
 	}
 }
@@ -472,7 +472,7 @@ describe('EthereumSubscriptionService', () => {
 				socket.tabId,
 				{
 					connections: {
-						[`${socket.tabId}-0x${socket.connectionName.toString(16)}`]: {
+						[`${ socket.tabId }-0x${ socket.connectionName.toString(16) }`]: {
 							port: {
 								postMessage(message: unknown) {
 									postedMessages.push(InterceptorMessageToInpage.parse(message))

@@ -257,7 +257,7 @@ const fakeRequestHandler = {
 					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0)),
 				)
 			default:
-				throw new Error(`Unexpected RPC method: ${rpcRequest.method}`)
+				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 		}
 	},
 }

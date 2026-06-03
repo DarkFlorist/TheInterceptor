@@ -7,7 +7,7 @@ const SignedBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'
 		if (!/^-?0x[a-fA-F0-9]{1,64}$/.test(value))
 			return {
 				success: false,
-				message: `${value} is not a hex string encoded number.`,
+				message: `${ value } is not a hex string encoded number.`,
 			}
 		return {
 			success: true,
@@ -15,10 +15,10 @@ const SignedBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'
 		}
 	},
 	serialize: (value) => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		return {
 			success: true,
-			value: value < 0 ? `-0x${(-value).toString(16)}` : `0x${value.toString(16)}`,
+			value: value < 0 ? `-0x${ (-value).toString(16) }` : `0x${ value.toString(16) }`,
 		}
 	},
 }

@@ -248,7 +248,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 							editableAccessList.value.map((access, accessListIndex) => (
 								<li key={access.websiteAccess.website.websiteOrigin}>
 									{access.removed ? (
-										<p style="color: var(--negative-color)"> {`Forgot ${access.websiteAccess.website.websiteOrigin}. `}</p>
+										<p style="color: var(--negative-color)"> {`Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p>
 									) : (
 										<div class="card">
 											<div class="card-header">
@@ -332,9 +332,9 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 													) : (
 														<>
 															{access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
-																<li key={addressString(websiteAccessAddress.address)} style={`margin: 0px; margin-bottom: ${addressIndex < access.addressAccessModified.length - 1 ? '10px;' : '0px'}`}>
+																<li key={addressString(websiteAccessAddress.address)} style={`margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1 ? '10px;' : '0px' }`}>
 																	{websiteAccessAddress.removed ? (
-																		<p style="color: var(--negative-color)"> {`Forgot ${metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address)}`} </p>
+																		<p style="color: var(--negative-color)"> {`Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p>
 																	) : (
 																		<div style="display: flex; width: 100%; overflow: hidden;">
 																			<SmallAddress

@@ -18,7 +18,7 @@ type EnsEvenExplainerParam = {
 const expiresToDateString = (expires: bigint) => bigintSecondsToDate(expires).toISOString()
 
 const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, renameAddressCallBack, rpcNetwork }: EnsEvenExplainerParam) => {
-	const textStyle = `color: ${textColor}; margin-bottom: 0px; display: inline-block`
+	const textStyle = `color: ${ textColor }; margin-bottom: 0px; display: inline-block`
 	switch (ensEvent.subType) {
 		case 'ENSAddrChanged':
 			return (
@@ -64,7 +64,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`with expiration date of ${expiresToDateString(ensEvent.logInformation.expires)}`}
+							{`with expiration date of ${ expiresToDateString(ensEvent.logInformation.expires) }`}
 						</p>
 					</div>
 				</div>
@@ -117,7 +117,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`to expire on ${expiresToDateString(ensEvent.logInformation.expires)} for`}
+							{`to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for`}
 						</p>
 					</div>
 					<div class="log-cell">
@@ -138,7 +138,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`to expire on ${expiresToDateString(ensEvent.logInformation.expires)} for`}
+							{`to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for`}
 						</p>
 					</div>
 					<div class="log-cell">
@@ -159,7 +159,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`to expire on ${expiresToDateString(ensEvent.logInformation.expires)}`}
+							{`to expire on ${ expiresToDateString(ensEvent.logInformation.expires) }`}
 						</p>
 					</div>
 				</div>
@@ -204,7 +204,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`to ${ensEvent.logInformation.name}`}
+							{`to ${ ensEvent.logInformation.name }`}
 						</p>
 					</div>
 				</div>
@@ -251,7 +251,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`to expire on ${expiresToDateString(ensEvent.logInformation.expires)} with fuses`}
+							{`to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } with fuses`}
 						</p>
 					</div>
 					<div class="log-cell">
@@ -328,7 +328,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 					</div>
 					<div class="log-cell">
 						<p class="ellipsis paragraph" style={textStyle}>
-							{`TTL to ${ensEvent.logInformation.ttl}`}
+							{`TTL to ${ ensEvent.logInformation.ttl }`}
 						</p>
 					</div>
 				</div>
@@ -485,7 +485,7 @@ export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
 			{param.ensEvents
 				.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed')
 				.map((ensEvent, index) => (
-					<div key={`${ensEvent.subType}-${index}`} class="vertical-center">
+					<div key={`${ ensEvent.subType }-${ index }`} class="vertical-center">
 						<div class="box token-box vertical-center positive-box" style="display: inline-block">
 							<VisualizeEnsEvent ensEvent={ensEvent} textColor={param.textColor} editEnsNamedHashCallBack={param.editEnsNamedHashCallBack} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />
 						</div>

@@ -77,7 +77,7 @@ async function onContentScriptConnected(
 ) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
-		printError(`Could not connect to a port: ${port.name}`)
+		printError(`Could not connect to a port: ${ port.name }`)
 		return
 	}
 	const websiteOrigin = getHostWithPort(port.sender.url)

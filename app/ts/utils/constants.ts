@@ -219,7 +219,7 @@ export const BRAVE_LOGO = '../img/signers/brave.svg'
 export const COINBASEWALLET_LOGO = '../img/signers/coinbasewallet.svg'
 
 export function getChainName(chainId: bigint) {
-	return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${chainId.toString()}`
+	return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${ chainId.toString() }`
 }
 
 export const ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER = 4n // Bounds the maximum gas limit an EIP-1559 block may have, Ethereum = 4, Polygon = 8, lets just default to 4

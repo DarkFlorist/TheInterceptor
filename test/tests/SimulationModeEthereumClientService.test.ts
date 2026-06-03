@@ -31,7 +31,7 @@ import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
+	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
 	return jsonRpcResponse.result as T
 }
 
@@ -90,10 +90,10 @@ function createMockEthSimulateV1ResultWithCustomLastBlock(blockStateCallCount: n
 }
 
 function testBytes32(suffix: string) {
-	return `0x${suffix.padStart(64, '0')}`
+	return `0x${ suffix.padStart(64, '0') }`
 }
 
-const zeroBytes256 = `0x${'0'.repeat(512)}`
+const zeroBytes256 = `0x${ '0'.repeat(512) }`
 
 const blockNumber = 8443561n
 const rpcNetwork = {
@@ -123,7 +123,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber':
-				return `0x${blockNumber.toString(16)}`
+				return `0x${ blockNumber.toString(16) }`
 			case 'eth_getTransactionCount':
 				return '0x0'
 			case 'eth_getBlockByNumber': {
@@ -173,7 +173,7 @@ class MockEthereumJSONRpcRequestHandler {
 				return createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
 			}
 			default:
-				throw new Error(`unsupported method ${rpcRequest.method}`)
+				throw new Error(`unsupported method ${ rpcRequest.method }`)
 		}
 	}
 }
@@ -603,7 +603,7 @@ describe('SimulationModeEthereumClientService', () => {
 			value: exampleTransaction.value,
 			input: exampleTransaction.input,
 		})
-		if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${estimateGas.message}`)
+		if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 		assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 	})
 
@@ -617,7 +617,7 @@ describe('SimulationModeEthereumClientService', () => {
 			input: exampleTransaction.input,
 			gas: explicitGas,
 		})
-		if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${estimateGas.message}`)
+		if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 		assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, explicitGas)
 	})
 
@@ -631,7 +631,7 @@ describe('SimulationModeEthereumClientService', () => {
 			maxFeePerGas: 0n,
 			maxPriorityFeePerGas: 0n,
 		})
-		if ('error' in callResult) throw new Error(`simulated call unexpectedly failed: ${callResult.message}`)
+		if ('error' in callResult) throw new Error(`simulated call unexpectedly failed: ${ callResult.message }`)
 		assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 	})
 
@@ -647,7 +647,7 @@ describe('SimulationModeEthereumClientService', () => {
 			maxPriorityFeePerGas: 0n,
 			gasLimit,
 		})
-		if ('error' in callResult) throw new Error(`simulated call unexpectedly failed: ${callResult.message}`)
+		if ('error' in callResult) throw new Error(`simulated call unexpectedly failed: ${ callResult.message }`)
 		assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, gasLimit)
 	})
 

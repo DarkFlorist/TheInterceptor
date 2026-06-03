@@ -70,7 +70,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										</div>
 
 										<div class="media-content" style="overflow-y: hidden;">
-											<p class="title is-5 is-spaced">{`Use address from ${getPrettySignerName(param.signerName)}`}</p>
+											<p class="title is-5 is-spaced">{`Use address from ${ getPrettySignerName(param.signerName) }`}</p>
 											<p class="subtitle is-7"> {signerAddressName === undefined ? '' : signerAddressName}</p>
 										</div>
 									</div>
@@ -93,7 +93,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 											<BigAddress addressBookEntry={activeAddress} noCopying={true} noEditAddress={true} renameAddressCallBack={param.renameAddressCallBack} />
 											{isSignerConnected(activeAddress.address) ? (
 												<div class="content" style="color: var(--text-color)">
-													<SignerLogoText signerName={param.signerName} text={` ${getPrettySignerName(param.signerName)} connected`} />
+													<SignerLogoText signerName={param.signerName} text={` ${ getPrettySignerName(param.signerName) } connected`} />
 												</div>
 											) : (
 												<></>

@@ -68,7 +68,7 @@ type AddressInputParams = {
 
 function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
 	return (
-		<input disabled={disabled} class="input subtitle is-7 is-spaced" type="text" value={addressInput} placeholder={'0x0...'} onInput={(e) => setAddress((e.target as HTMLInputElement).value)} style={`width: 100%;${addressInput === undefined || isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);'}`} />
+		<input disabled={disabled} class="input subtitle is-7 is-spaced" type="text" value={addressInput} placeholder={'0x0...'} onInput={(e) => setAddress((e.target as HTMLInputElement).value)} style={`width: 100%;${ addressInput === undefined || isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }`} />
 	)
 }
 
@@ -98,7 +98,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	useEffect(() => {
 		ref.current?.focus()
 	}, [])
-	return <input class="input is-spaced" type="text" value={abiInput} placeholder={'no abi'} onInput={(e) => setAbiInput(e.currentTarget.value)} ref={ref} disabled={disabled} style={`width: 100%;${abiInput === undefined || isValidAbi(abiInput.trim()) ? '' : 'color: var(--negative-color);'}`} />
+	return <input class="input is-spaced" type="text" value={abiInput} placeholder={'no abi'} onInput={(e) => setAbiInput(e.currentTarget.value)} ref={ref} disabled={disabled} style={`width: 100%;${ abiInput === undefined || isValidAbi(abiInput.trim()) ? '' : 'color: var(--negative-color);' }`} />
 }
 
 function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, fetchAbiAndNameFromBlockExplorer }: RenderinCompleteAddressBookParams) {
@@ -466,11 +466,11 @@ export function AddNewAddress(param: AddAddressParam) {
 	function getCardTitle() {
 		const incompleteAddressBookEntry = param.modifyAddressWindowState.value.incompleteAddressBookEntry
 		if (incompleteAddressBookEntry.addingAddress) {
-			return `Add New ${readableAddressType[incompleteAddressBookEntry.type]}`
+			return `Add New ${ readableAddressType[incompleteAddressBookEntry.type] }`
 		}
 		const alleged = showOnChainVerificationErrorBox.value ? 'alleged ' : ''
-		const name = incompleteAddressBookEntry.name !== undefined ? `${alleged}${incompleteAddressBookEntry.name}` : readableAddressType[incompleteAddressBookEntry.type]
-		return `Modify ${name}`
+		const name = incompleteAddressBookEntry.name !== undefined ? `${ alleged }${ incompleteAddressBookEntry.name }` : readableAddressType[incompleteAddressBookEntry.type]
+		return `Modify ${ name }`
 	}
 	const incompleteAddressBookEntry = useComputed(() => param.modifyAddressWindowState.value.incompleteAddressBookEntry)
 	return (

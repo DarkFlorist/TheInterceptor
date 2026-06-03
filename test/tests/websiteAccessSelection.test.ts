@@ -155,7 +155,7 @@ function installWindowHashMock(initialHash: string) {
 	const location = {
 		pathname: '/websiteAccess.html',
 		get href() {
-			return `${this.pathname}${currentHash}`
+			return `${ this.pathname }${ currentHash }`
 		},
 		set href(value: string) {
 			const hashIndex = value.indexOf('#')
@@ -166,7 +166,7 @@ function installWindowHashMock(initialHash: string) {
 			return currentHash
 		},
 		set hash(nextHash: string) {
-			currentHash = nextHash.length === 0 || nextHash.startsWith('#') ? nextHash : `#${nextHash}`
+			currentHash = nextHash.length === 0 || nextHash.startsWith('#') ? nextHash : `#${ nextHash }`
 			dispatchHashChange()
 		},
 	}

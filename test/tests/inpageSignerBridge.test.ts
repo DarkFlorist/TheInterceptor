@@ -63,7 +63,7 @@ function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}
 					}
 					return signerAccounts
 				default:
-					throw new Error(`Unexpected signer request: ${method}`)
+					throw new Error(`Unexpected signer request: ${ method }`)
 			}
 		},
 		on: () => fakeSigner,
@@ -167,7 +167,7 @@ function createLockedCompatibilitySigner() {
 				case 'eth_chainId':
 					return '0x1'
 				default:
-					throw new Error(`Unexpected signer request: ${method}`)
+					throw new Error(`Unexpected signer request: ${ method }`)
 			}
 		},
 		on: () => baseSigner,
@@ -192,7 +192,7 @@ function createConfigurableGetterOnlyCompatibilitySigner() {
 				case 'eth_chainId':
 					return '0x1'
 				default:
-					throw new Error(`Unexpected signer request: ${method}`)
+					throw new Error(`Unexpected signer request: ${ method }`)
 			}
 		},
 		on: () => baseSigner,

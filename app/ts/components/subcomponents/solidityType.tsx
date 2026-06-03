@@ -48,11 +48,11 @@ function PureSolidityTypeComponent({ valueType }: { valueType: PureGroupedSolidi
 		case 'signedInteger':
 			return <StringElement text={valueType.value.toString()} />
 		case 'string':
-			return <StringElement text={`"${valueType.value}"`} />
+			return <StringElement text={`"${ valueType.value }"`} />
 		case 'address[]':
-			return <StringElement text={`[${valueType.value.map((value) => checksummedAddress(value)).toString()}]`} />
+			return <StringElement text={`[${ valueType.value.map((value) => checksummedAddress(value)).toString() }]`} />
 		case 'bool[]':
-			return <StringElement text={`[${valueType.value.map((a) => (a === true ? 'True' : 'False')).toString()}]`} />
+			return <StringElement text={`[${ valueType.value.map((a) => (a === true ? 'True' : 'False')).toString() }]`} />
 		case 'bytes[]':
 			return (
 				<JsxArray
@@ -65,12 +65,12 @@ function PureSolidityTypeComponent({ valueType }: { valueType: PureGroupedSolidi
 				/>
 			)
 		case 'fixedBytes[]':
-			return <StringElement text={`[${valueType.value.toString()}]`} />
+			return <StringElement text={`[${ valueType.value.toString() }]`} />
 		case 'unsignedInteger[]':
 		case 'signedInteger[]':
-			return <StringElement text={`[${valueType.value.toString()}]`} />
+			return <StringElement text={`[${ valueType.value.toString() }]`} />
 		case 'string[]':
-			return <StringElement text={`[${valueType.value.map((a) => `"${a}"`)}]`} />
+			return <StringElement text={`[${ valueType.value.map((a) => `"${ a }"`) }]`} />
 		default:
 			assertNever(valueType)
 	}

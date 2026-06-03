@@ -21,30 +21,30 @@ async function waitForCondition(condition: () => Promise<boolean> | boolean, tim
 	const start = Date.now()
 	while (true) {
 		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${label} after ${timeoutMs}ms`)
+		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
 		await sleep(50)
 	}
 }
 
 function extractExtensionId(url: string) {
 	const match = /^chrome-extension:\/\/([^/]+)/.exec(url)
-	if (match?.[1] === undefined) throw new Error(`Could not determine extension id from ${url}`)
+	if (match?.[1] === undefined) throw new Error(`Could not determine extension id from ${ url }`)
 	return match[1]
 }
 
 async function getCommunicationPageState(connection: CdpConnection): Promise<CommunicationPageState | undefined> {
-	return await connection.evaluate<CommunicationPageState | undefined>(`(() => globalThis[${JSON.stringify(COMMUNICATION_PAGE_STATE_GLOBAL)}] ?? undefined)()`)
+	return await connection.evaluate<CommunicationPageState | undefined>(`(() => globalThis[${ JSON.stringify(COMMUNICATION_PAGE_STATE_GLOBAL) }] ?? undefined)()`)
 }
 
 async function waitForCommunicationPagePhase(connection: CdpConnection, phase: CommunicationPageState['phase'], timeoutMs: number) {
 	await waitForCondition(
 		async () => {
 			const state = await getCommunicationPageState(connection)
-			if (state?.phase === 'error') throw new Error(`Communication page failed: ${state.error ?? 'unknown error'}`)
+			if (state?.phase === 'error') throw new Error(`Communication page failed: ${ state.error ?? 'unknown error' }`)
 			return state?.phase === phase
 		},
 		timeoutMs,
-		`communication page phase ${phase}`,
+		`communication page phase ${ phase }`,
 	)
 }
 
@@ -54,21 +54,21 @@ async function waitForButtonEnabled(connection: CdpConnection, selector: string,
 			return Boolean(
 				await connection
 					.evaluate<boolean>(`(() => {
-			const element = document.querySelector(${JSON.stringify(selector)})
+			const element = document.querySelector(${ JSON.stringify(selector) })
 			return element instanceof HTMLButtonElement && element.disabled === false
 		})()`)
 					.catch(() => false),
 			)
 		},
 		timeoutMs,
-		`button ${selector} to be enabled`,
+		`button ${ selector } to be enabled`,
 	)
 }
 
 async function clickButton(connection: CdpConnection, selector: string) {
 	await connection.evaluate(`(() => {
-		const element = document.querySelector(${JSON.stringify(selector)})
-		if (!(element instanceof HTMLButtonElement)) throw new Error('Could not find button ${selector}')
+		const element = document.querySelector(${ JSON.stringify(selector) })
+		if (!(element instanceof HTMLButtonElement)) throw new Error('Could not find button ${ selector }')
 		element.click()
 		return true
 	})()`)
@@ -94,7 +94,7 @@ async function main() {
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
-			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${extensionId}/html3/interceptorAccessV3.html`, 30_000)
+			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 			accessTargetId = accessTarget.id
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
 			try {
@@ -106,7 +106,7 @@ async function main() {
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
 			const finalState = await getCommunicationPageState(pageConnection)
-			console.warn(`Interceptor Chrome communication smoke test passed for extension ${extensionId}.`)
+			console.warn(`Interceptor Chrome communication smoke test passed for extension ${ extensionId }.`)
 			console.warn(
 				JSON.stringify(
 					{

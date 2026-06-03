@@ -53,7 +53,7 @@ function SignerExplanation(param: SignerExplanationParams) {
 		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text="No signer installed. You need to install a signer, eg. Metamask." />
 		return <ErrorComponent text="The page you are looking at has NOT CONNECTED to a wallet." />
 	}
-	return <ErrorComponent text={`No account connected (or wallet is locked) in ${param.tabState.value.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.value.signerName)}.`} />
+	return <ErrorComponent text={`No account connected (or wallet is locked) in ${ param.tabState.value.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.value.signerName) }.`} />
 }
 
 function FirstCardHeader(param: FirstCardParams) {
@@ -87,10 +87,10 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 				<div>
 					<div class="buttons has-addons" style="border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;">
-						<button class={`button is-primary ${param.simulationMode.value ? '' : 'is-outlined'}`} style={`margin-bottom: 0px; ${param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;'}`} disabled={param.simulationMode.value} onClick={() => enableSimulationMode(true)}>
+						<button class={`button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }`} style={`margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }`} disabled={param.simulationMode.value} onClick={() => enableSimulationMode(true)}>
 							Simulating
 						</button>
-						<button class={`button is-primary ${param.simulationMode.value ? 'is-outlined' : ''}`} style={`margin-bottom: 0px; ${param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;'}`} disabled={!param.simulationMode.value} onClick={() => enableSimulationMode(false)}>
+						<button class={`button is-primary ${ param.simulationMode.value ? 'is-outlined' : '' }`} style={`margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }`} disabled={!param.simulationMode.value} onClick={() => enableSimulationMode(false)}>
 							<SignerLogoText signerName={signerName} text={'Signing'} />
 						</button>
 					</div>
@@ -109,7 +109,7 @@ type InterceptorDisabledButtonParams = {
 
 function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
 	return (
-		<button disabled={website.value === undefined} class={`button is-small ${interceptorDisabled.value ? 'is-success' : 'is-primary'}`} onClick={() => disableInterceptorToggle(!interceptorDisabled.value)}>
+		<button disabled={website.value === undefined} class={`button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }`} onClick={() => disableInterceptorToggle(!interceptorDisabled.value)}>
 			{interceptorDisabled.value ? (
 				<>
 					<span class="icon">
@@ -375,13 +375,13 @@ function FirstCard(param: FirstCardParams) {
 											})
 										}
 									>
-										<SignerLogoText signerName={param.tabState.value?.signerName ?? 'NoSignerDetected'} text={`Connect to ${getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected')}`} />
+										<SignerLogoText signerName={param.tabState.value?.signerName ?? 'NoSignerDetected'} text={`Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`} />
 									</button>
 								</div>
 							) : (
 								<p style="color: var(--subtitle-text-color);" class="subtitle is-7">
 									{' '}
-									{` You can change active address by changing it directly from ${getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected')}`}{' '}
+									{` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`}{' '}
 								</p>
 							)}
 						</>
@@ -490,7 +490,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 			{resolvedResults.visualizedSimulationState.success === false ? (
 				<>
-					<ErrorComponent text={`Failed to simulate the stack due to error: "${resolvedResults.visualizedSimulationState.jsonRpcError.error.message}". Please modify the stack to make it simutable.`} />
+					<ErrorComponent text={`Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.`} />
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults={param.simulationAndVisualisationResults}
 						removeTransactionOrSignedMessage={param.removeTransactionOrSignedMessage}
@@ -588,7 +588,7 @@ export function Home(param: HomeParams) {
 
 	return (
 		<>
-			{param.rpcNetwork.value.httpsRpc === undefined ? <ErrorComponent text={`${param.rpcNetwork.value.name} is not a supported network. The Interceptor is disabled while you are using ${param.rpcNetwork.value.name}.`} /> : <></>}
+			{param.rpcNetwork.value.httpsRpc === undefined ? <ErrorComponent text={`${ param.rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ param.rpcNetwork.value.name }.`} /> : <></>}
 
 			<FirstCard
 				preSimulationBlockTimeManipulation={param.preSimulationBlockTimeManipulation}

@@ -7,7 +7,7 @@ import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
+	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
 	return jsonRpcResponse.result as T
 }
 

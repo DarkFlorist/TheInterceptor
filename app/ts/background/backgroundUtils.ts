@@ -191,8 +191,8 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
-	if (manifest.manifest_version === 2) return `/html/${file}.html`
-	return `/html3/${file}V3.html`
+	if (manifest.manifest_version === 2) return `/html/${ file }.html`
+	return `/html3/${ file }V3.html`
 }
 
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
@@ -254,7 +254,7 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 	}
 }
 
-export const websiteSocketToString = (socket: WebsiteSocket) => `${socket.tabId}-${serialize(EthereumQuantity, socket.connectionName)}`
+export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined

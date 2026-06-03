@@ -16,7 +16,7 @@ const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config']
 		const encoded = new TextEncoder().encode(value)
 		const serializationResult = BytesParser.serialize!(encoded)
 		if (!serializationResult.success) return serializationResult
-		return { success: true, value: `Reverted ${serializationResult.value}` }
+		return { success: true, value: `Reverted ${ serializationResult.value }` }
 	},
 }
 

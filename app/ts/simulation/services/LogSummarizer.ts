@@ -284,7 +284,7 @@ const materializeSummaryForAddress = (
 
 	const erc20TokenBalanceChanges: Erc20TokenBalanceChange[] = Array.from(addressSummary.erc20TokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
 		const metadata = addressMetaData.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${tokenAddress}`)
+		if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		const tokenPriceEstimate = tokenPriceEstimates.find((tokenEstimate) => addressString(tokenEstimate.token.address) === tokenAddress)
 		const quoteTokenAddress = tokenPriceEstimate?.quoteToken.address
 		const quoteTokenEntry = quoteTokenAddress === undefined ? undefined : addressMetaData.get(addressString(quoteTokenAddress))
@@ -299,7 +299,7 @@ const materializeSummaryForAddress = (
 
 	const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = Array.from(addressSummary.erc20TokenApprovalChanges).map(([tokenAddress, approvals]) => {
 		const metadata = addressMetaData.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${tokenAddress}`)
+		if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		return {
 			...metadata,
 			approvals: Array.from(approvals).map(([approvedAddress, change]) => ({
@@ -314,7 +314,7 @@ const materializeSummaryForAddress = (
 		tokenId: bigint
 	})[] = Array.from(addressSummary.erc721TokenBalanceChanges).flatMap(([tokenAddress, tokenIds]) => {
 		const metadata = addressMetaData.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${tokenAddress}`)
+		if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		return Array.from(tokenIds).map(([tokenId, received]) => ({
 			...metadata,
 			tokenId: BigInt(tokenId),
@@ -324,7 +324,7 @@ const materializeSummaryForAddress = (
 
 	const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.erc721TokenIdApprovalChanges).flatMap(([tokenAddress, approvals]) => {
 		const metadata = addressMetaData.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${tokenAddress}`)
+		if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		return Array.from(approvals).map(([tokenId, approvedAddress]) => ({
 			tokenEntry: metadata,
 			tokenId: BigInt(tokenId),
@@ -334,7 +334,7 @@ const materializeSummaryForAddress = (
 
 	const erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[] = Array.from(addressSummary.erc1155TokenBalanceChanges).flatMap(([tokenAddress, tokenIds]) => {
 		const metadata = addressMetaData.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error(`Missing metadata for token: ${tokenAddress}`)
+		if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		return Array.from(tokenIds).map(([tokenId, changeAmount]) => ({
 			...metadata,
 			tokenId: BigInt(tokenId),
@@ -345,7 +345,7 @@ const materializeSummaryForAddress = (
 
 	const erc721and1155OperatorChanges: Erc721and1155OperatorChange[] = Array.from(addressSummary.erc721and1155OperatorChanges).map(([tokenAddress, operator]) => {
 		const metadata = addressMetaData.get(tokenAddress)
-		if (metadata === undefined || (metadata.type !== 'ERC1155' && metadata.type !== 'ERC721')) throw new Error(`Missing metadata for token: ${tokenAddress}`)
+		if (metadata === undefined || (metadata.type !== 'ERC1155' && metadata.type !== 'ERC721')) throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 		if (operator === undefined) {
 			return {
 				...metadata,

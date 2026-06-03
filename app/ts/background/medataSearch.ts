@@ -43,7 +43,7 @@ const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, Token
 	const { logoUri, ...rest } = def
 	return {
 		...rest,
-		...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 		address: BigInt(address),
 		type: 'ERC20' as const,
 		entrySource: 'DarkFloristMetadata' as const,
@@ -54,7 +54,7 @@ const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, Erc7
 	const { logoUri, ...rest } = def
 	return {
 		...rest,
-		...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 		address: BigInt(address),
 		type: 'ERC721' as const,
 		entrySource: 'DarkFloristMetadata' as const,
@@ -65,7 +65,7 @@ const convertErc1155DefinitionToAddressBookEntry = ([address, def]: [string, Erc
 	const { logoUri, ...rest } = def
 	return {
 		...rest,
-		...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 		address: BigInt(address),
 		type: 'ERC1155' as const,
 		entrySource: 'DarkFloristMetadata' as const,
@@ -77,7 +77,7 @@ const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, Co
 	const { logoUri, ...rest } = def
 	return {
 		...rest,
-		...(logoUri !== undefined ? { logoUri: `${getFullLogoUri(logoUri)}` } : {}),
+		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
 		address: BigInt(address),
 		type: 'contract' as const,
 		entrySource: 'DarkFloristMetadata' as const,
@@ -91,9 +91,9 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 }
 
 async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, chainId: ChainIdWithUniversal): Promise<AddressBookEntries> {
-	const unicodeEscapeString = (input: string) => `\\u{${input.charCodeAt(0).toString(16)}}`
+	const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim() : undefined
-	const searchPattern = trimmedSearch ? new RegExp(`(?=(${trimmedSearch.split('').map(unicodeEscapeString).join('.*?')}))`, 'ui') : undefined
+	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
 	const userEntries = (await getUserAddressBookEntriesForChainId(chainId)).filter((entry) => entry.entrySource !== 'OnChain')
 	switch (addressBookCategory) {
@@ -130,7 +130,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc20TokenEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${entry.symbol} ${entry.name}`, addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol } ${ entry.name }`, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -140,7 +140,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(erc721Metadata).map(convertErc721DefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc721Entry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${entry.symbol} ${entry.name}`, addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol } ${ entry.name }`, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)
@@ -150,7 +150,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ContractEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${'protocol' in entry && entry.protocol !== undefined ? entry.protocol : ''} ${entry.name}`, addressString(entry.address)),
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in entry && entry.protocol !== undefined ? entry.protocol : '' } ${ entry.name }`, addressString(entry.address)),
 				entry,
 			})
 			return search(entries, searchFunction)

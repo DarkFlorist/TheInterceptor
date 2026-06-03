@@ -27,12 +27,12 @@ export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: 
 	if (simulationMode === false) return undefined
 	if (data.externalRpc)
 		return {
-			message: `${data.name} relies on a centralized RPC connection which causes The Interceptor's Simulation Mode to not work properly with this site.`,
+			message: `${ data.name } relies on a centralized RPC connection which causes The Interceptor's Simulation Mode to not work properly with this site.`,
 			suggestedAlternative: data.suggestedAlternative,
 		}
 	if (data.usesSubGraph)
 		return {
-			message: `${data.name} relies on the centralized The Graph Protocol which causes The Interceptor's Simulation Mode to not work properly with this site.`,
+			message: `${ data.name } relies on the centralized The Graph Protocol which causes The Interceptor's Simulation Mode to not work properly with this site.`,
 			suggestedAlternative: data.suggestedAlternative,
 		}
 	return undefined

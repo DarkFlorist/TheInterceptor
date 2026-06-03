@@ -130,7 +130,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 					return undefined
 				},
 				async jsonRpcRequest(request) {
-					throw new Error(`Unexpected RPC method: ${request.method}`)
+					throw new Error(`Unexpected RPC method: ${ request.method }`)
 				},
 			},
 			async () => undefined,

@@ -16,7 +16,7 @@ const BeforeAfterBalance = funtypes.ReadonlyObject({
 })
 
 const getUniqueSwapAssetIdentifier = (metadata: TokenVisualizerResultWithMetadata) => {
-	return `${metadata.token.type}|${metadata.token.address}|${'tokenId' in metadata.token ? metadata.token.tokenId : 'noTokenid'}`
+	return `${ metadata.token.type }|${ metadata.token.address }|${ 'tokenId' in metadata.token ? metadata.token.tokenId : 'noTokenid' }`
 }
 
 type SwapAsset = funtypes.Static<typeof SwapAsset>
@@ -260,7 +260,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 	if (identifiedSwap === false) return undefined
 	const sent = identifiedSwap.sendAsset.token.symbol
 	const to = identifiedSwap.receiveAsset.token.symbol
-	return `Swap ${sent} for ${to}`
+	return `Swap ${ sent } for ${ to }`
 }
 
 function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset; renameAddressCallBack: RenameAddressCallBack }) {

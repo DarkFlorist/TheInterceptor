@@ -55,7 +55,7 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 			},
 			async get(tabId: number) {
 				const tab = tabsById.get(tabId)
-				if (tab === undefined) throw new Error(`No tab with id ${tabId}`)
+				if (tab === undefined) throw new Error(`No tab with id ${ tabId }`)
 				return tab
 			},
 			async update() {

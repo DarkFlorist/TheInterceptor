@@ -11,9 +11,9 @@ if (relativePaths.length === 0) {
 
 for (const relativePath of relativePaths) {
 	const absolutePath = path.resolve(repositoryRoot, relativePath)
-	const isInsideRepository = absolutePath === repositoryRoot || absolutePath.startsWith(`${repositoryRoot}${path.sep}`)
+	const isInsideRepository = absolutePath === repositoryRoot || absolutePath.startsWith(`${ repositoryRoot }${ path.sep }`)
 	if (!isInsideRepository) {
-		throw new Error(`Refusing to remove path outside repository: ${relativePath}`)
+		throw new Error(`Refusing to remove path outside repository: ${ relativePath }`)
 	}
 	fs.rmSync(absolutePath, { recursive: true, force: true })
 }

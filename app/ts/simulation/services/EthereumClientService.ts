@@ -18,8 +18,8 @@ import { getCurrentTimestampString } from '../../utils/time.js'
 const parseSignatureHex = (signature: `0x${string}`) => {
 	const stripped = signature.slice(2)
 	if (stripped.length !== 130) throw new Error('Unsupported signature length')
-	const r: `0x${string}` = `0x${stripped.slice(0, 64)}`
-	const s: `0x${string}` = `0x${stripped.slice(64, 128)}`
+	const r: `0x${string}` = `0x${ stripped.slice(0, 64) }`
+	const s: `0x${string}` = `0x${ stripped.slice(64, 128) }`
 	const rawV = Number.parseInt(stripped.slice(128, 130), 16)
 	return {
 		r,
@@ -118,7 +118,7 @@ export class EthereumClientService {
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			if (newBlock === null) return
-			console.info(`${getCurrentTimestampString()} Current block number: ${newBlock.number} on ${this.getRpcEntry().name}`)
+			console.info(`${ getCurrentTimestampString() } Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
 			this.cachedBlock = newBlock
@@ -264,7 +264,7 @@ export class EthereumClientService {
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
-		if (parentBlock === null) throw new Error(`The block ${blockNumber} is null`)
+		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
 		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
@@ -279,7 +279,7 @@ export class EthereumClientService {
 			let currentChunk: EthereumSendableSignedTransaction[] = []
 			let currentChunkGasSum = 0n
 			for (const transaction of currentTransactions) {
-				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${transaction.gas.toString()} exceeds gas limit ${gasLimit.toString()}`)
+				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
 				if (currentChunkGasSum + transaction.gas <= gasLimit) {
 					currentChunk.push(transaction)
 					currentChunkGasSum = currentChunkGasSum + transaction.gas

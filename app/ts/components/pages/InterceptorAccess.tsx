@@ -80,7 +80,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 						) : (
 							<ul>
 								{associatedAddresses.map((info, index) => (
-									<li key={info.address.toString()} style={`margin: 0px; margin-bottom: ${index < associatedAddresses.length - 1 ? '10px;' : '0px'}`}>
+									<li key={info.address.toString()} style={`margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1 ? '10px;' : '0px' }`}>
 										<BigAddress addressBookEntry={info} renameAddressCallBack={renameAddressCallBack} />
 									</li>
 								))}
@@ -118,7 +118,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 								<>
 									<ActiveAddressComponent activeAddress={accessRequest.requestAccessToAddress} renameAddressCallBack={renameAddressCallBack} changeActiveAddress={refreshActiveAddress} disableButton={false} buttonText={'Refresh'} />
 									<p style="color: var(--subtitle-text-color); white-space: normal;" class="subtitle is-7">
-										{`You can change active address by changing it directly from ${getPrettySignerName(accessRequest.signerName)} and clicking refresh here afterwards`}
+										{`You can change active address by changing it directly from ${ getPrettySignerName(accessRequest.signerName) } and clicking refresh here afterwards`}
 									</p>
 								</>
 							)}
@@ -376,7 +376,7 @@ export function InterceptorAccess() {
 	return (
 		<main>
 			<Hint>
-				<div class={`modal ${isModalActive ? 'is-active' : ''}`}>
+				<div class={`modal ${ isModalActive ? 'is-active' : '' }`}>
 					{(appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedPendingAccessRequest !== undefined ? (
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt={(address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address)}

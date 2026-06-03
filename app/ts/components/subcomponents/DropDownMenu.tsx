@@ -27,7 +27,7 @@ export const DropDownMenu = <OptionType extends string>({ selected, dropDownOpti
 	}
 
 	return (
-		<div ref={ref} class={`dropdown ${isOpen.value ? 'is-active' : ''}`}>
+		<div ref={ref} class={`dropdown ${ isOpen.value ? 'is-active' : '' }`}>
 			<div class="dropdown-trigger" style={{ maxWidth: '100%' }}>
 				<button class={buttonClassses} aria-haspopup="true" aria-controls="dropdown-menu" onClick={toggle} title={selected.value} style={{ width: '100%' }}>
 					<span class="truncate" style={{ contain: 'content' }}>
@@ -43,7 +43,7 @@ export const DropDownMenu = <OptionType extends string>({ selected, dropDownOpti
 					{' '}
 					{dropDownOptions.value.map((option) => (
 						<>
-							<button type={buttonClassses} class={`dropdown-item ${option === selected.value ? 'is-active' : ''}`} onClick={() => onChanged(option)}>
+							<button type={buttonClassses} class={`dropdown-item ${ option === selected.value ? 'is-active' : '' }`} onClick={() => onChanged(option)}>
 								{option}
 							</button>
 						</>

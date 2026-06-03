@@ -168,7 +168,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(reply.richList[1]?.addressBookEntry.name, checksummedAddress(failingAddress))
 		assert.equal(reply.richList[1]?.makingRich, false)
 		assert.equal(reply.richList[1]?.type, 'PreviousActiveAddress')
-		assert.equal((await getLatestUnexpectedError())?.data.message, `Failed to identify rich list address ${checksummedAddress(failingAddress)}: boom`)
+		assert.equal((await getLatestUnexpectedError())?.data.message, `Failed to identify rich list address ${ checksummedAddress(failingAddress) }: boom`)
 		assert.equal(typeof storageState.latestUnexpectedError, 'object')
 	})
 

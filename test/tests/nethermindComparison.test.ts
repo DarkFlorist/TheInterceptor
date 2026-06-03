@@ -20,7 +20,7 @@ import { type SimulationState, toResolvedSimulationState } from '../../app/ts/ty
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${jsonRpcResponse.error.message}`)
+	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
 	return jsonRpcResponse.result
 }
 
@@ -34,7 +34,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber':
-				return `0x${8443561n.toString(16)}`
+				return `0x${ 8443561n.toString(16) }`
 			case 'eth_getBlockByNumber': {
 				if (rpcRequest.params[0] === 8443562n) {
 					if (rpcRequest.params[1] !== true) throw new Error('Compatibility block only supports full transactions')
@@ -79,7 +79,7 @@ class MockEthereumJSONRpcRequestHandler {
 				throw new Error('unsupported Hash')
 			}
 			default:
-				new Error(`unsupported method ${rpcRequest.method}`)
+				new Error(`unsupported method ${ rpcRequest.method }`)
 		}
 		return
 	}

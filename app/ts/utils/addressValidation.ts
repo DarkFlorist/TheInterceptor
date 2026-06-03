@@ -10,7 +10,7 @@ export function getIssueWithAddressString(address: string): string | undefined {
 
 		// It is a checksummed address with a bad checksum
 		if (checkSummedAddress !== address && address.toLowerCase() !== address) {
-			return `Bad address checksum, did you mean ${checkSummedAddress} ?`
+			return `Bad address checksum, did you mean ${ checkSummedAddress } ?`
 		}
 	} else {
 		return 'Address contains invalid characters.'

@@ -67,19 +67,19 @@ async function extractEIP712MessageSubset(
 ): Promise<EnrichedEIP712Message> {
 	if (depth > 2) throw new Error('Too deep EIP712 message')
 	const currentTypes = types[currentType]
-	if (currentTypes === undefined) throw new Error(`Types not found: ${currentType}`)
+	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
 	const messageEntries = Object.entries(message)
 	const pairArray: [string, EnrichedEIP712MessageRecord][] = await promiseAllMapAbortSafe(Array.from(messageEntries), async ([key, messageEntry]): Promise<[string, EnrichedEIP712MessageRecord]> => {
-		if (messageEntry === undefined) throw new Error(`Subtype not found: ${key}`)
+		if (messageEntry === undefined) throw new Error(`Subtype not found: ${ key }`)
 		const fullType = findType(key, currentTypes)
-		if (fullType === undefined) throw new Error(`Type not found for key: ${key}`)
+		if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
 		const arraylessType = separateArraySuffix(fullType)
 		if (SolidityType.test(arraylessType.arraylessType)) {
 			return [key, await parseSolidityValueByTypeEnriched(ethereumClientService, requestAbortController, SolidityType.parse(arraylessType.arraylessType), messageEntry, arraylessType.isArray, useLocalStorage)]
 		}
 		if (arraylessType.isArray) {
 			const jsonEncodeableArray = JSONEncodeableObjectArray.safeParse(messageEntry)
-			if (!jsonEncodeableArray.success) throw new Error(`Type was defined to be an array but it was not: ${messageEntry}`)
+			if (!jsonEncodeableArray.success) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
 			const currentType = arraylessType.arraylessType
 			if (currentType === undefined) throw new Error(`array's type is missing`)
 			return [
@@ -93,7 +93,7 @@ async function extractEIP712MessageSubset(
 				},
 			]
 		}
-		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${messageEntry}`)
+		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
 		return [
 			key,
 			{

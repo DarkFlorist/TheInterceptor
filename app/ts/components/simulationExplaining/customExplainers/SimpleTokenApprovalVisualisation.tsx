@@ -42,7 +42,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 							<>
 								{' '}
 								{'amount' in param.approval && param.approval.amount >= 2n ** 96n - 1n ? (
-									<p class="ellipsis" style={`color: ${textColor}; font-size: 28px; font-weight: 500`}>
+									<p class="ellipsis" style={`color: ${ textColor }; font-size: 28px; font-weight: 500`}>
 										<b>ALL</b>
 									</p>
 								) : 'amount' in param.approval ? (

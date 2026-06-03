@@ -4,8 +4,8 @@ export function bigintToDecimalString(value: bigint, power: bigint) {
 	const integerPart = abs(value / 10n ** power)
 	const fractionalPart = abs(value % 10n ** power)
 	const sign = value < 0n ? '-' : ''
-	if (fractionalPart === 0n) return `${sign}${integerPart.toString(10)}`
-	return `${sign}${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
+	if (fractionalPart === 0n) return `${ sign }${ integerPart.toString(10) }`
+	return `${ sign }${ integerPart.toString(10) }.${ fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '') }`
 }
 
 export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
@@ -49,7 +49,7 @@ export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bi
 }
 
 export const nanoString = (value: bigint) => bigintToDecimalString(value, 9n)
-export const addressString = (address: bigint): `0x${string}` => `0x${address.toString(16).padStart(40, '0')}`
+export const addressString = (address: bigint): `0x${string}` => `0x${ address.toString(16).padStart(40, '0') }`
 export const addressStringWithout0x = (address: bigint) => address.toString(16).padStart(40, '0')
 export const checksummedAddress = (address: bigint) => getAddress(addressString(address))
 
@@ -60,7 +60,7 @@ export function stringToAddress(addressString: string | undefined) {
 	return BigInt(trimmedAddress)
 }
 
-export const bytes32String = (bytes32: bigint): `0x${string}` => `0x${bytes32.toString(16).padStart(64, '0')}`
+export const bytes32String = (bytes32: bigint): `0x${string}` => `0x${ bytes32.toString(16).padStart(64, '0') }`
 
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
@@ -76,12 +76,12 @@ export function dataString(data: Uint8Array | null) {
 }
 
 export function dataStringWith0xStart(data: Uint8Array | null): `0x${string}` {
-	return `0x${dataString(data)}`
+	return `0x${ dataString(data) }`
 }
 
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	if (typeof value === 'number') value = BigInt(value)
-	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${value} into a ${numberOfBytes}-byte unsigned integer.`)
+	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${ value } into a ${ numberOfBytes }-byte unsigned integer.`)
 	const result = new Uint8Array(numberOfBytes)
 	for (let i = 0; i < result.length; ++i) {
 		result[i] = Number((value >> (BigInt(numberOfBytes - i - 1) * 8n)) & 0xffn)
@@ -93,7 +93,7 @@ export function stringifyJSONWithBigInts(value: unknown, space?: string | number
 	return JSON.stringify(
 		value,
 		(_key, value) => {
-			if (typeof value === 'bigint') return `0x${value.toString(16)}`
+			if (typeof value === 'bigint') return `0x${ value.toString(16) }`
 			if (value instanceof Uint8Array)
 				return (
 					'0x' +
@@ -154,8 +154,8 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint; 
 }
 
 export const bigintSecondsToDate = (seconds: bigint) => {
-	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${seconds}`)
-	if (seconds < 0) throw new Error(`Got negative seconds: ${seconds}`)
+	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${ seconds }`)
+	if (seconds < 0) throw new Error(`Got negative seconds: ${ seconds }`)
 	return new Date(Number(seconds) * 1000)
 }
 

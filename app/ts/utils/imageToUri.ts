@@ -14,7 +14,7 @@ const imageToUriSucceeded = (data: string): ImageToUriResult => ({
 	data,
 	failureReason: undefined,
 })
-const imageTooLarge = (maxSizeInBytes: number) => imageToUriFailed(`image data exceeded ${maxSizeInBytes} bytes`)
+const imageTooLarge = (maxSizeInBytes: number) => imageToUriFailed(`image data exceeded ${ maxSizeInBytes } bytes`)
 
 async function readBlobAsDataUrl(blob: Blob): Promise<ImageToUriResult> {
 	const reader = new FileReader()
@@ -71,9 +71,9 @@ async function readBlobWithSizeLimit(response: Response, maxSizeInBytes: number)
 export async function imageToUri(url: string, maxSizeInBytes = 1048576): Promise<ImageToUriResult> {
 	try {
 		const response = await fetchWithTimeout(url, undefined, 15_000)
-		if (!response.ok) return imageToUriFailed(`HTTP ${response.status}${response.statusText === '' ? '' : ` ${response.statusText}`}`)
+		if (!response.ok) return imageToUriFailed(`HTTP ${ response.status }${ response.statusText === '' ? '' : ` ${ response.statusText }` }`)
 		const contentType = response.headers.get('content-type')
-		if (contentType !== null && !contentType.startsWith('image/')) return imageToUriFailed(`response was not an image (${contentType})`)
+		if (contentType !== null && !contentType.startsWith('image/')) return imageToUriFailed(`response was not an image (${ contentType })`)
 		const blob = await readBlobWithSizeLimit(response, maxSizeInBytes)
 		if (!(blob instanceof Blob)) return blob
 		const result = await readBlobAsDataUrl(blob)
@@ -81,7 +81,7 @@ export async function imageToUri(url: string, maxSizeInBytes = 1048576): Promise
 		if (result.data.length > maxSizeInBytes) return imageTooLarge(maxSizeInBytes)
 		return result
 	} catch (error) {
-		if (error instanceof Error) return imageToUriFailed(`fetch failed (${error.message})`)
+		if (error instanceof Error) return imageToUriFailed(`fetch failed (${ error.message })`)
 		throw error
 	}
 }

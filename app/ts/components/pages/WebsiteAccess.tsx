@@ -24,7 +24,7 @@ import { getHostnameForWebsiteOrigin } from '../../utils/websiteOrigins.js'
 import { searchWebsiteAccess } from '../../background/websiteAccessSearch.js'
 
 const URL_HASH_KEY = 'origin'
-const URL_HASH_PREFIX = `#${URL_HASH_KEY}:`
+const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
 
 function getSelectedDomainFromHash(hash: string) {
 	const domainInHash = hash.slice(URL_HASH_PREFIX.length)
@@ -355,7 +355,7 @@ type WebsiteAccessOverviewProps = {
 
 const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
 	const handleChange = () => {
-		window.location.hash = `${URL_HASH_KEY}:${websiteAccess.website.websiteOrigin}`
+		window.location.hash = `${ URL_HASH_KEY }:${ websiteAccess.website.websiteOrigin }`
 	}
 
 	const getWebsiteStatus = () => {
@@ -483,7 +483,7 @@ const WebsiteSettingsDetail = () => {
 	if (selectedWebsiteAccess.value === undefined) return <></>
 
 	return (
-		<div class={`modal ${modalState.value.page !== 'noModal' ? 'is-active' : ''}`}>
+		<div class={`modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }`}>
 			<FullFrameWindow>
 				<form method="dialog" class="layout" onSubmit={closeDetails}>
 					<header style={{ paddingBlock: '1rem' }}>

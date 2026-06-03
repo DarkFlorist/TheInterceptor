@@ -31,7 +31,7 @@ export async function startChromeCommunicationPageServer(): Promise<ChromeCommun
 	if (address === null || typeof address === 'string') throw new Error('Could not start the Chrome communication test page server')
 
 	return {
-		baseUrl: `http://127.0.0.1:${address.port}/`,
+		baseUrl: `http://127.0.0.1:${ address.port }/`,
 		close: async () => {
 			await new Promise<void>((resolve) => {
 				server.close(() => resolve())

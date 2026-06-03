@@ -54,11 +54,11 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 			{param.tokenVisualizerResults
 				.filter((tokenEvent) => !tokenEvent.isApproval)
 				.map((tokenEvent, index) => (
-					<div key={`${tokenEvent.token.address.toString()}-${index}`} class="vertical-center">
-						<div class={`box token-box ${param.sending ? 'negative-box' : 'positive-box'} vertical-center`} style="display: inline-block">
+					<div key={`${ tokenEvent.token.address.toString() }-${ index }`} class="vertical-center">
+						<div class={`box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center`} style="display: inline-block">
 							<table class="log-table">
 								<div class="log-cell">
-									<p class="ellipsis paragraph" style={`color: ${param.textColor}; margin-bottom: 0px; display: inline-block`}>
+									<p class="ellipsis paragraph" style={`color: ${ param.textColor }; margin-bottom: 0px; display: inline-block`}>
 										{param.sending ? 'Send' : 'Receive'}
 									</p>
 								</div>
@@ -67,7 +67,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 									<TokenSymbol {...tokenEventToTokenSymbolParams(tokenEvent)} style={{ color: param.textColor }} useFullTokenName={false} renameAddressCallBack={param.renameAddressCallBack} fontSize="normal" />
 								</div>
 								<div class="log-cell">
-									<p class="ellipsis paragraph" style={`color: ${param.textColor}; margin-bottom: 0px; display: inline-block`}>
+									<p class="ellipsis paragraph" style={`color: ${ param.textColor }; margin-bottom: 0px; display: inline-block`}>
 										{param.sending ? 'to' : 'from'}
 									</p>
 								</div>
@@ -143,7 +143,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 	if (param.simTx.transaction.to !== undefined && param.simTx.transaction.value === 0n && eventTypesForEachAccount.length === 0 && ensEvents.length === 0) {
 		return (
 			<div class="notification transaction-importance-box">
-				<p class="paragraph"> {param.simTx.events.length === 0 ? 'The transaction does no visible important changes to your accounts.' : `The transaction does no visible important changes to your accounts, HOWEVER, it produces ${param.simTx.events.length} event${param.simTx.events.length === 1 ? '' : 's'}.`}</p>
+				<p class="paragraph"> {param.simTx.events.length === 0 ? 'The transaction does no visible important changes to your accounts.' : `The transaction does no visible important changes to your accounts, HOWEVER, it produces ${ param.simTx.events.length } event${ param.simTx.events.length === 1 ? '' : 's' }.`}</p>
 			</div>
 		)
 	}
@@ -155,7 +155,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 			<div style="display: grid; grid-template-rows: max-content max-content">
 				{/* contract creation */}
 				<div class="log-cell" style="justify-content: left; display: grid;">
-					{param.simTx.transaction.to !== undefined ? <></> : <p class="paragraph"> {`A contract is deployed to address ${addressString(getDeployedContractAddress(param.simTx.transaction.from.address, param.simTx.transaction.nonce))}`}</p>}
+					{param.simTx.transaction.to !== undefined ? <></> : <p class="paragraph"> {`A contract is deployed to address ${ addressString(getDeployedContractAddress(param.simTx.transaction.from.address, param.simTx.transaction.nonce)) }`}</p>}
 				</div>
 				{/* ENS events */}
 				<div class="log-cell" style="justify-content: left; display: grid;">
