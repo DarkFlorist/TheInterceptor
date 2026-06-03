@@ -100,14 +100,8 @@ function createBrowserMock(): BrowserMock {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onConnect: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onMessage: { addListener: () => undefined, removeListener: () => undefined },
+			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
 			local: {
@@ -132,14 +126,8 @@ function createBrowserMock(): BrowserMock {
 			async update() {
 				return undefined
 			},
-			onUpdated: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onRemoved: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		windows: {
 			async get() {

@@ -24,14 +24,8 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onConnect: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onMessage: { addListener: () => undefined, removeListener: () => undefined },
+			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
 			local: {
@@ -61,14 +55,8 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 			async update() {
 				return undefined
 			},
-			onUpdated: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onRemoved: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		windows: {
 			async get() {
@@ -123,10 +111,7 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 			},
 		},
 		webRequest: {
-			onBeforeRequest: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onBeforeRequest: { addListener: () => undefined, removeListener: () => undefined },
 		},
 	} as typeof globalThis.browser
 	globalThis.chrome = { runtime: { id: 'test-extension' } }

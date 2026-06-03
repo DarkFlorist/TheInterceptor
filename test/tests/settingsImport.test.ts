@@ -26,14 +26,8 @@ function createBrowserStorageMock() {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onConnect: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onMessage: { addListener: () => undefined, removeListener: () => undefined },
+			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
 			local: {

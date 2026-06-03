@@ -40,20 +40,14 @@ const makeMockBrowser = () => {
 			},
 		},
 		tabs: {
-			onRemoved: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			query: async () => [],
 			get: async () => undefined,
 			update: async () => undefined,
 			reload: async () => undefined,
 			create: async () => undefined,
 			remove: async () => undefined,
-			onUpdated: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		windows: {
 			get: async () => undefined,

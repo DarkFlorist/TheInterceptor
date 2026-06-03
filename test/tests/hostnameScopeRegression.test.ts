@@ -16,14 +16,8 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: manifestVersion }),
-			onMessage: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onConnect: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onMessage: { addListener: () => undefined, removeListener: () => undefined },
+			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
 			local: {
@@ -54,14 +48,8 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 			async reload() {
 				return undefined
 			},
-			onUpdated: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onRemoved: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		windows: {
 			async get() {
@@ -122,10 +110,7 @@ function installBrowserMock(storageState: StorageState, manifestVersion = 3) {
 			},
 		},
 		webNavigation: {
-			onCommitted: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onCommitted: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		webRequest: {
 			onBeforeRequest: {

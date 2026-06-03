@@ -48,10 +48,7 @@ function createBrowserMock() {
 					if (index >= 0) listeners.splice(index, 1)
 				},
 			},
-			onConnect: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		storage: {
 			local: {
@@ -78,14 +75,8 @@ function createBrowserMock() {
 			async update() {
 				return undefined
 			},
-			onUpdated: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-			onRemoved: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		windows: {
 			async get() {
