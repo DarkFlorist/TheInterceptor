@@ -6,13 +6,10 @@ export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisuali
 const LARGE_STATE_DB_NAME = 'interceptorLargeState'
 const LARGE_STATE_STORE_NAME = 'largeState'
 
-type IndexedDbLookup =
-	| { kind: 'available', found: false }
-	| { kind: 'available', found: true, value: unknown }
-	| { kind: 'unavailable' }
+type IndexedDbLookup = { kind: 'available'; found: false } | { kind: 'available'; found: true; value: unknown } | { kind: 'unavailable' }
 
-let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined 
-let indexedDbSource: IDBFactory | undefined 
+let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
+let indexedDbSource: IDBFactory | undefined
 
 function canUseIndexedDb() {
 	return typeof indexedDB !== 'undefined'
@@ -45,7 +42,7 @@ async function openLargeStateDb() {
 async function runIndexedDbRequest<T>(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>) {
 	const db = await openLargeStateDb()
 	if (db === undefined) return { kind: 'unavailable' as const }
-	return await new Promise<{ kind: 'available', value: T }>((resolve, reject) => {
+	return await new Promise<{ kind: 'available'; value: T }>((resolve, reject) => {
 		const transaction = db.transaction(LARGE_STATE_STORE_NAME, mode)
 		const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
 		const request = operation(store)

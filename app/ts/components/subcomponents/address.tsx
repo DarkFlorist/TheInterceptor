@@ -111,7 +111,7 @@ export function BigAddress(params: BigAddressParams) {
 	}
 
 	const iconConfig: ActionableIconProps = {
-		icon: () => addressBookEntry ? <Blockie address={addressBookEntry.address} /> : <></>,
+		icon: () => (addressBookEntry ? <Blockie address={addressBookEntry.address} /> : <></>),
 		...(!params.noCopying && addressString ? configPartialWithCopyOnClick : { onClick: undefined }),
 	}
 

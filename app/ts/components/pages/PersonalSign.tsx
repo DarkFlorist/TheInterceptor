@@ -266,7 +266,9 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 	}
 	return (
 		<span class="eip-712-table" style={isSubTable ? 'justify-content: space-between;' : ''}>
-			{Object.entries(enrichedEIP712Message).map(([name, entry]) => <EIP712Entry key={name} entry={entry} name={name} />)}
+			{Object.entries(enrichedEIP712Message).map(([name, entry]) => (
+				<EIP712Entry key={name} entry={entry} name={name} />
+			))}
 		</span>
 	)
 }

@@ -54,7 +54,7 @@ type ErrorResultFormatterParam = {
 	signature?: string
 }
 
-const formatReason = (reason: string, defaultReason: string) => reason.trim() !== '' ? reason : defaultReason
+const formatReason = (reason: string, defaultReason: string) => (reason.trim() !== '' ? reason : defaultReason)
 
 const baseErrorResult = ({ type, data, reason, fragment, args, selector, name, signature }: ErrorResultFormatterParam & { type: ErrorType }): DecodedError => ({
 	type,

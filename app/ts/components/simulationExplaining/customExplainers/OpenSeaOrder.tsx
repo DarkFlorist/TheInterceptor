@@ -102,12 +102,16 @@ export function OrderComponents(param: OrderComponentsParams) {
 			<div style="display: grid; grid-template-rows: max-content max-content max-content max-content;">
 				<p class="paragraph"> Offer </p>
 				<div class="box swap-box">
-					{param.openSeaOrderMessage.offer.map((offer, index) => <SwapGrid key={index} orderOrConsideration={offer} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />)}
+					{param.openSeaOrderMessage.offer.map((offer, index) => (
+						<SwapGrid key={index} orderOrConsideration={offer} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />
+					))}
 				</div>
 				<p class="paragraph"> For </p>
 				<div class="box swap-box">
 					<span class="log-table-4" style="justify-content: center; column-gap: 5px;">
-						{param.openSeaOrderMessage.consideration.map((consideration, index) => <VisualizeOpenSeaAsset key={index} consideration={consideration} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />)}
+						{param.openSeaOrderMessage.consideration.map((consideration, index) => (
+							<VisualizeOpenSeaAsset key={index} consideration={consideration} renameAddressCallBack={param.renameAddressCallBack} rpcNetwork={param.rpcNetwork} />
+						))}
 					</span>
 				</div>
 			</div>

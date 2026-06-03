@@ -45,7 +45,7 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 function ImportExport() {
 	const settingsReply = useSignal<ImportSettingsReply | undefined>(undefined)
 	const dismissedNotification = useSignal<boolean>(false)
-	const errorText = useComputed(() => settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined)
+	const errorText = useComputed(() => (settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined))
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -247,7 +247,9 @@ const RpcListings = () => {
 
 	return (
 		<ul class="grid" style="--gap-y: 0.5rem">
-			{rpcEntries.value.map((entry) => <RpcSummary key={JSON.stringify(serialize(RpcEntry, entry))} info={entry} />)}
+			{rpcEntries.value.map((entry) => (
+				<RpcSummary key={JSON.stringify(serialize(RpcEntry, entry))} info={entry} />
+			))}
 		</ul>
 	)
 }

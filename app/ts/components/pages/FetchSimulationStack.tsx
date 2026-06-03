@@ -205,7 +205,9 @@ export function FetchSimulationStack() {
 													width: 'max-content',
 												}}
 											>
-												{addressReferences.value.map((addressBookEntry) => <SmallAddress key={addressBookEntry.address.toString()} addressBookEntry={addressBookEntry} renameAddressCallBack={renameAddressCallBack} />)}
+												{addressReferences.value.map((addressBookEntry) => (
+													<SmallAddress key={addressBookEntry.address.toString()} addressBookEntry={addressBookEntry} renameAddressCallBack={renameAddressCallBack} />
+												))}
 											</div>
 										</div>
 									</div>

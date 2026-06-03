@@ -36,7 +36,8 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 				<AddressBeforeAfter {...sender} renameAddressCallBack={renameAddressCallBack} tokenOrEtherDefinition={asset} />
 			</div>
 			<p class="paragraph"> To </p>
-			{receivers.map((receiver) => <>
+			{receivers.map((receiver) => (
+				<>
 					<span style="grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;">
 						<p class="paragraph" style="justify-self: right;">
 							{' '}
@@ -60,7 +61,8 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 							}}
 						/>
 					</div>
-				</>)}
+				</>
+			))}
 			<span class="log-table" style={{ display: 'inline-flex', marginTop: '5px' }}>
 				<GasFee tx={transaction} rpcNetwork={transaction.rpcNetwork} />
 			</span>

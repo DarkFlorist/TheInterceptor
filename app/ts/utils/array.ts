@@ -1,4 +1,3 @@
-
 export function deduplicateByFunction<Element>(elements: Element[], uniqueIdentifier: (element: Element) => string): Element[] {
 	const unique: Map<string, Element> = new Map()
 	for (const element of elements) {

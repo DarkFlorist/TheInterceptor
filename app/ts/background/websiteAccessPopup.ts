@@ -6,7 +6,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
-	const addresses = websiteAccess.flatMap((x) => x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => addr.address))
+	const addresses = websiteAccess.flatMap((x) => (x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => addr.address)))
 	const addressSet = new Set(addresses)
 	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
 }

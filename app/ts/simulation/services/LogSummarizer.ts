@@ -267,7 +267,7 @@ const applyTransaction = (state: SummaryState, result: SimulatedAndVisualizedTra
 }
 
 const buildSummaryState = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]): SummaryState => {
-	const summaryState = transactions.reduce<SummaryState>((currentState, transaction) => transaction === undefined ? currentState : applyTransaction(currentState, transaction), new Map<string, BalanceChangeSummary>())
+	const summaryState = transactions.reduce<SummaryState>((currentState, transaction) => (transaction === undefined ? currentState : applyTransaction(currentState, transaction)), new Map<string, BalanceChangeSummary>())
 	return new Map(Array.from(summaryState.entries()).filter(([_address, summary]) => !isEmptyBalanceChangeSummary(summary)))
 }
 

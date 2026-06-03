@@ -451,7 +451,8 @@ export function AddressBook() {
 							{addressBookEntriesWithFilter.value.addressBookEntries.length ? (
 								<DynamicScroller
 									items={addressBookEntries}
-									renderItem={(addressBookEntry) => <AddressBookEntryCard
+									renderItem={(addressBookEntry) => (
+										<AddressBookEntryCard
 											{...addressBookEntry}
 											category={addressBookEntriesWithFilter.value.activeFilter}
 											removeEntry={() => {
@@ -461,7 +462,8 @@ export function AddressBook() {
 												}
 											}}
 											renameAddressCallBack={renameAddressCallBack}
-										/>}
+										/>
+									)}
 								/>
 							) : (
 								<GetNoResultsError />

@@ -92,7 +92,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	}
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	silenceChromeUnCaughtPromise(blockingWebsitePromise)
-	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => (await blockingWebsitePromise) && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
+	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => ((await blockingWebsitePromise) && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon)
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), (await blockingWebsitePromise) ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)
 
 	const settings = await getSettings()

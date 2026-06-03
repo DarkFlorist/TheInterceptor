@@ -171,7 +171,7 @@ export async function refreshConfirmTransactionSimulation(
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
-		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined).filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
+		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => ('abi' in entry && entry.abi !== undefined ? entry.abi : undefined)).filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return {
 				statusCode: 'failed' as const,

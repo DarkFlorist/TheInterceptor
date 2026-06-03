@@ -205,7 +205,7 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 }
 
 export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
-	const addressesToFetchMetadata = [...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]), ...getAddressesForSolidityTypes(inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : []))]
+	const addressesToFetchMetadata = [...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]), ...getAddressesForSolidityTypes(inputData.flatMap((event) => (event.type !== 'NonParsed' ? event.args : [])))]
 
 	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
@@ -262,14 +262,14 @@ export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetad
 }
 
 export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) => {
-	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
+	const labelHashesToRetrieve = events.map((event) => ('logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined)).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions
 		.map((entry) => addressStringWithout0x(entry.address))
 		.map((label) => ({
 			label,
 			labelHash: BigInt(keccak256(stringToBytes(label))),
 		}))
-	const newLabels = [...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
+	const newLabels = [...events.map((event) => ('logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined)).filter((label): label is string => label !== undefined)]
 
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))

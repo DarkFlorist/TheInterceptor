@@ -126,14 +126,7 @@ function createBrowserMock(): BrowserMock {
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
-		windows: {
-			async get() {
-				return undefined
-			},
-			async update() {
-				return undefined
-			},
-		},
+		windows: { get: async () => undefined, update: async () => undefined },
 		action: {
 			async setIcon() {
 				return undefined

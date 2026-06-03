@@ -20,9 +20,9 @@ export function stripLeadingZeros(byteArray: Uint8Array): Uint8Array {
 	return result
 }
 
-const arePropValuesEqual = <T>(subject: T, target: T, propNames: (keyof T)[]): boolean => propNames.every(propName => subject[propName] === target[propName])
+const arePropValuesEqual = <T>(subject: T, target: T, propNames: (keyof T)[]): boolean => propNames.every((propName) => subject[propName] === target[propName])
 
-export const getUniqueItemsByProperties = <T>(items: T[], propNames: (keyof T)[]): T[] => items.filter((item, index, array) => index === array.findIndex(foundItem => arePropValuesEqual(foundItem, item, propNames)))
+export const getUniqueItemsByProperties = <T>(items: T[], propNames: (keyof T)[]): T[] => items.filter((item, index, array) => index === array.findIndex((foundItem) => arePropValuesEqual(foundItem, item, propNames)))
 
 export function replaceElementInReadonlyArray<T>(originalArray: readonly T[], index: number, newValue: T): readonly T[] {
 	if (index < 0 || index >= originalArray.length) throw new Error('Index is out of bounds')

@@ -137,7 +137,7 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
-const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : 'Unknown error'
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : 'Unknown error')
 
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({
 	type: 'ImportSimulationStackReply',
@@ -303,7 +303,7 @@ export async function removeAddressBookEntry(ethereum: EthereumClientService, to
 export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => {
 		if (previousContacts.find((previous) => previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n))) {
-			return previousContacts.map((previous) => previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n) ? entry.data : previous)
+			return previousContacts.map((previous) => (previous.address === entry.data.address && (previous.chainId || 1n) === (entry.data.chainId || 1n) ? entry.data : previous))
 		}
 		return previousContacts.concat([entry.data])
 	})
@@ -943,7 +943,7 @@ async function setAdressAccessForWebsite(websiteOrigin: string, address: Ethereu
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
-			const addressAccessList = access.addressAccess.map((addressAccess) => addressAccess.address !== address ? addressAccess : modifyObject(addressAccess, { access: allowAccess }))
+			const addressAccessList = access.addressAccess.map((addressAccess) => (addressAccess.address !== address ? addressAccess : modifyObject(addressAccess, { access: allowAccess })))
 			return modifyObject(access, { addressAccess: addressAccessList })
 		})
 	})
@@ -1007,7 +1007,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 			} as const
 			// replace manipulator
 			return {
-				operations: normalizeConsecutiveTimeManipulations(normalizedPrevStack.operations.map((operation, index) => index === indexOfMaybeManipulator ? newManipulator : operation)),
+				operations: normalizeConsecutiveTimeManipulations(normalizedPrevStack.operations.map((operation, index) => (index === indexOfMaybeManipulator ? newManipulator : operation))),
 			}
 		}
 		// insert new manipulator
@@ -1292,7 +1292,7 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 		}
 	const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(
 		Promise.all(
-			simulationState.value.simulatedBlocks.map((block) => Promise.all(block.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereumClientService, undefined)))),
+			simulationState.value.simulatedBlocks.map((block) => Promise.all(block.simulatedTransactions.map(async (simulatedTransaction) => (simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereumClientService, undefined))))),
 		),
 	)
 	const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(

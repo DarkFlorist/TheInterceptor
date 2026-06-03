@@ -9,7 +9,7 @@ function listenContentScript(connectionName: string | undefined) {
 		readonly requestId?: number
 		readonly requestMethod?: string
 	}
-	const stringifyForwardedFallbackError = (error: unknown) => error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`
+	const stringifyForwardedFallbackError = (error: unknown) => (error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`)
 	const stringifyForwardedFallbackValue = (value: unknown) => {
 		try {
 			return String(value)
@@ -21,7 +21,7 @@ function listenContentScript(connectionName: string | undefined) {
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
 	 * this script serves as a _very thin_ proxy between the page scripts (dapp) and the extension, simply forwarding messages between the two
-	*/
+	 */
 	// the content script is a very thin proxy between the background script and the page script
 
 	const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
@@ -47,7 +47,9 @@ function listenContentScript(connectionName: string | undefined) {
 
 	const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 	const isBridgeRequestCandidate = (value: unknown): value is BridgeRequestCandidate => typeof value === 'object' && value !== null
-	const isBridgeRequest = (value: unknown): value is {
+	const isBridgeRequest = (
+		value: unknown,
+	): value is {
 		readonly type: typeof INTERCEPTOR_BRIDGE_REQUEST_MESSAGE
 		readonly method: string
 		readonly params?: readonly unknown[]
@@ -68,7 +70,7 @@ function listenContentScript(connectionName: string | undefined) {
 		if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
 		if (typeof value === 'bigint') return value.toString()
 		try {
-			const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
+			const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue))
 			if (stringified !== undefined) return stringified
 		} catch (error: unknown) {
 			const fallbackValue = stringifyForwardedFallbackValue(value)

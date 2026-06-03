@@ -128,20 +128,22 @@ export const TransactionNames = (param: TransactionNamesParams) => {
 		if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough' || param.completeVisualizedSimulation.value.visualizedSimulationState.success === false) return []
 		const visualizedBlocks = param.completeVisualizedSimulation.value.visualizedSimulationState.visualizedBlocks
 		const transactionsAndMessages = visualizedBlocks.flatMap((block) => [...block.visualizedPersonalSignRequests, ...block.simulatedAndVisualizedTransactions])
-		const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
+		const names = transactionsAndMessages.map((transactionOrMessage) => ('transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title))
 		return [...(param.completeVisualizedSimulation.value.numberOfAddressesMadeRich > 0 ? [`Simply making ${ param.completeVisualizedSimulation.value.numberOfAddressesMadeRich } addresses rich`] : []), ...names, ...(param.includeCurrentTransaction ? [titleOfCurrentPendingTransaction()] : [])]
 	})
 
 	return (
 		<nav class="breadcrumb has-succeeds-separator is-small">
 			<ul>
-				{namesWithCurrentTransaction.value.map((name, index) => <li key={`${ index }-${ name }`} style="margin: 0px;">
+				{namesWithCurrentTransaction.value.map((name, index) => (
+					<li key={`${ index }-${ name }`} style="margin: 0px;">
 						<div class="card" style={`padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'background-color: var(--disabled-card-color)' : '' }`}>
 							<p class="paragraph" style={`margin: 0px; ${ index !== namesWithCurrentTransaction.value.length - 1 && param.includeCurrentTransaction ? 'color: var(--disabled-text-color)' : '' }`}>
 								{name}
 							</p>
 						</div>
-					</li>)}
+					</li>
+				))}
 			</ul>
 		</nav>
 	)

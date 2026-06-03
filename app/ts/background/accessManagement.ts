@@ -152,7 +152,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 					})
 				}
 				return modifyObject(updatedEntry, {
-					addressAccess: prevAccess.addressAccess.map((x) => x.address === address ? addressAccess : x),
+					addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)),
 				})
 			}
 			return prevAccess

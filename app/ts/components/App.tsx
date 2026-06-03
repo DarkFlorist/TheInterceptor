@@ -570,7 +570,7 @@ export function App() {
 		})
 	}
 
-	const activeAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+	const activeAddress = useComputed(() => (simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value))
 
 	return (
 		<main>

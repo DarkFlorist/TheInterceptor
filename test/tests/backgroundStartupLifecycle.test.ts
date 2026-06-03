@@ -9,7 +9,7 @@ describe('background startup lifecycle', () => {
 
 		const port = {
 			get onDisconnect() {
-				throw new Error('Failed to read the \'onDisconnect\' property from \'Object\': Extension context invalidated.')
+				throw new Error("Failed to read the 'onDisconnect' property from 'Object': Extension context invalidated.")
 			},
 			onMessage: {
 				addListener: () => {
@@ -35,9 +35,6 @@ describe('background startup lifecycle', () => {
 	})
 
 	test('classifies extension context invalidation as an ignorable lifecycle error', () => {
-		assert.equal(
-			isIgnorablePortLifecycleError(new Error('Failed to read the \'onDisconnect\' property from \'Object\': Extension context invalidated.')),
-			true,
-		)
+		assert.equal(isIgnorablePortLifecycleError(new Error("Failed to read the 'onDisconnect' property from 'Object': Extension context invalidated.")), true)
 	})
 })

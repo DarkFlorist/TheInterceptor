@@ -79,9 +79,11 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 							<DinoSays text={"Given its size, a tiny dinosaur wouldn't be expected to know any..."} />
 						) : (
 							<ul>
-								{associatedAddresses.map((info, index) => <li key={info.address.toString()} style={`margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1 ? '10px;' : '0px' }`}>
+								{associatedAddresses.map((info, index) => (
+									<li key={info.address.toString()} style={`margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1 ? '10px;' : '0px' }`}>
 										<BigAddress addressBookEntry={info} renameAddressCallBack={renameAddressCallBack} />
-									</li>)}
+									</li>
+								))}
 							</ul>
 						)}
 					</div>
@@ -144,7 +146,8 @@ function AccessRequests(param: AccessRequestParam) {
 	return (
 		<>
 			{' '}
-			{param.pendingAccessRequests.map((pendingRequest) => <>
+			{param.pendingAccessRequests.map((pendingRequest) => (
+				<>
 					<div class="card" style="margin-bottom: 10px;">
 						<AccessRequestHeader {...pendingRequest.website} />
 						<div class="card-content" style="padding-bottom: 5px;">
@@ -167,7 +170,8 @@ function AccessRequests(param: AccessRequestParam) {
 							</div>
 						</nav>
 					</div>
-				</>)}{' '}
+				</>
+			))}{' '}
 		</>
 	)
 }

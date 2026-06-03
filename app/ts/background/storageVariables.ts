@@ -216,7 +216,7 @@ export const getInterceptorStartSleepingTimestamp = async () => (await browserSt
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
 	if (rpcNetwork.primary) return
 	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	await setRpcList(rpcs.map((rpc) => (rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc)))
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
@@ -350,7 +350,7 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 	return await interceptorTransactionStackSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
 		const interceptorTransactionStack = updateFunc(prevStack)
-		const ids = interceptorTransactionStack.operations.map((x) => x.type === 'Transaction' ? x.preSimulationTransaction.transactionIdentifier : undefined).filter((x): x is bigint => x !== undefined)
+		const ids = interceptorTransactionStack.operations.map((x) => (x.type === 'Transaction' ? x.preSimulationTransaction.transactionIdentifier : undefined)).filter((x): x is bigint => x !== undefined)
 		if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
 		return interceptorTransactionStack

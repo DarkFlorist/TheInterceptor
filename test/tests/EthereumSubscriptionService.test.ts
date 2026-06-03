@@ -50,7 +50,7 @@ function createMockEthSimulateV1Result(blockStateCallCount: number, aggregate3Ba
 
 	const includesAggregate3BalanceCall = aggregate3BalanceQueryCount !== undefined
 	const nonAggregateBlockCount = includesAggregate3BalanceCall ? Math.max(blockStateCallCount - 1, 0) : blockStateCallCount
-	const nonAggregateBlocks = Array.from({ length: nonAggregateBlockCount }, (_, blockIndex) => blockIndex === 0 ? singleTransactionBlock : followupTransactionBlock)
+	const nonAggregateBlocks = Array.from({ length: nonAggregateBlockCount }, (_, blockIndex) => (blockIndex === 0 ? singleTransactionBlock : followupTransactionBlock))
 	if (!includesAggregate3BalanceCall) return nonAggregateBlocks
 	return [...nonAggregateBlocks, buildAggregate3BalanceBlock(aggregate3BalanceQueryCount)]
 }

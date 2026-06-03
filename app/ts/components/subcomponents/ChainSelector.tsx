@@ -18,7 +18,7 @@ export function RpcSelector(params: RpcSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${ rpcName }`)
 		params.changeRpc(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small'/>
+	return <DropDownMenu selected={selected} dropDownOptions={options} onChangedCallBack={onChangedCallBack} buttonClassses="btn btn--outline is-small" />
 }
 
 interface ChainSelectorParams {
@@ -37,5 +37,5 @@ export function ChainSelector(params: ChainSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ rpcName }`)
 		params.changeChain(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = { params.buttonClassses }/>
+	return <DropDownMenu selected={selected} dropDownOptions={options} onChangedCallBack={onChangedCallBack} buttonClassses={params.buttonClassses} />
 }

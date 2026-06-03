@@ -162,7 +162,7 @@ export async function getEthFilterChanges(filterId: string, ethereumClientServic
 				})
 			: []
 	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters) => {
-		return subscriptionsAndfilters.map((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId ? { ...subscriptionOrfilter, calledInlastBlock } : subscriptionOrfilter)
+		return subscriptionsAndfilters.map((subscriptionOrfilter) => (subscriptionOrfilter.subscriptionOrFilterId === filterId ? { ...subscriptionOrfilter, calledInlastBlock } : subscriptionOrfilter))
 	})
 	return logs
 }

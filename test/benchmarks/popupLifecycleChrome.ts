@@ -523,7 +523,7 @@ async function main() {
 			const workerRefreshEnd = stats(run.samples.map((sample) => sample.workerRefreshEndMs))
 			const rpcRequests = run.samples.flatMap((sample) => sample.rpcRequests)
 			const setupRpcRequests = run.samples.flatMap((sample) => sample.setupRpcRequests)
-			const stackedSetups = run.samples.flatMap((sample) => sample.stackedSetup === undefined ? [] : [sample.stackedSetup])
+			const stackedSetups = run.samples.flatMap((sample) => (sample.stackedSetup === undefined ? [] : [sample.stackedSetup]))
 			const rpcSummary = aggregateRpcRequests(rpcRequests)
 			const rpcMethodStats = rpcSummary.methods
 			const setupRpcSummary = aggregateRpcRequests(setupRpcRequests)

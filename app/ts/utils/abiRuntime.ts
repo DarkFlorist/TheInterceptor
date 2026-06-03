@@ -48,8 +48,8 @@ const hasComponents = (
 	readonly components: readonly AbiParameter[]
 } => 'components' in parameter
 
-const toHex = (value: Hex | Uint8Array): Hex => value instanceof Uint8Array ? bytesToHex(value) : value
-const sliceHex = (value: Hex, start: number): Hex => value.length <= start ? '0x' : `0x${ value.slice(start) }`
+const toHex = (value: Hex | Uint8Array): Hex => (value instanceof Uint8Array ? bytesToHex(value) : value)
+const sliceHex = (value: Hex, start: number): Hex => (value.length <= start ? '0x' : `0x${ value.slice(start) }`)
 const functionSelectorFromData = (data: Hex) => data.slice(0, 10)
 
 const normalizeAbiArray = (abiEntries: readonly unknown[]): Abi => {
@@ -275,7 +275,7 @@ export const decodeEventLoose = (abiLike: AbiLike, log: { data: Hex | Uint8Array
 		strict: false,
 	})
 	if (decoded.eventName === undefined) return undefined
-	const args = Array.isArray(decoded.args) ? decoded.args : fragment.inputs.map((input) => input.name === undefined || input.name === '' ? undefined : Reflect.get(decoded.args ?? {}, input.name))
+	const args = Array.isArray(decoded.args) ? decoded.args : fragment.inputs.map((input) => (input.name === undefined || input.name === '' ? undefined : Reflect.get(decoded.args ?? {}, input.name)))
 	const namedArgs = Array.isArray(decoded.args) ? toNamedArgs(fragment.inputs, decoded.args) : { ...(decoded.args ?? {}) }
 	return {
 		name: decoded.eventName,

@@ -53,7 +53,8 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 		<>
 			{param.tokenVisualizerResults
 				.filter((tokenEvent) => !tokenEvent.isApproval)
-				.map((tokenEvent, index) => <div key={`${ tokenEvent.token.address.toString() }-${ index }`} class="vertical-center">
+				.map((tokenEvent, index) => (
+					<div key={`${ tokenEvent.token.address.toString() }-${ index }`} class="vertical-center">
 						<div class={`box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center`} style="display: inline-block">
 							<table class="log-table">
 								<div class="log-cell">
@@ -75,7 +76,8 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								</div>
 							</table>
 						</div>
-					</div>)}
+					</div>
+				))}
 		</>
 	)
 }
@@ -161,7 +163,8 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				</div>
 			</div>
 			{(param.simTx.transaction.to === undefined || ensEvents.length > 0) && eventTypesForEachAccount.length > 0 ? <div class="is-divider" style="margin-top: 8px; margin-bottom: 8px" /> : <></>}
-			{eventTypesForEachAccount.map((eventsGrouped, index) => <div key={addressString(eventsGrouped.currentAddress.address)}>
+			{eventTypesForEachAccount.map((eventsGrouped, index) => (
+				<div key={addressString(eventsGrouped.currentAddress.address)}>
 					<BigAddress addressBookEntry={eventsGrouped.currentAddress} renameAddressCallBack={param.renameAddressCallBack} style={{ '--bg-color': 'var(--importance-box-color)' }} />
 					<div style="display: grid; grid-template-rows: max-content max-content">
 						<div class="log-cell" style="justify-content: left; display: grid;">
@@ -185,7 +188,8 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 						</div>
 					</div>
 					{index + 1 !== eventTypesForEachAccount.length ? <div class="is-divider" style="margin-top: 8px; margin-bottom: 8px" /> : <></>}
-				</div>)}
+				</div>
+			))}
 		</div>
 	)
 }

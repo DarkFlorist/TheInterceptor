@@ -4,10 +4,14 @@ import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactio
 import type { SimulationStateInput, SimulationStateInputMinimalData } from '../types/visualizer-types.js'
 
 export function getSimulationInputHash(simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) {
-	const messages = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.signedMessages.map((signedMessage) => ({
-		fakeSignedFor: signedMessage.fakeSignedFor,
-		originalRequestParameters: signedMessage.originalRequestParameters,
-	}))))
+	const messages = stringifyJSONWithBigInts(
+		simulationStateInput.map((x) =>
+			x.signedMessages.map((signedMessage) => ({
+				fakeSignedFor: signedMessage.fakeSignedFor,
+				originalRequestParameters: signedMessage.originalRequestParameters,
+			})),
+		),
+	)
 	const overrides = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.stateOverrides))
 	const transactions = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.transactions.map((transaction) => dataStringWith0xStart(serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(transaction.signedTransaction))))))
 	const blockTime = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.blockTimeManipulation))

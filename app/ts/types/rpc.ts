@@ -29,8 +29,8 @@ export const RpcEntry = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		currencyLogoUri: funtypes.String,
-		blockExplorer: BlockExplorer
-	})
+		blockExplorer: BlockExplorer,
+	}),
 )
 
 export type RpcEntries = funtypes.Static<typeof RpcEntries>
@@ -47,5 +47,5 @@ export const RpcNetwork = funtypes.Union(
 		currencyTicker: funtypes.Literal('ETH?'),
 		primary: funtypes.Literal(false),
 		minimized: funtypes.Literal(true),
-	})
+	}),
 )

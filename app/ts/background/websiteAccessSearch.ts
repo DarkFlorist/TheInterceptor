@@ -22,7 +22,7 @@ function computeSearchMatch(searchQuery: string, searchAgainst: string): SearchM
 
 	return {
 		length: matchedString.length,
-		location: searchAgainst.indexOf(matchedString)
+		location: searchAgainst.indexOf(matchedString),
 	}
 }
 
@@ -44,13 +44,11 @@ function calculateWebsiteAccessScore(entry: WebsiteAccess, query: string): Searc
 	const titleMatch = entry.website.title ? computeSearchMatch(query, entry.website.title.toLowerCase()) : undefined
 	const addressMatches = entry.addressAccess?.map((addr: WebsiteAddressAccess) => computeSearchMatch(query, addressString(addr.address).toLowerCase())) || []
 
-	const bestResult = [urlMatch, titleMatch, ...addressMatches]
-		.filter((x): x is NonNullable<typeof x> => x !== undefined)
-		.reduce(selectLongerMatch, { length: 0, location: Infinity })
+	const bestResult = [urlMatch, titleMatch, ...addressMatches].filter((x): x is NonNullable<typeof x> => x !== undefined).reduce(selectLongerMatch, { length: 0, location: Infinity })
 
 	return {
 		entry,
-		score: bestResult.length
+		score: bestResult.length,
 	}
 }
 
@@ -59,8 +57,8 @@ export const searchWebsiteAccess = (query: string, websiteAccess: WebsiteAccessA
 	if (query.trim() === '') return websiteAccess
 
 	return websiteAccess
-		.map(entry => calculateWebsiteAccessScore(entry, query))
-		.filter(result => result.score > 0)
+		.map((entry) => calculateWebsiteAccessScore(entry, query))
+		.filter((result) => result.score > 0)
 		.sort((a, b) => b.score - a.score)
-		.map(result => result.entry)
+		.map((result) => result.entry)
 }

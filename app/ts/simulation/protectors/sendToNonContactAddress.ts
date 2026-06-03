@@ -14,7 +14,7 @@ export async function sendToNonContact(transaction: EthereumUnsignedTransaction,
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) {
 		if (transaction.input.length === 0 && transaction.value > 0 && transaction.to !== null) return await checkSendToAddress(transaction.to)
-		return 
+		return
 	}
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
 	return await checkSendToAddress(transferInfo.arguments.to)

@@ -303,7 +303,9 @@ const WebsiteSettingsList = () => {
 			) : (
 				<>
 					<ul role="listbox">
-						{websiteAccessList.map((access) => <WebsiteAccessOverview key={access.website.websiteOrigin} websiteAccess={access} checked={selectedDomain.value === access.website.websiteOrigin} />)}
+						{websiteAccessList.map((access) => (
+							<WebsiteAccessOverview key={access.website.websiteOrigin} websiteAccess={access} checked={selectedDomain.value === access.website.websiteOrigin} />
+						))}
 					</ul>
 					<input type="submit" style={{ display: 'none' }} />
 				</>
@@ -681,7 +683,9 @@ const AddressAccessList = ({ websiteAccess, renameAddressCallBack }: { websiteAc
 				</button>
 			</p>
 			<div style={{ display: 'grid', rowGap: '0.5rem', padding: '0.5rem 0' }}>
-				{access.addressAccess.map((addressAcces) => <AddressAccessCard key={addressAcces.address.toString()} website={website} addressAccess={addressAcces} renameAddressCallBack={renameAddressCallBack} />)}
+				{access.addressAccess.map((addressAcces) => (
+					<AddressAccessCard key={addressAcces.address.toString()} website={website} addressAccess={addressAcces} renameAddressCallBack={renameAddressCallBack} />
+				))}
 			</div>
 		</Collapsible>
 	)

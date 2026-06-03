@@ -134,7 +134,8 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams) {
 	return (
 		<>
 			{param.erc20TokenApprovalChanges.map((token) =>
-				token.approvals.map((entryToApprove, index) => <Erc20ApprovalChange
+				token.approvals.map((entryToApprove, index) => (
+					<Erc20ApprovalChange
 						key={`${ token.address.toString() }-${ entryToApprove.address.toString() }-${ index }`}
 						{...{
 							...token,
@@ -146,7 +147,8 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams) {
 							isImportant: param.isImportant,
 							renameAddressCallBack: param.renameAddressCallBack,
 						}}
-					/>),
+					/>
+				)),
 			)}
 		</>
 	)
@@ -169,14 +171,16 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams) {
 	if (param.Erc721TokenBalanceChanges.length === 0) return <></>
 	return (
 		<>
-			{param.Erc721TokenBalanceChanges.map((tokenChange) => <div key={`${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }`} class="vertical-center" style="display: flex">
+			{param.Erc721TokenBalanceChanges.map((tokenChange) => (
+				<div key={`${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }`} class="vertical-center" style="display: flex">
 					<div class={param.isImportant.value ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }` : ''} style="display: flex">
 						<p class="noselect nopointer" style={`color: ${ param.textColor }; align-items: center`}>
 							&nbsp;{`${ tokenChange.received ? '+' : '-' }`}&nbsp;
 						</p>
 						<TokenOrEth tokenEntry={tokenChange} tokenId={tokenChange.tokenId} style={{ color: param.textColor }} useFullTokenName={true} showSign={true} renameAddressCallBack={param.renameAddressCallBack} fontSize="normal" />
 					</div>
-				</div>)}
+				</div>
+			))}
 		</>
 	)
 }
@@ -200,7 +204,8 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 	if (param.erc721or1155OperatorChanges.length === 0) return <></>
 	return (
 		<>
-			{param.erc721or1155OperatorChanges.map((token, index) => <div key={`${ token.address.toString() }-${ token.operator?.address.toString() ?? 'none' }-${ index }`} class="vertical-center" style="display: flex">
+			{param.erc721or1155OperatorChanges.map((token, index) => (
+				<div key={`${ token.address.toString() }-${ token.operator?.address.toString() ?? 'none' }-${ index }`} class="vertical-center" style="display: flex">
 					{token.operator !== undefined ? (
 						<div class={param.isImportant.value ? 'box token-box negative-box' : ''} style="display: flex">
 							<table class="log-table">
@@ -238,7 +243,8 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 							</table>
 						</div>
 					)}
-				</div>)}
+				</div>
+			))}
 		</>
 	)
 }
@@ -257,7 +263,8 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 			{' '}
 			{param.Erc721TokenIdApprovalChanges.length > 0 ? (
 				<>
-					{param.Erc721TokenIdApprovalChanges.map((approvalsChange) => <div key={`${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-${ approvalsChange.approvedEntry.address.toString() }`} class="vertical-center" style="display: flex">
+					{param.Erc721TokenIdApprovalChanges.map((approvalsChange) => (
+						<div key={`${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-${ approvalsChange.approvedEntry.address.toString() }`} class="vertical-center" style="display: flex">
 							<div class={param.isImportant.value ? 'box token-box negative-box' : ''} style="display: flex">
 								<table class="log-table">
 									<div class="log-cell">
@@ -279,7 +286,8 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 									</div>
 								</table>
 							</div>
-						</div>)}
+						</div>
+					))}
 				</>
 			) : (
 				<></>
@@ -302,7 +310,8 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams) {
 
 	return (
 		<>
-			{param.Erc1155TokenBalanceChanges.map((tokenChange) => <div key={`${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }`} class="vertical-center" style="display: flex">
+			{param.Erc1155TokenBalanceChanges.map((tokenChange) => (
+				<div key={`${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }`} class="vertical-center" style="display: flex">
 					<div class={param.isImportant.value ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }` : ''} style="display: flex">
 						<TokenWithAmount
 							tokenEntry={tokenChange}
@@ -316,7 +325,8 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams) {
 							fontSize="normal"
 						/>
 					</div>
-				</div>)}
+				</div>
+			))}
 		</>
 	)
 }
@@ -502,10 +512,12 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 							<p class="paragraph"> No changes to your accounts </p>
 						) : (
 							<div class="notification transaction-importance-box">
-								{ownAddresses.map(([_index, balanceSummary], index) => <>
+								{ownAddresses.map(([_index, balanceSummary], index) => (
+									<>
 										<SummarizeAddress balanceSummary={balanceSummary} simulationAndVisualisationResults={simulationAndVisualisationResults} activeAddress={activeAddress} renameAddressCallBack={renameAddressCallBack} />
 										{index + 1 !== ownAddresses.length ? <div class="is-divider" style="margin-top: 8px; margin-bottom: 8px" /> : <></>}
-									</>)}
+									</>
+								))}
 							</div>
 						)}
 					</div>
@@ -708,10 +720,12 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						<p class="paragraph"> No changes to your accounts </p>
 					) : (
 						<div class="notification transaction-importance-box">
-							{ownAddresses.map(([_index, balanceSummary], index) => <>
+							{ownAddresses.map(([_index, balanceSummary], index) => (
+								<>
 									<SummarizeAddress balanceSummary={balanceSummary} simulationAndVisualisationResults={simulationAndVisualisationResults} activeAddress={param.activeAddress} renameAddressCallBack={param.renameAddressCallBack} />
 									{index + 1 !== ownAddresses.length ? <div class="is-divider" style="margin-top: 8px; margin-bottom: 8px" /> : <></>}
-								</>)}
+								</>
+							))}
 						</div>
 					)}
 				</div>
@@ -740,10 +754,12 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 								{notOwnAddresses.length === 0 ? (
 									<p class="paragraph">No changes to other accounts</p>
 								) : (
-									notOwnAddresses.map(([_index, balanceSummary]) => <>
+									notOwnAddresses.map(([_index, balanceSummary]) => (
+										<>
 											<SummarizeAddress balanceSummary={balanceSummary} simulationAndVisualisationResults={simulationAndVisualisationResults} activeAddress={param.activeAddress} renameAddressCallBack={param.renameAddressCallBack} />
 											<div class="is-divider" style="margin-top: 8px; margin-bottom: 8px" />
-										</>)
+										</>
+									))
 								)}
 							</div>
 						</div>
