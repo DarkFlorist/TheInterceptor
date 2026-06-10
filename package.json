@@ -12,6 +12,7 @@
 		"build-firefox": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run firefox",
 		"build-chrome": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run chrome",
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
+		"benchmark:dispatchevent-reload": "bun ./test/benchmarks/dispatchEventReloadComparison.ts",
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",

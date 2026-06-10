@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Dispatch Event Reload Repro</title>
+		<style>
+			:root {
+				color-scheme: light;
+				font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+				background: #f5efe2;
+				color: #1a1712;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				background:
+					radial-gradient(circle at top left, rgba(226, 163, 79, 0.3), transparent 32%),
+					radial-gradient(circle at bottom right, rgba(74, 127, 196, 0.24), transparent 30%),
+					#f5efe2;
+				display: grid;
+				place-items: center;
+				padding: 24px;
+			}
+
+			main {
+				width: min(760px, 100%);
+				border: 1px solid rgba(26, 23, 18, 0.16);
+				border-radius: 20px;
+				background: rgba(255, 251, 244, 0.92);
+				box-shadow: 0 20px 80px rgba(35, 28, 18, 0.12);
+				padding: 24px;
+			}
+
+			h1 {
+				margin: 0 0 12px;
+				font-size: 24px;
+			}
+
+			p {
+				margin: 0 0 16px;
+				line-height: 1.5;
+			}
+
+			pre {
+				margin: 0;
+				padding: 16px;
+				border-radius: 14px;
+				background: #17130f;
+				color: #f8f3ea;
+				overflow: auto;
+				font-size: 13px;
+			}
+		</style>
+		<script>
+			(() => {
+				const STATE_KEY = '__interceptorDispatchEventReloadState'
+				const COUNT_KEY = '__interceptorDispatchEventReloadCount'
+				const MAX_RELOADS = 3
+
+				const reloadCount = Number(sessionStorage.getItem(COUNT_KEY) ?? '0') + 1
+				sessionStorage.setItem(COUNT_KEY, String(reloadCount))
+
+				const state = {
+					phase: 'booting',
+					reloadCount,
+					dispatchOwn: Object.prototype.hasOwnProperty.call(window, 'dispatchEvent'),
+					dispatchSource: String(window.dispatchEvent).slice(0, 120),
+					dispatchNative: /\[native code\]/.test(String(window.dispatchEvent)),
+					dispatchReturned: undefined,
+					hasEthereum: typeof window.ethereum,
+					isInterceptor: window.ethereum?.isInterceptor,
+					reason: undefined,
+				}
+
+				window[STATE_KEY] = state
+
+				window.addEventListener('interceptor-repro-probe', (event) => {
+					event.preventDefault()
+				}, { once: true })
+
+				const dispatchReturned = window.dispatchEvent(new Event('interceptor-repro-probe', { cancelable: true }))
+				state.dispatchReturned = dispatchReturned
+
+				if (dispatchReturned !== false) {
+					state.reason = 'cancelable event returned true'
+					if (reloadCount < MAX_RELOADS) {
+						state.phase = 'reloading'
+						window[STATE_KEY] = state
+						location.reload()
+						return
+					}
+					state.phase = 'detected-bug'
+					window[STATE_KEY] = state
+					return
+				}
+
+				state.phase = 'stable'
+				window[STATE_KEY] = state
+			})()
+		</script>
+	</head>
+	<body>
+		<main>
+			<h1>Dispatch Event Reload Repro</h1>
+			<p>
+				This page models a boot script that expects native cancelable
+				<code>dispatchEvent()</code> behavior. If that contract is broken, it reloads.
+			</p>
+			<pre id="state"></pre>
+		</main>
+		<script>
+			const state = window.__interceptorDispatchEventReloadState
+			document.getElementById('state').textContent = JSON.stringify(state, null, 2)
+			document.title = `Dispatch Event Repro: ${state.phase}`
+		</script>
+	</body>
+</html>
