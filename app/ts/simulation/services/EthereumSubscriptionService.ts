@@ -49,6 +49,33 @@ export async function sendSubscriptionMessagesForNewBlock(
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
+	let liveBlockPromise: Promise<Awaited<ReturnType<EthereumClientService['getBlock']>>> | undefined
+	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
+	let simulatedBlocksPromise: Promise<readonly NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>[]> | undefined
+	const getLiveBlock = async () => {
+		if (liveBlockPromise === undefined) liveBlockPromise = ethereumClientService.getBlock(undefined, blockNumber, false)
+		return await liveBlockPromise
+	}
+	const getCachedSimulationState = async () => {
+		if (simulationStatePromise === undefined) simulationStatePromise = getSimulationState(ethereumClientService)
+		return await simulationStatePromise
+	}
+	const getSimulatedBlocks = async () => {
+		if (simulatedBlocksPromise !== undefined) return await simulatedBlocksPromise
+		simulatedBlocksPromise = (async () => {
+			const simulationState = await getCachedSimulationState()
+			if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
+			const simulationInput = { kind: 'simulated' as const, value: simulationState.value.simulationStateInput }
+			const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationInput)
+			const simulatedBlocks = []
+			for (let simulatedBlockNumber = blockNumber + 1n; simulatedBlockNumber <= simulatedHead; simulatedBlockNumber++) {
+				const simulatedBlock = await getSimulatedBlockFromInput(ethereumClientService, undefined, simulationInput, simulatedBlockNumber, false)
+				if (simulatedBlock !== null) simulatedBlocks.push(simulatedBlock)
+			}
+			return simulatedBlocks
+		})()
+		return await simulatedBlocksPromise
+	}
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
 		if (websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
 			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
@@ -56,7 +83,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		}
 		switch (subscriptionOrFilter.type) {
 			case 'newHeads': {
-				const newBlock = await ethereumClientService.getBlock(undefined, blockNumber, false)
+				const newBlock = await getLiveBlock()
 
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 					type: 'result',
@@ -66,12 +93,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 				})
 
 				if (isSimulation) {
-					const simulationState = await getSimulationState(ethereumClientService)
-					if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) break
-					const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, { kind: 'simulated', value: simulationState.value.simulationStateInput })
-					for (let simulatedBlockNumber = blockNumber + 1n; simulatedBlockNumber <= simulatedHead; simulatedBlockNumber++) {
-						const simulatedBlock = await getSimulatedBlockFromInput(ethereumClientService, undefined, { kind: 'simulated', value: simulationState.value.simulationStateInput }, simulatedBlockNumber, false)
-						if (simulatedBlock === null) continue
+					for (const simulatedBlock of await getSimulatedBlocks()) {
 						// post our simulated blocks on top (reorg them)
 						sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 							type: 'result',
