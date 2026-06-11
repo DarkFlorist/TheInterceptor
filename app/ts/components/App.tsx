@@ -329,11 +329,11 @@ export function App() {
 						tabIconDetails.value = parsed.data
 						return undefined
 					}
-				case 'popup_new_block_arrived': {
-					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
-					return undefined
-				}
+					case 'popup_new_block_arrived': {
+						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+						return undefined
+					}
 					case 'popup_failed_to_get_block': {
 						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
