@@ -7,6 +7,7 @@ import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verif
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
+import { bumpPopupRefreshGeneration } from '../popupRefreshGeneration.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import type { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
@@ -78,7 +79,15 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), promptForAccessesIfNeeded)
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		await getSettings(),
+		promptForAccessesIfNeeded,
+		bumpPopupRefreshGeneration(),
+	)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 

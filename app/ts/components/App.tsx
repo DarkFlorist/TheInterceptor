@@ -155,6 +155,7 @@ export function App() {
 	const boundaryResetKey = useSignal(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 	const popupRefreshAppliedGeneration = useSignal(0)
+	const popupRefreshGeneration = useSignal(0)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
@@ -244,8 +245,11 @@ export function App() {
 			simulationResultState.value = state.simulationResultState
 		}
 
-		const updateHomePage = ({ data }: UpdateHomePage) => {
+		const shouldIgnoreOutdatedPopupRefreshMessage = (refreshGeneration: number) => refreshGeneration < popupRefreshGeneration.value
+		const updateHomePage = ({ data, popupRefreshGeneration: updateGeneration }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
+			if (shouldIgnoreOutdatedPopupRefreshMessage(updateGeneration)) return
+			popupRefreshGeneration.value = updateGeneration
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
 			rpcEntries.value = data.rpcEntries
@@ -293,12 +297,16 @@ export function App() {
 			if (!maybeParsed.success) return undefined // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
-				switch(parsed.method) {
+			switch(parsed.method) {
 					case 'popup_UnexpectedErrorOccured': {
 						unexpectedError.value = parsed
 						return undefined
 					}
 					case 'popup_settingsUpdated':
+						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+						popupRefreshGeneration.value = parsed.popupRefreshGeneration
+						requestCachedHomeData()
+						return undefined
 					case 'popup_accounts_update':
 					case 'popup_chain_update':
 					case 'popup_signer_name_changed':
@@ -315,6 +323,9 @@ export function App() {
 						return undefined
 					}
 					case 'popup_websiteIconChanged': {
+						if (currentTabId.value === undefined || parsed.tabId !== currentTabId.value) return undefined
+						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+						popupRefreshGeneration.value = parsed.popupRefreshGeneration
 						tabIconDetails.value = parsed.data
 						return undefined
 					}
@@ -336,8 +347,15 @@ export function App() {
 				if (parsed.method !== 'popup_UpdateHomePage') {
 					return undefined
 				}
-				const { role: _role, ...popupUpdateHomePage } = parsed
-				return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
+				if (typeof msg !== 'object' || msg === null) {
+					return undefined
+				}
+				const { role: _role, ...popupUpdateHomePage } = msg as Record<string, unknown>
+				const parsedUpdateHomePage = UpdateHomePage.safeParse(popupUpdateHomePage)
+				if (!parsedUpdateHomePage.success) {
+					return undefined
+				}
+				return updateHomePage(parsedUpdateHomePage.value)
 			}
 
 		browser.runtime.onMessage.addListener(replyPopupMessageListener)

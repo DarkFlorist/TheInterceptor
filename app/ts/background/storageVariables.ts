@@ -76,6 +76,9 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
 }
 
+export const getPopupRefreshGeneration = async () => (await browserStorageLocalGet('popupRefreshGeneration'))?.popupRefreshGeneration ?? 0
+export const setPopupRefreshGeneration = async (popupRefreshGeneration: number) => await browserStorageLocalSet({ popupRefreshGeneration })
+
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()

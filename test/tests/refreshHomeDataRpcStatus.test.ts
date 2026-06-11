@@ -163,7 +163,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, false)
+			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, false)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -247,7 +247,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, false)
+			await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, 1, false)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -304,7 +304,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, false)
+			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, false)
 		} finally {
 			ethereum.cleanup()
 		}

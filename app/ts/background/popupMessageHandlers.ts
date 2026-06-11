@@ -2,7 +2,7 @@ import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationState
 import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, setMakeCurrentAddressRich, setFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
-import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type SetRpcList, UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
+import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type ImportSettingsReply, type SetRpcList, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -42,6 +42,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
+import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -194,7 +195,7 @@ export async function removeAddressBookEntry(ethereum: EthereumClientService, to
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
-	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses') updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses') await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
@@ -205,7 +206,7 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 		}
 		return previousContacts.concat([entry.data])
 	})
-	if (entry.data.useAsActiveAddress) updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	if (entry.data.useAsActiveAddress) await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
@@ -225,7 +226,7 @@ export async function changeInterceptorAccess(ethereum: EthereumClientService, t
 		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
 	}))
 
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -478,12 +479,28 @@ export async function requestNewHomeData(
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
 	requestAbortController: AbortController | undefined,
+	popupRefreshGeneration: number,
 ) {
-	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts })
-	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
+	const newPopupRefreshGeneration = popupRefreshGeneration
+	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
+		requestAbortController,
+		richDataSource: 'cached',
+		shouldRefreshSignerAccounts,
+		popupRefreshGeneration: newPopupRefreshGeneration,
+	})
+	await sendPopupMessageToOpenWindows(updatedPage)
 }
 
-export async function refreshHomeData(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, shouldRefreshSignerAccounts: boolean, refreshSimulation = true, requestAbortController: AbortController | undefined = undefined) {
+export async function refreshHomeData(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	websiteTabConnections: WebsiteTabConnections,
+	shouldRefreshSignerAccounts: boolean,
+	popupRefreshGeneration: number,
+	refreshSimulation = true,
+	requestAbortController: AbortController | undefined = undefined,
+) {
+	const newPopupRefreshGeneration = popupRefreshGeneration
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
 		const currentSettings = await getSettings()
@@ -491,8 +508,13 @@ export async function refreshHomeData(ethereum: EthereumClientService, tokenPric
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum)
-		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts })
-		await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
+		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
+			requestAbortController,
+			richDataSource: 'fresh',
+			shouldRefreshSignerAccounts,
+			popupRefreshGeneration: newPopupRefreshGeneration,
+		})
+		await sendPopupMessageToOpenWindows(updatedPage)
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
 	}
@@ -522,30 +544,19 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await requestNewHomeData(ethereum, new Map(), false, requestAbortController)
+	return await requestNewHomeData(ethereum, new Map(), false, requestAbortController, bumpPopupRefreshGeneration())
 }
 
-export async function importSettings(settingsData: ImportSettings) {
+export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
-		await sendPopupMessageToOpenWindows({
-			method: 'popup_initiate_export_settings_reply',
-			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' }
-		})
-		return
+		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		await sendPopupMessageToOpenWindows({
-			method: 'popup_initiate_export_settings_reply',
-			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' }
-		})
-		return
+		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
 	await importSettingsAndAddressBook(parsed.value)
-	await sendPopupMessageToOpenWindows({
-		method: 'popup_initiate_export_settings_reply',
-		data: { success: true }
-	})
+	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 
 export async function exportSettings() {
@@ -699,7 +710,7 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 
 export async function disableInterceptor(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
 	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -739,7 +750,7 @@ async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: Websit
 
 export async function blockOrAllowExternalRequests(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
 	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -756,7 +767,7 @@ async function removeAddressAccessByAddress(websiteOrigin: string, address: Ethe
 export async function removeWebsiteAddressAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
 	await reloadConnectedTabs(websiteTabConnections)
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -779,7 +790,7 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 
 export async function removeWebsiteAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
 	await updateWebsiteAccess((previousAccess) => previousAccess.filter(access => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings())
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, bumpPopupRefreshGeneration())
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {
@@ -886,10 +897,12 @@ async function buildHomePageUpdate(
 		requestAbortController,
 		richDataSource,
 		shouldRefreshSignerAccounts,
+		popupRefreshGeneration,
 	}: {
 		requestAbortController?: AbortController
 		richDataSource: 'cached' | 'fresh'
 		shouldRefreshSignerAccounts: boolean
+		popupRefreshGeneration: number
 	}
 ): Promise<UpdateHomePage> {
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
@@ -914,6 +927,7 @@ async function buildHomePageUpdate(
 	const richData = await richDataPromise
 	return {
 		method: 'popup_UpdateHomePage' as const,
+		popupRefreshGeneration: popupRefreshGeneration,
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,
 			activeAddresses: await activeAddressesPromise,
