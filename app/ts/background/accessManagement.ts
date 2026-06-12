@@ -40,14 +40,15 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	if (connection?.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
-		return connectToPort(
+		const popupRefreshGeneration = bumpPopupRefreshGeneration()
+		connectToPort(
 			websiteTabConnections,
 			socket,
-			websiteOrigin,
 			settings,
 			requestAccessForAddress?.address,
-			bumpPopupRefreshGeneration(),
-		) ? 'hasAccess' : 'noAccess'
+		)
+		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)
+		return 'hasAccess'
 	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
@@ -165,13 +166,10 @@ async function getActiveAddressForDomain(websiteOrigin: string, settings: Settin
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	websiteOrigin: string,
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
-	popupRefreshGeneration: number,
 ): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)
 
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
 
@@ -185,11 +183,8 @@ function connectToPort(
 function disconnectFromPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	websiteOrigin: string,
-	popupRefreshGeneration: number,
 ): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
-	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
@@ -223,8 +218,7 @@ async function updateTabConnections(
 	tabConnection: TabConnection,
 	promptForAccessesIfNeeded: boolean,
 	settings: Settings,
-	popupRefreshGeneration: number,
-) {
+): Promise<Map<string, { tabId: number, websiteOrigin: string }>> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
@@ -234,9 +228,9 @@ async function updateTabConnections(
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin, popupRefreshGeneration)
+			disconnectFromPort(websiteTabConnections, connection.socket)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress?.address, popupRefreshGeneration)
+			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
@@ -244,9 +238,7 @@ async function updateTabConnections(
 			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
-	for (const { tabId, websiteOrigin } of iconRefreshTargets.values()) {
-		await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
-	}
+	return iconRefreshTargets
 }
 
 const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
@@ -347,8 +339,7 @@ export async function updateWebsiteApprovalAccesses(
 	websiteTabConnectionsOrPrompt: WebsiteTabConnections | boolean,
 	settingsOrPrompt: Settings | boolean,
 	promptForAccessesIfNeeded: boolean,
-	popupRefreshGeneration: number,
-): Promise<void> {
+): Promise<number> {
 	const usingLegacySignature = tokenPriceServiceOrWebsiteTabConnections instanceof Map
 	const tokenPriceService = usingLegacySignature ? undefined as never : tokenPriceServiceOrWebsiteTabConnections
 	const resetSimulationServices = usingLegacySignature ? undefined as never : resetSimulationServicesOrSettings as ResetSimulationServices
@@ -357,7 +348,9 @@ export async function updateWebsiteApprovalAccesses(
 	const promptForAccesses = typeof (usingLegacySignature ? websiteTabConnectionsOrPrompt : promptForAccessesIfNeeded) === 'boolean'
 		? usingLegacySignature ? websiteTabConnectionsOrPrompt as boolean : promptForAccessesIfNeeded
 		: promptForAccessesIfNeeded
+	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const allTabStates = await getAllTabStates()
+	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 
 	try {
 		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
@@ -366,16 +359,26 @@ export async function updateWebsiteApprovalAccesses(
 	}
 	// update port connections and disconnect from ports that should not have access anymore
 	const updatePromises = [...websiteTabConnections.entries()].map(async ([_tab, tabConnection]) => {
-		await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings, popupRefreshGeneration)
+		const tabIconRefreshTargets = await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings)
+		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	for (const tabState of allTabStates) {
 		if (websiteTabConnections.has(tabState.tabId)) continue
 		if (tabState.website?.websiteOrigin === undefined) continue
-		updatePromises.push(updateExtensionIcon(websiteTabConnections, tabState.tabId, tabState.website.websiteOrigin, popupRefreshGeneration))
+		addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
 	}
 	try {
 		await Promise.all(updatePromises)
 	} catch (error) {
 		await handleUnexpectedError(error)
 	}
+	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
+		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
+	)
+	try {
+		await Promise.all(iconRefreshPromises)
+	} catch (error) {
+		await handleUnexpectedError(error)
+	}
+	return popupRefreshGeneration
 }
