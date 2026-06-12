@@ -307,15 +307,15 @@ export function App() {
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
 			switch(parsed.method) {
-					case 'popup_UnexpectedErrorOccured': {
+				case 'popup_UnexpectedErrorOccured': {
 						unexpectedError.value = parsed
 						return undefined
 					}
-						case 'popup_settingsUpdated':
-							if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
-							pendingPopupRefreshGeneration.value = Math.max(pendingPopupRefreshGeneration.value, parsed.popupRefreshGeneration)
-							requestCachedHomeData()
-							return undefined
+					case 'popup_settingsUpdated':
+						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+						pendingPopupRefreshGeneration.value = Math.max(pendingPopupRefreshGeneration.value, parsed.popupRefreshGeneration)
+						requestCachedHomeData()
+						return undefined
 					case 'popup_accounts_update':
 					case 'popup_chain_update':
 					case 'popup_signer_name_changed':
