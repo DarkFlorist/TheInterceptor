@@ -433,4 +433,55 @@ describe('popup icon sync', () => {
 			dom.restore()
 		}
 	})
+
+	test('settings update blocks stale home updates with lower generation', async () => {
+		const dom = installDomMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 10),
+				}, undefined, () => undefined)
+			})
+			const iconAfterCurrentTabUpdate = collectImageSrcs(dom.document.body).find((src) => src.includes('head-'))
+			assert.equal(iconAfterCurrentTabUpdate?.endsWith('head-signing.png'), true)
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 20,
+					data: defaultSettings,
+				}, undefined, () => undefined)
+			})
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 5),
+				}, undefined, () => undefined)
+			})
+			const iconAfterStaleHomeAfterSettingsUpdate = collectImageSrcs(dom.document.body).find((src) => src.includes('head-'))
+			assert.equal(iconAfterStaleHomeAfterSettingsUpdate?.endsWith('head-signing.png'), true)
+		} finally {
+			dom.restore()
+		}
+	})
 })

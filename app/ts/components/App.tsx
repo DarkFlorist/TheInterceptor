@@ -156,6 +156,8 @@ export function App() {
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 	const popupRefreshAppliedGeneration = useSignal(0)
 	const popupRefreshGeneration = useSignal(0)
+	const pendingPopupRefreshGeneration = useSignal(0)
+	const popupIconRefreshGeneration = useSignal(0)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
@@ -245,11 +247,15 @@ export function App() {
 			simulationResultState.value = state.simulationResultState
 		}
 
-		const shouldIgnoreOutdatedPopupRefreshMessage = (refreshGeneration: number) => refreshGeneration < popupRefreshGeneration.value
+		const shouldIgnoreOutdatedPopupRefreshMessage = (refreshGeneration: number, minimumGeneration = popupRefreshGeneration.value) => refreshGeneration < minimumGeneration
 		const updateHomePage = ({ data, popupRefreshGeneration: updateGeneration }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
-			if (shouldIgnoreOutdatedPopupRefreshMessage(updateGeneration)) return
+			const minimumValidGeneration = Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value)
+			if (shouldIgnoreOutdatedPopupRefreshMessage(updateGeneration, minimumValidGeneration)) return
 			popupRefreshGeneration.value = updateGeneration
+			if (pendingPopupRefreshGeneration.value <= updateGeneration) {
+				pendingPopupRefreshGeneration.value = 0
+			}
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
 			rpcEntries.value = data.rpcEntries
@@ -261,7 +267,10 @@ export function App() {
 			fixedAddressRichList.value = data.richList
 			unexpectedError.value = data.latestUnexpectedError
 			updateHomePageSettings(data.settings, !wasLoaded)
-			tabIconDetails.value = data.tabState.tabIconDetails
+			if (popupIconRefreshGeneration.value <= updateGeneration) {
+				tabIconDetails.value = data.tabState.tabIconDetails
+				popupIconRefreshGeneration.value = updateGeneration
+			}
 			updateVisualizedState(data.visualizedSimulatorState)
 			tabState.value = data.tabState
 			currentBlockNumber.value = data.currentBlockNumber
@@ -302,11 +311,11 @@ export function App() {
 						unexpectedError.value = parsed
 						return undefined
 					}
-					case 'popup_settingsUpdated':
-						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
-						popupRefreshGeneration.value = parsed.popupRefreshGeneration
-						requestCachedHomeData()
-						return undefined
+						case 'popup_settingsUpdated':
+							if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+							pendingPopupRefreshGeneration.value = Math.max(pendingPopupRefreshGeneration.value, parsed.popupRefreshGeneration)
+							requestCachedHomeData()
+							return undefined
 					case 'popup_accounts_update':
 					case 'popup_chain_update':
 					case 'popup_signer_name_changed':
@@ -325,7 +334,8 @@ export function App() {
 					case 'popup_websiteIconChanged': {
 						if (currentTabId.value === undefined || parsed.tabId !== currentTabId.value) return undefined
 						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
-						popupRefreshGeneration.value = parsed.popupRefreshGeneration
+						if (parsed.popupRefreshGeneration < popupIconRefreshGeneration.value) return undefined
+						popupIconRefreshGeneration.value = parsed.popupRefreshGeneration
 						tabIconDetails.value = parsed.data
 						return undefined
 					}
