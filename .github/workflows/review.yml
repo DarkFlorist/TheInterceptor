@@ -21,6 +21,7 @@ on:
 permissions:
   pull-requests: write
   contents: read
+  checks: write
 
 jobs:
   ci-agent:
@@ -28,7 +29,7 @@ jobs:
     if: github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/zoltu/ci-docker-agent:v3@sha256:3a2d571b7c1fefec817dbd1ed4434ad2b399adb6d7b845e17852b6a20620225a 
+      image: ghcr.io/zoltu/ci-docker-agent:v4@sha256:42137128493ffc13fde5a54c197191133dca011b67ca6da18843d38bdc9f24c4
       options: --user root
     steps:
       # Intentionally checks out the base branch; PR diff is fetched via GitHub API
