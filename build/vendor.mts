@@ -212,8 +212,17 @@ async function vendorDependencies() {
 		}
 		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
 		await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
+		if (packageRoot === '@darkflorist/address-metadata') await exposeAddressMetadataImagesAtPackageRoot(destinationDirectoryPath)
 	}
 	await writeVendorTypeShims()
+}
+
+async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
+	const sourceDirectoryPath = path.join(packageDirectoryPath, 'lib', 'images')
+	const destinationDirectoryPath = path.join(packageDirectoryPath, 'images')
+	const sourceStats = await fs.stat(sourceDirectoryPath)
+	if (!sourceStats.isDirectory()) return
+	await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath)
 }
 
 async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {

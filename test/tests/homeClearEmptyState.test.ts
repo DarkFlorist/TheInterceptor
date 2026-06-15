@@ -151,4 +151,53 @@ describe('Home popup clear empty state', () => {
 			dom.restore()
 		}
 	})
+
+	test('treats a known signer account as connected even if the signerConnected flag is stale', async () => {
+		const dom = installDomMock()
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
+		try {
+			await act(() => {
+				render(h(Home, {
+					changeActiveAddress: () => undefined,
+					makeCurrentAddressRich: new Signal(false),
+					activeAddresses: new Signal([activeAddressEntry]),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: false,
+						signerName: 'MetaMask',
+						signerAccounts: [ACTIVE_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' },
+						activeSigningAddress: ACTIVE_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
+					activeSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
+					useSignersAddressAsActiveAddress: new Signal(true),
+					simVisResults,
+					rpcNetwork: new Signal(rpcNetwork),
+					setActiveRpcAndInformAboutIt: () => undefined,
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' }),
+					currentBlockNumber: new Signal<bigint | undefined>(101n),
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
+					rpcEntries: new Signal([rpcNetwork]),
+					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
+					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
+					interceptorDisabled: new Signal(false),
+					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
+					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
+					openImportSimulation: () => undefined,
+				}), dom.document.body)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('CONNECTED'), true)
+			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
+		} finally {
+			dom.restore()
+		}
+	})
 })
