@@ -174,20 +174,20 @@ const vendoredPackageRoots = [...new Set([
 	...extraPackageRoots,
 ])]
 
-async function recursiveDirectoryCopy(source: string, destination: string, include: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transform: (sourcePath: string, destinationPath: string) => Promise<void>) {
+async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transform?: (sourcePath: string, destinationPath: string) => Promise<void>) {
 	const entries = await fs.readdir(source, { withFileTypes: true })
 	await fs.mkdir(destination, { recursive: true })
 	for (const entry of entries) {
 		const sourcePath = path.join(source, entry.name)
 		const destinationPath = path.join(destination, entry.name)
 		if (entry.isDirectory()) {
-			if (!await include(sourcePath, 'directory')) continue
+			if (include && !await include(sourcePath, 'directory')) continue
 			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transform)
 		} else {
-			if (!await include(sourcePath, 'file')) continue
+			if (include && !await include(sourcePath, 'file')) continue
 			await fs.copyFile(sourcePath, destinationPath)
 		}
-		await transform(sourcePath, destinationPath)
+		await transform?.(sourcePath, destinationPath)
 	}
 }
 
