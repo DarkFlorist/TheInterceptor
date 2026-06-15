@@ -401,7 +401,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, false, undefined)
+		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)

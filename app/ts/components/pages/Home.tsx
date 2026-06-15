@@ -61,7 +61,6 @@ function FirstCardHeader(param: FirstCardParams) {
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
 
 	function enableSimulationMode(enabled: boolean ) {
-		param.simulationMode.value = enabled
 		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
 	}
 

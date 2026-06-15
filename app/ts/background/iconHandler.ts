@@ -27,7 +27,7 @@ async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	return { cachedIcon: sanitizeStoredWebsiteIcon(storedWebsite.website.icon), hasStoredWebsiteAccess: true as const }
 }
 
-async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
+async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string, popupRefreshGeneration: number) {
 	const tabIconDetails = { icon, iconReason }
 	if (!(await doesTabExist(tabId))) return
 	const { previousState, newState } = await updateTabState(tabId, (previousState: TabState) => {
@@ -38,7 +38,14 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	if (previousState === newState) return
 	const iconChanged = previousState.tabIconDetails.icon !== icon
 	const titleChanged = previousState.tabIconDetails.iconReason !== iconReason
-	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
+	if (await getLastKnownCurrentTabId() === tabId) {
+		await sendPopupMessageToOpenWindows({
+			method: 'popup_websiteIconChanged',
+			tabId,
+			popupRefreshGeneration,
+			data: tabIconDetails
+		})
+	}
 	try {
 		if (iconChanged) await setExtensionIcon({ path: { 128: icon }, tabId })
 		if (titleChanged) await setExtensionTitle({ title: iconReason, tabId })
@@ -78,7 +85,7 @@ async function waitForLoadedTab(tabId: number) {
 	}
 }
 
-export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
+export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
 	if (!(await doesTabExist(tabId))) {
 		await removeTabState(tabId)
 		return
@@ -86,7 +93,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	silenceChromeUnCaughtPromise(blockingWebsitePromise)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
-	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)
+	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
 	const settings = await getSettings()
 	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
