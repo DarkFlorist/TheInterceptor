@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { FailedTransactionGasLimitCard, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
+import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
@@ -160,6 +160,7 @@ type TransactionCardParams = {
 
 function FailedTransactionPreviewDetails({
 	website,
+	transactionIdentifier,
 	originalRequestParameters,
 	addressMetaData,
 	created,
@@ -170,6 +171,7 @@ function FailedTransactionPreviewDetails({
 	currentBlockNumber,
 }: {
 	website: Website
+	transactionIdentifier: bigint
 	originalRequestParameters: OriginalSendRequestParameters
 	addressMetaData: readonly AddressBookEntry[]
 	created: Date
@@ -184,8 +186,9 @@ function FailedTransactionPreviewDetails({
 	const from = request?.from === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData, request.from)
 	const to = request?.to === null || request?.to === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData, request.to)
 	const input = request === undefined ? new Uint8Array() : request.input ?? request.data ?? new Uint8Array()
+	const gasLimit = request?.gas
 
-	return <div class = 'card'>
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header'>
 			<div class = 'card-header-icon unset-cursor'>
 				<span class = 'icon'>
@@ -201,9 +204,7 @@ function FailedTransactionPreviewDetails({
 		</header>
 		<div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<div class = 'container'>
-				<ErrorComponent text = { `The transaction fails with an error '${ errorMessage }'` } containerStyle = { { margin: '0px' } } />
-			</div>
-			<div class = 'container' style = 'margin-top: 10px;'>
+				<ErrorComponent text = { `The transaction fails with an error '${ errorMessage }'` } containerStyle = { { margin: '0px', marginBottom: '10px' } } />
 				<dl class = 'grid key-value-pair'>
 					<dt>Transaction type</dt>
 					<dd>{ originalRequestParameters.method }</dd>
@@ -213,22 +214,24 @@ function FailedTransactionPreviewDetails({
 					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
 					<dt>Value</dt>
 					<dd>{ request?.value === undefined ? 'Unknown' : `${ request.value.toString(10) } wei` }</dd>
+					<dt>Gas limit </dt>
+					<dd>
+						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />
+					</dd>
 				</dl>
 			</div>
-				<div style = 'margin-top: 10px;'>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
-					{ rawRequest === undefined
-						? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { () => undefined } />
-						: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
-					}
-				</div>
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+			<div style = 'margin-top: 10px;'>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
+				{ rawRequest === undefined
+					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { () => undefined } />
+					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
+				}
+			</div>
+			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'>
-				</div>
-				<div class = 'log-cell' style = 'justify-content: center;'>
 					<TransactionCreated created = { created } />
 				</div>
-				<div class = 'log-cell' style = 'justify-content: right;'>
+				<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
 					<SimulatedInBlockNumber
 						simulationBlockNumber = { simulationBlockNumber }
 						currentBlockNumber = { currentBlockNumber }
@@ -274,11 +277,10 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
-		const failedRequestData = currentPendingTransaction.originalRequestParameters.method === 'eth_sendTransaction' ? currentPendingTransaction.originalRequestParameters.params[0] : undefined
-		const initialGasLimit = currentPendingTransaction.transactionToSimulate.success ? currentPendingTransaction.transactionToSimulate.transaction.gas : failedRequestData?.gas
 		return <>
 			<FailedTransactionPreviewDetails
 				website = { currentPendingTransaction.transactionToSimulate.website }
+				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
 				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
 				created = { currentPendingTransaction.created }
@@ -287,11 +289,6 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 				rpcConnectionStatus = { param.rpcConnectionStatus }
 				currentBlockNumber = { param.currentBlockNumber }
-			/>
-			<FailedTransactionGasLimitCard
-				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
-				initialGasLimit = { initialGasLimit }
-				isRawTransaction = { currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction' }
 			/>
 		</>
 	}

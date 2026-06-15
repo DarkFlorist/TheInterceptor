@@ -811,7 +811,7 @@ type GasLimitEditorParams = {
 	isRawTransaction: boolean
 }
 
-function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
+export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
 	const gasLimit = useOptionalSignal<bigint>(initialGasLimit)
 
 	async function forceSetGasLimitForTransaction() {
