@@ -834,19 +834,6 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	</>
 }
 
-export function FailedTransactionGasLimitCard({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<div class = 'card-content' style = 'padding-bottom: 5px;'>
-			<dl class = 'grid key-value-pair'>
-				<dt>Gas limit</dt>
-				<dd style = 'display: flex; align-items: center; justify-content: center;'>
-					<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { initialGasLimit } isRawTransaction = { isRawTransaction } />
-				</dd>
-			</dl>
-		</div>
-	</div>
-}
-
 export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 

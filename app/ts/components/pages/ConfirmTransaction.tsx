@@ -165,6 +165,7 @@ function FailedTransactionPreviewDetails({
 	addressMetaData,
 	created,
 	errorMessage,
+	isGasEstimationError,
 	simulationBlockNumber,
 	simulationConductedTimestamp,
 	rpcConnectionStatus,
@@ -176,6 +177,7 @@ function FailedTransactionPreviewDetails({
 	addressMetaData: readonly AddressBookEntry[]
 	created: Date
 	errorMessage: string
+	isGasEstimationError: boolean
 	simulationBlockNumber: bigint
 	simulationConductedTimestamp: Date
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
@@ -196,7 +198,7 @@ function FailedTransactionPreviewDetails({
 				</span>
 			</div>
 			<p class = 'card-header-title' style = 'white-space: nowrap;'>
-				{ request === undefined ? 'Execution error' : 'Gas estimation error' }
+				{ isGasEstimationError ? 'Gas estimation error' : 'Execution error' }
 			</p>
 			<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
 				<WebsiteOriginText website = { website } />
@@ -285,6 +287,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
+				isGasEstimationError = { popupVisualisation.data.transactionToSimulate.success }
 				simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
 				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 				rpcConnectionStatus = { param.rpcConnectionStatus }
