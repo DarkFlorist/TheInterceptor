@@ -233,6 +233,10 @@ describe('ConfirmTransaction', () => {
 			})
 		})
 
+		assert.equal(dom.document.body.textContent?.includes('Transaction type'), true)
+		assert.equal(dom.document.body.textContent?.includes('From'), true)
+		assert.equal(dom.document.body.textContent?.includes('To'), true)
+		assert.equal(dom.document.body.textContent?.includes('Transaction Input'), true)
 		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
 		assert.equal(dom.document.body.textContent?.includes('Change'), true)
 

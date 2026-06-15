@@ -13,12 +13,13 @@ import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '.
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
-import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
-import { type EthereumBytes32, serialize } from '../../types/wire-types.js'
-import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import { SmallAddress } from '../subcomponents/address.js'
+import { TransactionInput } from '../subcomponents/ParsedInputData.js'
+import type { EthereumBytes32 } from '../../types/wire-types.js'
+import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
@@ -31,6 +32,9 @@ import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/sig
 import type { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
+import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
+import { dataStringWith0xStart } from '../../utils/bigint.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -154,6 +158,89 @@ type TransactionCardParams = {
 	numberOfUnderTransactions: number,
 }
 
+function FailedTransactionPreviewDetails({
+	website,
+	originalRequestParameters,
+	addressMetaData,
+	created,
+	errorMessage,
+	simulationBlockNumber,
+	simulationConductedTimestamp,
+	rpcConnectionStatus,
+	currentBlockNumber,
+}: {
+	website: Website
+	originalRequestParameters: OriginalSendRequestParameters
+	addressMetaData: readonly AddressBookEntry[]
+	created: Date
+	errorMessage: string
+	simulationBlockNumber: bigint
+	simulationConductedTimestamp: Date
+	rpcConnectionStatus: Signal<RpcConnectionStatus>
+	currentBlockNumber: Signal<bigint | undefined>
+}) {
+	const request = originalRequestParameters.method === 'eth_sendTransaction' ? originalRequestParameters.params[0] : undefined
+	const rawRequest = originalRequestParameters.method === 'eth_sendRawTransaction' ? originalRequestParameters.params[0] : undefined
+	const from = request?.from === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData, request.from)
+	const to = request?.to === null || request?.to === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData, request.to)
+	const input = request === undefined ? new Uint8Array() : request.input ?? request.data ?? new Uint8Array()
+
+	return <div class = 'card'>
+		<header class = 'card-header'>
+			<div class = 'card-header-icon unset-cursor'>
+				<span class = 'icon'>
+					<img src = '../img/error-icon.svg' width = '24' height = '24'/>
+				</span>
+			</div>
+			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+				{ request === undefined ? 'Execution error' : 'Gas estimation error' }
+			</p>
+			<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
+				<WebsiteOriginText website = { website } />
+			</p>
+		</header>
+		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<div class = 'container'>
+				<ErrorComponent text = { `The transaction fails with an error '${ errorMessage }'` } containerStyle = { { margin: '0px' } } />
+			</div>
+			<div class = 'container' style = 'margin-top: 10px;'>
+				<dl class = 'grid key-value-pair'>
+					<dt>Transaction type</dt>
+					<dd>{ originalRequestParameters.method }</dd>
+					<dt>From</dt>
+					<dd>{ from === undefined ? 'Unknown' : <SmallAddress addressBookEntry = { from } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dt>To</dt>
+					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dt>Value</dt>
+					<dd>{ request?.value === undefined ? 'Unknown' : `${ request.value.toString(10) } wei` }</dd>
+				</dl>
+			</div>
+				<div style = 'margin-top: 10px;'>
+					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
+					{ rawRequest === undefined
+						? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { () => undefined } />
+						: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
+					}
+				</div>
+			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+				<div class = 'log-cell'>
+				</div>
+				<div class = 'log-cell' style = 'justify-content: center;'>
+					<TransactionCreated created = { created } />
+				</div>
+				<div class = 'log-cell' style = 'justify-content: right;'>
+					<SimulatedInBlockNumber
+						simulationBlockNumber = { simulationBlockNumber }
+						currentBlockNumber = { currentBlockNumber }
+						simulationConductedTimestamp = { simulationConductedTimestamp }
+						rpcConnectionStatus = { rpcConnectionStatus }
+					/>
+				</div>
+			</span>
+		</div>
+	</div>
+}
+
 export function TransactionCard(param: TransactionCardParams) {
 	const currentPendingTransaction = param.currentPendingTransaction.value
 	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction' || (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return <></>
@@ -187,57 +274,25 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
-		const initialGasLimit = currentPendingTransaction.transactionToSimulate.success
-			? currentPendingTransaction.transactionToSimulate.transaction.gas
-			: currentPendingTransaction.originalRequestParameters.method === 'eth_sendTransaction'
-				? currentPendingTransaction.originalRequestParameters.params[0].gas
-				: undefined
+		const failedRequestData = currentPendingTransaction.originalRequestParameters.method === 'eth_sendTransaction' ? currentPendingTransaction.originalRequestParameters.params[0] : undefined
+		const initialGasLimit = currentPendingTransaction.transactionToSimulate.success ? currentPendingTransaction.transactionToSimulate.transaction.gas : failedRequestData?.gas
 		return <>
-			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
-				<header class = 'card-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<span class = 'icon'>
-							<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
-						</span>
-					</div>
-					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ popupVisualisation.data.transactionToSimulate.success ? 'Gas estimation error' : 'Execution error' }
-					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-						<WebsiteOriginText website = { currentPendingTransaction.transactionToSimulate.website } />
-					</p>
-				</header>
-
-				<div class = 'card-content' style = 'padding-bottom: 5px;'>
-					<div class = 'container'>
-						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } containerStyle = { { margin: '0px' } } />
-					</div>
-
-					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(serialize(OriginalSendRequestParameters, currentPendingTransaction.originalRequestParameters), 4) }</p>
-					</div>
-					<FailedTransactionGasLimitCard
-						transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
-						initialGasLimit = { initialGasLimit }
-						isRawTransaction = { currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction' }
-					/>
-					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
-						<div class = 'log-cell'>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: center;'>
-							<TransactionCreated created = { currentPendingTransaction.created } />
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<SimulatedInBlockNumber
-								simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
-								currentBlockNumber = { param.currentBlockNumber }
-								simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
-								rpcConnectionStatus = { param.rpcConnectionStatus }
-							/>
-						</div>
-					</span>
-				</div>
-			</div>
+			<FailedTransactionPreviewDetails
+				website = { currentPendingTransaction.transactionToSimulate.website }
+				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
+				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
+				created = { currentPendingTransaction.created }
+				errorMessage = { getErrorMesssage() }
+				simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
+				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
+				rpcConnectionStatus = { param.rpcConnectionStatus }
+				currentBlockNumber = { param.currentBlockNumber }
+			/>
+			<FailedTransactionGasLimitCard
+				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
+				initialGasLimit = { initialGasLimit }
+				isRawTransaction = { currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction' }
+			/>
 		</>
 	}
 	const activeAddress = useComputed(() => popupVisualisation.data.activeAddress)
