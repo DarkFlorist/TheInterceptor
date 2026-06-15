@@ -1018,18 +1018,14 @@ class InterceptorMessageListener {
 function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
-	window.dispatchEvent(new Event('ethereum#initialized'))
 
-	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor
-	const interceptorCapturedDispatcher = window.dispatchEvent
-	window.dispatchEvent = (event: Event) => {
-		interceptorCapturedDispatcher(event)
-		if (!(typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string')) return true
-		if (event.type !== 'ethereum#initialized') return true
+	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
+	const onEthereumInitialized = () => {
+		if (inpageWindow.ethereum?.isInterceptor) return
 		interceptorMessageListener.injectEthereumIntoWindow()
-		window.dispatchEvent = interceptorCapturedDispatcher
-		return true
 	}
+	window.addEventListener('ethereum#initialized', onEthereumInitialized)
+	window.dispatchEvent(new Event('ethereum#initialized'))
 }
 
 injectInterceptor()
