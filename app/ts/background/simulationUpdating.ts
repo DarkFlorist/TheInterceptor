@@ -105,7 +105,11 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 			default: assertNever(operation)
 		}
 	}
-	if (currentBlockTransactions.length > 0 || currentBlockSignedMessages.length > 0) {
+	if (
+		currentBlockTransactions.length > 0
+		|| currentBlockSignedMessages.length > 0
+		|| Object.keys(currentBlockStateOverrides).length > 0
+	) {
 		inputBlocks.push({
 			stateOverrides: currentBlockStateOverrides,
 			transactions: currentBlockTransactions,
@@ -113,17 +117,6 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 			blockTimeManipulation: previousBlockTimeManipulation,
 			simulateWithZeroBaseFee: false,
 		})
-	} else {
-		for (const _ in currentBlockStateOverrides) {
-			inputBlocks.push({
-				stateOverrides: currentBlockStateOverrides,
-				transactions: currentBlockTransactions,
-				signedMessages: currentBlockSignedMessages,
-				blockTimeManipulation: previousBlockTimeManipulation,
-				simulateWithZeroBaseFee: false,
-			})
-			break
-		}
 	}
 	return inputBlocks
 }
