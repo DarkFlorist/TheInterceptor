@@ -215,6 +215,7 @@ describe('inpage signer bridge', () => {
 			setBlockRequestAccounts,
 			rejectPendingRequestAccounts,
 		} = createFakeWindow()
+		const originalDispatchEvent = fakeWindow.dispatchEvent
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -231,6 +232,7 @@ describe('inpage signer bridge', () => {
 			await import('../../app/inpage/ts/inpage.js')
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
+			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
 				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { jsonrpc: '2.0', id: string | number | null, result: unknown }
@@ -346,6 +348,26 @@ describe('inpage signer bridge', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(signerRequests.length, signerRequestCountBeforeSpoof)
 			assert.equal(interceptorErrorPayloads.length, 0)
+
+			const lateSignerRequests: string[] = []
+			const lateSigner = {
+				isMetaMask: true,
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => {
+					lateSignerRequests.push(method)
+					if (method === 'eth_chainId') return '0x1'
+					if (method === 'eth_accounts') return signerAccounts
+					throw new Error(`Unexpected late signer request: ${ method }`)
+				},
+				on: () => lateSigner,
+				removeListener: () => lateSigner,
+			}
+			;(fakeWindow as { ethereum: typeof lateSigner }).ethereum = lateSigner
+			fakeWindow.dispatchEvent({ type: 'ethereum#initialized' })
+			await waitFor(() => lateSignerRequests.length >= 1)
+			assert.equal(lateSignerRequests[0], 'eth_chainId')
+			assert.equal((fakeWindow.ethereum as { isInterceptor?: boolean }).isInterceptor, true)
+			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
 		} finally {
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {
