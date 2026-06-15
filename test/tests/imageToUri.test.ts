@@ -114,6 +114,37 @@ describe('imageToUri', () => {
 		assert.equal(result.failureReason, 'image data exceeded 5 bytes')
 	})
 
+	test('rejects oversized image responses before decoding them when content-length exceeds the limit', async () => {
+		let fileReaderUsed = false
+		function TrackingFileReader(this: MockFileReaderState) {
+			this.result = undefined
+			this.onabort = undefined
+			this.onerror = undefined
+			this.onloadend = undefined
+			this.readAsDataURL = () => {
+				fileReaderUsed = true
+				this.result = 'data:image/png;base64,b2s='
+				this.onloadend?.()
+			}
+		}
+
+		Object.defineProperty(globalThis, 'FileReader', {
+			configurable: true,
+			writable: true,
+			value: TrackingFileReader,
+		})
+		fetchImplementation = async () => new Response(new Blob(['too-big'], { type: 'image/png' }), {
+			status: 200,
+			headers: { 'content-type': 'image/png', 'content-length': '7' },
+		})
+
+		const result = await imageToUri('https://example.test/stream-too-big.png', 5)
+
+		assert.equal(result.data, undefined)
+		assert.equal(result.failureReason, 'image data exceeded 5 bytes')
+		assert.equal(fileReaderUsed, false)
+	})
+
 	test('classifies file reader failures', async () => {
 		function FailingFileReader(this: MockFileReaderState) {
 			this.result = undefined

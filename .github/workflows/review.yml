@@ -1,0 +1,58 @@
+name: CI Agent
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number (PR review mode)"
+        required: false
+        type: number
+      base_commit:
+        description: "Base commit SHA (diff mode)"
+        required: false
+        type: string
+      head_commit:
+        description: "Head commit SHA (diff mode)"
+        required: false
+        type: string
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  ci-agent:
+    # if triggered by an issue_comment, the issue must be a Pull Request comment and the commentor must be semi-trusted (not internet rando)
+    if: github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/zoltu/ci-docker-agent:v3@sha256:3a2d571b7c1fefec817dbd1ed4434ad2b399adb6d7b845e17852b6a20620225a 
+      options: --user root
+    steps:
+      # Intentionally checks out the base branch; PR diff is fetched via GitHub API
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run CI Agent
+        run: bun /ci-agent/source/index.mts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          BASE_COMMIT: ${{ github.event.inputs.base_commit }}
+          HEAD_COMMIT: ${{ github.event.inputs.head_commit }}
+          AI_API_URL: ${{ vars.AI_API_URL }}
+          AI_MODEL: ${{ vars.AI_MODEL }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+
+      - name: Upload debug traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-traces
+          path: /debug
+          retention-days: 7

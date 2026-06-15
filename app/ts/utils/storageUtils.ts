@@ -72,6 +72,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
+	popupRefreshGeneration: funtypes.Number,
 })
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
@@ -108,6 +109,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
 	funtypes.Literal('fixedAddressRichList'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
+	funtypes.Literal('popupRefreshGeneration'),
 )
 
 const LocalStorageItems2Runtype: funtypes.Partial<{
