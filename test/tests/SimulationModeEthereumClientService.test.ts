@@ -611,14 +611,8 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				assert.equal(await getBlockNumberFromInput(splitSimulationStateInput), blockNumber + 2n)
 			})
 
-			test('input-based block number ignores the default empty simulation block', async () => {
-				const emptySimulationStateInput = [{
-					stateOverrides: {},
-					transactions: [],
-					signedMessages: [],
-					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
-					simulateWithZeroBaseFee: false,
-				}] as const
+			test('input-based block number returns parent block number for empty input', async () => {
+				const emptySimulationStateInput = [] as const
 
 				assert.equal(await getBlockNumberFromInput(emptySimulationStateInput), blockNumber)
 			})
