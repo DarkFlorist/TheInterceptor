@@ -31,20 +31,6 @@ The benchmark is:
 bun run benchmark:popup-lifecycle
 ```
 
-For a deterministic page that models the old `dispatchEvent()` refresh-loop failure mode, run:
-
-```bash
-bun run benchmark:dispatchevent-reload
-```
-
-That benchmark compares three cases:
-
-- current Interceptor
-- no extension
-- a simulated broken `dispatchEvent()` shim that matches the old bug shape
-
-The repro page stays stable when `dispatchEvent()` is native, and it intentionally reloads several times when cancelable event semantics are broken.
-
 It currently reports the `cold`, `warm`, and `stacked` popup-open scenarios. The `stacked` scenario opens a real local HTTP test page that first requests account access, then sends one `eth_sendTransaction`, waits for the confirm popup, fetches the user's balance, and then opens the main popup.
 
 For `stacked`, the output is split into two timing families:
