@@ -1,7 +1,6 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
-import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const nodeModulesDirectory = path.join(directoryOfThisFile, '..', 'node_modules')
@@ -175,12 +174,29 @@ const vendoredPackageRoots = [...new Set([
 	...extraPackageRoots,
 ])]
 
+async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transform?: (sourcePath: string, destinationPath: string) => Promise<void>) {
+	const entries = await fs.readdir(source, { withFileTypes: true })
+	await fs.mkdir(destination, { recursive: true })
+	for (const entry of entries) {
+		const sourcePath = path.join(source, entry.name)
+		const destinationPath = path.join(destination, entry.name)
+		if (entry.isDirectory()) {
+			if (include && !await include(sourcePath, 'directory')) continue
+			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transform)
+		} else {
+			if (include && !await include(sourcePath, 'file')) continue
+			await fs.copyFile(sourcePath, destinationPath)
+		}
+		await transform?.(sourcePath, destinationPath)
+	}
+}
+
 async function vendorDependencies() {
 	await fs.rm(path.join(directoryOfThisFile, '..', 'app', 'vendor'), { recursive: true, force: true })
 	for (const packageRoot of vendoredPackageRoots) {
 		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageRoot)
-		async function inclusionPredicate(path: string, fileType: FileType) {
+		async function inclusionPredicate(path: string, fileType: 'directory' | 'file') {
 			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
 			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
 			if (path.endsWith('.js')) return true
