@@ -1019,11 +1019,10 @@ function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 
-	// keep listening until another wallet announces itself, then reinject once without patching dispatchEvent
+	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
 	const onEthereumInitialized = () => {
 		if (inpageWindow.ethereum?.isInterceptor) return
 		interceptorMessageListener.injectEthereumIntoWindow()
-		window.removeEventListener('ethereum#initialized', onEthereumInitialized)
 	}
 	window.addEventListener('ethereum#initialized', onEthereumInitialized)
 	window.dispatchEvent(new Event('ethereum#initialized'))
