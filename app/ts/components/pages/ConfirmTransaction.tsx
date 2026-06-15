@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
+import { FailedTransactionGasLimitCard, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
@@ -187,6 +187,11 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
+		const initialGasLimit = currentPendingTransaction.transactionToSimulate.success
+			? currentPendingTransaction.transactionToSimulate.transaction.gas
+			: currentPendingTransaction.originalRequestParameters.method === 'eth_sendTransaction'
+				? currentPendingTransaction.originalRequestParameters.params[0].gas
+				: undefined
 		return <>
 			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 				<header class = 'card-header'>
@@ -211,6 +216,11 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 					<div class = 'textbox'>
 						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(serialize(OriginalSendRequestParameters, currentPendingTransaction.originalRequestParameters), 4) }</p>
 					</div>
+					<FailedTransactionGasLimitCard
+						transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
+						initialGasLimit = { initialGasLimit }
+						isRawTransaction = { currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction' }
+					/>
 					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
 						<div class = 'log-cell'>
 						</div>

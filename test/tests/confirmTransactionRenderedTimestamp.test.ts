@@ -210,6 +210,36 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
+	test('shows gas limit editing for failed transactions', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
+		assert.equal(dom.document.body.textContent?.includes('Change'), true)
+
+		clock.restore()
+		dom.restore()
+	})
+
 	test('updates the simulation age when the real refresh flow runs', { timeout: 15_000 }, async () => {
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')

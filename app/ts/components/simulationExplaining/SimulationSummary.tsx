@@ -804,15 +804,51 @@ type RawTransactionDetailsCardParams = {
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
 }
-export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
-	const showSummary = useSignal<boolean>(false)
-	const gasLimit = useOptionalSignal<bigint>(transaction.gas)
+
+type GasLimitEditorParams = {
+	transactionIdentifier: bigint
+	initialGasLimit: bigint | undefined
+	isRawTransaction: boolean
+}
+
+function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
+	const gasLimit = useOptionalSignal<bigint>(initialGasLimit)
 
 	async function forceSetGasLimitForTransaction() {
 		const gas = gasLimit.deepPeek()
-		if (gas === undefined || gas === transaction.gas) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gas, transactionIdentifier: transactionIdentifier } })
+		if (gas === undefined || gas === initialGasLimit) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gas, transactionIdentifier } })
 	}
+
+	return <>
+		<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
+			<IntegerInput
+				autoSize = { true }
+				value = { gasLimit }
+				placeholder = { initialGasLimit?.toString(10) ?? '' }
+				disabled = { isRawTransaction }
+			/>
+		</span>
+		&nbsp;gas&nbsp;
+		<button disabled = { isRawTransaction || gasLimit.deepValue === initialGasLimit } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+	</>
+}
+
+export function FailedTransactionGasLimitCard({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<dl class = 'grid key-value-pair'>
+				<dt>Gas limit</dt>
+				<dd style = 'display: flex; align-items: center; justify-content: center;'>
+					<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { initialGasLimit } isRawTransaction = { isRawTransaction } />
+				</dd>
+			</dl>
+		</div>
+	</div>
+}
+
+export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
+	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
@@ -842,16 +878,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 						</> }
 						<dt>Gas limit </dt>
 						<dd style = 'display: flex; align-items: center; justify-content: center;'>
-							<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
-								<IntegerInput
-									autoSize = { true }
-									value = { gasLimit }
-									placeholder = { transaction.gas.toString(10) }
-									disabled = { isRawTransaction }
-								/>
-							</span>
-							&nbsp;gas&nbsp;
-							<button disabled = { gasLimit.deepValue === transaction.gas } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+							<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
 						</dd>
 						<dt>Nonce: </dt>
 						<dd>{ transaction.nonce.toString(10) }</dd>
