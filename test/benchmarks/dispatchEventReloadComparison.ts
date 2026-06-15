@@ -77,8 +77,8 @@ async function runScenario(label: string, extensionDir: string, pageUrl: string,
 		try {
 			const navigations: string[] = []
 			connection.on('Page.frameNavigated', (params: unknown) => {
-				const p = params as { frame?: { url?: string } }
-				if (p.frame?.url !== undefined) navigations.push(p.frame.url)
+				const frameNavigatedParams = params as { frame?: { url?: string } }
+				if (frameNavigatedParams.frame?.url !== undefined) navigations.push(frameNavigatedParams.frame.url)
 			})
 
 			await connection.send('Page.enable')
