@@ -22,7 +22,7 @@ function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry
 
 type TransactionInputParams = {
 	addressMetaData: SignalOrValue<readonly AddressBookEntry[]>
-	parsedInputData: EnrichedEthereumInputData
+	parsedInputData?: EnrichedEthereumInputData
 	input: Uint8Array
 	to: AddressBookEntry | undefined
 	renameAddressCallBack: RenameAddressCallBack
