@@ -371,9 +371,16 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = await ethereum.getBlock(undefined)
-	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : await Promise.all(simulationInput.map(async (block) => (
-		modifyObject(block, { transactions: await getBaseFeeAdjustedTransactions(ethereum, undefined, parentBlock, block.transactions) })
-	)))
+	const getBaseFeeFixedInputStateBlocks = async () => {
+		if (parentBlock === undefined) return simulationInput
+		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []
+		for (const block of simulationInput) {
+			const transactions = await getBaseFeeAdjustedTransactions(ethereum, undefined, parentBlock, baseFeeFixedInputStateBlocks, block)
+			baseFeeFixedInputStateBlocks.push(modifyObject(block, { transactions }))
+		}
+		return baseFeeFixedInputStateBlocks
+	}
+	const baseFeeFixedInputStateBlocks = await getBaseFeeFixedInputStateBlocks()
 	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
 	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
 }

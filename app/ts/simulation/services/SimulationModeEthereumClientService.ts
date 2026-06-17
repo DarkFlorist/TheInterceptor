@@ -689,22 +689,61 @@ const getAffordableMaxFeePerGas = (desiredMaxFeePerGas: bigint, balance: bigint,
 	return min(desiredMaxFeePerGas, availableForGas / gasLimit)
 }
 
-export const getBaseFeeAdjustedTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, parentBlock: EthereumBlockHeader, preSimulationTransactions: readonly PreSimulationTransaction[]): Promise<readonly PreSimulationTransaction[]> => {
-	if (parentBlock === null) return preSimulationTransactions
+const getBalanceBeforeSimulationInputTransaction = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	parentBlock: NonNullable<EthereumBlockHeader>,
+	simulationInputBeforeBlock: SimulationStateInput,
+	currentBlock: SimulationStateInput[number],
+	transactionsBefore: readonly PreSimulationTransaction[],
+	address: bigint,
+) => {
+	const overrideBalance = currentBlock.stateOverrides[addressString(address)]?.balance
+	if (transactionsBefore.length === 0 && overrideBalance !== undefined) return overrideBalance
+	if (simulationInputBeforeBlock.length === 0 && transactionsBefore.length === 0) return await ethereumClientService.getBalance(address, parentBlock.number, requestAbortController)
+	const simulationInputBeforeTransaction = [
+		...simulationInputBeforeBlock,
+		modifyObject(currentBlock, { transactions: transactionsBefore }),
+	]
+	return await getSimulatedBalanceFromInput(
+		ethereumClientService,
+		requestAbortController,
+		{ kind: 'simulated', value: simulationInputBeforeTransaction },
+		address,
+		'latest',
+		parentBlock.number,
+	)
+}
+
+export const getBaseFeeAdjustedTransactions = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	parentBlock: EthereumBlockHeader,
+	simulationInputBeforeBlock: SimulationStateInput,
+	currentBlock: SimulationStateInput[number],
+): Promise<readonly PreSimulationTransaction[]> => {
+	if (parentBlock === null) return currentBlock.transactions
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
-	if (parentBaseFeePerGas === undefined) return preSimulationTransactions
-	return await Promise.all(preSimulationTransactions.map(async (transaction) => {
-		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') return transaction
-		if (transaction.originalRequestParameters.params[0].maxFeePerGas !== undefined && transaction.originalRequestParameters.params[0].maxFeePerGas !== null) return transaction
-		if (transaction.signedTransaction.type !== '1559') return transaction
-		const maxFeePerGas = getAffordableMaxFeePerGas(
-			parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas,
-			await ethereumClientService.getBalance(transaction.signedTransaction.from, 'latest', requestAbortController),
-			transaction.signedTransaction.value,
-			transaction.signedTransaction.gas,
-		)
-		return modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas }) })
-	}))
+	if (parentBaseFeePerGas === undefined) return currentBlock.transactions
+	const adjustedTransactions: PreSimulationTransaction[] = []
+	for (const transaction of currentBlock.transactions) {
+		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') {
+			adjustedTransactions.push(transaction)
+			continue
+		}
+		if (transaction.originalRequestParameters.params[0].maxFeePerGas !== undefined && transaction.originalRequestParameters.params[0].maxFeePerGas !== null) {
+			adjustedTransactions.push(transaction)
+			continue
+		}
+		if (transaction.signedTransaction.type !== '1559') {
+			adjustedTransactions.push(transaction)
+			continue
+		}
+		const balance = await getBalanceBeforeSimulationInputTransaction(ethereumClientService, requestAbortController, parentBlock, simulationInputBeforeBlock, currentBlock, adjustedTransactions, transaction.signedTransaction.from)
+		const maxFeePerGas = getAffordableMaxFeePerGas(parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas, balance, transaction.signedTransaction.value, transaction.signedTransaction.gas)
+		adjustedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas }) }))
+	}
+	return adjustedTransactions
 }
 
 const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
@@ -1089,9 +1128,14 @@ export const getSimulatedBalanceFromInput = async (
 	simulationStateInput: ResolvedSimulationInput,
 	address: bigint,
 	blockTag: EthereumBlockTag = 'latest',
+	baseBlockTag: EthereumBlockTag = 'latest',
 ): Promise<bigint> => {
-	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
-	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) {
+	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput, baseBlockTag)
+	if (context === undefined) {
+		const directBlockTag = blockTag === 'latest' || blockTag === 'pending' ? baseBlockTag : blockTag
+		return await ethereumClientService.getBalance(address, directBlockTag, requestAbortController)
+	}
+	if (canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) {
 		return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 	}
 	const executionBlocksToApply = getExecutionBlocksUpToTag(context, blockTag)
