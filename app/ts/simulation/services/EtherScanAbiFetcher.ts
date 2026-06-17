@@ -27,6 +27,29 @@ function getBlockExplorer(chainId: ChainIdWithUniversal, rpcEntries: RpcEntries)
 
 export const isBlockExplorerAvailableForChain = (chainId: ChainIdWithUniversal, rpcEntries: RpcEntries) => getBlockExplorer(chainId, rpcEntries) !== undefined
 
+const parseAbiArray = (abi: string): readonly unknown[] | undefined => {
+	try {
+		const parsed: unknown = JSON.parse(abi)
+		if (!Array.isArray(parsed)) return undefined
+		return parsed
+	} catch {
+		return undefined
+	}
+}
+
+export const mergeProxyAndImplementationAbi = (proxyAbi: string, implementationAbi: string) => {
+	const isProxyAbiValid = isValidAbi(proxyAbi)
+	const isImplementationAbiValid = isValidAbi(implementationAbi)
+	if (!isProxyAbiValid) return implementationAbi
+	if (!isImplementationAbiValid) return proxyAbi
+	const proxyAbiEntries = parseAbiArray(proxyAbi)
+	const implementationAbiEntries = parseAbiArray(implementationAbi)
+	if (proxyAbiEntries === undefined) return implementationAbi
+	if (implementationAbiEntries === undefined) return proxyAbi
+	const mergedAbi = JSON.stringify([...proxyAbiEntries, ...implementationAbiEntries])
+	return isValidAbi(mergedAbi) ? mergedAbi : implementationAbi
+}
+
 async function fetchAbi(contractAddress: EthereumAddress, maybeExplorer: BlockExplorer | undefined, chainId: bigint): Promise<Result<EtherscanSourceCodeResult>> {
 	const normalizedAddressString = addressString(contractAddress)
 	let bestResult: Result<EtherscanSourceCodeResult> = { success: false, message: 'Failed to fetch Abi' } as const
@@ -76,8 +99,9 @@ export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress
 		const implementationName = EtherscanSourceCodeResult.safeParse(sourceCodeResult.result)
 
 		if (!implResult.success || !implementationName.success) return { success: false as const, error: 'Failed to parse Etherscan results.' }
-		if (!isValidAbi(implResult.value.result)) return { success: false as const, error: 'Etherscan returned an invalid ABI' }
-		return { success: true as const, address: contractAddress, abi: implResult.value.result, contractName: `Proxy: ${ implementationName.value.result[0].ContractName }` }
+		const proxyAndImplementationAbi = mergeProxyAndImplementationAbi(parsedSourceCode.value.result[0].ABI, implResult.value.result)
+		if (!isValidAbi(proxyAndImplementationAbi)) return { success: false as const, error: 'Etherscan returned an invalid ABI' }
+		return { success: true as const, address: contractAddress, abi: proxyAndImplementationAbi, contractName: `Proxy: ${ implementationName.value.result[0].ContractName }` }
 	}
 	const abi = parsedSourceCode.value.result[0].ABI
 	if (abi && abi !== 'Contract source code not verified') {

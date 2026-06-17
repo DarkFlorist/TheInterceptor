@@ -46,6 +46,14 @@ const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulatio
 		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 }
 
+export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addressBookEntries: readonly AddressBookEntry[]) {
+	const exactChainEntry = addressBookEntries.find((entry) => entry.address === clickedEntry.address && entry.chainId === clickedEntry.chainId)
+	if (exactChainEntry !== undefined) return exactChainEntry
+	const mainnetFallbackEntry = addressBookEntries.find((entry) => entry.address === clickedEntry.address && entry.chainId === undefined && clickedEntry.chainId === 1n)
+	if (mainnetFallbackEntry !== undefined) return mainnetFallbackEntry
+	return addressBookEntries.find((entry) => entry.address === clickedEntry.address) ?? clickedEntry
+}
+
 const HALF_HEADER_HEIGHT = 48 / 2
 
 export function shouldDisableSignableMessageConfirm(params: {
@@ -247,10 +255,10 @@ function FailedTransactionPreviewDetails({
 }
 
 export function TransactionCard(param: TransactionCardParams) {
-	const currentPendingTransaction = param.currentPendingTransaction.value
-	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction' || (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return <></>
+	const renderablePendingTransaction = useComputed(() => getRenderableTransaction(param.currentPendingTransaction.value))
+	if (renderablePendingTransaction.value === undefined) return <></>
 	return <TransactionCardContent
-		currentPendingTransaction = { currentPendingTransaction }
+		currentPendingTransaction = { renderablePendingTransaction }
 		pendingTransactionsAndSignableMessages = { param.pendingTransactionsAndSignableMessages }
 		renameAddressCallBack = { param.renameAddressCallBack }
 		editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
@@ -261,7 +269,7 @@ export function TransactionCard(param: TransactionCardParams) {
 }
 
 type TransactionCardContentParams = {
-	currentPendingTransaction: SimulatedPendingTransaction,
+	currentPendingTransaction: ReadonlySignal<SimulatedPendingTransaction | undefined>,
 	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
@@ -270,8 +278,21 @@ type TransactionCardContentParams = {
 	numberOfUnderTransactions: number,
 }
 
+function getRenderableTransaction(currentPendingTransaction: PendingTransactionOrSignableMessage | undefined): SimulatedPendingTransaction | undefined {
+	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction') return undefined
+	if (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate') return undefined
+	return currentPendingTransaction
+}
+
+function getSuccessfulTransactionPopupVisualisation(currentPendingTransaction: SimulatedPendingTransaction | undefined) {
+	if (currentPendingTransaction === undefined || currentPendingTransaction.popupVisualisation.statusCode !== 'success') return undefined
+	if (currentPendingTransaction.popupVisualisation.data.transactionToSimulate.success === false) return undefined
+	return currentPendingTransaction.popupVisualisation
+}
+
 function TransactionCardContent(param: TransactionCardContentParams) {
-	const currentPendingTransaction = param.currentPendingTransaction
+	const currentPendingTransaction = param.currentPendingTransaction.value
+	if (currentPendingTransaction === undefined) return <></>
 	const popupVisualisation = currentPendingTransaction.popupVisualisation
 	const getErrorMesssage = () => {
 		if (popupVisualisation.statusCode === 'failed') return `${ popupVisualisation.data.error.decodedErrorMessage } ${ popupVisualisation.data.error.data !== undefined ? ` (data: '${ popupVisualisation.data.error.data }')` : '' }`
@@ -295,9 +316,9 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 			/>
 		</>
 	}
-	const activeAddress = useComputed(() => popupVisualisation.data.activeAddress)
-	const addressMetaData = useComputed(() => popupVisualisation.data.addressBookEntries)
-	const rpcNetwork = useComputed(() => popupVisualisation.data.simulationState.rpcNetwork)
+	const activeAddress = useComputed(() => getSuccessfulTransactionPopupVisualisation(param.currentPendingTransaction.value)?.data.activeAddress)
+	const addressMetaData = useComputed(() => getSuccessfulTransactionPopupVisualisation(param.currentPendingTransaction.value)?.data.addressBookEntries ?? popupVisualisation.data.addressBookEntries)
+	const rpcNetwork = useComputed(() => getSuccessfulTransactionPopupVisualisation(param.currentPendingTransaction.value)?.data.simulationState.rpcNetwork ?? popupVisualisation.data.simulationState.rpcNetwork)
 	const simulationAndVisualisationResults = {
 		blockNumber: popupVisualisation.data.simulationState.blockNumber,
 		blockTimestamp: popupVisualisation.data.simulationState.blockTimestamp,
@@ -650,8 +671,16 @@ export function ConfirmTransaction() {
 		return false
 	})
 
+	function getCurrentAddressBookEntries() {
+		const current = currentPendingTransactionOrSignableMessage.value
+		if (current?.type === 'Transaction' && current.transactionOrMessageCreationStatus === 'Simulated' && current.popupVisualisation.statusCode === 'success') {
+			return current.popupVisualisation.data.addressBookEntries
+		}
+		return completeVisualizedSimulation.value.addressBookEntries
+	}
+
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
+		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(getAddressBookEntryForEdit(entry, getCurrentAddressBookEntries()))) }
 	}
 
 	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {
