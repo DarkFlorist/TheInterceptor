@@ -6,7 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
@@ -90,6 +90,8 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 	class MockEthereumJSONRpcRequestHandler {
 		public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
 		public rejectOmittedGas = false
+		public balance = 0n
+		public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 		public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, lastCallGas: bigint | undefined }[] = []
 
 		public clearCache = () => undefined
@@ -100,6 +102,9 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			switch (rpcRequest.method) {
 				case 'eth_blockNumber': return `0x${ blockNumber.toString(16) }`
 				case 'eth_getTransactionCount': return '0x0'
+				case 'eth_getBalance':
+					this.ethGetBalanceCalls.push(rpcRequest)
+					return `0x${ this.balance.toString(16) }`
 				case 'eth_getBlockByNumber': {
 					if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 					if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
@@ -490,6 +495,80 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			assert.equal(groupedBlock.calls.length, 2)
 			assert.equal(groupedBlock.calls[0]?.gasUsed, 0x5208n)
 			assert.equal(groupedBlock.calls[1]?.gasUsed, 0x6dd4n)
+		})
+
+		test('getBaseFeeAdjustedTransactions caps priority fee with affordable max fee', async () => {
+			requestHandler.balance = 50n
+			requestHandler.ethGetBalanceCalls.length = 0
+			requestHandler.ethSimulateV1Calls.length = 0
+			const parentBlock = await ethereum.getBlock(undefined)
+			const transaction = {
+				signedTransaction: mockSignTransaction({
+					...exampleTransaction,
+					nonce: 0n,
+					maxFeePerGas: 999n,
+					maxPriorityFeePerGas: 100n,
+					gas: 10n,
+					value: 0n,
+				}),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+				transactionIdentifier: 20n,
+			} as const
+			const currentBlock = {
+				stateOverrides: {},
+				transactions: [transaction],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+				simulateWithZeroBaseFee: false,
+			} as const
+
+			const adjusted = await getBaseFeeAdjustedTransactions(ethereum, undefined, parentBlock, [], currentBlock)
+			const adjustedTransaction = adjusted[0]?.signedTransaction
+			if (adjustedTransaction === undefined || adjustedTransaction.type !== '1559') throw new Error('missing adjusted 1559 transaction')
+			assert.equal(adjustedTransaction.maxFeePerGas, 5n)
+			assert.equal(adjustedTransaction.maxPriorityFeePerGas, 5n)
+			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
+			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
+		})
+
+		test('getBaseFeeAdjustedTransactions skips prefix simulation when conservative balance can afford desired fees', async () => {
+			requestHandler.balance = 100_000n
+			requestHandler.ethGetBalanceCalls.length = 0
+			requestHandler.ethSimulateV1Calls.length = 0
+			const parentBlock = await ethereum.getBlock(undefined)
+			const makeTransaction = (nonce: bigint, identifier: bigint) => ({
+				signedTransaction: mockSignTransaction({
+					...exampleTransaction,
+					nonce,
+					maxFeePerGas: 999n,
+					maxPriorityFeePerGas: 100n,
+					gas: 10n,
+					value: 0n,
+				}),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+				transactionIdentifier: identifier,
+			} as const)
+			const currentBlock = {
+				stateOverrides: {},
+				transactions: [makeTransaction(0n, 21n), makeTransaction(1n, 22n)],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+				simulateWithZeroBaseFee: false,
+			} as const
+
+			const adjusted = await getBaseFeeAdjustedTransactions(ethereum, undefined, parentBlock, [], currentBlock)
+			assert.equal(adjusted.length, 2)
+			for (const transaction of adjusted) {
+				if (transaction.signedTransaction.type !== '1559') throw new Error('wrong transaction type')
+				assert.equal(transaction.signedTransaction.maxFeePerGas, 284n)
+				assert.equal(transaction.signedTransaction.maxPriorityFeePerGas, 100n)
+			}
+			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
+			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
 		})
 
 		test('simulateEstimateGasFromInput omits gas when input gas is omitted', async () => {
