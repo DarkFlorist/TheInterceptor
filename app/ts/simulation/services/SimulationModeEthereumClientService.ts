@@ -683,10 +683,23 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 	return { nonceFixed: true, simulationStateInput: simulationInputBlocks }
 }
 
-const getAffordableMaxFeePerGas = (desiredMaxFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
-	if (gasLimit === 0n) return desiredMaxFeePerGas
+const getAffordableTransactionFees = (desiredMaxFeePerGas: bigint, desiredMaxPriorityFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
+	if (gasLimit === 0n) return { maxFeePerGas: desiredMaxFeePerGas, maxPriorityFeePerGas: desiredMaxPriorityFeePerGas }
 	const availableForGas = balance > value ? balance - value : 0n
-	return min(desiredMaxFeePerGas, availableForGas / gasLimit)
+	const maxFeePerGas = min(desiredMaxFeePerGas, availableForGas / gasLimit)
+	return {
+		maxFeePerGas,
+		maxPriorityFeePerGas: min(desiredMaxPriorityFeePerGas, maxFeePerGas),
+	}
+}
+
+const canAffordMaxGasCost = (balance: bigint, value: bigint, gasLimit: bigint, maxFeePerGas: bigint) => {
+	return balance >= value + gasLimit * maxFeePerGas
+}
+
+const subtractMaxGasCost = (balance: bigint, value: bigint, gasLimit: bigint, maxFeePerGas: bigint) => {
+	const maxCost = value + gasLimit * maxFeePerGas
+	return balance > maxCost ? balance - maxCost : 0n
 }
 
 const getBalanceBeforeSimulationInputTransaction = async (
@@ -726,22 +739,31 @@ export const getBaseFeeAdjustedTransactions = async (
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) return currentBlock.transactions
 	const adjustedTransactions: PreSimulationTransaction[] = []
+	const conservativeBalances = new Map<bigint, bigint>()
 	for (const transaction of currentBlock.transactions) {
 		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') {
+			conservativeBalances.delete(transaction.signedTransaction.from)
 			adjustedTransactions.push(transaction)
 			continue
 		}
 		if (transaction.originalRequestParameters.params[0].maxFeePerGas !== undefined && transaction.originalRequestParameters.params[0].maxFeePerGas !== null) {
+			conservativeBalances.delete(transaction.signedTransaction.from)
 			adjustedTransactions.push(transaction)
 			continue
 		}
 		if (transaction.signedTransaction.type !== '1559') {
+			conservativeBalances.delete(transaction.signedTransaction.from)
 			adjustedTransactions.push(transaction)
 			continue
 		}
-		const balance = await getBalanceBeforeSimulationInputTransaction(ethereumClientService, requestAbortController, parentBlock, simulationInputBeforeBlock, currentBlock, adjustedTransactions, transaction.signedTransaction.from)
-		const maxFeePerGas = getAffordableMaxFeePerGas(parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas, balance, transaction.signedTransaction.value, transaction.signedTransaction.gas)
-		adjustedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas }) }))
+		const desiredMaxFeePerGas = parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas
+		const conservativeBalance = conservativeBalances.get(transaction.signedTransaction.from)
+		const balance = conservativeBalance !== undefined && canAffordMaxGasCost(conservativeBalance, transaction.signedTransaction.value, transaction.signedTransaction.gas, desiredMaxFeePerGas)
+			? conservativeBalance
+			: await getBalanceBeforeSimulationInputTransaction(ethereumClientService, requestAbortController, parentBlock, simulationInputBeforeBlock, currentBlock, adjustedTransactions, transaction.signedTransaction.from)
+		const feePerGas = getAffordableTransactionFees(desiredMaxFeePerGas, transaction.signedTransaction.maxPriorityFeePerGas, balance, transaction.signedTransaction.value, transaction.signedTransaction.gas)
+		conservativeBalances.set(transaction.signedTransaction.from, subtractMaxGasCost(balance, transaction.signedTransaction.value, transaction.signedTransaction.gas, feePerGas.maxFeePerGas))
+		adjustedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, feePerGas) }))
 	}
 	return adjustedTransactions
 }

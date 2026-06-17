@@ -58,10 +58,14 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
-const getAffordableMaxFeePerGas = (desiredMaxFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
-	if (gasLimit === 0n) return desiredMaxFeePerGas
+const getAffordableTransactionFees = (desiredMaxFeePerGas: bigint, desiredMaxPriorityFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
+	if (gasLimit === 0n) return { maxFeePerGas: desiredMaxFeePerGas, maxPriorityFeePerGas: desiredMaxPriorityFeePerGas }
 	const availableForGas = balance > value ? balance - value : 0n
-	return min(desiredMaxFeePerGas, availableForGas / gasLimit)
+	const maxFeePerGas = min(desiredMaxFeePerGas, availableForGas / gasLimit)
+	return {
+		maxFeePerGas,
+		maxPriorityFeePerGas: min(desiredMaxPriorityFeePerGas, maxFeePerGas),
+	}
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
@@ -340,9 +344,12 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const balancePromise = silenceChromeUnCaughtPromise(getSimulatedBalance(ethereumClientService, requestAbortController, simulationState, from))
 	const maxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoEth/gas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
-	const getMaxFeePerGas = async (gasLimit: bigint) => {
-		if (transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null) return transactionDetails.maxFeePerGas
-		return getAffordableMaxFeePerGas(parentBaseFeePerGas * 2n + maxPriorityFeePerGas, await balancePromise, value, gasLimit)
+	const getFeePerGas = async (gasLimit: bigint) => {
+		if (transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null) return {
+			maxFeePerGas: transactionDetails.maxFeePerGas,
+			maxPriorityFeePerGas,
+		}
+		return getAffordableTransactionFees(parentBaseFeePerGas * 2n + maxPriorityFeePerGas, maxPriorityFeePerGas, await balancePromise, value, gasLimit)
 	}
 	const transactionWithoutGas = {
 		type: '1559' as const,
@@ -367,7 +374,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		try {
 			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
 			if ('error' in estimateGas) return { ...extraParams, ...estimateGas, success: false }
-			return { transaction: { ...transactionWithoutGas, maxFeePerGas: await getMaxFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
+			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
 			printError(error)
@@ -375,7 +382,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: { ...transactionWithoutGas, maxFeePerGas: await getMaxFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, success: true }
+	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
