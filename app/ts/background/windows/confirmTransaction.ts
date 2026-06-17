@@ -18,7 +18,7 @@ import {
 	parseTransaction as parseSerializedTransaction,
 	serializeTransaction,
 } from '../../utils/viem.js'
-import { dataStringWith0xStart, min, stringToUint8Array } from '../../utils/bigint.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
@@ -33,6 +33,7 @@ import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.j
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
+import { getAffordableTransactionFees } from '../../utils/transactionFees.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -56,16 +57,6 @@ const shouldReplacePopupVisualisation = (
 	const nextTimestamp = getSimulationStartedTimestamp(nextPopupVisualisation)
 	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
-}
-
-const getAffordableTransactionFees = (desiredMaxFeePerGas: bigint, desiredMaxPriorityFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
-	if (gasLimit === 0n) return { maxFeePerGas: desiredMaxFeePerGas, maxPriorityFeePerGas: desiredMaxPriorityFeePerGas }
-	const availableForGas = balance > value ? balance - value : 0n
-	const maxFeePerGas = min(desiredMaxFeePerGas, availableForGas / gasLimit)
-	return {
-		maxFeePerGas,
-		maxPriorityFeePerGas: min(desiredMaxPriorityFeePerGas, maxFeePerGas),
-	}
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {

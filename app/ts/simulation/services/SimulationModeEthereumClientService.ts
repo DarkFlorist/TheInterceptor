@@ -22,6 +22,7 @@ import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
+import { getAffordableTransactionFees } from '../../utils/transactionFees.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -681,16 +682,6 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 		simulationInputBlocks.push({ ...oldBlock, transactions: processedTransactions })
 	}
 	return { nonceFixed: true, simulationStateInput: simulationInputBlocks }
-}
-
-const getAffordableTransactionFees = (desiredMaxFeePerGas: bigint, desiredMaxPriorityFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
-	if (gasLimit === 0n) return { maxFeePerGas: desiredMaxFeePerGas, maxPriorityFeePerGas: desiredMaxPriorityFeePerGas }
-	const availableForGas = balance > value ? balance - value : 0n
-	const maxFeePerGas = min(desiredMaxFeePerGas, availableForGas / gasLimit)
-	return {
-		maxFeePerGas,
-		maxPriorityFeePerGas: min(desiredMaxPriorityFeePerGas, maxFeePerGas),
-	}
 }
 
 const canAffordMaxGasCost = (balance: bigint, value: bigint, gasLimit: bigint, maxFeePerGas: bigint) => {
