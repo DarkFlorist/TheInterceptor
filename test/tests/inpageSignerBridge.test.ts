@@ -4,6 +4,9 @@ import { describe, test } from 'bun:test'
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[] }
 type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true }
+type FakeWindowOptions = {
+	readonly onConnectedToSignerRequest?: () => void
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 
@@ -22,7 +25,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow() {
+function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
@@ -94,6 +97,7 @@ function createFakeWindow() {
 		queueMicrotask(() => {
 			switch (request.method) {
 				case 'connected_to_signer':
+					onConnectedToSignerRequest?.()
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -139,6 +143,56 @@ function createFakeWindow() {
 	}
 }
 
+function createLockedCompatibilitySigner() {
+	const baseSigner = {
+		isMetaMask: true,
+		isConnected: () => true,
+		request: async ({ method }: { method: string }) => {
+			switch (method) {
+				case 'eth_chainId':
+					return '0x1'
+				default:
+					throw new Error(`Unexpected signer request: ${ method }`)
+			}
+		},
+		on: () => baseSigner,
+		removeListener: () => baseSigner,
+	}
+
+	Object.defineProperty(baseSigner, 'selectedAddress', {
+		configurable: false,
+		enumerable: true,
+		get: () => undefined,
+	})
+
+	return baseSigner
+}
+
+function createConfigurableGetterOnlyCompatibilitySigner() {
+	const baseSigner = {
+		isMetaMask: true,
+		isConnected: () => true,
+		request: async ({ method }: { method: string }) => {
+			switch (method) {
+				case 'eth_chainId':
+					return '0x1'
+				default:
+					throw new Error(`Unexpected signer request: ${ method }`)
+			}
+		},
+		on: () => baseSigner,
+		removeListener: () => baseSigner,
+	}
+
+	Object.defineProperty(baseSigner, 'selectedAddress', {
+		configurable: true,
+		enumerable: true,
+		get: () => undefined,
+	})
+
+	return baseSigner
+}
+
 async function waitFor(condition: () => boolean, timeoutMs = 2000) {
 	const start = Date.now()
 	while (!condition()) {
@@ -161,6 +215,7 @@ describe('inpage signer bridge', () => {
 			setBlockRequestAccounts,
 			rejectPendingRequestAccounts,
 		} = createFakeWindow()
+		const originalDispatchEvent = fakeWindow.dispatchEvent
 		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
 		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
@@ -177,6 +232,7 @@ describe('inpage signer bridge', () => {
 			await import('../../app/inpage/ts/inpage.js')
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
+			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
 				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { jsonrpc: '2.0', id: string | number | null, result: unknown }
@@ -292,7 +348,141 @@ describe('inpage signer bridge', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(signerRequests.length, signerRequestCountBeforeSpoof)
 			assert.equal(interceptorErrorPayloads.length, 0)
+
+			const lateSignerRequests: string[] = []
+			const lateSigner = {
+				isMetaMask: true,
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => {
+					lateSignerRequests.push(method)
+					if (method === 'eth_chainId') return '0x1'
+					if (method === 'eth_accounts') return signerAccounts
+					throw new Error(`Unexpected late signer request: ${ method }`)
+				},
+				on: () => lateSigner,
+				removeListener: () => lateSigner,
+			}
+			;(fakeWindow as { ethereum: typeof lateSigner }).ethereum = lateSigner
+			fakeWindow.dispatchEvent({ type: 'ethereum#initialized' })
+			await waitFor(() => lateSignerRequests.length >= 1)
+			assert.equal(lateSignerRequests[0], 'eth_chainId')
+			assert.equal((fakeWindow.ethereum as { isInterceptor?: boolean }).isInterceptor, true)
+			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
 		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('skips readonly compatibility properties without warning', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const previousWarn = console.warn
+		const { fakeWindow } = createFakeWindow()
+		const warnings: unknown[] = []
+		fakeWindow.ethereum = createLockedCompatibilitySigner()
+		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?locked-compatibility')
+			await waitFor(() => 'isInterceptor' in (fakeWindow.ethereum as Record<string, unknown>))
+			assert.equal((fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress, undefined)
+			assert.deepEqual(warnings, [])
+		} finally {
+			console.warn = previousWarn
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('updates configurable getter-only compatibility properties without throwing', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const previousWarn = console.warn
+		const { fakeWindow } = createFakeWindow()
+		const warnings: unknown[] = []
+		fakeWindow.ethereum = createConfigurableGetterOnlyCompatibilitySigner()
+		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
+			await waitFor(() => (fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress === '0x1111111111111111111111111111111111111111')
+			assert.deepEqual((fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress, '0x1111111111111111111111111111111111111111')
+			assert.deepEqual(warnings, [])
+		} finally {
+			console.warn = previousWarn
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('warns when compatibility assignments cannot be made on non-extensible targets', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const previousWarn = console.warn
+		let fakeWindowWithSigner: { ethereum: { isMetamask?: boolean, [key: string]: unknown } } | undefined
+		const { fakeWindow } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				if (fakeWindowWithSigner === undefined) return
+				fakeWindowWithSigner.ethereum.isMetamask = true
+				Object.preventExtensions(fakeWindowWithSigner.ethereum)
+			},
+		})
+		fakeWindowWithSigner = fakeWindow
+		const warnings: string[] = []
+		console.warn = (...args: unknown[]) => { warnings.push(String(args[0])) }
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
+			await waitFor(() => warnings.length > 0)
+			assert.ok(warnings.some((warning) => warning.includes('compatibility assignment was rejected for window.ethereum.selectedAddress')))
+		} finally {
+			console.warn = previousWarn
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {
 				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent

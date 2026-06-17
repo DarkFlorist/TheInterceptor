@@ -2,7 +2,6 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const repositoryRoot = path.join(directoryOfThisFile, '..')
@@ -183,6 +182,23 @@ const vendoredPackageRoots = [...new Set([
 	...extraPackageRoots,
 ])]
 
+async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transform?: (sourcePath: string, destinationPath: string) => Promise<void>) {
+	const entries = await fs.readdir(source, { withFileTypes: true })
+	await fs.mkdir(destination, { recursive: true })
+	for (const entry of entries) {
+		const sourcePath = path.join(source, entry.name)
+		const destinationPath = path.join(destination, entry.name)
+		if (entry.isDirectory()) {
+			if (include && !await include(sourcePath, 'directory')) continue
+			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transform)
+		} else {
+			if (include && !await include(sourcePath, 'file')) continue
+			await fs.copyFile(sourcePath, destinationPath)
+		}
+		await transform?.(sourcePath, destinationPath)
+	}
+}
+
 async function vendorDependencies() {
 	const vendorCacheKey = await getVendorCacheKey()
 	if (await canReuseVendorDirectory(vendorCacheKey)) return
@@ -193,7 +209,7 @@ async function vendorDependencies() {
 		for (const packageRoot of vendoredPackageRoots) {
 			const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
 			const destinationDirectoryPath = path.join(temporaryVendorDirectory, packageRoot)
-			async function inclusionPredicate(path: string, fileType: FileType) {
+			async function inclusionPredicate(path: string, fileType: 'directory' | 'file') {
 				if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
 				if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
 				if (path.endsWith('.js')) return true
@@ -209,6 +225,7 @@ async function vendorDependencies() {
 			}
 			await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
 			await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
+			if (packageRoot === '@darkflorist/address-metadata') await exposeAddressMetadataImagesAtPackageRoot(destinationDirectoryPath)
 		}
 		await writeVendorTypeShims(temporaryVendorDirectory)
 		await fs.writeFile(path.join(temporaryVendorDirectory, path.basename(vendorCacheStampPath)), `${ vendorCacheKey }\n`)
@@ -318,6 +335,14 @@ async function getVendorFileManifest(vendorRootDirectory: string) {
 	}
 	await addFiles(vendorRootDirectory)
 	return relativeFilePaths.sort()
+}
+
+async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
+	const sourceDirectoryPath = path.join(packageDirectoryPath, 'lib', 'images')
+	const destinationDirectoryPath = path.join(packageDirectoryPath, 'images')
+	const sourceStats = await fs.stat(sourceDirectoryPath)
+	if (!sourceStats.isDirectory()) return
+	await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath)
 }
 
 async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {

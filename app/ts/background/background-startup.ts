@@ -1,8 +1,8 @@
 import 'webextension-polyfill'
-import { defaultRpcs, getSettings } from './settings.js'
+import { defaultRpcs, getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -14,17 +14,18 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { type OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
+import { addWindowTabListeners } from '../utils/popupOrTab.js'
+import { migrateAddressBook } from './addressBookMigration.js'
+import { migrateWebsiteAccess } from './websiteAccessMigration.js'
+import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
+import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -48,8 +49,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 				// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
 				return
 			}
-			if (error.message.includes('The message port closed before a response was received')) return
-			if (error.message.includes('Could not establish connection. Receiving end does not exist')) return
+			if (isIgnorablePortLifecycleError(error)) return
 			if (error.message.includes('Failed to fetch')) return
 			if (isNewBlockAbort(error)) return
 		}
@@ -66,42 +66,9 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 	clearTabStates()
 }
 
-async function migrateAddressInfoAndContactsFromV1ToV2() {
-	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries'])).userAddressBookEntries
-	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry | OldActiveAddressEntry): AddressBookEntry => {
-		if (entry.type !== 'activeAddress') return entry
-		return { ...entry, type: 'contact', useAsActiveAddress: true }
-	}
-	if (userAddressBookEntries === undefined) return
-	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
-	if (updated.length > 0) {
-		await updateUserAddressBookEntriesV2Old((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address']))
-		await browserStorageLocalRemove(['userAddressBookEntries'])
-	}
-}
-async function migrateAddressInfoAndContactsFromV2ToV3() {
-	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntriesV2'])).userAddressBookEntriesV2
-	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry): AddressBookEntry => {
-		if (entry.chainId !== undefined) return entry
-		if (entry.useAsActiveAddress === true && entry.type === 'contact') return { ...entry, chainId: 'AllChains' }
-		return { ...entry, chainId: 1n }
-	}
-	if (userAddressBookEntries === undefined) return
-	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
-	if (updated.length > 0) {
-		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address', 'chainId']))
-		await browserStorageLocalRemove(['userAddressBookEntriesV2'])
-	}
-}
-async function migrateAddressBook() {
-	await migrateAddressInfoAndContactsFromV1ToV2()
-	await migrateAddressInfoAndContactsFromV2ToV3()
-}
-migrateAddressBook()
-
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
-async function onContentScriptConnected(getCurrentSimulationServices: () => SimulationServices, resetActiveRpcNetwork: ResetSimulationServices, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+async function onContentScriptConnected(waitForStartup: () => Promise<{ resetActiveRpcNetwork: ResetSimulationServices, simulationServices: SimulationServices }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
@@ -109,53 +76,52 @@ async function onContentScriptConnected(getCurrentSimulationServices: () => Simu
 	}
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
-	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
+	const websitePromise = (async () => {
+		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+		await updateKnownWebsiteMetadata(website)
+		return website
+	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 
-	port.onDisconnect.addListener(() => {
-		catchAllErrorsAndCall(async () => {
-			removeWebsiteTabConnection(websiteTabConnections, socket)
-		})
-		try {
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			if (error instanceof Error) {
-				if (error.message?.includes('the message channel is closed')) {
-					// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
-					// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
-					return
-				}
-			}
-			throw error
-		}
-	})
-
-	port.onMessage.addListener((payload) => {
-		catchAllErrorsAndCall(async () => {
-			if (!(
-				'data' in payload
-				&& typeof payload.data === 'object'
-				&& payload.data !== null
-				&& 'interceptorRequest' in payload.data
-			)) return
+	const listenersRegistered = tryRegisterContentScriptPortListeners(
+		port,
+		() => {
+			catchAllErrorsAndCall(async () => {
+				removeWebsiteTabConnection(websiteTabConnections, socket)
+			})
+		},
+		(payload) => {
+			catchAllErrorsAndCall(async () => {
+				if (!(
+					typeof payload === 'object'
+					&& payload !== null
+					&&
+					'data' in payload
+					&& typeof payload.data === 'object'
+					&& payload.data !== null
+					&& 'interceptorRequest' in payload.data
+				)) return
 				await pendingRequestLimiter.execute(async () => {
 					const rawMessage = RawInterceptedRequest.parse(payload.data)
-					const { ethereum, tokenPriceService } = getCurrentSimulationServices()
+					const { resetActiveRpcNetwork, simulationServices } = await waitForStartup()
 					const request = {
 						method: rawMessage.method,
-					...'params' in rawMessage ? { params: rawMessage.params } : {},
+						...'params' in rawMessage ? { params: rawMessage.params } : {},
 						interceptorRequest: rawMessage.interceptorRequest,
 						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
+					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
 				})
 			})
-		})
+		},
+		checkAndThrowRuntimeLastError,
+	)
+	if (!listenersRegistered) return
 
 	if (tabConnection === undefined) {
 		websiteTabConnections.set(socket.tabId, {
@@ -167,7 +133,7 @@ async function onContentScriptConnected(getCurrentSimulationServices: () => Simu
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
+		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
@@ -233,6 +199,10 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 }
 
 async function startup() {
+	await migrateAddressBook()
+	await migrateWebsiteAccess()
+	await initializePopupRefreshGeneration()
+	bumpPopupRefreshGeneration()
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
@@ -269,10 +239,11 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	if (changeInfo.status !== 'complete') return
 	if (tab.url === undefined) return
 	const websiteOrigin = getHostWithPort(tab.url)
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
+	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId, websiteOrigin) }
+	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
+	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, bumpPopupRefreshGeneration())
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
@@ -288,8 +259,7 @@ const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () =>
 // MV3 service worker event listeners must be registered synchronously at module load.
 browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
-	const { resetActiveRpcNetwork } = await waitForBackgroundStartup()
-	return await onContentScriptConnected(getSimulationServices, resetActiveRpcNetwork, port, websiteTabConnections)
+	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServices, resetActiveRpcNetwork } = await waitForBackgroundStartup()

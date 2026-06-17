@@ -6,6 +6,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '..
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
 export function getChangeChainActionState(params: { hasSupportedRpc: boolean, simulationMode: boolean }) {
 	if (params.hasSupportedRpc) return {
@@ -60,6 +61,7 @@ export function ChangeChain() {
 		hasSupportedRpc: chainChangeData.value.rpcNetwork.httpsRpc !== undefined,
 		simulationMode: chainChangeData.value.simulationMode,
 	})
+	const websiteIcon = sanitizeStoredWebsiteIcon(chainChangeData.value.website.icon)
 	return (
 		<main>
 			<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
@@ -78,11 +80,11 @@ export function ChangeChain() {
 				<div class = 'card-content'>
 					<article class = 'media'>
 						{
-							chainChangeData.value.website.icon === undefined
+							websiteIcon === undefined
 								? <></>
 								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 									<div class = 'image is-64x64'>
-										<img src = { chainChangeData.value.website.icon } width = '64' height = '64'/>
+										<img src = { websiteIcon } width = '64' height = '64'/>
 									</div>
 								</figure>
 						}

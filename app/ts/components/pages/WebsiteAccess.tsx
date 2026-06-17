@@ -19,6 +19,7 @@ import type { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
+import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -212,13 +213,14 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 		if (websiteAccess.declarativeNetRequestBlockMode === 'block-all') return 'blocked'
 		return
 	}
+	const websiteIcon = sanitizeStoredWebsiteIcon(websiteAccess.website.icon)
 
 	return (
 		<li role = 'option'>
 			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
 			<label for = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } }>
 				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
-					<img role = 'img' src = { websiteAccess.website.icon } width = '24' height = '24' style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' />
+					{ websiteIcon === undefined ? <span style = { { width: '1.5rem', aspectRatio: 1, display: 'block' } } /> : <img role = 'img' src = { websiteIcon } width = '24' height = '24' style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' /> }
 					<div class = 'flexy' style = { { textAlign: 'left', flex: '1', '--pad-y': 0 } }>
 						<div style = { { flex: 1 } }>
 							<h4 class = 'truncate' style = { { contain: 'inline-size',  color: 'var(--heading-color)', fontWeight: 'var(--heading-weight)' } }>{ websiteAccess.website.title }</h4>
@@ -315,9 +317,10 @@ const WebsiteSettingsDetail = () => {
 
 const DetailsHeader = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
 	if (websiteAccess.deepValue === undefined) return <></>
+	const websiteIcon = sanitizeStoredWebsiteIcon(websiteAccess.deepValue.website.icon)
 	return (
 		<div class = 'flexy flexy-sm' style = { { '--gap-x': '1rem', flex: 1 } }>
-			<figure><img width = '34' height = '34' src = { websiteAccess.deepValue.website.icon } /></figure>
+			{ websiteIcon === undefined ? <></> : <figure><img width = '34' height = '34' src = { websiteIcon } /></figure> }
 			<div style = { { flex: 1 } }>
 				<h2 class = 'truncate' style = { { contain: 'inline-size', fontSize: 'clamp(1.25rem,2vw,2rem)', fontWeight: 600, color: 'var(--text-color)' } }>{ websiteAccess.deepValue.website.title }</h2>
 				<p><span class = 'truncate' style = { { flex: 1, lineHeight: 1, color: 'var(--disabled-text-color)', direction: 'rtl', textAlign: 'left' } }>&lrm;{ websiteAccess.deepValue.website.websiteOrigin }</span></p>
@@ -572,9 +575,10 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal
 
 const WebsiteCard = ({ website }: { website: Website | undefined }) => {
 	if (website === undefined) return <></>
+	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
 	return (
 		<div style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.125rem 0.25rem', borderRadius: '2px', backgroundColor: 'var(--card-bg-color)', verticalAlign: 'bottom' } }>
-			<img style = { { inlineSize: '1rem' } } width = '16' height = '16' src = { website.icon } />
+			{ websiteIcon === undefined ? <></> : <img style = { { inlineSize: '1rem' } } width = '16' height = '16' src = { websiteIcon } /> }
 			<div style = { { fontSize: '0.875rem', color: 'var(--text-color)' } }>{ website.websiteOrigin }</div>
 		</div>
 	)

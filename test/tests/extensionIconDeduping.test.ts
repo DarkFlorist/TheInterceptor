@@ -100,6 +100,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/iconHandler.js'),
 		...await import('../../app/ts/background/settings.js'),
+		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 	}
@@ -203,11 +204,109 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		updateWebsiteApprovalAccesses({} as never, websiteTabConnections, await getSettings())
+		await updateWebsiteApprovalAccesses(
+			undefined,
+			undefined,
+			undefined,
+			websiteTabConnections,
+			await getSettings(),
+			true,
+			0,
+		)
 		await flushAsyncWork()
 
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
+	})
+
+	test('access refresh updates stale icons for tabs without active connections', async () => {
+		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
+			tabIconDetails: {
+				icon: ICON_SIMULATING,
+				iconReason: 'The Interceptor simulates your sent transactions.',
+			},
+		}))
+
+		await updateWebsiteApprovalAccesses(
+			undefined,
+			undefined,
+			undefined,
+			new Map(),
+			await getSettings(),
+			true,
+			0,
+		)
+		await flushAsyncWork()
+
+		assert.equal(setIconCalls.length, 1)
+		assert.equal(setTitleCalls.length, 1)
+		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
+		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
+	})
+
+	test('imported mode change updates tabs without active connections', async () => {
+		const { changeSimulationMode, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const importedSettingsReply = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.4',
+			exportedDate: '2026-05-21',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				rpcNetwork: {
+					name: 'Imported',
+					chainId: '0x1',
+					httpsRpc: 'https://example.test/rpc',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: true,
+				},
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: false,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: false,
+				metamaskCompatibilityMode: false,
+			},
+		})
+
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 0x1n, activeSigningAddress: undefined })
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
+			tabIconDetails: {
+				icon: ICON_SIMULATING,
+				iconReason: 'The Interceptor simulates your sent transactions.',
+			},
+		}))
+
+		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } })
+		assert.equal(importSettingsReply.data.success, true)
+		await updateWebsiteApprovalAccesses(
+			undefined,
+			undefined,
+			undefined,
+			new Map(),
+			await getSettings(),
+			true,
+			0,
+		)
+		await flushAsyncWork()
+
+		const settings = await getSettings()
+		assert.equal(settings.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
+		assert.equal(settings.simulationMode, false)
+
+		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
+		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
 	})
 
 	test('last-port disconnect removes the tab entry', async () => {

@@ -7,6 +7,7 @@ import type { InpageScriptCallBack, Settings } from '../types/interceptor-messag
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -15,6 +16,9 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
+import { handleUnexpectedError } from '../utils/errors.js'
+import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -35,7 +39,17 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection?.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress?.address) ? 'hasAccess' : 'noAccess'
+	if (access === 'hasAccess') {
+		const popupRefreshGeneration = bumpPopupRefreshGeneration()
+		connectToPort(
+			websiteTabConnections,
+			socket,
+			settings,
+			requestAccessForAddress?.address,
+		)
+		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)
+		return 'hasAccess'
+	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
@@ -124,11 +138,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
 		return previousWebsiteAccess.map((prevAccess) => {
 			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = {
-					...website,
-					icon: prevAccess.website.icon ?? website.icon,
-					title: prevAccess.website.title ?? website.title,
-				}
+				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
 				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
 				const addressAccess = { address, access }
 				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
@@ -153,9 +163,13 @@ async function getActiveAddressForDomain(websiteOrigin: string, settings: Settin
 	return undefined
 }
 
-function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
+function connectToPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	settings: Settings,
+	connectWithActiveAddress: bigint | undefined,
+): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
 
@@ -166,9 +180,11 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 	return true
 }
 
-function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
+function disconnectFromPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
-	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
@@ -184,7 +200,7 @@ async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientServic
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }
+	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
 	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
@@ -194,7 +210,15 @@ function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, w
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
-async function updateTabConnections(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+async function updateTabConnections(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	tabConnection: TabConnection,
+	promptForAccessesIfNeeded: boolean,
+	settings: Settings,
+): Promise<Map<string, { tabId: number, websiteOrigin: string }>> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
@@ -204,24 +228,22 @@ async function updateTabConnections(ethereum: EthereumClientService, tokenPriceS
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
+			disconnectFromPort(websiteTabConnections, connection.socket)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress?.address)
+			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
 
-		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
+		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
 			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
-	for (const { tabId, websiteOrigin } of iconRefreshTargets.values()) {
-		await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
-	}
+	return iconRefreshTargets
 }
 
 const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabs = new Set<number>()
-	for (const [tab, tabConnection] of websiteTabConnections.entries() ) {
+	for (const [tab, tabConnection] of websiteTabConnections.entries()) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
 			if (connection?.approved) {
@@ -310,28 +332,45 @@ export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections
 	return false
 }
 
-export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): void
-export function updateWebsiteApprovalAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded?: boolean): void
-export function updateWebsiteApprovalAccesses(
-	ethereum: EthereumClientService,
-	tokenPriceServiceOrWebsiteTabConnections: TokenPriceService | WebsiteTabConnections,
-	resetSimulationServicesOrSettings: ResetSimulationServices | Settings,
-	websiteTabConnectionsOrPrompt?: WebsiteTabConnections | boolean,
-	settingsOrPrompt?: Settings | boolean,
-	promptForAccessesIfNeeded = true
-) {
-	const usingLegacySignature = tokenPriceServiceOrWebsiteTabConnections instanceof Map
-	const tokenPriceService = usingLegacySignature ? undefined as never : tokenPriceServiceOrWebsiteTabConnections
-	const resetSimulationServices = usingLegacySignature ? undefined as never : resetSimulationServicesOrSettings as ResetSimulationServices
-	const websiteTabConnections = usingLegacySignature ? tokenPriceServiceOrWebsiteTabConnections : websiteTabConnectionsOrPrompt as WebsiteTabConnections
-	const settings = usingLegacySignature ? resetSimulationServicesOrSettings as Settings : settingsOrPrompt as Settings
-	const promptForAccesses = typeof (usingLegacySignature ? websiteTabConnectionsOrPrompt : promptForAccessesIfNeeded) === 'boolean'
-		? usingLegacySignature ? websiteTabConnectionsOrPrompt as boolean : promptForAccessesIfNeeded
-		: promptForAccessesIfNeeded
+export async function updateWebsiteApprovalAccesses(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	settings: Settings,
+	promptForAccessesIfNeeded: boolean,
+): Promise<number> {
+	const popupRefreshGeneration = bumpPopupRefreshGeneration()
+	const allTabStates = await getAllTabStates()
+	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 
-	updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	// update port connections and disconnect from ports that should not have access anymore
-	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
-		updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccesses, settings)
+	try {
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	} catch (error) {
+		await handleUnexpectedError(error)
 	}
+	// update port connections and disconnect from ports that should not have access anymore
+	const updatePromises = [...websiteTabConnections.entries()].map(async ([_tab, tabConnection]) => {
+		const tabIconRefreshTargets = await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
+		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
+	})
+	for (const tabState of allTabStates) {
+		if (websiteTabConnections.has(tabState.tabId)) continue
+		if (tabState.website?.websiteOrigin === undefined) continue
+		addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
+	}
+	try {
+		await Promise.all(updatePromises)
+	} catch (error) {
+		await handleUnexpectedError(error)
+	}
+	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
+		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
+	)
+	try {
+		await Promise.all(iconRefreshPromises)
+	} catch (error) {
+		await handleUnexpectedError(error)
+	}
+	return popupRefreshGeneration
 }
