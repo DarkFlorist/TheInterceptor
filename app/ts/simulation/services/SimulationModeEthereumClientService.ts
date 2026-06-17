@@ -116,10 +116,7 @@ const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinim
 	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
 }
 
-const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => (
-	simulationStateInput.length === 0
-	|| (simulationStateInput.length === 1 && simulationStateInput[0]?.transactions.length === 0 && simulationStateInput[0]?.signedMessages.length === 0)
-)
+const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0
 
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 

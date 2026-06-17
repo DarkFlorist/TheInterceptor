@@ -25,6 +25,7 @@ import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
+import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -132,7 +133,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
+		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
@@ -200,6 +201,8 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 async function startup() {
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await initializePopupRefreshGeneration()
+	bumpPopupRefreshGeneration()
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
@@ -240,7 +243,7 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
+	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, bumpPopupRefreshGeneration())
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
