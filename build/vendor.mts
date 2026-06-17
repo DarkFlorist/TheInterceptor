@@ -13,6 +13,7 @@ const vendorCacheStampPath = path.join(vendorDirectory, '.vendor-cache-stamp')
 const vendorCacheManifestFileName = '.vendor-cache-manifest'
 const vendorCacheManifestPath = path.join(vendorDirectory, vendorCacheManifestFileName)
 const vendoredDependencyMirrorDirectoryName = '__dependencies__'
+const vendorManifestHashPattern = /^[0-9a-f]{64}$/
 
 const vendoredDependencies = [
 	'webextension-polyfill',
@@ -230,7 +231,7 @@ async function vendorDependencies() {
 		await writeVendorTypeShims(temporaryVendorDirectory)
 		await fs.writeFile(path.join(temporaryVendorDirectory, path.basename(vendorCacheStampPath)), `${ vendorCacheKey }\n`)
 		const vendorFileManifest = await getVendorFileManifest(temporaryVendorDirectory)
-		await fs.writeFile(path.join(temporaryVendorDirectory, vendorCacheManifestFileName), `${ vendorFileManifest.join('\n') }\n`)
+		await fs.writeFile(path.join(temporaryVendorDirectory, vendorCacheManifestFileName), `${ vendorFileManifest.map(formatVendorManifestEntry).join('\n') }\n`)
 		await replaceVendorDirectory()
 	} catch (error) {
 		await fs.rm(temporaryVendorDirectory, { recursive: true, force: true })
@@ -297,8 +298,9 @@ async function canReuseVendorDirectory(vendorCacheKey: string) {
 		if (cachedVendorKey !== vendorCacheKey) return false
 		const vendorFileManifest = getCachedVendorFileManifest(await fs.readFile(vendorCacheManifestPath, 'utf8'))
 		if (vendorFileManifest === undefined) return false
-		for (const relativeVendorPath of vendorFileManifest) {
-			await fs.access(path.join(vendorDirectory, relativeVendorPath))
+		for (const vendorFile of vendorFileManifest) {
+			const currentFileHash = await getFileHash(path.join(vendorDirectory, vendorFile.relativePath))
+			if (currentFileHash !== vendorFile.hash) return false
 		}
 		return true
 	} catch {
@@ -307,19 +309,47 @@ async function canReuseVendorDirectory(vendorCacheKey: string) {
 }
 
 function getCachedVendorFileManifest(vendorFileManifestContents: string) {
-	const vendorFileManifest = vendorFileManifestContents
+	const vendorFileManifestLines = vendorFileManifestContents
 		.split('\n')
-		.map((relativeVendorPath) => relativeVendorPath.replace(/\r$/, ''))
-		.filter((relativeVendorPath) => relativeVendorPath !== '')
+		.map((vendorManifestEntry) => vendorManifestEntry.replace(/\r$/, ''))
+		.filter((vendorManifestEntry) => vendorManifestEntry !== '')
+	const vendorFileManifest: VendorManifestEntry[] = []
+	for (const vendorManifestEntry of vendorFileManifestLines) {
+		const parsedVendorManifestEntry = parseVendorManifestEntry(vendorManifestEntry)
+		if (parsedVendorManifestEntry === undefined) return undefined
+		vendorFileManifest.push(parsedVendorManifestEntry)
+	}
 	if (vendorFileManifest.length === 0) return undefined
-	if (vendorFileManifest.some((relativeVendorPath) => !isSafeRelativeVendorPath(relativeVendorPath))) return undefined
 	return vendorFileManifest
 }
 
 const isSafeRelativeVendorPath = (relativeVendorPath: string) => !path.isAbsolute(relativeVendorPath) && !relativeVendorPath.split(/[\\/]/).includes('..')
 
+type VendorManifestEntry = {
+	hash: string
+	relativePath: string
+}
+
+function parseVendorManifestEntry(vendorManifestEntry: string): VendorManifestEntry | undefined {
+	const separatorIndex = vendorManifestEntry.indexOf('\t')
+	if (separatorIndex === -1) return undefined
+	const hash = vendorManifestEntry.slice(0, separatorIndex)
+	const relativePath = vendorManifestEntry.slice(separatorIndex + 1)
+	if (!vendorManifestHashPattern.test(hash)) return undefined
+	if (!isSafeRelativeVendorPath(relativePath)) return undefined
+	return { hash, relativePath }
+}
+
+const formatVendorManifestEntry = (vendorManifestEntry: VendorManifestEntry) => `${ vendorManifestEntry.hash }\t${ vendorManifestEntry.relativePath }`
+
+async function getFileHash(filePath: string) {
+	return createHash('sha256')
+		.update(await fs.readFile(filePath))
+		.digest('hex')
+}
+
 async function getVendorFileManifest(vendorRootDirectory: string) {
-	const relativeFilePaths: string[] = []
+	const vendorManifestEntries: VendorManifestEntry[] = []
 	async function addFiles(directoryPath: string) {
 		const directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true })
 		for (const directoryEntry of directoryEntries) {
@@ -330,11 +360,14 @@ async function getVendorFileManifest(vendorRootDirectory: string) {
 			}
 			const relativePath = path.relative(vendorRootDirectory, entryPath).replace(/\\/g, '/')
 			if (relativePath === vendorCacheManifestFileName) continue
-			relativeFilePaths.push(relativePath)
+			vendorManifestEntries.push({
+				hash: await getFileHash(entryPath),
+				relativePath,
+			})
 		}
 	}
 	await addFiles(vendorRootDirectory)
-	return relativeFilePaths.sort()
+	return vendorManifestEntries.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
 }
 
 async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
