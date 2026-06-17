@@ -743,6 +743,18 @@ const getBalanceBeforeSimulationInputTransaction = async (
 	)
 }
 
+const getBaseFeeAdjustedTransactionWithBalances = (
+	parentBlock: NonNullable<EthereumBlockHeader>,
+	currentBlock: SimulationStateInput[number],
+	transaction: PreSimulationTransaction,
+	balances: ReadonlyMap<EthereumQuantity, bigint>,
+) => {
+	const adjustedTransactions = getBaseFeeAdjustedTransactions(parentBlock, modifyObject(currentBlock, { transactions: [transaction] }), balances)
+	const adjustedTransaction = adjustedTransactions[0]
+	if (adjustedTransaction === undefined) throw new Error('missing base fee adjusted transaction')
+	return adjustedTransaction
+}
+
 export const getBaseFeeAdjustmentBalances = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -759,12 +771,12 @@ export const getBaseFeeAdjustmentBalances = async (
 	for (const transaction of currentBlock.transactions) {
 		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') {
 			conservativeBalances.delete(transaction.signedTransaction.from)
-			adjustedTransactions.push(transaction)
+			adjustedTransactions.push(getBaseFeeAdjustedTransactionWithBalances(parentBlock, currentBlock, transaction, balances))
 			continue
 		}
 		if (transaction.signedTransaction.type !== '1559') {
 			conservativeBalances.delete(transaction.signedTransaction.from)
-			adjustedTransactions.push(transaction)
+			adjustedTransactions.push(getBaseFeeAdjustedTransactionWithBalances(parentBlock, currentBlock, transaction, balances))
 			continue
 		}
 		if (hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)) {
@@ -775,7 +787,7 @@ export const getBaseFeeAdjustmentBalances = async (
 					subtractMaxGasCost(conservativeBalance, transaction.signedTransaction.value, transaction.signedTransaction.gas, transaction.originalRequestParameters.params[0].maxFeePerGas),
 				)
 			}
-			adjustedTransactions.push(transaction)
+			adjustedTransactions.push(getBaseFeeAdjustedTransactionWithBalances(parentBlock, currentBlock, transaction, balances))
 			continue
 		}
 		const desiredMaxFeePerGas = getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, transaction.signedTransaction.maxPriorityFeePerGas)
@@ -783,9 +795,9 @@ export const getBaseFeeAdjustmentBalances = async (
 		const balance = conservativeBalance !== undefined && canAffordMaxGasCost(conservativeBalance, transaction.signedTransaction.value, transaction.signedTransaction.gas, desiredMaxFeePerGas)
 			? conservativeBalance
 			: await getBalanceBeforeSimulationInputTransaction(ethereumClientService, requestAbortController, parentBlock, simulationInputBeforeBlock, currentBlock, adjustedTransactions, transaction.signedTransaction.from)
-		const adjustedTransaction = getBaseFeeAdjustedTransaction(transaction, parentBaseFeePerGas, balance)
-		if (adjustedTransaction.signedTransaction.type !== '1559') throw new Error('Expected 1559 transaction after base fee adjustment')
 		balances.set(transaction.transactionIdentifier, balance)
+		const adjustedTransaction = getBaseFeeAdjustedTransactionWithBalances(parentBlock, currentBlock, transaction, balances)
+		if (adjustedTransaction.signedTransaction.type !== '1559') throw new Error('Expected 1559 transaction after base fee adjustment')
 		conservativeBalances.set(transaction.signedTransaction.from, subtractMaxGasCost(balance, transaction.signedTransaction.value, transaction.signedTransaction.gas, adjustedTransaction.signedTransaction.maxFeePerGas))
 		adjustedTransactions.push(adjustedTransaction)
 	}
