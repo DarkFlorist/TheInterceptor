@@ -18,7 +18,7 @@ import {
 	parseTransaction as parseSerializedTransaction,
 	serializeTransaction,
 } from '../../utils/viem.js'
-import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
+import { dataStringWith0xStart, min, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
@@ -56,6 +56,12 @@ const shouldReplacePopupVisualisation = (
 	const nextTimestamp = getSimulationStartedTimestamp(nextPopupVisualisation)
 	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
+}
+
+const getAffordableMaxFeePerGas = (desiredMaxFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
+	if (gasLimit === 0n) return desiredMaxFeePerGas
+	const availableForGas = balance > value ? balance - value : 0n
+	return min(desiredMaxFeePerGas, availableForGas / gasLimit)
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
@@ -327,19 +333,26 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
+	const balancePromise = silenceChromeUnCaughtPromise(ethereumClientService.getBalance(from, 'latest', requestAbortController))
 	const parentBlock = await parentBlockPromise
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
+	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	const maxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoEth/gas
+	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
+	const getMaxFeePerGas = async (gasLimit: bigint) => {
+		if (transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null) return transactionDetails.maxFeePerGas
+		return getAffordableMaxFeePerGas(parentBaseFeePerGas * 2n + maxPriorityFeePerGas, await balancePromise, value, gasLimit)
+	}
 	const transactionWithoutGas = {
 		type: '1559' as const,
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
-		maxFeePerGas: transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null ? transactionDetails.maxFeePerGas : parentBlock.baseFeePerGas * 2n + maxPriorityFeePerGas,
+		maxFeePerGas: transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null ? transactionDetails.maxFeePerGas : parentBaseFeePerGas * 2n + maxPriorityFeePerGas,
 		maxPriorityFeePerGas,
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
-		value: transactionDetails.value !== undefined  ? transactionDetails.value : 0n,
+		value,
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}
@@ -354,7 +367,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		try {
 			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
 			if ('error' in estimateGas) return { ...extraParams, ...estimateGas, success: false }
-			return { transaction: { ...transactionWithoutGas, gas: estimateGas.gas }, ...extraParams, success: true }
+			return { transaction: { ...transactionWithoutGas, maxFeePerGas: await getMaxFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
 			printError(error)
@@ -362,7 +375,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: { ...transactionWithoutGas, gas: transactionDetails.gas }, ...extraParams, success: true }
+	return { transaction: { ...transactionWithoutGas, maxFeePerGas: await getMaxFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {

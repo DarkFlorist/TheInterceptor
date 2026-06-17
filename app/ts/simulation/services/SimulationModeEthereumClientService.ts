@@ -686,15 +686,28 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 	return { nonceFixed: true, simulationStateInput: simulationInputBlocks }
 }
 
-export const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader, preSimulationTransactions: readonly PreSimulationTransaction[]): readonly PreSimulationTransaction[] => {
+const getAffordableMaxFeePerGas = (desiredMaxFeePerGas: bigint, balance: bigint, value: bigint, gasLimit: bigint) => {
+	if (gasLimit === 0n) return desiredMaxFeePerGas
+	const availableForGas = balance > value ? balance - value : 0n
+	return min(desiredMaxFeePerGas, availableForGas / gasLimit)
+}
+
+export const getBaseFeeAdjustedTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, parentBlock: EthereumBlockHeader, preSimulationTransactions: readonly PreSimulationTransaction[]): Promise<readonly PreSimulationTransaction[]> => {
 	if (parentBlock === null) return preSimulationTransactions
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) return preSimulationTransactions
-	return preSimulationTransactions.map((transaction) => {
+	return await Promise.all(preSimulationTransactions.map(async (transaction) => {
 		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') return transaction
+		if (transaction.originalRequestParameters.params[0].maxFeePerGas !== undefined && transaction.originalRequestParameters.params[0].maxFeePerGas !== null) return transaction
 		if (transaction.signedTransaction.type !== '1559') return transaction
-		return modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas: parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas }) })
-	})
+		const maxFeePerGas = getAffordableMaxFeePerGas(
+			parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas,
+			await ethereumClientService.getBalance(transaction.signedTransaction.from, 'latest', requestAbortController),
+			transaction.signedTransaction.value,
+			transaction.signedTransaction.gas,
+		)
+		return modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas }) })
+	}))
 }
 
 const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
