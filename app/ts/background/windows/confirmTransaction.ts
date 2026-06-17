@@ -33,7 +33,7 @@ import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.j
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
-import { getAffordableTransactionFees } from '../../utils/transactionFees.js'
+import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -336,18 +336,14 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const maxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoEth/gas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {
-		if (transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null) return {
-			maxFeePerGas: transactionDetails.maxFeePerGas,
-			maxPriorityFeePerGas,
-		}
-		return getAffordableTransactionFees(parentBaseFeePerGas * 2n + maxPriorityFeePerGas, maxPriorityFeePerGas, await balancePromise, value, gasLimit)
+		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
 	}
 	const transactionWithoutGas = {
 		type: '1559' as const,
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
-		maxFeePerGas: transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null ? transactionDetails.maxFeePerGas : parentBaseFeePerGas * 2n + maxPriorityFeePerGas,
+		maxFeePerGas: hasExplicitMaxFeePerGas(transactionDetails.maxFeePerGas) ? transactionDetails.maxFeePerGas : getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas),
 		maxPriorityFeePerGas,
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
 		value,

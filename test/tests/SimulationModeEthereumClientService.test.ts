@@ -6,7 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
@@ -524,7 +524,8 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const adjusted = await getBaseFeeAdjustedTransactions(ethereum, undefined, parentBlock, [], currentBlock)
+			const balances = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const adjusted = getBaseFeeAdjustedTransactions(parentBlock, currentBlock, balances)
 			const adjustedTransaction = adjusted[0]?.signedTransaction
 			if (adjustedTransaction === undefined || adjustedTransaction.type !== '1559') throw new Error('missing adjusted 1559 transaction')
 			assert.equal(adjustedTransaction.maxFeePerGas, 5n)
@@ -560,13 +561,52 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const adjusted = await getBaseFeeAdjustedTransactions(ethereum, undefined, parentBlock, [], currentBlock)
+			const balances = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const adjusted = getBaseFeeAdjustedTransactions(parentBlock, currentBlock, balances)
 			assert.equal(adjusted.length, 2)
 			for (const transaction of adjusted) {
 				if (transaction.signedTransaction.type !== '1559') throw new Error('wrong transaction type')
 				assert.equal(transaction.signedTransaction.maxFeePerGas, 284n)
 				assert.equal(transaction.signedTransaction.maxPriorityFeePerGas, 100n)
 			}
+			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
+			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
+		})
+
+		test('getBaseFeeAdjustmentBalances tracks explicit max fee in conservative balance', async () => {
+			requestHandler.balance = 100_000n
+			requestHandler.ethGetBalanceCalls.length = 0
+			requestHandler.ethSimulateV1Calls.length = 0
+			const parentBlock = await ethereum.getBlock(undefined)
+			const makeTransaction = (nonce: bigint, identifier: bigint, maxFeePerGas: bigint | undefined) => ({
+				signedTransaction: mockSignTransaction({
+					...exampleTransaction,
+					nonce,
+					maxFeePerGas: maxFeePerGas ?? 999n,
+					maxPriorityFeePerGas: 100n,
+					gas: 10n,
+					value: 0n,
+				}),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: maxFeePerGas === undefined ? [{}] : [{ maxFeePerGas }]},
+				transactionIdentifier: identifier,
+			} as const)
+			const currentBlock = {
+				stateOverrides: {},
+				transactions: [
+					makeTransaction(0n, 23n, undefined),
+					makeTransaction(1n, 24n, 200n),
+					makeTransaction(2n, 25n, undefined),
+				],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+				simulateWithZeroBaseFee: false,
+			} as const
+
+			const balances = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const adjusted = getBaseFeeAdjustedTransactions(parentBlock, currentBlock, balances)
+			assert.equal(adjusted.length, 3)
 			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
 		})
