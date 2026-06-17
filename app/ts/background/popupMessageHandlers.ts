@@ -341,17 +341,19 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
+				const updatedFirst = modifyObject(first,
+					{
+						popupVisualisation: {
+							statusCode: 'success',
+							data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
+						}
+					})
+				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => updatedFirst)
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
 						pendingTransactionAndSignableMessages: [
-							modifyObject(first,
-								{
-									popupVisualisation: {
-										statusCode: 'success',
-										data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
-									}
-								})
+							updatedFirst
 							, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: await currentBlockNumberPromise,
 						rpcConnectionStatus: await rpcConnectionStatusPromise,
