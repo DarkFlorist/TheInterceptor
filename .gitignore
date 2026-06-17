@@ -1,6 +1,8 @@
 /app/js/
 /test/js/
 /app/vendor/
+/app/.vendor-next/
+/app/.vendor-previous/
 node_modules/
 /app/inpage/build/
 /app/inpage/js/

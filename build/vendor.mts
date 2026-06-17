@@ -1,10 +1,18 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { type FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
+const repositoryRoot = path.join(directoryOfThisFile, '..')
 const nodeModulesDirectory = path.join(directoryOfThisFile, '..', 'node_modules')
+const vendorDirectory = path.join(repositoryRoot, 'app', 'vendor')
+const temporaryVendorDirectory = path.join(repositoryRoot, 'app', '.vendor-next')
+const previousVendorDirectory = path.join(repositoryRoot, 'app', '.vendor-previous')
+const vendorCacheStampPath = path.join(vendorDirectory, '.vendor-cache-stamp')
+const vendorCacheManifestFileName = '.vendor-cache-manifest'
+const vendorCacheManifestPath = path.join(vendorDirectory, vendorCacheManifestFileName)
 const vendoredDependencyMirrorDirectoryName = '__dependencies__'
 
 const vendoredDependencies = [
@@ -176,28 +184,140 @@ const vendoredPackageRoots = [...new Set([
 ])]
 
 async function vendorDependencies() {
-	await fs.rm(path.join(directoryOfThisFile, '..', 'app', 'vendor'), { recursive: true, force: true })
-	for (const packageRoot of vendoredPackageRoots) {
-		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
-		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageRoot)
-		async function inclusionPredicate(path: string, fileType: FileType) {
-			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
-			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
-			if (path.endsWith('.js')) return true
-			if (path.endsWith('.ts')) return true
-			if (path.endsWith('.mjs')) return true
-			if (path.endsWith('.mts')) return true
-			if (path.endsWith('package.json')) return true
-			if (path.endsWith('.map')) return true
-			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
-			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
-			if (fileType === 'directory') return true
-			return false
+	const vendorCacheKey = await getVendorCacheKey()
+	if (await canReuseVendorDirectory(vendorCacheKey)) return
+
+	await fs.rm(temporaryVendorDirectory, { recursive: true, force: true })
+	await fs.rm(previousVendorDirectory, { recursive: true, force: true })
+	try {
+		for (const packageRoot of vendoredPackageRoots) {
+			const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
+			const destinationDirectoryPath = path.join(temporaryVendorDirectory, packageRoot)
+			async function inclusionPredicate(path: string, fileType: FileType) {
+				if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
+				if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
+				if (path.endsWith('.js')) return true
+				if (path.endsWith('.ts')) return true
+				if (path.endsWith('.mjs')) return true
+				if (path.endsWith('.mts')) return true
+				if (path.endsWith('package.json')) return true
+				if (path.endsWith('.map')) return true
+				if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
+				if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
+				if (fileType === 'directory') return true
+				return false
+			}
+			await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
+			await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
 		}
-		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
-		await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
+		await writeVendorTypeShims(temporaryVendorDirectory)
+		await fs.writeFile(path.join(temporaryVendorDirectory, path.basename(vendorCacheStampPath)), `${ vendorCacheKey }\n`)
+		const vendorFileManifest = await getVendorFileManifest(temporaryVendorDirectory)
+		await fs.writeFile(path.join(temporaryVendorDirectory, vendorCacheManifestFileName), `${ vendorFileManifest.join('\n') }\n`)
+		await replaceVendorDirectory()
+	} catch (error) {
+		await fs.rm(temporaryVendorDirectory, { recursive: true, force: true })
+		throw error
 	}
-	await writeVendorTypeShims()
+}
+
+async function replaceVendorDirectory() {
+	const hadPreviousVendor = await pathExists(vendorDirectory)
+	try {
+		if (hadPreviousVendor) await fs.rename(vendorDirectory, previousVendorDirectory)
+		await fs.rename(temporaryVendorDirectory, vendorDirectory)
+		await fs.rm(previousVendorDirectory, { recursive: true, force: true })
+	} catch (error) {
+		await fs.rm(vendorDirectory, { recursive: true, force: true })
+		if (hadPreviousVendor && await pathExists(previousVendorDirectory)) {
+			await fs.rename(previousVendorDirectory, vendorDirectory)
+		}
+		throw error
+	}
+}
+
+async function pathExists(pathToCheck: string) {
+	try {
+		await fs.access(pathToCheck)
+		return true
+	} catch {
+		return false
+	}
+}
+
+async function getVendorCacheKey() {
+	const hash = createHash('sha256')
+	hash.update('vendor-cache-v1\n')
+	hash.update(JSON.stringify(vendoredPackageRoots))
+	hash.update('\n')
+	hash.update(JSON.stringify(vendorTypeShims))
+	hash.update('\n')
+	const cacheInputPaths = [
+		path.join(repositoryRoot, 'package.json'),
+		path.join(repositoryRoot, 'bun.lock'),
+		path.join(directoryOfThisFile, 'package.json'),
+		path.join(directoryOfThisFile, 'bun.lock'),
+		path.join(directoryOfThisFile, 'bundler.mts'),
+		url.fileURLToPath(import.meta.url),
+		...vendoredPackageRoots.map((packageRoot) => path.join(nodeModulesDirectory, packageRoot, 'package.json')),
+	]
+	for (const cacheInputPath of cacheInputPaths) {
+		hash.update(cacheInputPath)
+		hash.update('\n')
+		try {
+			hash.update(await fs.readFile(cacheInputPath))
+		} catch {
+			hash.update('missing')
+		}
+		hash.update('\n')
+	}
+	return hash.digest('hex')
+}
+
+async function canReuseVendorDirectory(vendorCacheKey: string) {
+	try {
+		const cachedVendorKey = (await fs.readFile(vendorCacheStampPath, 'utf8')).trim()
+		if (cachedVendorKey !== vendorCacheKey) return false
+		const vendorFileManifest = getCachedVendorFileManifest(await fs.readFile(vendorCacheManifestPath, 'utf8'))
+		if (vendorFileManifest === undefined) return false
+		for (const relativeVendorPath of vendorFileManifest) {
+			await fs.access(path.join(vendorDirectory, relativeVendorPath))
+		}
+		return true
+	} catch {
+		return false
+	}
+}
+
+function getCachedVendorFileManifest(vendorFileManifestContents: string) {
+	const vendorFileManifest = vendorFileManifestContents
+		.split('\n')
+		.map((relativeVendorPath) => relativeVendorPath.replace(/\r$/, ''))
+		.filter((relativeVendorPath) => relativeVendorPath !== '')
+	if (vendorFileManifest.length === 0) return undefined
+	if (vendorFileManifest.some((relativeVendorPath) => !isSafeRelativeVendorPath(relativeVendorPath))) return undefined
+	return vendorFileManifest
+}
+
+const isSafeRelativeVendorPath = (relativeVendorPath: string) => !path.isAbsolute(relativeVendorPath) && !relativeVendorPath.split(/[\\/]/).includes('..')
+
+async function getVendorFileManifest(vendorRootDirectory: string) {
+	const relativeFilePaths: string[] = []
+	async function addFiles(directoryPath: string) {
+		const directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true })
+		for (const directoryEntry of directoryEntries) {
+			const entryPath = path.join(directoryPath, directoryEntry.name)
+			if (directoryEntry.isDirectory()) {
+				await addFiles(entryPath)
+				continue
+			}
+			const relativePath = path.relative(vendorRootDirectory, entryPath).replace(/\\/g, '/')
+			if (relativePath === vendorCacheManifestFileName) continue
+			relativeFilePaths.push(relativePath)
+		}
+	}
+	await addFiles(vendorRootDirectory)
+	return relativeFilePaths.sort()
 }
 
 async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {
@@ -213,9 +333,9 @@ async function rewriteNestedNodeModulesDirectory(packageDirectoryPath: string) {
 	await fs.rename(nestedNodeModulesDirectoryPath, nestedDependenciesDirectoryPath)
 }
 
-async function writeVendorTypeShims() {
+async function writeVendorTypeShims(destinationRootDirectory: string) {
 	for (const shim of vendorTypeShims) {
-		const destinationPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', ...shim.pathParts)
+		const destinationPath = path.join(destinationRootDirectory, ...shim.pathParts)
 		await fs.mkdir(path.dirname(destinationPath), { recursive: true })
 		await fs.writeFile(destinationPath, shim.contents)
 	}
