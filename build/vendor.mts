@@ -241,16 +241,27 @@ async function vendorDependencies() {
 
 async function replaceVendorDirectory() {
 	const hadPreviousVendor = await pathExists(vendorDirectory)
+	let movedPreviousVendor = false
+	let installedNewVendor = false
 	try {
-		if (hadPreviousVendor) await fs.rename(vendorDirectory, previousVendorDirectory)
+		if (hadPreviousVendor) {
+			await fs.rename(vendorDirectory, previousVendorDirectory)
+			movedPreviousVendor = true
+		}
 		await fs.rename(temporaryVendorDirectory, vendorDirectory)
-		await fs.rm(previousVendorDirectory, { recursive: true, force: true })
+		installedNewVendor = true
 	} catch (error) {
-		await fs.rm(vendorDirectory, { recursive: true, force: true })
-		if (hadPreviousVendor && await pathExists(previousVendorDirectory)) {
+		if (installedNewVendor) await fs.rm(vendorDirectory, { recursive: true, force: true })
+		if (movedPreviousVendor && await pathExists(previousVendorDirectory)) {
 			await fs.rename(previousVendorDirectory, vendorDirectory)
 		}
 		throw error
+	}
+	if (!movedPreviousVendor) return
+	try {
+		await fs.rm(previousVendorDirectory, { recursive: true, force: true })
+	} catch (error) {
+		console.warn(`Failed to remove previous vendor directory: ${ previousVendorDirectory }`, error)
 	}
 }
 
