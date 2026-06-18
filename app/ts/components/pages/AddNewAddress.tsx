@@ -19,6 +19,20 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
 
+export function mergeAddressWindowErrorState(
+	currentErrorState: ModifyAddressWindowState['errorState'],
+	validationErrorState: ModifyAddressWindowState['errorState'],
+) {
+	if (validationErrorState !== undefined) return validationErrorState
+	if (currentErrorState?.blockEditing === false) return currentErrorState
+	return undefined
+}
+
+export function getAddressWindowStateSyncErrorMessage(error: unknown) {
+	if (error instanceof Error && error.message.length > 0) return `Failed to update address window state: ${ error.message }`
+	return 'Failed to update address window state.'
+}
+
 export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage = sendPopupMessageToBackgroundPage,
 ) {
 	if (entryToAdd.type === 'error') return
@@ -123,6 +137,26 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
+export async function updateModifyAddressWindowState(
+	modifyAddressWindowState: Signal<ModifyAddressWindowState>,
+	updateState: (previousState: ModifyAddressWindowState) => ModifyAddressWindowState,
+	sendMessage = sendPopupMessageToBackgroundPage,
+) {
+	const previousState = modifyAddressWindowState.peek()
+	const updatedState = updateState(previousState)
+	modifyAddressWindowState.value = updatedState
+	try {
+		await sendMessage({ method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: updatedState.windowStateId, newState: updatedState } })
+	} catch(error) {
+		modifyAddressWindowState.value = modifyObject(updatedState, {
+			errorState: {
+				blockEditing: false,
+				message: getAddressWindowStateSyncErrorMessage(error),
+			}
+		})
+	}
+}
+
 function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, fetchAbiAndNameFromBlockExplorer }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
@@ -142,16 +176,13 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 		updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { type }))
 	}
 
-	type ModifyEntry = typeof modifyAddressWindowState.peek extends () => infer State ? (State extends { incompleteAddressBookEntry: infer Entry } ? Entry : never) : never
-	const updateIncompleteAddressBookEntry = async (updateEntry: (previousEntry: ModifyEntry) => ModifyEntry) => {
-		const previousState = modifyAddressWindowState.peek()
-		modifyAddressWindowState.value = modifyObject(previousState, { incompleteAddressBookEntry: updateEntry(previousState.incompleteAddressBookEntry) })
-		try {
-			await sendPopupMessageToBackgroundPage({ method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: modifyAddressWindowState.value.windowStateId, newState: modifyAddressWindowState.value } })
-		} catch(e) {
-			console.error(e)
-		}
-	}
+	const updateIncompleteAddressBookEntry = async (updateEntry: (previousEntry: ModifyAddressWindowState['incompleteAddressBookEntry']) => ModifyAddressWindowState['incompleteAddressBookEntry']) => updateModifyAddressWindowState(
+		modifyAddressWindowState,
+		previousState => modifyObject(previousState, {
+			incompleteAddressBookEntry: updateEntry(previousState.incompleteAddressBookEntry),
+			errorState: previousState.errorState?.blockEditing === false ? undefined : previousState.errorState
+		})
+	)
 
 	const setAddress = async (address: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { address }))
 	const setName = async (name: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { name }))
@@ -239,7 +270,9 @@ export function AddNewAddress(param: AddAddressParam) {
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
 				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return false
-				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: parsed.data.errorState })
+				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+					errorState: mergeAddressWindowErrorState(param.modifyAddressWindowState.value.errorState, parsed.data.errorState)
+				})
 			}
 			return false
 		}
@@ -369,21 +402,27 @@ export function AddNewAddress(param: AddAddressParam) {
 			address,
 			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
 		})
-		if (reply === undefined) return
 		canFetchFromEtherScan.value = true
+		if (reply === undefined) return
 		if (!reply.data.success) {
-			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
-				errorState: { blockEditing: false, message: reply.data.error }
-			})
+			const error = reply.data.error
+			await updateModifyAddressWindowState(
+				param.modifyAddressWindowState,
+				previousState => modifyObject(previousState, { errorState: { blockEditing: false, message: error } })
+			)
 			return
 		}
-		param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
-			incompleteAddressBookEntry: modifyObject(param.modifyAddressWindowState.value.incompleteAddressBookEntry, {
-				abi: reply.data.abi,
-				name: param.modifyAddressWindowState.value.incompleteAddressBookEntry.name === undefined ? reply.data.contractName : param.modifyAddressWindowState.value.incompleteAddressBookEntry.name
-			}),
-			errorState: undefined
-		} )
+		const { abi, contractName } = reply.data
+		await updateModifyAddressWindowState(
+			param.modifyAddressWindowState,
+			previousState => modifyObject(previousState, {
+				incompleteAddressBookEntry: modifyObject(previousState.incompleteAddressBookEntry, {
+					abi,
+					name: previousState.incompleteAddressBookEntry.name === undefined ? contractName : previousState.incompleteAddressBookEntry.name
+				}),
+				errorState: undefined
+			})
+		)
 	}
 
 	const showOnChainVerificationErrorBox = useComputed(() => {
