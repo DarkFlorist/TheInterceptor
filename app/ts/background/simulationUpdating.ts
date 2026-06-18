@@ -19,7 +19,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
-import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -155,7 +155,9 @@ async function getDelegationAddressesForSimulation(
 				senderAddress,
 				delegationEntry: await identifyAddress(ethereum, requestAbortController, delegationAddress),
 			}
-		} catch {
+		} catch(error: unknown) {
+			console.warn(`Failed to retrieve EIP-7702 delegation for ${ addressString(senderAddress) }`)
+			printError(error)
 			return undefined
 		}
 	})
