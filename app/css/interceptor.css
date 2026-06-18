@@ -836,6 +836,177 @@ svg.spinner > circle {
 	color: var(--text-color)
 }
 
+.delegation-flow-banner {
+	display: grid;
+	gap: 10px;
+	margin-bottom: 10px;
+	padding: 10px 12px;
+	border-radius: 12px;
+	background-color: var(--alpha-005);
+	border: 1px solid var(--alpha-015);
+	min-width: 0;
+}
+
+.delegation-flow-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.delegation-flow-badge {
+	background-color: var(--alpha-01);
+	color: var(--subtitle-text-color);
+	margin: 0;
+	font-size: 11px;
+	padding-inline: 0.45rem;
+}
+
+.delegation-flow-title {
+	font-size: 15px;
+	font-weight: 500;
+	margin: 0;
+}
+
+.delegation-flow-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	align-items: start;
+	gap: 10px;
+}
+
+.delegation-flow-row {
+	display: grid;
+	grid-template-columns: repeat(4, max-content);
+	align-items: center;
+	column-gap: 8px;
+	row-gap: 6px;
+	width: fit-content;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.delegation-flow-column {
+	display: grid;
+	gap: 6px;
+	min-width: 0;
+}
+
+.delegation-flow-label {
+	color: var(--subtitle-text-color);
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.2;
+	text-align: center;
+	justify-self: center;
+}
+
+.delegation-flow-arrow {
+	display: inline-flex;
+	justify-content: center;
+	align-items: center;
+	color: var(--subtitle-text-color);
+	align-self: center;
+}
+
+.delegation-flow-targets {
+	display: inline-grid;
+	gap: 6px;
+	min-width: 0;
+	justify-items: start;
+}
+
+.delegation-flow-address-button {
+	display: inline-block;
+	width: fit-content;
+	max-width: 100%;
+	padding: 0;
+	margin: 0;
+	border: 0;
+	background: none;
+	text-align: left;
+	cursor: pointer;
+}
+
+.delegation-flow-address {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	column-gap: 8px;
+	padding: 6px 8px;
+	border-radius: 8px;
+	background-color: var(--alpha-005);
+	min-width: 0;
+	width: fit-content;
+	max-width: 100%;
+}
+
+.delegation-flow-address-icon {
+	display: inline-flex;
+	font-size: 18px;
+	line-height: 1;
+}
+
+.delegation-flow-address-icon svg,
+.delegation-flow-address-icon img {
+	display: block;
+	width: 18px;
+	height: 18px;
+}
+
+.delegation-flow-address-text {
+	display: grid;
+	min-width: 0;
+}
+
+.delegation-flow-address-primary {
+	font-size: 13px;
+	line-height: 1.2;
+	color: var(--text-color);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.delegation-flow-address-secondary {
+	font-size: 11px;
+	line-height: 1.2;
+	color: var(--subtitle-text-color);
+	overflow-wrap: anywhere;
+}
+
+@media screen and (max-width: 480px) {
+	.delegation-flow-arrow {
+		justify-self: center;
+		transform: rotate(90deg);
+	}
+
+	.delegation-flow-row {
+		grid-template-columns: minmax(0, 1fr);
+		justify-items: stretch;
+		width: 100%;
+	}
+
+	.delegation-flow-targets {
+		display: grid;
+		justify-items: stretch;
+	}
+
+	.delegation-flow-label {
+		justify-self: center;
+	}
+
+	.delegation-flow-address-button,
+	.delegation-flow-address {
+		width: 100%;
+	}
+
+	.delegation-flow-address-primary {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+}
+
 .swap-box {
 	background-color: var(--alpha-005);
 	box-shadow: unset;

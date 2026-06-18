@@ -47,13 +47,34 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 type SimpleSendParams = {
 	transaction: TransactionGasses & { rpcNetwork: RpcNetwork }
 	viaProxypath?: readonly AddressBookEntry[]
+	receiverLabel?: string
 	asset: TokenOrEtherParams
 	sender: BeforeAfterAddress
 	receiver: BeforeAfterAddress
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-export function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack, viaProxypath } : SimpleSendParams) {
+export function getProxyRouteLabel(viaProxypath: readonly AddressBookEntry[]) {
+	if (viaProxypath.length <= 1) return 'via 1 address'
+	return `via ${ viaProxypath.length } addresses`
+}
+
+export function ExecutionRouteNotice({ viaProxypath, renameAddressCallBack }: { viaProxypath: readonly AddressBookEntry[], renameAddressCallBack: RenameAddressCallBack }) {
+	return <div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 12px;'>
+		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;'>
+			<span class = 'tag' style = 'background-color: var(--alpha-005); color: var(--subtitle-text-color);'>Routed</span>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>
+				{ getProxyRouteLabel(viaProxypath) }
+			</p>
+		</div>
+		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 6px;'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>Route:</p>
+			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>{ '->' }</p>) } </>
+		</div>
+	</div>
+}
+
+export function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack, viaProxypath, receiverLabel } : SimpleSendParams) {
 	return <div class = 'notification transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
@@ -64,6 +85,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 				fontSize = 'big'
 			/>
 		</span>
+		{ viaProxypath === undefined ? <></> : <ExecutionRouteNotice viaProxypath = { viaProxypath } renameAddressCallBack = { renameAddressCallBack } /> }
 		<p class = 'paragraph'> From </p>
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter
@@ -72,7 +94,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 				tokenOrEtherDefinition = { asset }
 			/>
 		</div>
-		<p class = 'paragraph'> To </p>
+		<p class = 'paragraph'>{ receiverLabel ?? (viaProxypath === undefined ? 'To' : 'Final recipient') } </p>
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter
 				{ ...receiver }
@@ -83,10 +105,6 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
-		{ viaProxypath === undefined ? <></> : <div style = 'display: flex;'>
-			<p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }> Via proxy:&nbsp;</p>
-			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ '-> '}&nbsp;</p>) } </>
-		</div> }
 	</div>
 }
 
@@ -109,10 +127,16 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
 	const receiverGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.to.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+	const isDelegatedExecution = simTx.transaction.type === '7702' && simTx.transaction.authorizationList.length > 0 || simTx.transaction.delegationAddress !== undefined
+	const isDelegatedSelfCallSendingElsewhere = isDelegatedExecution
+		&& simTx.transaction.to !== undefined
+		&& simTx.transaction.to.address === simTx.transaction.from.address
+		&& transfer.to.address !== simTx.transaction.to.address
 
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }
+		receiverLabel = { isDelegatedSelfCallSendingElsewhere ? 'Funds sent to' : undefined }
 		sender = { {
 			address: transfer.from,
 			beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },

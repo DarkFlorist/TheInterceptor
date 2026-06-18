@@ -141,6 +141,29 @@ export async function getMetadataForSimulation(
 	}
 }
 
+async function getDelegationAddressesForSimulation(
+	simulationStateInput: SimulationStateInput,
+	ethereum: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+) {
+	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction.from))))
+	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
+		try {
+			const delegationAddress = await ethereum.getDelegation(senderAddress, 'latest', requestAbortController)
+			if (delegationAddress === undefined) return undefined
+			return {
+				senderAddress,
+				delegationEntry: await identifyAddress(ethereum, requestAbortController, delegationAddress),
+			}
+		} catch {
+			return undefined
+		}
+	})
+	return new Map(resolvedDelegations
+		.filter((entry): entry is { senderAddress: bigint, delegationEntry: AddressBookEntry } => entry !== undefined)
+		.map((entry) => [addressString(entry.senderAddress), entry.delegationEntry] as const))
+}
+
 export const getGovernanceExecutionSimulationInput = (
 	simulationInput: SimulationStateInput,
 	executionTransaction: PreSimulationTransaction,
@@ -400,6 +423,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
+	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {
@@ -433,7 +457,12 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 						transactionStatus: 'Failed To Simulate',
 						error: { code: -1000000, message: 'Could not simulate transaction', decodedErrorMessage: 'Could not simulate transaction' },
 						parsedInputData,
-						transaction: { ...getFromAndToMetadata(transaction.signedTransaction, updatedMetadata.addressBookEntries), rpcNetwork: settings.activeRpcNetwork, ...otherFields },
+						transaction: {
+							...getFromAndToMetadata(transaction.signedTransaction, updatedMetadata.addressBookEntries),
+							...(delegationAddressBySender.get(addressString(transaction.signedTransaction.from)) !== undefined ? { delegationAddress: delegationAddressBySender.get(addressString(transaction.signedTransaction.from)) } : {}),
+							rpcNetwork: settings.activeRpcNetwork,
+							...otherFields,
+						},
 					}
 				}),
 				blockTimeManipulation: block.blockTimeManipulation,
@@ -488,7 +517,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined) throw new Error('Block index overflow')
 		return {
 			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
-			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth),
+			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationAddressBySender),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
 	})

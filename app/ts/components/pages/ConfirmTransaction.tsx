@@ -6,7 +6,7 @@ import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
@@ -35,9 +35,28 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '.
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { dataStringWith0xStart } from '../../utils/bigint.js'
+import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
+}
+
+export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
+export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
+
+const waitForDelay = async (delayMs: number) => await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs))
+
+export async function bootstrapConfirmTransactionDialog(hasLoadedPendingTransaction: () => boolean) {
+	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
+		if (hasLoadedPendingTransaction()) return
+		await sendPopupReadyAndListening('confirmTransaction')
+		if (hasLoadedPendingTransaction()) return
+		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+	}
+}
+
+async function hydratePendingTransactionsFromStorage() {
+	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
@@ -595,8 +614,27 @@ export function ConfirmTransaction() {
 	}, [])
 
 	useEffect(() => {
-		void sendPopupReadyAndListening('confirmTransaction')
+		let cancelled = false
+		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
+			if (cancelled || pendingTransactions.length === 0) return
+			pendingTransactionsAndSignableMessages.value = pendingTransactions
+			currentPendingTransactionOrSignableMessage.value = pendingTransactions[0]
+		})
+		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
+			if (cancelled || reply?.method !== 'popup_readyAndListening') return
+			const bootstrapData = reply.data.confirmTransactionBootstrap
+			if (bootstrapData === undefined) return
+			pendingTransactionsAndSignableMessages.value = bootstrapData.pendingTransactionAndSignableMessages
+			currentPendingTransactionOrSignableMessage.value = bootstrapData.pendingTransactionAndSignableMessages[0]
+			completeVisualizedSimulation.value = bootstrapData.visualizedSimulatorState
+			currentBlockNumber.value = bootstrapData.currentBlockNumber
+			rpcConnectionStatus.value = bootstrapData.rpcConnectionStatus
+		})
+		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined)
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+		return () => {
+			cancelled = true
+		}
 	}, [])
 
 	async function approve() {
