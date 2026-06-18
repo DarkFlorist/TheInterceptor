@@ -12,7 +12,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meda
 import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import type { IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
@@ -92,7 +92,7 @@ export async function getLastKnownCurrentTabId() {
 	return tabs[0].id
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'changeChain': {
 			const promise = await getChainChangeConfirmationPromise()
@@ -110,13 +110,9 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
-			const settings = await getSettings()
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
-			const visualizedSimulatorState = settings.simulationMode
-				? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
-				: createPassthroughCompleteVisualizedSimulation()
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			const visualizedSimulatorState = await getPopupVisualisationState()
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
