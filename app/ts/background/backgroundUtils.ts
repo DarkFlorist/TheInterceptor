@@ -6,13 +6,11 @@ import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
-	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
-		|| error.message?.includes('The message port closed before a response was received')
-		|| error.message?.includes('Attempting to use a disconnected port object')
-		|| error.message?.includes('Could not establish connection. Receiving end does not exist')
-		|| error.message?.includes('Extension context invalidated')
+	return isIgnorablePortLifecycleError(error)
+		|| error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
 }
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
