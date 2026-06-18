@@ -6,7 +6,7 @@ import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
@@ -46,10 +46,23 @@ export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
 
 const waitForDelay = async (delayMs: number) => await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs))
 
-export async function bootstrapConfirmTransactionDialog(hasLoadedPendingTransaction: () => boolean) {
+type ConfirmTransactionBootstrapData = {
+	pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+	currentBlockNumber: bigint
+	rpcConnectionStatus: RpcConnectionStatus
+	visualizedSimulatorState: CompleteVisualizedSimulation
+}
+
+export async function bootstrapConfirmTransactionDialog(
+	hasLoadedPendingTransaction: () => boolean,
+	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
+) {
 	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
 		if (hasLoadedPendingTransaction()) return
-		await sendPopupReadyAndListening('confirmTransaction')
+		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
+		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+			applyBootstrapData(reply.data.confirmTransactionBootstrap)
+		}
 		if (hasLoadedPendingTransaction()) return
 		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
 	}
@@ -615,6 +628,14 @@ export function ConfirmTransaction() {
 
 	useEffect(() => {
 		let cancelled = false
+		const applyBootstrapData = (bootstrapData: ConfirmTransactionBootstrapData) => {
+			if (cancelled) return
+			pendingTransactionsAndSignableMessages.value = bootstrapData.pendingTransactionAndSignableMessages
+			currentPendingTransactionOrSignableMessage.value = bootstrapData.pendingTransactionAndSignableMessages[0]
+			completeVisualizedSimulation.value = bootstrapData.visualizedSimulatorState
+			currentBlockNumber.value = bootstrapData.currentBlockNumber
+			rpcConnectionStatus.value = bootstrapData.rpcConnectionStatus
+		}
 		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
 			if (cancelled || pendingTransactions.length === 0) return
 			pendingTransactionsAndSignableMessages.value = pendingTransactions
@@ -624,13 +645,9 @@ export function ConfirmTransaction() {
 			if (cancelled || reply?.method !== 'popup_readyAndListening') return
 			const bootstrapData = reply.data.confirmTransactionBootstrap
 			if (bootstrapData === undefined) return
-			pendingTransactionsAndSignableMessages.value = bootstrapData.pendingTransactionAndSignableMessages
-			currentPendingTransactionOrSignableMessage.value = bootstrapData.pendingTransactionAndSignableMessages[0]
-			completeVisualizedSimulation.value = bootstrapData.visualizedSimulatorState
-			currentBlockNumber.value = bootstrapData.currentBlockNumber
-			rpcConnectionStatus.value = bootstrapData.rpcConnectionStatus
+			applyBootstrapData(bootstrapData)
 		})
-		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined)
+		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined, applyBootstrapData)
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		return () => {
 			cancelled = true

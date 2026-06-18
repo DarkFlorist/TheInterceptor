@@ -271,8 +271,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 
-	test('retries bootstrap when the first ready handshake happens before pending data exists', async () => {
+	test('hydrates from a later bootstrap reply when the first ready handshake happens before pending data exists', async () => {
 		const dom = installDomMock()
+		const pendingTransaction = makePendingTransaction()
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
 			const typedMessage = message as { method?: string }
@@ -284,20 +288,23 @@ describe('confirm transaction rpc status bootstrap', () => {
 					&& sentMessage.method === 'popup_readyAndListening'
 				).length
 				if (readyCalls === 1) return undefined
-				return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+				return serialize(PopupRequestsReplies.popup_readyAndListening, {
+					method: 'popup_readyAndListening',
+					data: {
+						popupOrTabId: { type: 'popup', id: 1 },
+						confirmTransactionBootstrap: {
+							pendingTransactionAndSignableMessages: [pendingTransaction],
+							currentBlockNumber: 123n,
+							rpcConnectionStatus: undefined,
+							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+						},
+					},
+				})
 			}
 			if (typedMessage.method === 'popup_requestSettings') return undefined
 			return undefined
 		})
-		const [
-			{ serialize },
-			{ UpdateConfirmTransactionDialogPendingTransactions },
-			{ ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS },
-		] = await Promise.all([
-			import('../../app/ts/types/wire-types.js'),
-			import('../../app/ts/types/interceptor-messages.js'),
-			import('../../app/ts/components/pages/ConfirmTransaction.js'),
-		])
+		const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -312,20 +319,6 @@ describe('confirm transaction rpc status bootstrap', () => {
 			&& message.method === 'popup_readyAndListening'
 		).length
 		assert.equal(readyCalls >= 2, true)
-
-		await act(() => {
-			browser.dispatch({
-				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: {
-						pendingTransactionAndSignableMessages: [makePendingTransaction()],
-						currentBlockNumber: 123n,
-						rpcConnectionStatus: undefined,
-					},
-				}),
-			})
-		})
 
 		assert.equal(dom.document.body.textContent?.includes('simulation failed'), true)
 		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
