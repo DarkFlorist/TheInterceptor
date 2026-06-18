@@ -7,9 +7,12 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 
-function isIgnorableClosedMessageChannelError(error: Error) {
+function isIgnorableExtensionMessagingError(error: Error) {
 	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
 		|| error.message?.includes('The message port closed before a response was received')
+		|| error.message?.includes('Attempting to use a disconnected port object')
+		|| error.message?.includes('Could not establish connection. Receiving end does not exist')
+		|| error.message?.includes('Extension context invalidated')
 }
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
@@ -41,7 +44,7 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopupPaylo
 				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
 				return
 			}
-			if (isIgnorableClosedMessageChannelError(error)) return
+			if (isIgnorableExtensionMessagingError(error)) return
 		}
 		await handleUnexpectedError(error)
 	}
@@ -53,7 +56,7 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		if (error instanceof Error) {
-			if (isIgnorableClosedMessageChannelError(error)) return
+			if (isIgnorableExtensionMessagingError(error)) return
 		}
 		await handleUnexpectedError(error)
 	}
@@ -78,7 +81,7 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 		return parsePopupReply(message, response)
 	} catch (error) {
 		if (error instanceof Error) {
-			if (isIgnorableClosedMessageChannelError(error)) return undefined
+			if (isIgnorableExtensionMessagingError(error)) return undefined
 			if (error.message?.includes('Could not establish connection.')) return undefined
 		}
 		await handleUnexpectedError(error)
