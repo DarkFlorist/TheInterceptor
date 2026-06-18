@@ -92,7 +92,7 @@ export async function getLastKnownCurrentTabId() {
 	return tabs[0].id
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(ethereum: EthereumClientService, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'changeChain': {
 			const promise = await getChainChangeConfirmationPromise()
