@@ -118,8 +118,10 @@ function DelegationNotice({ signer, authorizationList, addressMetadata, renameAd
 			<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(signer) }>
 				<CompactDelegationAddress addressBookEntry = { signer } />
 			</button>
-			<p class = 'paragraph delegation-flow-label'>delegated to</p>
-			<DelegationFlowArrow />
+			<div class = 'delegation-flow-connector'>
+				<p class = 'paragraph delegation-flow-label'>delegated to</p>
+				<DelegationFlowArrow />
+			</div>
 			<div class = 'delegation-flow-targets'>
 				{ authorizationList.map((authorization, index) => {
 					const entry = getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)

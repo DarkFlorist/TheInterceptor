@@ -876,12 +876,11 @@ svg.spinner > circle {
 }
 
 .delegation-flow-row {
-	display: grid;
-	grid-template-columns: repeat(4, max-content);
+	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	column-gap: 8px;
-	row-gap: 6px;
-	width: fit-content;
+	gap: 6px 8px;
+	width: 100%;
 	max-width: 100%;
 	min-width: 0;
 }
@@ -898,7 +897,14 @@ svg.spinner > circle {
 	font-size: 12px;
 	line-height: 1.2;
 	text-align: center;
-	justify-self: center;
+	white-space: nowrap;
+}
+
+.delegation-flow-connector {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
 }
 
 .delegation-flow-arrow {
@@ -910,15 +916,17 @@ svg.spinner > circle {
 }
 
 .delegation-flow-targets {
-	display: inline-grid;
+	display: inline-flex;
+	flex-wrap: wrap;
 	gap: 6px;
 	min-width: 0;
-	justify-items: start;
+	max-width: 100%;
 }
 
 .delegation-flow-address-button {
-	display: inline-block;
-	width: fit-content;
+	display: inline-flex;
+	flex: 0 1 auto;
+	min-width: 0;
 	max-width: 100%;
 	padding: 0;
 	margin: 0;
@@ -973,38 +981,6 @@ svg.spinner > circle {
 	line-height: 1.2;
 	color: var(--subtitle-text-color);
 	overflow-wrap: anywhere;
-}
-
-@media screen and (max-width: 480px) {
-	.delegation-flow-arrow {
-		justify-self: center;
-		transform: rotate(90deg);
-	}
-
-	.delegation-flow-row {
-		grid-template-columns: minmax(0, 1fr);
-		justify-items: stretch;
-		width: 100%;
-	}
-
-	.delegation-flow-targets {
-		display: grid;
-		justify-items: stretch;
-	}
-
-	.delegation-flow-label {
-		justify-self: center;
-	}
-
-	.delegation-flow-address-button,
-	.delegation-flow-address {
-		width: 100%;
-	}
-
-	.delegation-flow-address-primary {
-		white-space: normal;
-		overflow-wrap: anywhere;
-	}
 }
 
 .swap-box {

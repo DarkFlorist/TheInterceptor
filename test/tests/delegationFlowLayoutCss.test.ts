@@ -2,33 +2,36 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
 describe('delegation flow layout CSS', () => {
-	async function getDelegationFlowMobileCss() {
+	async function getDelegationFlowCss() {
 		const css = await Bun.file('app/css/interceptor.css').text()
-		const start = css.indexOf('@media screen and (max-width: 480px) {')
-		assert.notEqual(start, -1)
-		const end = css.indexOf('\n}\n\n.swap-box', start)
-		assert.notEqual(end, -1)
-		return { css, mobileCss: css.slice(start, end) }
+		const rowMatch = css.match(/\.delegation-flow-row\s*\{([\s\S]*?)\n\}/)
+		const connectorMatch = css.match(/\.delegation-flow-connector\s*\{([\s\S]*?)\n\}/)
+		const targetsMatch = css.match(/\.delegation-flow-targets\s*\{([\s\S]*?)\n\}/)
+		const buttonMatch = css.match(/\.delegation-flow-address-button\s*\{([\s\S]*?)\n\}/)
+		assert.ok(rowMatch)
+		assert.ok(connectorMatch)
+		assert.ok(targetsMatch)
+		assert.ok(buttonMatch)
+		return {
+			css,
+			rowCss: rowMatch[1],
+			connectorCss: connectorMatch[1],
+			targetsCss: targetsMatch[1],
+			buttonCss: buttonMatch[1],
+		}
 	}
 
-	test('keeps the delegated execution row horizontal at extension popup width', async () => {
-		const { css } = await getDelegationFlowMobileCss()
-		const delegationFlowRowMediaQueries = Array.from(css.matchAll(
-			/@media screen and \(max-width: ([0-9]+)px\) \{[\s\S]*?\.delegation-flow-row[\s\S]*?\n\}/g,
-		))
-		assert.ok(delegationFlowRowMediaQueries.length > 0)
-		for (const mediaQuery of delegationFlowRowMediaQueries) {
-			const breakpoint = Number(mediaQuery[1])
-			assert.ok(breakpoint < 600, `delegation flow should remain horizontal at popup width, found ${ breakpoint }px breakpoint`)
-		}
-	})
-
-	test('allows the delegated execution row to shrink in the narrow layout', async () => {
-		const { mobileCss } = await getDelegationFlowMobileCss()
-		assert.match(mobileCss, /\.delegation-flow-row\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/)
-		assert.match(mobileCss, /\.delegation-flow-row\s*\{[\s\S]*width: 100%;/)
-		assert.match(mobileCss, /\.delegation-flow-address-button,\n\t\.delegation-flow-address\s*\{[\s\S]*width: 100%;/)
-		assert.match(mobileCss, /\.delegation-flow-address-primary\s*\{[\s\S]*white-space: normal;/)
-		assert.match(mobileCss, /\.delegation-flow-address-primary\s*\{[\s\S]*overflow-wrap: anywhere;/)
+	test('uses content-driven wrapping instead of a viewport breakpoint', async () => {
+		const { css, rowCss, connectorCss, targetsCss, buttonCss } = await getDelegationFlowCss()
+		assert.doesNotMatch(css, /@media[^{]*\{[\s\S]*?\.delegation-flow-row/)
+		assert.match(rowCss, /display: flex;/)
+		assert.match(rowCss, /flex-wrap: wrap;/)
+		assert.match(rowCss, /width: 100%;/)
+		assert.match(connectorCss, /display: inline-flex;/)
+		assert.match(connectorCss, /flex: 0 0 auto;/)
+		assert.match(targetsCss, /display: inline-flex;/)
+		assert.match(targetsCss, /flex-wrap: wrap;/)
+		assert.match(buttonCss, /flex: 0 1 auto;/)
+		assert.match(buttonCss, /min-width: 0;/)
 	})
 })
