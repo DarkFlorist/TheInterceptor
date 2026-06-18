@@ -106,7 +106,7 @@ function listenContentScript(connectionName: string | undefined) {
 	}
 	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script' | 'document-start', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, message, raw, context)
-	const isIgnorablePortLifecycleError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
+	const isIgnorableContentScriptPortError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
 		|| error.message.includes('Could not establish connection. Receiving end does not exist')
 		|| error.message.includes('Extension context invalidated')
 	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
@@ -120,7 +120,7 @@ function listenContentScript(connectionName: string | undefined) {
 		try {
 			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
 		} catch(reportingError: unknown) {
-			if (reportingError instanceof Error && isIgnorablePortLifecycleError(reportingError)) {
+			if (reportingError instanceof Error && isIgnorableContentScriptPortError(reportingError)) {
 				markExtensionPortDisconnected(currentExtensionPort)
 				return
 			}
@@ -144,7 +144,7 @@ function listenContentScript(connectionName: string | undefined) {
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
 			if (error instanceof Error) {
-				if (isIgnorablePortLifecycleError(error)) {
+				if (isIgnorableContentScriptPortError(error)) {
 					markExtensionPortDisconnected(currentExtensionPort)
 					return
 				}
@@ -179,7 +179,7 @@ function listenContentScript(connectionName: string | undefined) {
 			try {
 				previousExtensionPort.disconnect()
 			} catch (error: unknown) {
-				if (!(error instanceof Error && isIgnorablePortLifecycleError(error))) throw error
+				if (!(error instanceof Error && isIgnorableContentScriptPortError(error))) throw error
 			}
 		}
 		const connectedExtensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
