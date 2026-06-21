@@ -92,7 +92,7 @@ export async function getLastKnownCurrentTabId() {
 	return tabs[0].id
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(ethereum: EthereumClientService, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'changeChain': {
 			const promise = await getChainChangeConfirmationPromise()
@@ -102,6 +102,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
+					confirmTransactionBootstrap: undefined,
 				},
 			}
 		}
@@ -109,11 +110,19 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
+			const rpcConnectionStatus = await getRpcConnectionStatus()
+			const visualizedSimulatorState = await getPopupVisualisationState()
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
+					confirmTransactionBootstrap: {
+						pendingTransactionAndSignableMessages: pendingTransactions.map(toPopupPendingTransactionOrSignableMessage),
+						currentBlockNumber,
+						rpcConnectionStatus,
+						visualizedSimulatorState,
+					},
 				},
 			}
 		}
@@ -126,6 +135,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: firstPendingAccessRequest.popupOrTabId,
+					confirmTransactionBootstrap: undefined,
 				},
 			}
 		}
@@ -137,6 +147,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
+					confirmTransactionBootstrap: undefined,
 				},
 			}
 		}

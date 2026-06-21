@@ -94,6 +94,12 @@ function createBrowserMock() {
 
 createBrowserMock()
 
+async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	await act(() => {
+		render(null, dom.document.body)
+	})
+}
+
 function makePendingTransaction(simulationConductedTimestamp: Date) {
 	const activeAddress = 0x1111111111111111111111111111111111111111n
 	const recipientAddress = 0x2222222222222222222222222222222222222222n
@@ -206,6 +212,7 @@ describe('ConfirmTransaction', () => {
 		})
 		assert.equal(dom.document.body.textContent?.includes('Simulated 1s ago'), true)
 
+		await unmountConfirmTransaction(dom)
 		clock.restore()
 		dom.restore()
 	})
@@ -240,6 +247,7 @@ describe('ConfirmTransaction', () => {
 		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
 		assert.equal(dom.document.body.textContent?.includes('Change'), true)
 
+		await unmountConfirmTransaction(dom)
 		clock.restore()
 		dom.restore()
 	})
@@ -377,6 +385,7 @@ describe('ConfirmTransaction', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('Simulated 0s ago'), true)
 
+		await unmountConfirmTransaction(dom)
 		clock.restore()
 		dom.restore()
 	})
