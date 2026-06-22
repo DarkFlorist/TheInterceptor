@@ -698,17 +698,21 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 }
 
 // reload all connected tabs of the same origin and the current webpage
-async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefesh = Array.from(websiteTabConnections.entries()).map(([tabId]) => tabId)
+function isMissingTabReloadError(error: unknown) {
+	return error instanceof Error && error.message.startsWith('No tab with id')
+}
+
+export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
+	const tabIdsToRefresh = Array.from(websiteTabConnections.entries()).map(([tabId]) => tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
-	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
-	for (const tabId of new Set(withCurrentTabid)) {
+	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
+	for (const tabId of new Set(withCurrentTabId)) {
 		try {
 			await browser.tabs.reload(tabId)
 			checkAndThrowRuntimeLastError()
-		} catch (e) {
-			console.warn('Failed to reload tab')
-			console.warn(e)
+		} catch (error) {
+			if (isMissingTabReloadError(error)) continue
+			await handleUnexpectedError(error, { code: 'connected_tab_reload_failed' })
 		}
 	}
 }
