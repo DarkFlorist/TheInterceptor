@@ -289,26 +289,16 @@ function getExpectedPopupSimulationChangedMessage(popupVisualisation: CompleteVi
 
 function assertDefinedEmptyPopupVisualisation(
 	popupVisualisation: CompleteVisualizedSimulation,
-	defaultBlockManipulation: TestModules['DEFAULT_BLOCK_MANIPULATION'],
+	_defaultBlockManipulation: TestModules['DEFAULT_BLOCK_MANIPULATION'],
 ) {
 	assert.equal(popupVisualisation.simulationUpdatingState, 'done')
 	assert.equal(popupVisualisation.simulationResultState, 'done')
 	assert.equal(popupVisualisation.simulationState.kind, 'simulated')
 	assert.equal(popupVisualisation.simulationState.value.success, true)
-	assert.deepEqual(popupVisualisation.simulationState.value.simulationStateInput, [{
-		stateOverrides: {},
-		transactions: [],
-		signedMessages: [],
-		blockTimeManipulation: defaultBlockManipulation,
-		simulateWithZeroBaseFee: false,
-	}])
+	assert.deepEqual(popupVisualisation.simulationState.value.simulationStateInput, [])
 	assert.deepEqual(popupVisualisation.visualizedSimulationState, {
 		success: true,
-		visualizedBlocks: [{
-			simulatedAndVisualizedTransactions: [],
-			visualizedPersonalSignRequests: [],
-			blockTimeManipulation: defaultBlockManipulation,
-		}],
+		visualizedBlocks: [],
 	})
 }
 
@@ -345,8 +335,11 @@ describe('popup clear reset', () => {
 		const matchingPopupVisualisation = {
 			...stalePopupVisualisation,
 			simulationState: {
-				...stalePopupVisualisation.simulationState,
-				simulationStateInput: currentSimulationInput,
+				kind: 'simulated' as const,
+				value: {
+					...stalePopupVisualisation.simulationState.value,
+					simulationStateInput: currentSimulationInput,
+				},
 			},
 		}
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
@@ -401,7 +394,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(fakeEthereum, fakeTokenPriceService, false, undefined)
+		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -539,7 +532,7 @@ describe('popup clear reset', () => {
 		const visualizedSimulatorState = reply.visualizedSimulatorState
 		assert.ok(visualizedSimulatorState !== undefined && visualizedSimulatorState !== null && typeof visualizedSimulatorState === 'object')
 		assert.ok('simulationId' in visualizedSimulatorState && 'simulationResultState' in visualizedSimulatorState && 'simulationState' in visualizedSimulatorState)
-		assert.equal(visualizedSimulatorState.simulationId, stalePopupVisualisation.simulationId)
+		assert.equal(visualizedSimulatorState.simulationId, stalePopupVisualisation.simulationId + 1)
 		assert.equal(visualizedSimulatorState.simulationResultState, stalePopupVisualisation.simulationResultState)
 		const simulationState = visualizedSimulatorState.simulationState
 		assert.ok(simulationState !== undefined && simulationState !== null && typeof simulationState === 'object' && 'kind' in simulationState)

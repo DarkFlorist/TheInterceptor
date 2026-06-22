@@ -155,6 +155,9 @@ export function App() {
 	const boundaryResetKey = useSignal(0)
 	const preSimulationBlockTimeManipulation = useSignal<BlockTimeManipulation | undefined>(undefined)
 	const popupRefreshAppliedGeneration = useSignal(0)
+	const popupRefreshGeneration = useSignal(0)
+	const pendingPopupRefreshGeneration = useSignal(0)
+	const popupIconRefreshGeneration = useSignal(0)
 
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
@@ -244,8 +247,15 @@ export function App() {
 			simulationResultState.value = state.simulationResultState
 		}
 
-		const updateHomePage = ({ data }: UpdateHomePage) => {
+		const shouldIgnoreOutdatedPopupRefreshMessage = (refreshGeneration: number, minimumGeneration = popupRefreshGeneration.value) => refreshGeneration < minimumGeneration
+		const updateHomePage = ({ data, popupRefreshGeneration: updateGeneration }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
+			const minimumValidGeneration = Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value)
+			if (shouldIgnoreOutdatedPopupRefreshMessage(updateGeneration, minimumValidGeneration)) return
+			popupRefreshGeneration.value = updateGeneration
+			if (pendingPopupRefreshGeneration.value <= updateGeneration) {
+				pendingPopupRefreshGeneration.value = 0
+			}
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
 			rpcEntries.value = data.rpcEntries
@@ -257,7 +267,10 @@ export function App() {
 			fixedAddressRichList.value = data.richList
 			unexpectedError.value = data.latestUnexpectedError
 			updateHomePageSettings(data.settings, !wasLoaded)
-			tabIconDetails.value = data.tabState.tabIconDetails
+			if (popupIconRefreshGeneration.value <= updateGeneration) {
+				tabIconDetails.value = data.tabState.tabIconDetails
+				popupIconRefreshGeneration.value = updateGeneration
+			}
 			updateVisualizedState(data.visualizedSimulatorState)
 			tabState.value = data.tabState
 			currentBlockNumber.value = data.currentBlockNumber
@@ -293,12 +306,16 @@ export function App() {
 			if (!maybeParsed.success) return undefined // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
-				switch(parsed.method) {
-					case 'popup_UnexpectedErrorOccured': {
+			switch(parsed.method) {
+				case 'popup_UnexpectedErrorOccured': {
 						unexpectedError.value = parsed
 						return undefined
 					}
 					case 'popup_settingsUpdated':
+						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+						pendingPopupRefreshGeneration.value = Math.max(pendingPopupRefreshGeneration.value, parsed.popupRefreshGeneration)
+						requestCachedHomeData()
+						return undefined
 					case 'popup_accounts_update':
 					case 'popup_chain_update':
 					case 'popup_signer_name_changed':
@@ -315,14 +332,18 @@ export function App() {
 						return undefined
 					}
 					case 'popup_websiteIconChanged': {
+						if (currentTabId.value === undefined || parsed.tabId !== currentTabId.value) return undefined
+						if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+						if (parsed.popupRefreshGeneration < popupIconRefreshGeneration.value) return undefined
+						popupIconRefreshGeneration.value = parsed.popupRefreshGeneration
 						tabIconDetails.value = parsed.data
 						return undefined
 					}
-				case 'popup_new_block_arrived': {
-					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
-					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
-					return undefined
-				}
+					case 'popup_new_block_arrived': {
+						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+						return undefined
+					}
 					case 'popup_failed_to_get_block': {
 						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
@@ -336,8 +357,15 @@ export function App() {
 				if (parsed.method !== 'popup_UpdateHomePage') {
 					return undefined
 				}
-				const { role: _role, ...popupUpdateHomePage } = parsed
-				return updateHomePage(UpdateHomePage.parse(popupUpdateHomePage))
+				if (typeof msg !== 'object' || msg === null) {
+					return undefined
+				}
+				const { role: _role, ...popupUpdateHomePage } = msg as Record<string, unknown>
+				const parsedUpdateHomePage = UpdateHomePage.safeParse(popupUpdateHomePage)
+				if (!parsedUpdateHomePage.success) {
+					return undefined
+				}
+				return updateHomePage(parsedUpdateHomePage.value)
 			}
 
 		browser.runtime.onMessage.addListener(replyPopupMessageListener)

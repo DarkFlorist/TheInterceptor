@@ -2,23 +2,24 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
+import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
-import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
-import { type EthereumBytes32, serialize } from '../../types/wire-types.js'
-import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import { SmallAddress } from '../subcomponents/address.js'
+import { TransactionInput } from '../subcomponents/ParsedInputData.js'
+import type { EthereumBytes32 } from '../../types/wire-types.js'
+import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
@@ -31,15 +32,63 @@ import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/sig
 import type { RpcEntries } from '../../types/rpc.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
+import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
+import type { Website } from '../../types/websiteAccessTypes.js'
+import { dataStringWith0xStart } from '../../utils/bigint.js'
+import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
+}
+
+export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
+export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
+const CONFIRM_TRANSACTION_DATA_PRIORITY = {
+	storage: 1,
+	bootstrap: 2,
+	push: 3,
+} as const
+
+const waitForDelay = async (delayMs: number) => await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs))
+
+type ConfirmTransactionBootstrapData = {
+	pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+	currentBlockNumber: bigint
+	rpcConnectionStatus: RpcConnectionStatus
+	visualizedSimulatorState: CompleteVisualizedSimulation
+}
+
+export async function bootstrapConfirmTransactionDialog(
+	hasLoadedPendingTransaction: () => boolean,
+	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
+) {
+	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
+		if (hasLoadedPendingTransaction()) return
+		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
+		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+			applyBootstrapData(reply.data.confirmTransactionBootstrap)
+		}
+		if (hasLoadedPendingTransaction()) return
+		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+	}
+}
+
+async function hydratePendingTransactionsFromStorage() {
+	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
 	return visualizedSimulationState.visualizedBlocks
 		.flatMap((block): readonly MaybeSimulatedTransaction[] => block.simulatedAndVisualizedTransactions)
 		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
+}
+
+export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addressBookEntries: readonly AddressBookEntry[]) {
+	const exactChainEntry = addressBookEntries.find((entry) => entry.address === clickedEntry.address && entry.chainId === clickedEntry.chainId)
+	if (exactChainEntry !== undefined) return exactChainEntry
+	const mainnetFallbackEntry = addressBookEntries.find((entry) => entry.address === clickedEntry.address && entry.chainId === undefined && clickedEntry.chainId === 1n)
+	if (mainnetFallbackEntry !== undefined) return mainnetFallbackEntry
+	return addressBookEntries.find((entry) => entry.address === clickedEntry.address) ?? clickedEntry
 }
 
 const HALF_HEADER_HEIGHT = 48 / 2
@@ -154,11 +203,99 @@ type TransactionCardParams = {
 	numberOfUnderTransactions: number,
 }
 
+function FailedTransactionPreviewDetails({
+	website,
+	transactionIdentifier,
+	originalRequestParameters,
+	addressMetaData,
+	created,
+	errorMessage,
+	isGasEstimationError,
+	simulationBlockNumber,
+	simulationConductedTimestamp,
+	rpcConnectionStatus,
+	currentBlockNumber,
+}: {
+	website: Website
+	transactionIdentifier: bigint
+	originalRequestParameters: OriginalSendRequestParameters
+	addressMetaData: readonly AddressBookEntry[]
+	created: Date
+	errorMessage: string
+	isGasEstimationError: boolean
+	simulationBlockNumber: bigint
+	simulationConductedTimestamp: Date
+	rpcConnectionStatus: Signal<RpcConnectionStatus>
+	currentBlockNumber: Signal<bigint | undefined>
+}) {
+	const request = originalRequestParameters.method === 'eth_sendTransaction' ? originalRequestParameters.params[0] : undefined
+	const rawRequest = originalRequestParameters.method === 'eth_sendRawTransaction' ? originalRequestParameters.params[0] : undefined
+	const from = request?.from === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData, request.from)
+	const to = request?.to === null || request?.to === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData, request.to)
+	const input = request === undefined ? new Uint8Array() : request.input ?? request.data ?? new Uint8Array()
+	const gasLimit = request?.gas
+
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'card-header'>
+			<div class = 'card-header-icon unset-cursor'>
+				<span class = 'icon'>
+					<img src = '../img/error-icon.svg' width = '24' height = '24'/>
+				</span>
+			</div>
+			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+				{ isGasEstimationError ? 'Gas estimation error' : 'Execution error' }
+			</p>
+			<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
+				<WebsiteOriginText website = { website } />
+			</p>
+		</header>
+		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<div class = 'container'>
+				<ErrorComponent text = { `The transaction fails with an error '${ errorMessage }'` } containerStyle = { { margin: '0px', marginBottom: '10px' } } />
+				<dl class = 'grid key-value-pair'>
+					<dt>Transaction type</dt>
+					<dd>{ originalRequestParameters.method }</dd>
+					<dt>From</dt>
+					<dd>{ from === undefined ? 'Unknown' : <SmallAddress addressBookEntry = { from } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dt>To</dt>
+					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dt>Value</dt>
+					<dd>{ request?.value === undefined ? 'Unknown' : `${ request.value.toString(10) } wei` }</dd>
+					<dt>Gas limit </dt>
+					<dd>
+						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />
+					</dd>
+				</dl>
+			</div>
+			<div style = 'margin-top: 10px;'>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
+				{ rawRequest === undefined
+					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { () => undefined } />
+					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
+				}
+			</div>
+			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+				<div class = 'log-cell'>
+					<TransactionCreated created = { created } />
+				</div>
+				<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
+					<SimulatedInBlockNumber
+						simulationBlockNumber = { simulationBlockNumber }
+						currentBlockNumber = { currentBlockNumber }
+						simulationConductedTimestamp = { simulationConductedTimestamp }
+						rpcConnectionStatus = { rpcConnectionStatus }
+					/>
+				</div>
+			</span>
+		</div>
+	</div>
+}
+
 export function TransactionCard(param: TransactionCardParams) {
-	const currentPendingTransaction = param.currentPendingTransaction.value
-	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction' || (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return <></>
+	const renderablePendingTransaction = useComputed(() => getRenderableTransaction(param.currentPendingTransaction.value))
+	if (renderablePendingTransaction.value === undefined) return <></>
 	return <TransactionCardContent
-		currentPendingTransaction = { currentPendingTransaction }
+		currentPendingTransaction = { renderablePendingTransaction }
 		pendingTransactionsAndSignableMessages = { param.pendingTransactionsAndSignableMessages }
 		renameAddressCallBack = { param.renameAddressCallBack }
 		editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
@@ -169,7 +306,7 @@ export function TransactionCard(param: TransactionCardParams) {
 }
 
 type TransactionCardContentParams = {
-	currentPendingTransaction: SimulatedPendingTransaction,
+	currentPendingTransaction: ReadonlySignal<SimulatedPendingTransaction | undefined>,
 	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
@@ -178,8 +315,21 @@ type TransactionCardContentParams = {
 	numberOfUnderTransactions: number,
 }
 
+function getRenderableTransaction(currentPendingTransaction: PendingTransactionOrSignableMessage | undefined): SimulatedPendingTransaction | undefined {
+	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction') return undefined
+	if (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate') return undefined
+	return currentPendingTransaction
+}
+
+function getSuccessfulTransactionPopupVisualisation(currentPendingTransaction: SimulatedPendingTransaction | undefined) {
+	if (currentPendingTransaction === undefined || currentPendingTransaction.popupVisualisation.statusCode !== 'success') return undefined
+	if (currentPendingTransaction.popupVisualisation.data.transactionToSimulate.success === false) return undefined
+	return currentPendingTransaction.popupVisualisation
+}
+
 function TransactionCardContent(param: TransactionCardContentParams) {
-	const currentPendingTransaction = param.currentPendingTransaction
+	const currentPendingTransaction = param.currentPendingTransaction.value
+	if (currentPendingTransaction === undefined) return <></>
 	const popupVisualisation = currentPendingTransaction.popupVisualisation
 	const getErrorMesssage = () => {
 		if (popupVisualisation.statusCode === 'failed') return `${ popupVisualisation.data.error.decodedErrorMessage } ${ popupVisualisation.data.error.data !== undefined ? ` (data: '${ popupVisualisation.data.error.data }')` : '' }`
@@ -188,51 +338,24 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
 		return <>
-			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
-				<header class = 'card-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<span class = 'icon'>
-							<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
-						</span>
-					</div>
-					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ popupVisualisation.data.transactionToSimulate.success ? 'Gas estimation error' : 'Execution error' }
-					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-						<WebsiteOriginText website = { currentPendingTransaction.transactionToSimulate.website } />
-					</p>
-				</header>
-
-				<div class = 'card-content' style = 'padding-bottom: 5px;'>
-					<div class = 'container'>
-						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } containerStyle = { { margin: '0px' } } />
-					</div>
-
-					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(serialize(OriginalSendRequestParameters, currentPendingTransaction.originalRequestParameters), 4) }</p>
-					</div>
-					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
-						<div class = 'log-cell'>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: center;'>
-							<TransactionCreated created = { currentPendingTransaction.created } />
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<SimulatedInBlockNumber
-								simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
-								currentBlockNumber = { param.currentBlockNumber }
-								simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
-								rpcConnectionStatus = { param.rpcConnectionStatus }
-							/>
-						</div>
-					</span>
-				</div>
-			</div>
+			<FailedTransactionPreviewDetails
+				website = { currentPendingTransaction.transactionToSimulate.website }
+				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
+				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
+				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
+				created = { currentPendingTransaction.created }
+				errorMessage = { getErrorMesssage() }
+				isGasEstimationError = { popupVisualisation.data.transactionToSimulate.success }
+				simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
+				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
+				rpcConnectionStatus = { param.rpcConnectionStatus }
+				currentBlockNumber = { param.currentBlockNumber }
+			/>
 		</>
 	}
-	const activeAddress = useComputed(() => popupVisualisation.data.activeAddress)
-	const addressMetaData = useComputed(() => popupVisualisation.data.addressBookEntries)
-	const rpcNetwork = useComputed(() => popupVisualisation.data.simulationState.rpcNetwork)
+	const activeAddress = useComputed(() => getSuccessfulTransactionPopupVisualisation(param.currentPendingTransaction.value)?.data.activeAddress)
+	const addressMetaData = useComputed(() => getSuccessfulTransactionPopupVisualisation(param.currentPendingTransaction.value)?.data.addressBookEntries ?? popupVisualisation.data.addressBookEntries)
+	const rpcNetwork = useComputed(() => getSuccessfulTransactionPopupVisualisation(param.currentPendingTransaction.value)?.data.simulationState.rpcNetwork ?? popupVisualisation.data.simulationState.rpcNetwork)
 	const simulationAndVisualisationResults = {
 		blockNumber: popupVisualisation.data.simulationState.blockNumber,
 		blockTimestamp: popupVisualisation.data.simulationState.blockTimestamp,
@@ -437,11 +560,40 @@ export function ConfirmTransaction() {
 	const pendingTransactionAddedNotification = useSignal<boolean>(false)
 	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
+	const pendingTransactionsDataPriority = useSignal(0)
+	const simulationDataPriority = useSignal(0)
+	const networkDataPriority = useSignal(0)
+
+	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
+		if (priority < pendingTransactionsDataPriority.value) return
+		pendingTransactionsDataPriority.value = priority
+		pendingTransactionsAndSignableMessages.value = pendingTransactions
+		const firstMessage = pendingTransactions[0]
+		if (firstMessage === undefined) return
+		currentPendingTransactionOrSignableMessage.value = firstMessage
+		if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
+			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
+		}
+		if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate')) {
+			markPerformance(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationReady)
+		}
+		if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.popupVisualisation !== undefined && firstMessage.popupVisualisation.statusCode === 'success' && (currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)) {
+			currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
+		}
+	}
+
+	const applyNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus, priority: number) => {
+		if (priority < networkDataPriority.value) return
+		networkDataPriority.value = priority
+		currentBlockNumber.value = blockNumber
+		rpcConnectionStatus.value = status
+	}
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
+		if (CONFIRM_TRANSACTION_DATA_PRIORITY.push < simulationDataPriority.value) return
+		simulationDataPriority.value = CONFIRM_TRANSACTION_DATA_PRIORITY.push
 		completeVisualizedSimulation.value = message.data.visualizedSimulatorState
-		currentBlockNumber.value = message.data.currentBlockNumber
-		rpcConnectionStatus.value = message.data.rpcConnectionStatus
+		applyNetworkData(message.data.currentBlockNumber, message.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 	}
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -466,13 +618,12 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_new_block_arrived') {
-				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+				applyNetworkData(parsed.data.rpcConnectionStatus?.latestBlock?.number, parsed.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				refreshPopupVisualisationIfNeeded()
-				currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
 				return false
 			}
 			if (parsed.method === 'popup_failed_to_get_block') {
-				rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+				applyNetworkData(parsed.data.rpcConnectionStatus?.latestBlock?.number, parsed.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				return false
 			}
 			if (parsed.method === 'popup_confirm_transaction_simulation_started') {
@@ -487,20 +638,10 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
-				rpcConnectionStatus.value = updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus
-				pendingTransactionsAndSignableMessages.value = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages
+				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
-				currentPendingTransactionOrSignableMessage.value = firstMessage
-				if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
-					markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
-				}
-				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate')) {
-					markPerformance(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationReady)
-				}
-				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.popupVisualisation !== undefined && firstMessage.popupVisualisation.statusCode === 'success' && (currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)) {
-					currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
-				}
+				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 			}
 			return false
 		}
@@ -509,8 +650,31 @@ export function ConfirmTransaction() {
 	}, [])
 
 	useEffect(() => {
-		void sendPopupReadyAndListening('confirmTransaction')
+		let cancelled = false
+		const applyBootstrapData = (bootstrapData: ConfirmTransactionBootstrapData) => {
+			if (cancelled) return
+			applyPendingTransactions(bootstrapData.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
+			if (CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap >= simulationDataPriority.value) {
+				simulationDataPriority.value = CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap
+				completeVisualizedSimulation.value = bootstrapData.visualizedSimulatorState
+			}
+			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
+		}
+		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
+			if (cancelled || pendingTransactions.length === 0) return
+			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
+		})
+		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
+			if (cancelled || reply?.method !== 'popup_readyAndListening') return
+			const bootstrapData = reply.data.confirmTransactionBootstrap
+			if (bootstrapData === undefined) return
+			applyBootstrapData(bootstrapData)
+		})
+		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined, applyBootstrapData)
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+		return () => {
+			cancelled = true
+		}
 	}, [])
 
 	async function approve() {
@@ -585,8 +749,16 @@ export function ConfirmTransaction() {
 		return false
 	})
 
+	function getCurrentAddressBookEntries() {
+		const current = currentPendingTransactionOrSignableMessage.value
+		if (current?.type === 'Transaction' && current.transactionOrMessageCreationStatus === 'Simulated' && current.popupVisualisation.statusCode === 'success') {
+			return current.popupVisualisation.data.addressBookEntries
+		}
+		return completeVisualizedSimulation.value.addressBookEntries
+	}
+
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
+		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(getAddressBookEntryForEdit(entry, getCurrentAddressBookEntries()))) }
 	}
 
 	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { access, mkdtemp, readFile, rm } from 'fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm } from 'fs/promises'
 import * as fsConstants from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -29,7 +29,13 @@ export type ChromeSession = {
 	browserDebugPort: number
 	browserWebSocketUrl: string
 	browserConnection: CdpConnection
+	cleanupProfile: boolean
 	close: () => Promise<void>
+}
+
+export type LaunchChromeOptions = {
+	profileDir?: string
+	cleanupProfile?: boolean
 }
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -507,13 +513,16 @@ export async function closeChromeSession(session: ChromeSession) {
 		sleep(2_000),
 	]).catch(() => undefined)
 	if (session.process.exitCode === null && session.process.signalCode === null) killChromeProcessGroup(session.process, 'SIGKILL')
-	await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
+	if (session.cleanupProfile) await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
 }
 
-export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise<ChromeSession> {
+export async function launchChromeSession(extensionDir = EXTENSION_DIR, options: LaunchChromeOptions = {}): Promise<ChromeSession> {
 	await ensureExtensionDirReady(extensionDir)
 	const chromeBinary = await findChromeBinary()
-	const profileDir = await mkdtemp(path.join(os.tmpdir(), 'interceptor-chrome-profile-'))
+	const explicitProfileDir = options.profileDir ?? globalThis.process.env.INTERCEPTOR_CHROME_PROFILE_DIR ?? globalThis.process.env.CHROME_USER_DATA_DIR
+	const profileDir = explicitProfileDir ?? await mkdtemp(path.join(os.tmpdir(), 'interceptor-chrome-profile-'))
+	const cleanupProfile = options.cleanupProfile ?? explicitProfileDir === undefined
+	if (explicitProfileDir !== undefined) await mkdir(profileDir, { recursive: true })
 	const process = spawnChrome(chromeBinary, profileDir, extensionDir)
 	let stdout = ''
 	let stderr = ''
@@ -532,7 +541,7 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise
 		killChromeProcessGroup(process, 'SIGTERM')
 		await sleep(1_000)
 		if (process.exitCode === null && process.signalCode === null) killChromeProcessGroup(process, 'SIGKILL')
-		await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
+		if (cleanupProfile) await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
 		const extra = [`stdout:\n${ stdout }`, `stderr:\n${ stderr }`].filter((line) => line.length > 0).join('\n')
 		throw new Error(`${ error instanceof Error ? error.message : String(error) }${ extra.length > 0 ? `\n${ extra }` : '' }`)
 	})
@@ -546,6 +555,7 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise
 		browserDebugPort,
 		browserWebSocketUrl: browserVersion.webSocketDebuggerUrl,
 		browserConnection,
+		cleanupProfile,
 		close: async () => {
 			const browserClosePromise = browserConnection.send('Browser.close').catch(() => undefined)
 			await Promise.race([
@@ -556,7 +566,7 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR): Promise
 			killChromeProcessGroup(process, 'SIGTERM')
 			await sleep(500)
 			if (process.exitCode === null && process.signalCode === null) killChromeProcessGroup(process, 'SIGKILL')
-			await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
+			if (cleanupProfile) await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
 		},
 	}
 }
