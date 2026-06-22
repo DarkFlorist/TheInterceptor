@@ -14,6 +14,14 @@ If you already have Chrome installed elsewhere, point the benchmark at it direct
 CHROME_BIN=/path/to/chrome bun run benchmark:popup-lifecycle
 ```
 
+To reuse an existing Chrome profile instead of a temporary one, set `CHROME_USER_DATA_DIR` or `INTERCEPTOR_CHROME_PROFILE_DIR`:
+
+```bash
+CHROME_USER_DATA_DIR=/path/to/profile bun run benchmark:popup-lifecycle
+```
+
+When either env var is set, the benchmark keeps that profile directory instead of deleting it on exit. This is useful when a site requires a one-time interactive check, because you can solve it once in that profile and then rerun the benchmark or other Chrome harness scripts against the same session state.
+
 The real browser benchmark now uses the extension's built-in mainnet RPC configuration, so network latency is part of the measurement. It also opens the popup through the extension action API and fails if that API is unavailable.
 It also prints the RPC methods observed during the run and their durations, grouped by method.
 

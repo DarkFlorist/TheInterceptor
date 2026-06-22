@@ -441,6 +441,9 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+const PopupRefreshGeneration = funtypes.Number
+type PopupRefreshGeneration = funtypes.Static<typeof PopupRefreshGeneration>
+
 type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
 const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_new_block_arrived'), funtypes.Literal('popup_failed_to_get_block')),
@@ -450,7 +453,9 @@ const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
 type WebsiteIconChanged = funtypes.Static<typeof WebsiteIconChanged>
 const WebsiteIconChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_websiteIconChanged'),
-	data: TabIconDetails
+	tabId: funtypes.Number,
+	data: TabIconDetails,
+	popupRefreshGeneration: PopupRefreshGeneration,
 })
 
 type SimulationUpdateStartedOrEnded = funtypes.Static<typeof SimulationUpdateStartedOrEnded>
@@ -557,15 +562,10 @@ export const Settings = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 })
 
-type PartialUpdateHomePage = funtypes.Static<typeof PartialUpdateHomePage>
-const PartialUpdateHomePage = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_UpdateHomePage'),
-	data: funtypes.Unknown,
-})
-
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
+	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: CompleteVisualizedSimulation,
 		activeAddresses: AddressBookEntries,
@@ -682,7 +682,8 @@ export const PopupReadyAndListening = funtypes.ReadonlyObject({
 type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
 const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
-	data: Settings
+	data: Settings,
+	popupRefreshGeneration: PopupRefreshGeneration,
 })
 
 type PartiallyParsedSimulateExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateExecutionReply>
@@ -883,8 +884,40 @@ export const ImportSimulationStack = funtypes.ReadonlyObject({
 	data: InterceptorSimulationExport,
 })
 
-export type MessageToPopupPayload = funtypes.Static<typeof MessageToPopupPayload>
-export const MessageToPopupPayload = funtypes.Union(
+const PopupInitiateExportSettings = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_initiate_export_settings'),
+	data: funtypes.ReadonlyObject({ fileContents: funtypes.String }),
+}).asReadonly()
+
+const PopupIsMainPopupWindowOpen = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
+}).asReadonly()
+
+const messageToPopupPayloadCodecs: [
+	typeof MessageToPopupSimple,
+	typeof WebsiteIconChanged,
+	typeof GetAddressBookDataReply,
+	typeof ChangeChainRequest,
+	typeof InterceptorAccessDialog,
+	typeof NewBlockArrivedOrFailedToArrive,
+	typeof SettingsUpdated,
+	typeof UpdateConfirmTransactionDialogPartial,
+	typeof UpdateConfirmTransactionDialogPendingTransactionsPartial,
+	typeof PopupInitiateExportSettings,
+	typeof ImportSettingsReply,
+	typeof ActiveSigningAddressChanged,
+	typeof UpdateRPCList,
+	typeof SimulationUpdateStartedOrEnded,
+	typeof PartiallyParsedSimulateExecutionReply,
+	typeof SettingsOpenedReply,
+	typeof PopupAddOrModifyAddressWindowStateInfomation,
+	typeof DisableInterceptorReply,
+	typeof UnexpectedErrorOccured,
+	typeof RetrieveWebsiteAccessReply,
+	typeof UpdateHomePage,
+	typeof FetchSimulationStackRequest,
+	typeof PopupIsMainPopupWindowOpen,
+] = [
 	MessageToPopupSimple,
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
@@ -894,24 +927,28 @@ export const MessageToPopupPayload = funtypes.Union(
 	SettingsUpdated,
 	UpdateConfirmTransactionDialogPartial,
 	UpdateConfirmTransactionDialogPendingTransactionsPartial,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
+	PopupInitiateExportSettings,
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,
 	UpdateRPCList,
 	SimulationUpdateStartedOrEnded,
-	PartialUpdateHomePage,
 	PartiallyParsedSimulateExecutionReply,
 	SettingsOpenedReply,
 	PopupAddOrModifyAddressWindowStateInfomation,
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,
+	UpdateHomePage,
 	FetchSimulationStackRequest,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
-)
+	PopupIsMainPopupWindowOpen,
+]
 
-export type PopupMessage = funtypes.Static<typeof PopupMessage>
-export const PopupMessage = funtypes.Union(
+export type MessageToPopupPayload = funtypes.Static<(typeof messageToPopupPayloadCodecs)[number]>
+
+const MessageToPopupPayloadRuntype: funtypes.Codec<MessageToPopupPayload> = funtypes.Union(...messageToPopupPayloadCodecs)
+export const MessageToPopupPayload = MessageToPopupPayloadRuntype
+
+const PopupMessageRuntype = funtypes.Union(
 	PopupMessageReplyRequests,
 	TransactionConfirmation,
 	RemoveTransaction,
@@ -964,11 +1001,15 @@ export const PopupMessage = funtypes.Union(
 	UnexpectedErrorOccured,
 	ImportSimulationStack,
 )
+export type PopupMessage = funtypes.Static<typeof PopupMessageRuntype>
+export const PopupMessage = PopupMessageRuntype
 
-export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
-export const MessageToPopup = funtypes.Union(
+type MessageToPopupType = MessageToPopupPayload & { role: MessageToPopupRole }
+export type MessageToPopup = MessageToPopupType
+const MessageToPopupRuntype: funtypes.Codec<MessageToPopup> = funtypes.Union(
 	funtypes.Intersect(
 		funtypes.ReadonlyObject({ role: MessageToPopupRole }),
 		MessageToPopupPayload
 	)
 )
+export const MessageToPopup = MessageToPopupRuntype

@@ -329,8 +329,36 @@ function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'docum
 
 function setCompatibilityProperty(target: object, property: PropertyKey, value: unknown, propertyLabel: string) {
 	try {
-		if (Reflect.set(target, property, value) === false) {
+		const ownDescriptor = Object.getOwnPropertyDescriptor(target, property)
+		if (ownDescriptor !== undefined) {
+			if ('value' in ownDescriptor && ownDescriptor.writable === false) {
+				if (ownDescriptor.configurable !== true) return
+				Object.defineProperty(target, property, {
+					configurable: ownDescriptor.configurable,
+					enumerable: ownDescriptor.enumerable,
+					value,
+					writable: true,
+				})
+				return
+			}
+			if ('set' in ownDescriptor && ownDescriptor.set === undefined) {
+				if (ownDescriptor.configurable !== true) return
+				Object.defineProperty(target, property, {
+					configurable: ownDescriptor.configurable,
+					enumerable: ownDescriptor.enumerable,
+					value,
+					writable: true,
+				})
+				return
+			}
+		}
+		if (Reflect.set(target, property, value) === true) return
+		if (!Object.isExtensible(target)) {
 			console.warn(`Interceptor compatibility assignment was rejected for ${ propertyLabel }.`)
+			return
+		}
+		if (Object.isExtensible(target)) {
+			Object.defineProperty(target, property, { configurable: true, enumerable: true, writable: true, value })
 		}
 	} catch (error: unknown) {
 		console.warn(`Interceptor compatibility assignment failed for ${ propertyLabel }.`, error)
@@ -990,18 +1018,14 @@ class InterceptorMessageListener {
 function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
-	window.dispatchEvent(new Event('ethereum#initialized'))
 
-	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor
-	const interceptorCapturedDispatcher = window.dispatchEvent
-	window.dispatchEvent = (event: Event) => {
-		interceptorCapturedDispatcher(event)
-		if (!(typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string')) return true
-		if (event.type !== 'ethereum#initialized') return true
+	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
+	const onEthereumInitialized = () => {
+		if (inpageWindow.ethereum?.isInterceptor) return
 		interceptorMessageListener.injectEthereumIntoWindow()
-		window.dispatchEvent = interceptorCapturedDispatcher
-		return true
 	}
+	window.addEventListener('ethereum#initialized', onEthereumInitialized)
+	window.dispatchEvent(new Event('ethereum#initialized'))
 }
 
 injectInterceptor()

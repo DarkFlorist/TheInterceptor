@@ -94,6 +94,12 @@ function createBrowserMock() {
 
 createBrowserMock()
 
+async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	await act(() => {
+		render(null, dom.document.body)
+	})
+}
+
 function makePendingTransaction(simulationConductedTimestamp: Date) {
 	const activeAddress = 0x1111111111111111111111111111111111111111n
 	const recipientAddress = 0x2222222222222222222222222222222222222222n
@@ -206,6 +212,42 @@ describe('ConfirmTransaction', () => {
 		})
 		assert.equal(dom.document.body.textContent?.includes('Simulated 1s ago'), true)
 
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('shows gas limit editing for failed transactions', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('Transaction type'), true)
+		assert.equal(dom.document.body.textContent?.includes('From'), true)
+		assert.equal(dom.document.body.textContent?.includes('To'), true)
+		assert.equal(dom.document.body.textContent?.includes('Transaction Input'), true)
+		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
+		assert.equal(dom.document.body.textContent?.includes('Change'), true)
+
+		await unmountConfirmTransaction(dom)
 		clock.restore()
 		dom.restore()
 	})
@@ -343,6 +385,7 @@ describe('ConfirmTransaction', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('Simulated 0s ago'), true)
 
+		await unmountConfirmTransaction(dom)
 		clock.restore()
 		dom.restore()
 	})

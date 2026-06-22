@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { saveAddressBookEntry } from '../../app/ts/components/pages/AddNewAddress.js'
+import { Signal } from '@preact/signals'
+import { mergeAddressWindowErrorState, saveAddressBookEntry, updateModifyAddressWindowState } from '../../app/ts/components/pages/AddNewAddress.js'
+import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
 
 const sampleAddressBookEntry = {
 	type: 'contact',
@@ -35,5 +37,52 @@ describe('add new address save flow', () => {
 
 		assert.equal(sent, false)
 		assert.equal(closed, false)
+	})
+
+	test('keeps non-blocking block explorer errors when validation has no error', () => {
+		const blockExplorerError = { blockEditing: false, message: 'No ABI available for this contract.' }
+
+		assert.deepEqual(mergeAddressWindowErrorState(blockExplorerError, undefined), blockExplorerError)
+	})
+
+	test('clears blocking validation errors when validation has no error', () => {
+		const validationError = { blockEditing: true, message: 'The address is invalid.' }
+
+		assert.equal(mergeAddressWindowErrorState(validationError, undefined), undefined)
+	})
+
+	test('shows a non-blocking error when address window state sync fails', async () => {
+		const state = new Signal<ModifyAddressWindowState>({
+			windowStateId: '1',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				type: 'contract',
+				address: '0x0000000000000000000000000000000000000001',
+				askForAddressAccess: true,
+				name: 'Contract',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User',
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			}
+		})
+
+		await updateModifyAddressWindowState(
+			state,
+			previousState => previousState,
+			async () => {
+				throw new Error('background unavailable')
+			}
+		)
+
+		assert.deepEqual(state.value.errorState, {
+			blockEditing: false,
+			message: 'Failed to update address window state: background unavailable',
+		})
 	})
 })

@@ -18,6 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
+import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -320,8 +321,8 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
-	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
-	updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings)
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, true)
+	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
@@ -346,7 +347,9 @@ export async function changeActiveRpc(ethereum: EthereumClientService, tokenPric
 	// allow switching RPC only if we are in simulation mode, or that chain id would not change
 	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
-	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
+	const settings = await getSettings()
+	const popupRefreshGeneration = bumpPopupRefreshGeneration()
+	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })
 	await promoteRpcAsPrimary(rpcNetwork)
 }
 
@@ -543,15 +546,23 @@ export async function popupMessageHandler(
 				case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
 				case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_openAddressBook': return await openNewTab('addressBook')
-				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, tokenPriceService, simulationAbortController)
-				case 'popup_refreshHomeData': return await refreshHomeData(ethereum, tokenPriceService)
+				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, true, simulationAbortController, bumpPopupRefreshGeneration())
+				case 'popup_refreshHomeData': return await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, bumpPopupRefreshGeneration())
 				case 'popup_requestSettings': return await settingsOpened()
 				case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 				case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 				case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 				case 'popup_ChangeSettings': return await changeSettings(ethereum, tokenPriceService, resetSimulationServices, parsedRequest, simulationAbortController)
 				case 'popup_openSettings': return await openNewTab('settingsView')
-				case 'popup_import_settings': return await importSettings(parsedRequest)
+				case 'popup_import_settings': {
+					const importSettingsReply = await importSettings(parsedRequest)
+					await sendPopupMessageToOpenWindows(importSettingsReply)
+					if (!importSettingsReply.data.success) return
+					const settings = await getSettings()
+					const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, settings, true)
+					await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })
+					return
+				}
 				case 'popup_get_export_settings': return await exportSettings()
 				case 'popup_set_rpc_list': return await setNewRpcList(resetSimulationServices, parsedRequest, settings)
 				case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(ethereum, tokenPriceService, parsedRequest)
@@ -576,7 +587,7 @@ export async function popupMessageHandler(
 				case 'popup_requestSimulationMode': return await requestSimulationMode()
 				case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
 				case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(ethereum, websiteTabConnections, parsedRequest)
-				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, tokenPriceService, parsedRequest.data.page)
+				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, parsedRequest.data.page)
 				case 'popup_UnexpectedErrorOccured': return await handleUnexpectedErrorInWindow(parsedRequest)
 				case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(ethereum)
 				case 'popup_importSimulationStack': return await importSimulationStack(ethereum, tokenPriceService, parsedRequest)

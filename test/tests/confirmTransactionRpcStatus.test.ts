@@ -6,7 +6,7 @@ import { installDomMock } from './domMock.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
-function installBrowserMock() {
+function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessages: unknown[]) => unknown) {
 	const listeners: RuntimeMessageListener[] = []
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: unknown[] = []
@@ -19,6 +19,7 @@ function installBrowserMock() {
 				lastError: null,
 				async sendMessage(message: unknown) {
 					sentMessages.push(message)
+					if (sendMessageOverride !== undefined) return await sendMessageOverride(message, sentMessages)
 					if (typeof message === 'object' && message !== null && 'method' in message) {
 						const typedMessage = message as { method?: string }
 						if (typedMessage.method === 'popup_isMainPopupWindowOpen') {
@@ -97,13 +98,22 @@ function installBrowserMock() {
 
 	return {
 		sentMessages,
+		getSentMessages() {
+			return [...sentMessages]
+		},
 		dispatch(message: unknown) {
 			for (const listener of [...listeners]) listener(message)
 		},
 	}
 }
 
-function makePendingTransaction() {
+async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	await act(() => {
+		render(null, dom.document.body)
+	})
+}
+
+function makePendingTransaction(errorMessage = 'simulation failed') {
 	const activeAddress = 0x1111111111111111111111111111111111111111n
 	const recipientAddress = 0x2222222222222222222222222222222222222222n
 	const transactionIdentifier = 1n
@@ -129,7 +139,7 @@ function makePendingTransaction() {
 		success: false as const,
 		error: {
 			code: -32000,
-			message: 'simulation failed',
+			message: errorMessage,
 		},
 	}
 
@@ -157,8 +167,8 @@ function makePendingTransaction() {
 				signerName: 'NoSignerDetected' as const,
 				error: {
 					code: -32000,
-					message: 'simulation failed',
-					decodedErrorMessage: 'simulation failed',
+					message: errorMessage,
+					decodedErrorMessage: errorMessage,
 				},
 				simulationState: {
 					blockNumber: 123n,
@@ -257,6 +267,150 @@ describe('confirm transaction rpc status bootstrap', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Retrying resumes when the extension becomes active.'), true)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('hydrates from a later bootstrap reply when the first ready handshake happens before pending data exists', async () => {
+		const dom = installDomMock()
+		const pendingTransaction = makePendingTransaction()
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const browser = installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
+			const typedMessage = message as { method?: string }
+			if (typedMessage.method === 'popup_readyAndListening') {
+				const readyCalls = browser.getSentMessages().filter((sentMessage) =>
+					typeof sentMessage === 'object'
+					&& sentMessage !== null
+					&& 'method' in sentMessage
+					&& sentMessage.method === 'popup_readyAndListening'
+				).length
+				if (readyCalls === 1) return undefined
+				return serialize(PopupRequestsReplies.popup_readyAndListening, {
+					method: 'popup_readyAndListening',
+					data: {
+						popupOrTabId: { type: 'popup', id: 1 },
+						confirmTransactionBootstrap: {
+							pendingTransactionAndSignableMessages: [pendingTransaction],
+							currentBlockNumber: 123n,
+							rpcConnectionStatus: undefined,
+							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+						},
+					},
+				})
+			}
+			if (typedMessage.method === 'popup_requestSettings') return undefined
+			return undefined
+		})
+		const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		await new Promise((resolve) => setTimeout(resolve, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS + 50))
+
+		const readyCalls = browser.getSentMessages().filter((message) =>
+			typeof message === 'object'
+			&& message !== null
+			&& 'method' in message
+			&& message.method === 'popup_readyAndListening'
+		).length
+		assert.equal(readyCalls >= 2, true)
+
+		assert.equal(dom.document.body.textContent?.includes('simulation failed'), true)
+		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('does not let a late bootstrap reply overwrite pushed pending transaction data', async () => {
+		const dom = installDomMock()
+		const stalePendingTransaction = makePendingTransaction('stale bootstrap transaction')
+		const freshPendingTransaction = makePendingTransaction('fresh pushed transaction')
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const browser = installBrowserMock(async (message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
+			const typedMessage = message as { method?: string }
+			if (typedMessage.method === 'popup_readyAndListening') {
+				await new Promise((resolve) => setTimeout(resolve, 25))
+				return serialize(PopupRequestsReplies.popup_readyAndListening, {
+					method: 'popup_readyAndListening',
+					data: {
+						popupOrTabId: { type: 'popup', id: 1 },
+						confirmTransactionBootstrap: {
+							pendingTransactionAndSignableMessages: [stalePendingTransaction],
+							currentBlockNumber: 123n,
+							rpcConnectionStatus: undefined,
+							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+						},
+					},
+				})
+			}
+			if (typedMessage.method === 'popup_requestSettings') return undefined
+			return undefined
+		})
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [freshPendingTransaction],
+						currentBlockNumber: 124n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+		await new Promise((resolve) => setTimeout(resolve, 50))
+
+		assert.equal(dom.document.body.textContent?.includes('fresh pushed transaction'), true)
+		assert.equal(dom.document.body.textContent?.includes('stale bootstrap transaction'), false)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('hydrates pending transaction details from storage when the initial popup push is missed', async () => {
+		const dom = installDomMock()
+		installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
+			const typedMessage = message as { method?: string }
+			if (typedMessage.method === 'popup_readyAndListening') return undefined
+			if (typedMessage.method === 'popup_requestSettings') return undefined
+			return undefined
+		})
+		const [
+			{ browserStorageLocalSet2 },
+			{ ConfirmTransaction },
+		] = await Promise.all([
+			import('../../app/ts/utils/storageUtils.js'),
+			import('../../app/ts/components/pages/ConfirmTransaction.js'),
+		])
+
+		await browserStorageLocalSet2({
+			pendingTransactionsAndMessages: [makePendingTransaction()],
+		})
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await new Promise((resolve) => setTimeout(resolve, 25))
+
+		assert.equal(dom.document.body.textContent?.includes('simulation failed'), true)
+		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
+		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
 })

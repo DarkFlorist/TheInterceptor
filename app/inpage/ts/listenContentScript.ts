@@ -106,20 +106,34 @@ function listenContentScript(connectionName: string | undefined) {
 	}
 	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script' | 'document-start', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, message, raw, context)
+	const isIgnorableContentScriptPortError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
+		|| error.message.includes('Could not establish connection. Receiving end does not exist')
+		|| error.message.includes('Extension context invalidated')
+	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
+		if (extensionPort !== port) return
+		extensionPort = undefined
+		pageHidden = true
+	}
 	const reportInterceptorError = (diagnostics: string) => {
-		if (extensionPort === undefined) return
+		const currentExtensionPort = extensionPort
+		if (currentExtensionPort === undefined) return
 		try {
-			extensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
+			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
 		} catch(reportingError: unknown) {
+			if (reportingError instanceof Error && isIgnorableContentScriptPortError(reportingError)) {
+				markExtensionPortDisconnected(currentExtensionPort)
+				return
+			}
 			console.error(reportingError)
 		}
 	}
 
 	const forwardInpageMessageToBackground = (data: unknown) => {
-		if (extensionPort === undefined) return
+		const currentExtensionPort = extensionPort
+		if (currentExtensionPort === undefined) return
 		if (!isBridgeRequest(data)) return
 		try {
-			extensionPort.postMessage({ data: {
+			currentExtensionPort.postMessage({ data: {
 				interceptorRequest: true,
 				method: data.method,
 				...(data.params !== undefined ? { params: data.params } : {}),
@@ -130,8 +144,8 @@ function listenContentScript(connectionName: string | undefined) {
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
 			if (error instanceof Error) {
-				if (error.message?.includes('Extension context invalidated.')) {
-					// this error happens when the extension is refreshed and the page cannot reach The Interceptor anymore
+				if (isIgnorableContentScriptPortError(error)) {
+					markExtensionPortDisconnected(currentExtensionPort)
 					return
 				}
 				if (error.message?.includes('User denied')) return // user denied signature
@@ -159,11 +173,20 @@ function listenContentScript(connectionName: string | undefined) {
 	})
 
 	const connect = () => {
-		if (extensionPort) extensionPort.disconnect()
-		extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
+		const previousExtensionPort = extensionPort
+		extensionPort = undefined
+		if (previousExtensionPort !== undefined) {
+			try {
+				previousExtensionPort.disconnect()
+			} catch (error: unknown) {
+				if (!(error instanceof Error && isIgnorableContentScriptPortError(error))) throw error
+			}
+		}
+		const connectedExtensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
+		extensionPort = connectedExtensionPort
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
-		extensionPort.onMessage.addListener(messageEvent => {
+		connectedExtensionPort.onMessage.addListener(messageEvent => {
 			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
@@ -182,7 +205,7 @@ function listenContentScript(connectionName: string | undefined) {
 			}
 		})
 
-		extensionPort.onDisconnect.addListener(() => { pageHidden = true })
+		connectedExtensionPort.onDisconnect.addListener(() => { markExtensionPortDisconnected(connectedExtensionPort) })
 	}
 	connect()
 
