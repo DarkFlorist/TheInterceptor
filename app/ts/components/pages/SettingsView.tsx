@@ -101,12 +101,12 @@ function ImportExport() {
 			/>
 			: <></> }
 		<div class = 'popup-button-row'>
-			<div style = 'display: flex; flex-direction: row;'>
-				<label class = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
+			<div class = 'settings-import-export-actions'>
+				<label class = 'button is-primary is-danger settings-import-export-button'>
 					Import settings
 					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>
-				<button class = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
+				<button class = 'button is-primary settings-import-export-button' onClick = { exportSettings }>
 					Export settings
 				</button>
 			</div>
@@ -235,10 +235,10 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 
 	return (
 		<li class = 'grid brief'>
-			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>
-				<div style = '--area: 1 / 1'><strong>{ currentInfo.name }</strong></div>
-				<div style = '--area: span 2 / 2'>{ networkName }</div>
-				<div>{ currentInfo.httpsRpc }</div>
+			<div class = 'grid rpc-summary-details'>
+				<div class = 'truncate' title = { currentInfo.name }><strong>{ currentInfo.name }</strong></div>
+				<div class = 'truncate' title = { networkName }>{ networkName }</div>
+				<div class = 'truncate' title = { currentInfo.httpsRpc }>{ currentInfo.httpsRpc }</div>
 			</div>
 			<div class = 'actions'>
 				<ConfigureRpcConnection key = { infoKey } rpcInfo = { currentInfo } />

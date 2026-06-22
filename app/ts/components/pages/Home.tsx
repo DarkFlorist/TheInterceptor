@@ -22,6 +22,7 @@ import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
+import { useResetSimulation } from '../hooks/useResetSimulation.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -387,7 +388,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 }
 
 export function Home(param: HomeParams) {
-	const disableReset = useSignal<boolean>(false)
+	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
@@ -413,14 +414,9 @@ export function Home(param: HomeParams) {
 
 	useSignalEffect(() => {
 		param.simVisResults.value
-		disableReset.value = false
+		markSimulationDataReceived()
 		removedTransactionOrSignedMessages.value = []
 	})
-
-	function resetSimulation() {
-		disableReset.value = true
-		sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
-	}
 
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
 		removedTransactionOrSignedMessages.value = [...removedTransactionOrSignedMessages.value, transactionOrMessageIdentifier]

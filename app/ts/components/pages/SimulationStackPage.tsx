@@ -17,6 +17,7 @@ import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ImportSimulationStack } from './ImportSimulationStack.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
+import { useResetSimulation } from '../hooks/useResetSimulation.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -33,16 +34,16 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 	resetSimulation: () => void
 	disableReset: Signal<boolean>
 }) {
-	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: 1rem 0;'>
-		<h1 class = 'h1' style = 'margin: 0;'>Simulation Stack</h1>
-		<div style = 'display: flex; gap: 0.75rem; align-items: center;'>
-			<button class = 'btn btn--outline is-small' onClick = { openImportSimulation }>
+	return <div style = 'display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap; padding: 1rem 0; min-width: 0;'>
+		<h1 class = 'h1' style = 'margin: 0; min-width: 0;'>Simulation Stack</h1>
+		<div style = 'display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; flex-wrap: wrap; min-width: 0;'>
+			<button class = 'btn btn--outline is-small' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 					<ImportIcon/>
 				</span>
-				<span>Import Simulation Stack</span>
+				<span>Import</span>
 			</button>
-			<button class = 'btn is-small is-danger' disabled = { disableReset.value } onClick = { resetSimulation } >
+			<button class = 'btn is-small is-danger' disabled = { disableReset.value } onClick = { resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 					<BroomIcon />
 				</span>
@@ -71,7 +72,7 @@ export function SimulationStackPage() {
 		requestFreshHomeDataOnMount: true,
 		filterByTabId: false,
 	})
-	const disableReset = useSignal<boolean>(false)
+	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 	const boundaryResetKey = useSignal(0)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
@@ -83,7 +84,7 @@ export function SimulationStackPage() {
 
 	useSignalEffect(() => {
 		simVisResults.value
-		disableReset.value = false
+		markSimulationDataReceived()
 	})
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -96,11 +97,6 @@ export function SimulationStackPage() {
 
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
-	}
-
-	function resetSimulation() {
-		disableReset.value = true
-		sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
 	}
 
 	function onRenderError(error: Error) {
@@ -119,9 +115,9 @@ export function SimulationStackPage() {
 		<div style = 'max-width: 1100px; margin: 0 auto; padding: 0 1rem 2rem;'>
 			<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation' style = 'margin: 0 -1rem 1rem;'>
 				<div class = 'navbar-brand'>
-					<a class = 'navbar-item' style = 'cursor: unset'>
-						<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32'/>
-						<p style = 'color: var(--text-color); padding-left: 5px;'>THE INTERCEPTOR
+					<a class = 'navbar-item' style = 'cursor: unset; max-width: 100%; min-width: 0;'>
+						<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32' style = 'flex: 0 0 auto;'/>
+						<p style = 'color: var(--text-color); padding-left: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>THE INTERCEPTOR
 							<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 						</p>
 					</a>

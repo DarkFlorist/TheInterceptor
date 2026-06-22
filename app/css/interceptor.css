@@ -230,6 +230,16 @@ html, body {
 	margin-bottom: unset;
 }
 
+.card-header-title {
+	min-width: 0;
+}
+
+.card-header-title > .paragraph {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
 .hoverable:hover {
 	background-color: var(--highlighted-primary-color)
 }
@@ -304,6 +314,138 @@ html, body {
 	color: var(--negative-color);
 	border-color: var(--negative-color);
 	box-shadow: 0 0 0 1px var(--negative-color);
+}
+
+.address-book-page {
+	min-width: 0;
+	overflow-x: hidden;
+}
+
+.address-book-layout {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 34rem);
+	column-gap: 0;
+	width: min(100%, 48rem);
+	min-width: 0;
+	margin: 0 auto;
+	padding: 0 1rem;
+}
+
+.address-book-sidebar {
+	min-width: 0;
+	padding: 1rem 0;
+}
+
+.address-book-chain-selector {
+	min-width: 0;
+	padding: 10px;
+}
+
+.address-book-sidebar .menu-list a {
+	overflow-wrap: anywhere;
+}
+
+.address-book-content {
+	display: grid;
+	grid-template-rows: min-content minmax(0, 1fr);
+	row-gap: 1rem;
+	height: 100vh;
+	min-width: 0;
+	padding-top: 1rem;
+}
+
+.address-book-toolbar {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	column-gap: 1rem;
+	align-items: center;
+	min-width: 0;
+	padding: 0 1rem;
+}
+
+.address-book-toolbar > .input {
+	width: 100%;
+	min-width: 0;
+}
+
+.address-book-toolbar > .button {
+	max-width: 100%;
+}
+
+.address-book-list {
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.address-book-empty-state {
+	width: min(500px, 100%);
+	min-width: 0;
+	margin: 0 1rem;
+	padding: 0 1rem;
+	overflow-wrap: anywhere;
+}
+
+.address-book-entry-card {
+	min-width: 0;
+	max-width: 100%;
+	margin: 0 1rem 1rem;
+}
+
+.address-book-entry-content {
+	width: min(500px, 100%);
+	min-width: 0;
+	max-width: 100%;
+}
+
+.address-book-entry-media {
+	align-items: stretch;
+	min-width: 0;
+}
+
+.address-book-entry-main {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	overflow-x: hidden;
+	overflow-y: visible;
+}
+
+.address-book-entry-heading {
+	min-width: 0;
+	min-height: 40px;
+	padding-bottom: 10px;
+}
+
+.address-book-entry-meta {
+	display: inline-block;
+	font-size: 13px;
+	vertical-align: top;
+}
+
+.address-book-entry-abi {
+	display: block;
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.address-book-entry-source {
+	color: var(--subtitle-text-color);
+}
+
+.address-book-entry-actions {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	color: var(--text-color);
+}
+
+.address-book-entry-remove {
+	margin-left: auto;
+	padding: 0;
 }
 
 .input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {
@@ -983,6 +1125,54 @@ svg.spinner > circle {
 	overflow-wrap: anywhere;
 }
 
+@media screen and (max-width: 520px) {
+	.address-book-layout {
+		grid-template-columns: minmax(0, 1fr);
+		width: 100%;
+		padding: 0 0.5rem;
+	}
+
+	.address-book-sidebar {
+		padding: 0.75rem 0 0;
+	}
+
+	.address-book-sidebar .menu {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+		column-gap: 1rem;
+	}
+
+	.address-book-content {
+		height: auto;
+		min-height: 0;
+		padding-top: 0.5rem;
+	}
+
+	.address-book-toolbar {
+		grid-template-columns: minmax(0, 1fr);
+		row-gap: 0.75rem;
+		padding: 0;
+	}
+
+	.address-book-toolbar > .button {
+		justify-self: start;
+		height: auto;
+		min-height: 2.5em;
+		white-space: normal;
+	}
+
+	.address-book-list {
+		height: 60vh;
+		min-height: 14rem;
+	}
+
+	.address-book-entry-card,
+	.address-book-empty-state {
+		margin-right: 0;
+		margin-left: 0;
+	}
+}
+
 .swap-box {
 	background-color: var(--alpha-005);
 	box-shadow: unset;
@@ -1060,6 +1250,24 @@ svg.spinner > circle {
 	padding-bottom: 10px;
 	padding-top: 10px;
 	border-radius: 10px 10px 0 0;
+}
+
+.settings-import-export-actions {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.settings-import-export-button {
+	position: relative;
+	flex: 1 1 10rem;
+	min-width: 0;
+	height: auto;
+	min-height: 2.5em;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	white-space: normal;
 }
 
 .popup-contents {
@@ -1323,6 +1531,35 @@ summary:where(details[open] > *) {
 
 .brief .actions > .btn { --s-size: 0.8rem; }
 
+.rpc-summary-details {
+	--grid-cols: minmax(0, 1fr);
+	--gap-y: 0.125rem;
+	--text-color: gray;
+	min-width: 0;
+}
+
+.rpc-summary-details > .truncate {
+	min-width: 0;
+}
+
+.rpc-summary-details strong {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.rpc-add-button {
+	justify-self: start;
+	max-width: 100%;
+	height: auto;
+	min-height: 2.25em;
+	border-style: dashed;
+	white-space: normal;
+	text-align: center;
+}
+
 .dialog {
 	background: var(--bg-color);
 	color: var(--text-color);
@@ -1548,13 +1785,14 @@ fieldset label:has([type=radio]:checked):before {
 :has(> .layout:first-child):not(dialog:not([open])) {
 	background: var(--bg-color);
 	display: grid;
-	grid-template-columns: var(--grid-columns, minmax(1rem,auto) minmax(min-content,800px) minmax(1rem,auto));
+	grid-template-columns: var(--grid-columns, minmax(0, 1fr) minmax(0, min(800px, 100%)) minmax(0, 1fr));
 
 	.layout {
 		--grid-col: var(--grid-column, 2);
 		--line-color: var(--layout-line-color);
 		display: grid;
 		grid-column: var(--grid-col);
+		min-width: 0;
 		min-height: 100vh;
 		grid-template-rows: min-content 1fr;
 
@@ -1577,17 +1815,22 @@ fieldset label:has([type=radio]:checked):before {
 }
 
 /* Search Component */
-form[role='search'] { flex: 1 0 auto }
+form[role='search'] {
+	flex: 1 1 12rem;
+	min-width: 0;
+	max-width: 100%;
+}
 
 form[role='search'] fieldset {
 	color: var(--text-color);
 	display: grid;
-	grid-template-columns: min-content auto min-content;
+	grid-template-columns: min-content minmax(0, 1fr) min-content;
 	column-gap: 0.25rem;
 	align-items: center;
 	border: 1px solid var(--line-color);
 	padding: 0.25rem;
 	border-radius: 2px;
+	min-width: 0;
 }
 
 form[role='search'] fieldset:focus-within {
@@ -1607,6 +1850,8 @@ form[role='search'] input[type='search'] {
 	outline: none;
 	border: 0 none;
 	color: var(--text-color);
+	min-width: 0;
+	width: 100%;
 }
 
 form[role='search'] input[type='search']::-webkit-search-cancel-button { appearance: none }
@@ -1708,14 +1953,15 @@ header:has(form[role='search']) {
 	row-gap: 0.25rem;
 	justify-content: space-between;
 	flex-wrap: wrap;
-	place-content: center;
+	align-items: center;
 	padding: 1rem 0;
 }
 
 header:has(form[role='search']) h1 {
 	color: var(--text-color);
 	font-size: 1.5rem;
-	flex: 1 0 auto;
+	flex: 1 1 12rem;
+	min-width: 0;
 }
 
 [role=option]:has([type=radio]) {
