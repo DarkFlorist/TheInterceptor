@@ -50,13 +50,26 @@ export const mergeProxyAndImplementationAbi = (proxyAbi: string, implementationA
 	return isValidAbi(mergedAbi) ? mergedAbi : implementationAbi
 }
 
+type ContractApiAction = 'getabi' | 'getsourcecode'
+
+export function getBlockExplorerContractUrl(blockExplorer: BlockExplorer, action: ContractApiAction, contractAddress: EthereumAddress, chainId: bigint) {
+	const url = new URL(blockExplorer.apiUrl)
+	url.searchParams.set('chainId', chainId.toString())
+	url.searchParams.set('module', 'contract')
+	url.searchParams.set('action', action)
+	url.searchParams.set('address', addressString(contractAddress))
+	const apiKey = blockExplorer.apiKey.trim()
+	if (apiKey.length > 0) url.searchParams.set('apiKey', apiKey)
+	return url.toString()
+}
+
 async function fetchAbi(contractAddress: EthereumAddress, maybeExplorer: BlockExplorer | undefined, chainId: bigint): Promise<Result<EtherscanSourceCodeResult>> {
 	const normalizedAddressString = addressString(contractAddress)
 	let bestResult: Result<EtherscanSourceCodeResult> = { success: false, message: 'Failed to fetch Abi' } as const
 	try {
 		if (maybeExplorer !== undefined) {
 			try {
-				const result = await fetch(`${ maybeExplorer.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getsourcecode&address=${ normalizedAddressString }&apiKey=${ maybeExplorer.apiKey }`)
+				const result = await fetch(getBlockExplorerContractUrl(maybeExplorer, 'getsourcecode', contractAddress, chainId))
 				bestResult = EtherscanSourceCodeResult.safeParse(await result.json())
 				if (bestResult.success) return bestResult
 			} catch(error: unknown) {
@@ -83,18 +96,19 @@ async function fetchAbi(contractAddress: EthereumAddress, maybeExplorer: BlockEx
 
 export async function fetchAbiFromBlockExplorer(contractAddress: EthereumAddress, chainId: ChainIdWithUniversal) {
 	const api = getBlockExplorer(chainId, await getRpcList())
+	const resolvedChainId = chainId === 'AllChains' ? 1n : chainId
 
-	const parsedSourceCode = await fetchAbi(contractAddress, api, chainId === 'AllChains' ? 1n : chainId)
+	const parsedSourceCode = await fetchAbi(contractAddress, api, resolvedChainId)
 
 	// Extract ABI from getSourceCode request if not proxy, otherwise attempt to fetch ABI of implementation
 	if (parsedSourceCode.success === false || parsedSourceCode.value.status !== 'success') return { success: false as const, error: 'Could not get ABI for the contract.' }
 
 	if (api !== undefined && parsedSourceCode.value.result[0].Proxy === 'yes' && parsedSourceCode.value.result[0].Implementation !== '') {
-		const implReq = await fetchJson(`${ api.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)
+		const implReq = await fetchJson(getBlockExplorerContractUrl(api, 'getabi', parsedSourceCode.value.result[0].Implementation, resolvedChainId))
 		if (!implReq.success) return implReq
 		const implResult = EtherscanGetABIResult.safeParse(implReq.result)
 
-		const sourceCodeResult = await fetchJson(`${ api.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ api.apiKey }`)
+		const sourceCodeResult = await fetchJson(getBlockExplorerContractUrl(api, 'getsourcecode', parsedSourceCode.value.result[0].Implementation, resolvedChainId))
 		if (!sourceCodeResult.success) return sourceCodeResult
 		const implementationName = EtherscanSourceCodeResult.safeParse(sourceCodeResult.result)
 
