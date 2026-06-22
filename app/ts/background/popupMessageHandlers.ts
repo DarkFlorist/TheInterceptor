@@ -471,7 +471,7 @@ export async function getAddressBookData(parsed: GetAddressBookData) {
 	})
 }
 
-export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess') => {
+export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack') => {
 	const openInNewTab = async () => {
 		const tab = await browser.tabs.create({ url: getHtmlFile(tabName) })
 		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })

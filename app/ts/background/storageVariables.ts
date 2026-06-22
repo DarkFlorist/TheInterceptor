@@ -17,7 +17,7 @@ import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
 
-export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
+export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
 
 const pendingTransactionsSemaphore = new Semaphore(1)

@@ -989,6 +989,7 @@ const PopupMessageRuntype = funtypes.Union(
 	DisableInterceptor,
 	SetEnsNameForHash,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack') }),
 	RetrieveWebsiteAccess,
 	BlockOrAllowExternalRequests,
 	AllowOrPreventAddressAccessForWebsite,

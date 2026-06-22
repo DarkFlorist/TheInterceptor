@@ -12,16 +12,23 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
-const IdsOfOpenedTabs = funtypes.ReadonlyObject({
-	addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
-	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
-	websiteAccess: funtypes.Union(funtypes.Undefined, funtypes.Number),
-})
+const IdsOfOpenedTabs = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
+		settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
+		websiteAccess: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	}),
+	funtypes.ReadonlyPartial({
+		simulationStack: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	}),
+)
 
 export type PartialIdsOfOpenedTabs = funtypes.Static<typeof PartialIdsOfOpenedTabs>
 export const PartialIdsOfOpenedTabs = funtypes.ReadonlyPartial({
 	addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	websiteAccess: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	simulationStack: funtypes.Union(funtypes.Undefined, funtypes.Number),
 })
 
 export type OldActiveAddressEntry = funtypes.Static<typeof OldActiveAddressEntry>
