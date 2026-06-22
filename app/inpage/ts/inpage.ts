@@ -48,7 +48,7 @@ class InterceptorFuture<T> implements PromiseLike<T> {
 }
 
 class EthereumJsonRpcError extends Error {
-	constructor(public readonly code: number, message: string, public readonly data?: object) {
+	constructor(public readonly code: number, message: string, public readonly data?: unknown) {
 		super(message)
 		this.name = this.constructor.name
 	}
@@ -89,7 +89,7 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	readonly error: {
 		readonly code: number,
 		readonly message: string,
-		readonly data?: object
+		readonly data?: unknown
 	}
 }
 
@@ -165,7 +165,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 			error: {
 				code,
 				message,
-				...(errorData !== undefined && typeof errorData === 'object' && errorData !== null ? { data: errorData } : {}),
+				...(errorData !== undefined ? { data: errorData } : {}),
 			},
 		}
 	}

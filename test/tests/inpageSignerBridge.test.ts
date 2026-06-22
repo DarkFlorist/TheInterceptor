@@ -6,6 +6,7 @@ type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
+	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -25,7 +26,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}) {
+function createFakeWindow({ onConnectedToSignerRequest, handleRequest }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
@@ -95,6 +96,7 @@ function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}
 		const request = parseInpageRequest(data)
 		if (request === undefined) return
 		queueMicrotask(() => {
+			if (handleRequest?.(request, sendBackgroundMessage) === true) return
 			switch (request.method) {
 				case 'connected_to_signer':
 					onConnectedToSignerRequest?.()
@@ -368,6 +370,65 @@ describe('inpage signer bridge', () => {
 			assert.equal(lateSignerRequests[0], 'eth_chainId')
 			assert.equal((fakeWindow.ethereum as { isInterceptor?: boolean }).isInterceptor, true)
 			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('preserves string JSON-RPC error data from background replies', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const revertData = '0x08c379a0'
+		const { fakeWindow, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_call') return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'eth_call',
+					error: {
+						code: -32000,
+						message: 'execution reverted',
+						data: revertData,
+					},
+				})
+				return true
+			},
+		})
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?json-rpc-error-data')
+			await waitFor(() => signerRequests.length >= 1)
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+			}
+			await assert.rejects(
+				provider.request({ method: 'eth_call', params: [] }),
+				(error: unknown) => {
+					if (!isRecord(error)) return false
+					assert.equal(error.code, -32000)
+					assert.equal(error.message, 'execution reverted')
+					assert.equal(error.data, revertData)
+					return true
+				},
+			)
 		} finally {
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {
