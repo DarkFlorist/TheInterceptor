@@ -633,12 +633,16 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
-			if (typeof reply !== 'string') return
+			if (typeof reply !== 'string') {
+				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
+				return
+			}
 			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
-		} catch(e) {
+		} catch(error: unknown) {
 			console.error('failed to get chain Id from signer')
-			console.error(e)
-			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ '0x1' ] })
+			console.error(error)
+			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', error, { requestMethod: 'eth_chainId' }))
+			return undefined
 		}
 	}
 
