@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDateMock, installDomMock } from './domMock.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -86,6 +87,8 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/utils/errors.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/background.js'),
+		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
 		...await import('../../app/ts/components/subcomponents/Error.js'),
 	}
 }
@@ -119,6 +122,41 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
+	})
+
+	test('records unexpected simulation state failures before falling back to passthrough', async () => {
+		browserMock.reset()
+		const { getUpdatedSimulationState, getLatestUnexpectedError, EthereumClientService } = await modulesPromise
+		const requestHandler: IEthereumJSONRpcRequestHandler = {
+			rpcUrl: 'https://example.invalid',
+			clearCache: () => undefined,
+			getChainId: async () => 1n,
+			jsonRpcRequest: async () => {
+				throw new Error('simulation state exploded')
+			},
+		}
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Test Chain',
+				chainId: 1n,
+				httpsRpc: 'https://example.invalid',
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				currencyLogoUri: undefined,
+				primary: true,
+				minimized: true,
+			}
+		)
+
+		const simulationState = await getUpdatedSimulationState(ethereum)
+		const latestUnexpectedError = await getLatestUnexpectedError()
+
+		assert.deepEqual(simulationState, { kind: 'passthrough' })
+		assert.equal(latestUnexpectedError?.data.message, 'simulation state exploded')
+		assert.equal(latestUnexpectedError?.data.code, 'simulation_state_update_failed')
 	})
 
 	test('renders forwarded diagnostics directly from the message string in the existing unexpected error popup', async () => {

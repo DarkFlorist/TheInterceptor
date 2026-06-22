@@ -15,7 +15,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput, mockSignTransaction } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -52,7 +52,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService)
 		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(await getCurrentSimulationInput(), ethereum))
 	} catch(error: unknown) {
 		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return PASSTHROUGH_STATE
-		printError(error)
+		await handleUnexpectedError(error, { code: 'simulation_state_update_failed' })
 	}
 	return PASSTHROUGH_STATE
 }
