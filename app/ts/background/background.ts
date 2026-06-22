@@ -587,7 +587,7 @@ export async function popupMessageHandler(
 				case 'popup_requestSimulationMode': return await requestSimulationMode()
 				case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
 				case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(ethereum, websiteTabConnections, parsedRequest)
-				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, tokenPriceService, parsedRequest.data.page)
+				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, parsedRequest.data.page)
 				case 'popup_UnexpectedErrorOccured': return await handleUnexpectedErrorInWindow(parsedRequest)
 				case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(ethereum)
 				case 'popup_importSimulationStack': return await importSimulationStack(ethereum, tokenPriceService, parsedRequest)

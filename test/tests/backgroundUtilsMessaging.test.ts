@@ -106,6 +106,27 @@ describe('backgroundUtils messaging', () => {
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
+	test('ignore extension teardown errors for popup fire-and-forget messages', async () => {
+		const storageState = installBrowserMock('Extension context invalidated.')
+		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
+
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+
+		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
+	test('ignore disconnected port errors when requesting popup replies', async () => {
+		const storageState = installBrowserMock('Attempting to use a disconnected port object')
+		const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
+
+		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
+
+		assert.equal(reply, undefined)
+		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
 	test('treat null popup replies as no reply without recording an unexpected error', async () => {
 		const storageState = installBrowserMock('')
 		globalThis.browser.runtime.sendMessage = async () => null
