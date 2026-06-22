@@ -137,6 +137,8 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
+export const getHostname = (urlString: string): string => new URL(urlString).hostname
+
 export const getWebsiteOrigin = (urlString: string): string => {
 	const url = new URL(urlString)
 	if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin
@@ -149,6 +151,15 @@ export const getHostWithPortFromOriginLike = (originLike: string): string => {
 	if (!originLike.includes('://')) return originLike
 	try {
 		return getHostWithPort(originLike)
+	} catch {
+		return originLike
+	}
+}
+
+export const getHostnameFromOriginLike = (originLike: string): string => {
+	if (originLike === 'file://') return ''
+	try {
+		return getHostname(originLike.includes('://') ? originLike : `https://${ originLike }`)
 	} catch {
 		return originLike
 	}

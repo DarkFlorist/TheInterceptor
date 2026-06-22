@@ -1,16 +1,36 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getHostWithPortFromOriginLike } from './requests.js'
+import { checkAndThrowRuntimeLastError, getHostnameFromOriginLike, getMatchingWebsiteAccessOrigin, getWebsiteOrigin, isSchemefulWebsiteOrigin } from './requests.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 
-const getInterceptorDisabledSiteHost = (originLike: string): string => getHostWithPortFromOriginLike(originLike)
+const getHttpOriginMatchParts = (originLike: string): { scheme: 'http' | 'https', hostname: string } | undefined => {
+	if (!isSchemefulWebsiteOrigin(originLike)) return undefined
+	try {
+		const url = new URL(originLike)
+		if (url.protocol === 'http:') return { scheme: 'http', hostname: url.hostname }
+		if (url.protocol === 'https:') return { scheme: 'https', hostname: url.hostname }
+	} catch {
+		return undefined
+	}
+	return undefined
+}
 
-const getInterceptorDisabledSiteExcludeMatches = (originLike: string): readonly string[] => {
+export const getInterceptorDisabledSiteExcludeMatches = (originLike: string): readonly string[] => {
 	if (originLike === 'file://') return ['file://*/*']
-	const host = getInterceptorDisabledSiteHost(originLike)
+	const httpOriginParts = getHttpOriginMatchParts(originLike)
+	if (httpOriginParts !== undefined) return [`${ httpOriginParts.scheme }://${ httpOriginParts.hostname }/*`]
+	const host = getHostnameFromOriginLike(originLike)
 	if (host.length === 0) return []
 	return [`*://${ host }/*`, `*://*.${ host }/*`]
+}
+
+export const isUrlExcludedByInterceptorDisabledSite = (disabledSites: readonly string[], urlString: string): boolean => {
+	try {
+		return getMatchingWebsiteAccessOrigin(disabledSites, getWebsiteOrigin(urlString)) !== undefined
+	} catch {
+		return false
+	}
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
@@ -49,9 +69,8 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const allTabs = await browser.tabs.query({})
 	const thisTab = allTabs.find((tab) => tab.id === content.tabId)
 	const urls = [content.url, ...thisTab?.url === undefined ? [] : [thisTab.url]]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const disabledSites = getInterceptorDisabledSites(await getSettings()).map((origin) => getInterceptorDisabledSiteHost(origin))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const noMatches = urls.every((url) => !isUrlExcludedByInterceptorDisabledSite(disabledSites, url))
 	if (!noMatches) return false
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })

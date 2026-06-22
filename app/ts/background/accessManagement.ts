@@ -6,7 +6,7 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort, getHostWithPortFromOriginLike, getMatchingWebsiteAccessOrigin } from '../utils/requests.js'
+import { type WebsiteSocket, getHostname, getHostnameFromOriginLike, getMatchingWebsiteAccessOrigin } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
@@ -257,7 +257,8 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 	const sitesToBlock = (await getWebsiteAccess())
 		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
-		.map((acccess) => getHostWithPortFromOriginLike(acccess.website.websiteOrigin))
+		// declarativeNetRequest initiatorDomains is domain-based, so request blocking intentionally collapses schemeful origins to hostnames.
+		.map((acccess) => getHostnameFromOriginLike(acccess.website.websiteOrigin))
 		.filter((websiteOrigin) => websiteOrigin.length > 0)
 	return {
 		tabIdsToBlock,
@@ -314,8 +315,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
-				const websiteOrigin = getHostWithPort(details.originUrl)
-				const destinationHost = getHostWithPort(details.url)
+				const websiteOrigin = getHostname(details.originUrl)
+				const destinationHost = getHostname(details.url)
 				if (destinationHost === websiteOrigin) return {}
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
@@ -328,7 +329,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	const websiteHost = getHostWithPortFromOriginLike(websiteOrigin)
+	const websiteHost = getHostnameFromOriginLike(websiteOrigin)
 	if (sitesToBlock.find((blockUrl) => blockUrl === websiteHost) !== undefined) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false

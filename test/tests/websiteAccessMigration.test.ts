@@ -86,4 +86,44 @@ describe('website access migration', () => {
 			['https://conflict.example', false],
 		])
 	})
+
+	test('merges duplicate entries that normalize to the same schemeful origin', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		const sharedAddress = '0x1111111111111111111111111111111111111111'
+		const extraAddress = '0x2222222222222222222222222222222222222222'
+		storageState.websiteAccess = [
+			{
+				website: { websiteOrigin: 'https://duplicate.example:443', icon: undefined, title: undefined },
+				access: true,
+				addressAccess: [{ address: sharedAddress, access: true }],
+			},
+			{
+				website: { websiteOrigin: 'https://duplicate.example', icon: 'data:image/png;base64,ZHVw', title: 'Duplicate' },
+				access: false,
+				addressAccess: [
+					{ address: sharedAddress, access: false },
+					{ address: extraAddress, access: true },
+				],
+				interceptorDisabled: true,
+				declarativeNetRequestBlockMode: 'block-all',
+			},
+		]
+
+		await migrateWebsiteAccess()
+
+		assert.equal(Array.isArray(storageState.websiteAccess), true)
+		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
+		assert.equal(storageState.websiteAccess.length, 1)
+		assert.equal(storageState.websiteAccess[0]?.website.websiteOrigin, 'https://duplicate.example')
+		assert.equal(storageState.websiteAccess[0]?.website.icon, 'data:image/png;base64,ZHVw')
+		assert.equal(storageState.websiteAccess[0]?.website.title, 'Duplicate')
+		assert.equal(storageState.websiteAccess[0]?.access, false)
+		assert.equal(storageState.websiteAccess[0]?.interceptorDisabled, true)
+		assert.equal(storageState.websiteAccess[0]?.declarativeNetRequestBlockMode, 'block-all')
+		assert.deepEqual(storageState.websiteAccess[0]?.addressAccess, [
+			{ address: sharedAddress, access: false },
+			{ address: extraAddress, access: true },
+		])
+	})
 })

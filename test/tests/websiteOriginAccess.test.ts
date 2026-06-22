@@ -81,4 +81,30 @@ describe('website origin access', () => {
 		if (!Array.isArray(storedWebsiteAccess)) throw new Error('Expected websiteAccess to be stored as an array')
 		assert.deepEqual(storedWebsiteAccess.map((entry) => entry.website.websiteOrigin), ['https://new.example'])
 	})
+
+	test('excludes disabled content scripts with scheme-aware matching', async () => {
+		const { getInterceptorDisabledSiteExcludeMatches, isUrlExcludedByInterceptorDisabledSite } = await import('../../app/ts/utils/contentScriptsUpdating.js')
+
+		assert.deepEqual(getInterceptorDisabledSiteExcludeMatches('https://scheme.example'), ['https://scheme.example/*'])
+		assert.deepEqual(getInterceptorDisabledSiteExcludeMatches('http://scheme.example'), ['http://scheme.example/*'])
+		assert.deepEqual(getInterceptorDisabledSiteExcludeMatches('legacy.example'), ['*://legacy.example/*', '*://*.legacy.example/*'])
+		assert.deepEqual(getInterceptorDisabledSiteExcludeMatches('file://'), ['file://*/*'])
+		assert.equal(isUrlExcludedByInterceptorDisabledSite(['https://scheme.example'], 'https://scheme.example/page'), true)
+		assert.equal(isUrlExcludedByInterceptorDisabledSite(['https://scheme.example'], 'http://scheme.example/page'), false)
+		assert.equal(isUrlExcludedByInterceptorDisabledSite(['https://scheme.example'], 'https://sub.scheme.example/page'), false)
+		assert.equal(isUrlExcludedByInterceptorDisabledSite(['legacy.example'], 'http://legacy.example/page'), true)
+	})
+
+	test('keeps external request blocking domain-scoped for declarativeNetRequest compatibility', async () => {
+		const { areWeBlocking } = await import('../../app/ts/background/accessManagement.js')
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'https://blocked.example:8443', icon: undefined, title: 'Blocked' },
+			access: true,
+			addressAccess: undefined,
+			declarativeNetRequestBlockMode: 'block-all',
+		}]
+
+		assert.equal(await areWeBlocking(new Map(), 1, 'http://blocked.example:3000'), true)
+		assert.equal(await areWeBlocking(new Map(), 1, 'https://other.example'), false)
+	})
 })
