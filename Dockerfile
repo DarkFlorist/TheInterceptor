@@ -21,7 +21,7 @@ COPY app/ts/ /workspace/app/ts/
 COPY app/img/ /workspace/app/img/
 COPY app/inpage/ /workspace/app/inpage/
 COPY app/fonts/ /workspace/app/fonts/
-COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts /workspace/build/
+COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts build/pruneExtensionPackage.mts /workspace/build/
 
 COPY tsconfig-test.json /workspace/
 COPY test/ /workspace/test/
@@ -30,15 +30,17 @@ COPY scripts/ /workspace/scripts/
 WORKDIR /workspace
 RUN bun run setup-firefox
 RUN bun test
+RUN bun ./build/pruneExtensionPackage.mts app /tmp/interceptor-firefox-app
 
-WORKDIR /workspace/app
-RUN zip ../interceptor-firefox.zip -r .
+WORKDIR /tmp/interceptor-firefox-app
+RUN zip /workspace/interceptor-firefox.zip -r .
 
 WORKDIR /workspace
 RUN bun run setup-chrome
+RUN bun ./build/pruneExtensionPackage.mts app /tmp/interceptor-chrome-app
 
-WORKDIR /workspace/app
-RUN zip ../interceptor-chrome.zip -r .
+WORKDIR /tmp/interceptor-chrome-app
+RUN zip /workspace/interceptor-chrome.zip -r .
 
 WORKDIR /workspace
 RUN mv interceptor-firefox.zip /interceptor-firefox.zip && mv interceptor-chrome.zip /interceptor-chrome.zip
