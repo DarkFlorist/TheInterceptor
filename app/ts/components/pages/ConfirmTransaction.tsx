@@ -345,7 +345,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
-				isGasEstimationError = { popupVisualisation.data.transactionToSimulate.success }
+				isGasEstimationError = { !popupVisualisation.data.transactionToSimulate.success }
 				simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
 				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 				rpcConnectionStatus = { param.rpcConnectionStatus }
