@@ -103,6 +103,15 @@ export function shouldDisableSignableMessageConfirm(params: {
 	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
 }
 
+export function getConfirmDialogDeliveryError(error: unknown): CaughtError {
+	const reason = error instanceof Error
+		? error.message
+		: typeof error === 'string'
+			? error
+			: 'Unknown error'
+	return { message: `Failed to confirm transaction: ${ reason }`, timestamp: new Date() }
+}
+
 function UnderTransactions(param: UnderTransactionsParams) {
 	const absoluteStyle = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'
 	const nTx = param.pendingTransactionsAndSignableMessages.value.length
@@ -686,6 +695,7 @@ export function ConfirmTransaction() {
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
 		} catch(error) {
+			unexpectedError.value = getConfirmDialogDeliveryError(error)
 			console.warn('Failed to confirm transaction')
 			console.warn({ error })
 		}

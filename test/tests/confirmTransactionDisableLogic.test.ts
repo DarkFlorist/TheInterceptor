@@ -23,4 +23,14 @@ describe('ConfirmTransaction signable message disable logic', () => {
 			hasSupportedRpc: false,
 		}), false)
 	})
+
+	test('formats confirm dialog delivery failures for the visible error banner', async () => {
+		;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
+		const { getConfirmDialogDeliveryError } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+
+		const error = getConfirmDialogDeliveryError(new Error('background unavailable'))
+
+		assert.equal(error.message, 'Failed to confirm transaction: background unavailable')
+		assert.equal(error.timestamp instanceof Date, true)
+	})
 })
