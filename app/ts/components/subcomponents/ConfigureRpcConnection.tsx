@@ -150,7 +150,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 		<RpcQueryProvider>
 			{ rpcInfo
 				? <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline'>Edit</button>
-				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline' style = 'border-style: dashed'>+ New RPC Connection</button>
+				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline rpc-add-button'>+ New RPC Connection</button>
 			}
 			<dialog class = 'dialog' ref = { modalRef }>
 				<ConfigureRpcForm defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { rpcEntries.value.length > 1 ? removeRpcEntryByUrl : undefined } />
