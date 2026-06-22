@@ -76,12 +76,26 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init: Reques
 	}
 }
 
+function isMissingBrowserTargetError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return error.message.startsWith('No tab with id')
+		|| error.message.startsWith('No window with id')
+		|| error.message.includes('Invalid tab ID')
+		|| error.message.includes('Invalid window ID')
+}
+
+function throwIfUnexpectedBrowserTargetError(error: unknown) {
+	if (isMissingBrowserTargetError(error)) return
+	throw error
+}
+
 export const safeGetTab = async (tabId: number) => {
 	try {
 		const tab = await browser.tabs.get(tabId)
 		checkAndThrowRuntimeLastError()
 		return tab
-	} catch (e: unknown){
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
@@ -94,10 +108,11 @@ export const doesTabExist = async (tabId: number) => {
 
 export const safeGetWindow = async (windowId: number) => {
 	try {
-		const tab = await browser.windows.get(windowId)
+		const window = await browser.windows.get(windowId)
 		checkAndThrowRuntimeLastError()
-		return tab
-	} catch (e: unknown){
+		return window
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
@@ -107,7 +122,8 @@ export const updateTabIfExists = async (tabId: number, updateProperties: browser
 		const tab = await browser.tabs.update(tabId, updateProperties)
 		checkAndThrowRuntimeLastError()
 		return tab
-	} catch (e: unknown){
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
@@ -117,7 +133,8 @@ export const updateWindowIfExists = async (windowId: number, updateProperties: b
 		const window = await browser.windows.update(windowId, updateProperties)
 		checkAndThrowRuntimeLastError()
 		return window
-	} catch (e: unknown){
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
