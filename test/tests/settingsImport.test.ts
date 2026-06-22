@@ -136,8 +136,8 @@ describe('settings import', () => {
 	test('sanitizes imported website access icons before persisting them', async () => {
 		const { getWebsiteAccess, importSettingsAndAddressBook } = await settingsModulePromise
 		await importSettingsAndAddressBook(buildVersion14Import(false, false, [
-			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
-			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
+			{ website: { websiteOrigin: 'https://remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
+			{ website: { websiteOrigin: 'https://cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
 		]))
 
 		const storedWebsiteAccess = (await browser.storage.local.get('websiteAccess')).websiteAccess

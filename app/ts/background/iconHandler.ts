@@ -6,7 +6,7 @@ import { TabIcon, type TabState, type WebsiteTabConnections } from '../types/use
 import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { checkAndPrintRuntimeLastError, doesTabExist, getMatchingWebsiteAccessOrigin, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
@@ -17,10 +17,11 @@ const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
 
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	const storedWebsiteAccess = await getWebsiteAccess()
-	const storedWebsite = storedWebsiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+	const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(storedWebsiteAccess.map((entry) => entry.website.websiteOrigin), websiteOrigin)
+	const storedWebsite = matchingWebsiteOrigin === undefined ? undefined : storedWebsiteAccess.find((entry) => entry.website.websiteOrigin === matchingWebsiteOrigin)
 	if (storedWebsite === undefined) return { cachedIcon: undefined, hasStoredWebsiteAccess: false as const }
 	const currentWebsite = (await getTabState(tabId)).website
-	if (currentWebsite?.websiteOrigin === websiteOrigin) {
+	if (currentWebsite !== undefined && getMatchingWebsiteAccessOrigin([currentWebsite.websiteOrigin], websiteOrigin) !== undefined) {
 		const currentIcon = sanitizeStoredWebsiteIcon(currentWebsite.icon)
 		if (currentIcon !== undefined) return { cachedIcon: currentIcon, hasStoredWebsiteAccess: true as const }
 	}

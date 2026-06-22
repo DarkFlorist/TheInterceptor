@@ -11,8 +11,9 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getMatchingWebsiteAccessOrigin, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import { migrateWebsiteAccessOrigins } from './websiteAccessMigration.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -141,7 +142,9 @@ export async function getSettings() : Promise<Settings> {
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
-	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
+	return settings.websiteAccess
+		.filter((site) => site.interceptorDisabled === true)
+		.map((site) => site.website.websiteOrigin)
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -172,7 +175,7 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 const websiteAccessSemaphore = new Semaphore(1)
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
-	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
+	const sanitizedWebsiteAccess = migrateWebsiteAccessOrigins(sanitizeWebsiteAccess(rawWebsiteAccess))
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
 
@@ -183,7 +186,7 @@ export async function getWebsiteAccess() {
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
+		const nextWebsiteAccess = migrateWebsiteAccessOrigins(sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess)))
 		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
 		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 	})
@@ -191,9 +194,11 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 
 export async function updateKnownWebsiteMetadata(website: Website) {
 	await updateWebsiteAccess((previousWebsiteAccess) => {
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousWebsiteAccess.map((entry) => entry.website.websiteOrigin), website.websiteOrigin)
+		if (matchingWebsiteOrigin === undefined) return previousWebsiteAccess
 		let changed = false
 		const nextWebsiteAccess = previousWebsiteAccess.map((entry) => {
-			if (entry.website.websiteOrigin !== website.websiteOrigin) return entry
+			if (entry.website.websiteOrigin !== matchingWebsiteOrigin) return entry
 			const mergedWebsite = mergeStoredWebsiteMetadata(entry.website, website)
 			if (mergedWebsite === entry.website) return entry
 			changed = true

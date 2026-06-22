@@ -1,11 +1,20 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort } from './requests.js'
+import { checkAndThrowRuntimeLastError, getHostWithPort, getHostWithPortFromOriginLike } from './requests.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 
+const getInterceptorDisabledSiteHost = (originLike: string): string => getHostWithPortFromOriginLike(originLike)
+
+const getInterceptorDisabledSiteExcludeMatches = (originLike: string): readonly string[] => {
+	if (originLike === 'file://') return ['file://*/*']
+	const host = getInterceptorDisabledSiteHost(originLike)
+	if (host.length === 0) return []
+	return [`*://${ host }/*`, `*://*.${ host }/*`]
+}
+
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map((origin) => `*://*.${ origin }/*`)
+	const excludeMatches = getInterceptorDisabledSites(await getSettings()).flatMap((origin) => getInterceptorDisabledSiteExcludeMatches(origin))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
@@ -41,7 +50,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const thisTab = allTabs.find((tab) => tab.id === content.tabId)
 	const urls = [content.url, ...thisTab?.url === undefined ? [] : [thisTab.url]]
 	const hostnames = urls.map((url) => getHostWithPort(url))
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const disabledSites = getInterceptorDisabledSites(await getSettings()).map((origin) => getInterceptorDisabledSiteHost(origin))
 	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
 	try {

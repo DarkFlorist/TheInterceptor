@@ -137,6 +137,63 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
+export const getWebsiteOrigin = (urlString: string): string => {
+	const url = new URL(urlString)
+	if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin
+	if (url.protocol === 'file:') return 'file://'
+	return url.origin === 'null' ? getHostWithPort(urlString) : url.origin
+}
+
+export const getHostWithPortFromOriginLike = (originLike: string): string => {
+	if (originLike === 'file://') return ''
+	if (!originLike.includes('://')) return originLike
+	try {
+		return getHostWithPort(originLike)
+	} catch {
+		return originLike
+	}
+}
+
+export const isSchemefulWebsiteOrigin = (originLike: string): boolean => originLike.includes('://')
+
+export const normalizeSchemefulWebsiteOrigin = (originLike: string): string => {
+	if (!isSchemefulWebsiteOrigin(originLike)) return originLike
+	try {
+		return getWebsiteOrigin(originLike)
+	} catch {
+		return originLike
+	}
+}
+
+export const getLegacyWebsiteAccessOrigin = (websiteOrigin: string): string => getHostWithPortFromOriginLike(websiteOrigin)
+
+export const getWebsiteAccessLookupOrigins = (websiteOrigin: string): readonly string[] => {
+	const normalizedWebsiteOrigin = normalizeSchemefulWebsiteOrigin(websiteOrigin)
+	const legacyWebsiteOrigin = getLegacyWebsiteAccessOrigin(normalizedWebsiteOrigin)
+	return legacyWebsiteOrigin === normalizedWebsiteOrigin ? [normalizedWebsiteOrigin] : [normalizedWebsiteOrigin, legacyWebsiteOrigin]
+}
+
+export const getMatchingWebsiteAccessOrigin = (storedWebsiteOrigins: Iterable<string>, websiteOrigin: string): string | undefined => {
+	const storedWebsiteOriginSet = new Set(storedWebsiteOrigins)
+	for (const lookupOrigin of getWebsiteAccessLookupOrigins(websiteOrigin)) {
+		if (storedWebsiteOriginSet.has(lookupOrigin)) return lookupOrigin
+	}
+	return undefined
+}
+
+export const getSchemefulOriginsForLegacyWebsiteOrigin = (legacyWebsiteOrigin: string): readonly string[] => {
+	if (legacyWebsiteOrigin === '') return ['file://']
+	const toOrigin = (scheme: 'http' | 'https') => {
+		const originLike = `${ scheme }://${ legacyWebsiteOrigin }`
+		try {
+			return getWebsiteOrigin(originLike)
+		} catch {
+			return originLike
+		}
+	}
+	return [toOrigin('https'), toOrigin('http')]
+}
+
 export const silenceChromeUnCaughtPromise = async <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction

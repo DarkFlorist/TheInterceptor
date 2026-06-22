@@ -6,9 +6,9 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import { type WebsiteSocket, getHostWithPort, getHostWithPortFromOriginLike, getMatchingWebsiteAccessOrigin } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
-import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
@@ -34,6 +34,12 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 }
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
+
+function findWebsiteAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string): WebsiteAccess | undefined {
+	const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(websiteAccess.map((web) => web.website.websiteOrigin), websiteOrigin)
+	if (matchingWebsiteOrigin === undefined) return undefined
+	return websiteAccess.find((web) => web.website.websiteOrigin === matchingWebsiteOrigin)
+}
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
@@ -83,41 +89,31 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 }
 
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			return web.access ? 'hasAccess' : 'noAccess'
-		}
-	}
-	return 'notFound'
+	const web = findWebsiteAccess(websiteAccess, websiteOrigin)
+	if (web === undefined) return 'notFound'
+	if (web.interceptorDisabled) return 'interceptorDisabled'
+	return web.access ? 'hasAccess' : 'noAccess'
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (!web.access) return 'noAccess'
-			if (web.addressAccess !== undefined) {
-				for (const addressAccess of web.addressAccess) {
-					if (addressAccess.address === address.address) {
-						return addressAccess.access ? 'hasAccess' : 'noAccess'
-					}
-				}
+	const web = findWebsiteAccess(websiteAccess, websiteOrigin)
+	if (web === undefined) return 'notFound'
+	if (web.interceptorDisabled) return 'interceptorDisabled'
+	if (!web.access) return 'noAccess'
+	if (web.addressAccess !== undefined) {
+		for (const addressAccess of web.addressAccess) {
+			if (addressAccess.address === address.address) {
+				return addressAccess.access ? 'hasAccess' : 'noAccess'
 			}
-			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'notFound'
 		}
 	}
+	if (address.askForAddressAccess === false) return 'hasAccess'
 	return 'notFound'
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			return web.addressAccess === undefined ? [] : web.addressAccess
-		}
-	}
-	return []
+	const web = findWebsiteAccess(websiteAccess, websiteOrigin)
+	return web?.addressAccess === undefined ? [] : web.addressAccess
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
@@ -125,7 +121,8 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 
 export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
 	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousWebsiteAccess.map((entry) => entry.website.websiteOrigin), website.websiteOrigin)
+		const index = matchingWebsiteOrigin === undefined ? -1 : previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === matchingWebsiteOrigin)
 		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
 		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
 		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
@@ -134,10 +131,11 @@ export async function setInterceptorDisabledForWebsite(website: Website, interce
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
 	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousWebsiteAccess.map((entry) => entry.website.websiteOrigin), website.websiteOrigin)
+		const foundEntry = matchingWebsiteOrigin === undefined ? undefined : previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === matchingWebsiteOrigin)
 		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
 		return previousWebsiteAccess.map((prevAccess) => {
-			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
+			if (prevAccess.website.websiteOrigin === matchingWebsiteOrigin) {
 				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
 				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
 				const addressAccess = { address, access }
@@ -257,7 +255,10 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	const sitesToBlock = (await getWebsiteAccess())
+		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
+		.map((acccess) => getHostWithPortFromOriginLike(acccess.website.websiteOrigin))
+		.filter((websiteOrigin) => websiteOrigin.length > 0)
 	return {
 		tabIdsToBlock,
 		sitesToBlock
@@ -327,7 +328,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	const websiteHost = getHostWithPortFromOriginLike(websiteOrigin)
+	if (sitesToBlock.find((blockUrl) => blockUrl === websiteHost) !== undefined) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

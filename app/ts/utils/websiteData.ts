@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { getHostWithPortFromOriginLike } from './requests.js'
 
 type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>
 const WebsiteMetadataInfo = funtypes.Intersect(
@@ -17,7 +18,7 @@ type WebsiteMetaData  = funtypes.Static<typeof WebsiteMetaData>
 const WebsiteMetaData = funtypes.ReadonlyRecord(funtypes.String, WebsiteMetadataInfo)
 
 export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: boolean): { message: string, suggestedAlternative: string | undefined } | undefined => {
-	const data = websiteMetaData[websiteOrigin]
+	const data = websiteMetaData[getHostWithPortFromOriginLike(websiteOrigin)]
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
 	if (simulationMode === false) return undefined

@@ -200,8 +200,8 @@ describe('startup storage recovery', () => {
 		const storageState = installBrowserMock()
 		const { getSettings, getWebsiteAccess } = await loadModules()
 		storageState.websiteAccess = [
-			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
-			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
+			{ website: { websiteOrigin: 'https://remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
+			{ website: { websiteOrigin: 'https://cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
 		]
 
 		const settings = await withSilencedConsole(async () => await getSettings())

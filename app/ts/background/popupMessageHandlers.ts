@@ -6,7 +6,7 @@ import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type 
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
-import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { hasAccess, sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
@@ -25,7 +25,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, getMatchingWebsiteAccessOrigin, silenceChromeUnCaughtPromise, updateTabIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -223,11 +223,16 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 
 export async function changeInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
 	await updateWebsiteAccess((previousAccess) => {
-		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
+		const previousWebsiteOrigins = previousAccess.map((access) => access.website.websiteOrigin)
+		const changeTargets = accessChange.data.map((change) => ({
+			change,
+			websiteOrigin: getMatchingWebsiteAccessOrigin(previousWebsiteOrigins, change.newEntry.website.websiteOrigin)
+		}))
+		const withEntriesRemoved = previousAccess.filter((access) => changeTargets.find((target) => target.websiteOrigin === access.website.websiteOrigin)?.change.removed !== true)
 		return withEntriesRemoved.map((entry) => {
-			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
+			const changeForEntry = changeTargets.find((target) => target.websiteOrigin === entry.website.websiteOrigin)
 			if (changeForEntry === undefined) return entry
-			return changeForEntry.newEntry
+			return changeForEntry.change.newEntry
 		})
 	})
 
@@ -752,8 +757,10 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 
 async function blockOrAllowWebsiteExternalRequests(websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) {
 	await updateWebsiteAccess((previousAccessList) => {
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousAccessList.map((access) => access.website.websiteOrigin), website.websiteOrigin)
+		if (matchingWebsiteOrigin === undefined) return previousAccessList
 		return previousAccessList.map((access) => {
-			if (access.website.websiteOrigin !== website.websiteOrigin) return access
+			if (access.website.websiteOrigin !== matchingWebsiteOrigin) return access
 			return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 		})
 	})
@@ -769,8 +776,10 @@ export async function blockOrAllowExternalRequests(ethereum: EthereumClientServi
 
 async function removeAddressAccessByAddress(websiteOrigin: string, address: EthereumAddress) {
 	await updateWebsiteAccess((previousAccessList) => {
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousAccessList.map((access) => access.website.websiteOrigin), websiteOrigin)
+		if (matchingWebsiteOrigin === undefined) return previousAccessList
 		return previousAccessList.map(access => {
-			if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
+			if (access.website.websiteOrigin !== matchingWebsiteOrigin || !access.addressAccess) return access
 			const strippedAddressAccess = access.addressAccess.filter(addressAccess => addressAccess.address !== address)
 			return modifyObject(access, { addressAccess: strippedAddressAccess })
 		})
@@ -786,8 +795,10 @@ export async function removeWebsiteAddressAccess(ethereum: EthereumClientService
 
 async function setAdressAccessForWebsite(websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
 	await updateWebsiteAccess((previousAccessList) => {
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousAccessList.map((access) => access.website.websiteOrigin), websiteOrigin)
+		if (matchingWebsiteOrigin === undefined) return previousAccessList
 		return previousAccessList.map((access) => {
-			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
+			if (access.website.websiteOrigin !== matchingWebsiteOrigin || access.addressAccess === undefined) return access
 			const addressAccessList = access.addressAccess.map(addressAccess => (addressAccess.address !== address) ? addressAccess : modifyObject(addressAccess, { access: allowAccess }))
 			return modifyObject(access, { addressAccess: addressAccessList })
 		})
@@ -802,7 +813,11 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 }
 
 export async function removeWebsiteAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccess((previousAccess) => previousAccess.filter(access => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await updateWebsiteAccess((previousAccess) => {
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(previousAccess.map((access) => access.website.websiteOrigin), parsedRequest.data.websiteOrigin)
+		if (matchingWebsiteOrigin === undefined) return previousAccess
+		return previousAccess.filter(access => access.website.websiteOrigin !== matchingWebsiteOrigin)
+	})
 	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
@@ -936,7 +951,7 @@ async function buildHomePageUpdate(
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
+	const interceptorDisabled = websiteOrigin === undefined ? false : hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled'
 	const richData = await richDataPromise
 	return {
 		method: 'popup_UpdateHomePage' as const,
@@ -1009,7 +1024,8 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 
 	const websiteAccess = await getWebsiteAccess()
 	const updateWebsiteDetails = (website: Website) => {
-		const websiteData = websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website
+		const matchingWebsiteOrigin = getMatchingWebsiteAccessOrigin(websiteAccess.map((access) => access.website.websiteOrigin), website.websiteOrigin)
+		const websiteData = matchingWebsiteOrigin === undefined ? undefined : websiteAccess.find((access) => access.website.websiteOrigin === matchingWebsiteOrigin)?.website
 		return websiteData ?? website
 	}
 
