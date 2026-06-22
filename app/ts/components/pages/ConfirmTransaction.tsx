@@ -718,11 +718,11 @@ export function ConfirmTransaction() {
 		} })
 	}
 	const refreshMetadata = async () => {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) return
+		if (currentPendingTransactionOrSignableMessage === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata'})
 	}
 	const refreshPopupVisualisationIfNeeded = async () => {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) return
+		if (currentPendingTransactionOrSignableMessage === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
 	}
 
