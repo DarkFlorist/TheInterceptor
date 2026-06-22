@@ -115,10 +115,20 @@ svg[role="img"] {
 
 .form-control {
 	display: grid;
-	grid-template-columns: 1em auto;
+	grid-template-columns: 1em minmax(0, 1fr);
 	gap: 0.5em;
 	color: var(--text-color);
 	font-size: 0.8em;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.form-control > * {
+	min-width: 0;
+}
+
+.form-control .checkbox-text {
+	overflow-wrap: anywhere;
 }
 
 input[type=checkbox]:not([role=switch]) {
@@ -339,6 +349,12 @@ html, body {
 .address-book-chain-selector {
 	min-width: 0;
 	padding: 10px;
+}
+
+.address-book-chain-selector .dropdown,
+.address-book-chain-selector .dropdown-trigger {
+	width: 100%;
+	min-width: 0;
 }
 
 .address-book-sidebar .menu-list a {
@@ -1173,6 +1189,25 @@ svg.spinner > circle {
 	}
 }
 
+@media screen and (max-width: 220px) {
+	.address-book-entry-media {
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.address-book-entry-actions {
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.25rem;
+	}
+
+	.address-book-entry-remove {
+		margin-left: 0;
+	}
+}
+
 .swap-box {
 	background-color: var(--alpha-005);
 	box-shadow: unset;
@@ -1393,9 +1428,12 @@ strong { color: inherit }
 	background-color: var(--s-bg);
 	color: var(--s-fg, var(--text-color));
 	font-size: var(--s-size, inherit);
+	line-height: 1.2;
 	filter: saturate(var(--s-saturation)) brightness(var(--s-brightness));
 	justify-content: var(--s-justify);
-	height: 2.25em;
+	box-sizing: border-box;
+	height: auto;
+	min-height: 2.25em;
 	padding: 0 0.75em;
 	border: var(--s-outline);
 	border-radius: 4px;
@@ -1505,6 +1543,8 @@ summary:where(details[open] > *) {
 	display: grid;
 	row-gap: var(--gap-y);
 	grid-template-columns: var(--grid-cols);
+	max-width: 100%;
+	min-width: 0;
 }
 
 :where(.flex) { display: flex }
@@ -1512,16 +1552,19 @@ summary:where(details[open] > *) {
 :where(.grid > *) {
 	--area: auto;
 	grid-area: var(--area);
+	min-width: 0;
 }
 
 .brief {
-	--grid-cols: 1fr max-content;
+	--grid-cols: minmax(0, 1fr) minmax(0, max-content);
 	--gap-x: 1rem;
 	--hl-color: white;
 	background-color: color(srgb .3 .3 .3);
 	color: color(srgb .6 .6 .6);
+	box-sizing: border-box;
 	font-size: var(--text-size, inherit);
 	font-weight: var(--font-weight, normal);
+	max-width: 100%;
 	padding: 0.5rem 1em;
 	border-radius: 4px;
 	margin: 0;
@@ -2372,8 +2415,26 @@ header:has(form[role='search']) h1 {
 }
 
 .chainSelector {
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
 	padding-left: 0.5em;
 	padding-right: 0.5em;
+}
+
+.dropdown,
+.dropdown-trigger {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.dropdown button {
+	min-width: 0;
+}
+
+.dropdown button > .truncate {
+	min-width: 0;
+	max-width: 100%;
 }
 
 .sub-importance-box {
@@ -2397,6 +2458,7 @@ header:has(form[role='search']) h1 {
 
 .btn.is-small {
 	font-size: 0.75rem;
+	line-height: 1.2;
 }
 
 .btn.is-danger {
