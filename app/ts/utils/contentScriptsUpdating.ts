@@ -1,18 +1,14 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getHostnameFromOriginLike, getMatchingWebsiteAccessOrigin, getWebsiteOrigin, isSchemefulWebsiteOrigin } from './requests.js'
+import { checkAndThrowRuntimeLastError, getHostnameFromOriginLike, getMatchingWebsiteAccessOrigin, isSchemefulWebsiteOrigin, parseUrlOrUndefined } from './requests.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 
 const getHttpOriginMatchParts = (originLike: string): { scheme: 'http' | 'https', hostname: string } | undefined => {
 	if (!isSchemefulWebsiteOrigin(originLike)) return undefined
-	try {
-		const url = new URL(originLike)
-		if (url.protocol === 'http:') return { scheme: 'http', hostname: url.hostname }
-		if (url.protocol === 'https:') return { scheme: 'https', hostname: url.hostname }
-	} catch {
-		return undefined
-	}
+	const url = parseUrlOrUndefined(originLike)
+	if (url?.protocol === 'http:') return { scheme: 'http', hostname: url.hostname }
+	if (url?.protocol === 'https:') return { scheme: 'https', hostname: url.hostname }
 	return undefined
 }
 
@@ -26,11 +22,10 @@ export const getInterceptorDisabledSiteExcludeMatches = (originLike: string): re
 }
 
 export const isUrlExcludedByInterceptorDisabledSite = (disabledSites: readonly string[], urlString: string): boolean => {
-	try {
-		return getMatchingWebsiteAccessOrigin(disabledSites, getWebsiteOrigin(urlString)) !== undefined
-	} catch {
-		return false
-	}
+	const url = parseUrlOrUndefined(urlString)
+	if (url === undefined) return false
+	const websiteOrigin = url.protocol === 'file:' ? 'file://' : url.origin === 'null' ? (url.port ? `${ url.hostname }:${ url.port }` : url.hostname) : url.origin
+	return getMatchingWebsiteAccessOrigin(disabledSites, websiteOrigin) !== undefined
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {

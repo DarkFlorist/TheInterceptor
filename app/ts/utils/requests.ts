@@ -132,6 +132,15 @@ export const checkAndPrintRuntimeLastError = () => {
 	if (error !== null && error !== undefined && error.message !== undefined) console.error(error)
 }
 
+export const parseUrlOrUndefined = (urlString: string): URL | undefined => {
+	try {
+		return new URL(urlString)
+	} catch (error: unknown) {
+		if (error instanceof TypeError) return undefined
+		throw error
+	}
+}
+
 export const getHostWithPort = (urlString: string): string => {
 	const url = new URL(urlString)
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
@@ -149,31 +158,26 @@ export const getWebsiteOrigin = (urlString: string): string => {
 export const getHostWithPortFromOriginLike = (originLike: string): string => {
 	if (originLike === 'file://') return ''
 	if (!originLike.includes('://')) return originLike
-	try {
-		return getHostWithPort(originLike)
-	} catch {
-		return originLike
-	}
+	const url = parseUrlOrUndefined(originLike)
+	if (url === undefined) return originLike
+	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
 export const getHostnameFromOriginLike = (originLike: string): string => {
 	if (originLike === 'file://') return ''
-	try {
-		return getHostname(originLike.includes('://') ? originLike : `https://${ originLike }`)
-	} catch {
-		return originLike
-	}
+	const url = parseUrlOrUndefined(originLike.includes('://') ? originLike : `https://${ originLike }`)
+	return url?.hostname ?? originLike
 }
 
 export const isSchemefulWebsiteOrigin = (originLike: string): boolean => originLike.includes('://')
 
 export const normalizeSchemefulWebsiteOrigin = (originLike: string): string => {
 	if (!isSchemefulWebsiteOrigin(originLike)) return originLike
-	try {
-		return getWebsiteOrigin(originLike)
-	} catch {
-		return originLike
-	}
+	const url = parseUrlOrUndefined(originLike)
+	if (url === undefined) return originLike
+	if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin
+	if (url.protocol === 'file:') return 'file://'
+	return url.origin === 'null' ? (url.port ? `${ url.hostname }:${ url.port }` : url.hostname) : url.origin
 }
 
 export const getLegacyWebsiteAccessOrigin = (websiteOrigin: string): string => getHostWithPortFromOriginLike(websiteOrigin)
@@ -196,11 +200,8 @@ export const getSchemefulOriginsForLegacyWebsiteOrigin = (legacyWebsiteOrigin: s
 	if (legacyWebsiteOrigin === '') return ['file://']
 	const toOrigin = (scheme: 'http' | 'https') => {
 		const originLike = `${ scheme }://${ legacyWebsiteOrigin }`
-		try {
-			return getWebsiteOrigin(originLike)
-		} catch {
-			return originLike
-		}
+		const url = parseUrlOrUndefined(originLike)
+		return url === undefined ? originLike : url.origin
 	}
 	return [toOrigin('https'), toOrigin('http')]
 }
