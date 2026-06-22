@@ -246,6 +246,8 @@ describe('ConfirmTransaction', () => {
 		assert.equal(dom.document.body.textContent?.includes('Transaction Input'), true)
 		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
 		assert.equal(dom.document.body.textContent?.includes('Change'), true)
+		assert.equal(dom.document.body.textContent?.includes('Gas estimation error'), true)
+		assert.equal(dom.document.body.textContent?.includes('Execution error'), false)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
