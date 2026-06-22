@@ -345,7 +345,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
-				isGasEstimationError = { popupVisualisation.data.transactionToSimulate.success }
+				isGasEstimationError = { !popupVisualisation.data.transactionToSimulate.success }
 				simulationBlockNumber = { popupVisualisation.data.simulationState.blockNumber }
 				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 				rpcConnectionStatus = { param.rpcConnectionStatus }
@@ -718,11 +718,11 @@ export function ConfirmTransaction() {
 		} })
 	}
 	const refreshMetadata = async () => {
-		if (currentPendingTransactionOrSignableMessage === undefined) return
+		if (currentPendingTransactionOrSignableMessage.value === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata'})
 	}
 	const refreshPopupVisualisationIfNeeded = async () => {
-		if (currentPendingTransactionOrSignableMessage === undefined) return
+		if (currentPendingTransactionOrSignableMessage.value === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
 	}
 

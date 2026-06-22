@@ -30,7 +30,8 @@
 		"lint:catches": "bun ./scripts/check-comment-only-catches.mts",
 		"lint:quotes": "bun ./scripts/check-single-quotes.mts",
 		"lint:quotes:fix": "bun ./scripts/check-single-quotes.mts --write",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes"
+		"lint:signals": "bun ./scripts/check-signal-comparisons.mts",
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:signals"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",
