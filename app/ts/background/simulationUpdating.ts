@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
@@ -398,9 +398,16 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	const parentBlock = await ethereum.getBlock(undefined)
-	const baseFeeFixedInputStateBlocks = parentBlock === undefined ? simulationInput : simulationInput.map((block) => (
-		modifyObject(block, { transactions: getBaseFeeAdjustedTransactions(parentBlock, block.transactions) })
-	))
+	const getBaseFeeFixedInputStateBlocks = async () => {
+		if (parentBlock === undefined) return simulationInput
+		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []
+		for (const block of simulationInput) {
+			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, baseFeeFixedInputStateBlocks, block)
+			baseFeeFixedInputStateBlocks.push(modifyObject(block, { transactions }))
+		}
+		return baseFeeFixedInputStateBlocks
+	}
+	const baseFeeFixedInputStateBlocks = await getBaseFeeFixedInputStateBlocks()
 	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
 	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
 }
