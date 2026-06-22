@@ -1,13 +1,11 @@
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedProxyTokenTransferTransaction } from '../identifyTransaction.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
-import { AddressBeforeAfter, type BeforeAfterAddress, SimpleSend, getAsset } from './SimpleSendVisualisations.js'
+import { AddressBeforeAfter, type BeforeAfterAddress, ExecutionRouteNotice, SimpleSend, getAsset } from './SimpleSendVisualisations.js'
 import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { interleave } from '../../../utils/typed-arrays.js'
-import { SmallAddress } from '../../subcomponents/address.js'
 import { extractTokenEvents } from '../../../background/metadataUtils.js'
 
 type BeforeAfterAddressWithAmount = BeforeAfterAddress & { amount: bigint }
@@ -27,11 +25,12 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
 			<TokenOrEth { ...asset } useFullTokenName = { false } style = { { 'font-weight': '500' } } fontSize = 'big' />
 		</span>
+		{ viaProxypath === undefined ? <></> : <ExecutionRouteNotice viaProxypath = { viaProxypath } renameAddressCallBack = { renameAddressCallBack } /> }
 		<p class = 'paragraph'> From </p>
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter { ...sender } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { asset } />
 		</div>
-		<p class = 'paragraph'> To </p>
+		<p class = 'paragraph'> Final recipients </p>
 		{ receivers.map((receiver) => <>
 			<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 				<p class = 'paragraph' style = 'justify-self: right;'> Receive&nbsp;</p>
@@ -44,10 +43,6 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
-		{ viaProxypath === undefined ? <></> : <span style = 'display: flex;'>
-			<p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }> Via proxy:&nbsp;</p>
-			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ ','}&nbsp;</p>) } </>
-		</span> }
 	</div>
 }
 

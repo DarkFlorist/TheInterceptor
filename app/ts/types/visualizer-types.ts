@@ -286,12 +286,27 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		hash: EthereumQuantity,
 		gas: EthereumQuantity,
 		nonce: EthereumQuantity,
-	}),
+	}).And(funtypes.Partial({
+		delegationAddress: AddressBookEntry,
+	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
-			type: funtypes.Union(funtypes.Literal('1559'), funtypes.Literal('7702')),
+			type: funtypes.Literal('1559'),
 			maxFeePerGas: EthereumQuantity,
 			maxPriorityFeePerGas: EthereumQuantity,
+		}),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('7702'),
+			maxFeePerGas: EthereumQuantity,
+			maxPriorityFeePerGas: EthereumQuantity,
+			authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+				chainId: EthereumQuantity,
+				address: EthereumAddress,
+				nonce: EthereumQuantity,
+				r: EthereumQuantity,
+				s: EthereumQuantity,
+				yParity: funtypes.Union(funtypes.Literal('even'), funtypes.Literal('odd')),
+			})),
 		}),
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('4844'),
