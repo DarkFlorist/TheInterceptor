@@ -12,6 +12,7 @@ type ErrorReportMetadata = {
 	source?: string
 	code?: string
 	debugId?: string
+	message?: string
 	category?: InterceptorErrorCategory
 	severity?: InterceptorErrorSeverity
 	details?: unknown
@@ -198,7 +199,7 @@ function popupMessageFromUnexpectedReport(report: InterceptorErrorReport) {
 export async function reportUnexpectedError(error: unknown, metadata: ErrorReportMetadata = {}) {
 	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
-	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, normalizeUnexpectedError(error).message)
+	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, metadata.message ?? normalizeUnexpectedError(error).message)
 	console.error('Unexpected Interceptor error', {
 		debugId: report.debugId,
 		source: report.source,

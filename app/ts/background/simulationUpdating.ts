@@ -19,7 +19,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
-import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
+import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -157,9 +157,12 @@ async function getDelegationAddressesForSimulation(
 			}
 		} catch(error: unknown) {
 			if (isExpectedInfrastructureError(error)) throw error
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-			await reportUnexpectedError({ message: `Failed to retrieve EIP-7702 delegation for ${ addressString(senderAddress) }: ${ errorMessage }` }, {
+			const senderAddressString = addressString(senderAddress)
+			const errorMessage = getErrorMessage(error) ?? 'Unknown error'
+			await reportUnexpectedError(error, {
+				message: `Failed to retrieve EIP-7702 delegation for ${ senderAddressString }: ${ errorMessage }`,
 				code: 'delegation_lookup_failed',
+				details: { senderAddress: senderAddressString },
 				suppressExpectedInfrastructure: false,
 			})
 			return undefined

@@ -864,7 +864,11 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 			if (isExpectedInfrastructureError(error)) throw error
 			const address = checksummedAddress(element.address)
 			const errorMessage = formatCaughtErrorMessage(error)
-			await reportUnexpectedError({ message: `Failed to identify rich list address ${ address }: ${ errorMessage }` }, { suppressExpectedInfrastructure: false })
+			await reportUnexpectedError(error, {
+				message: `Failed to identify rich list address ${ address }: ${ errorMessage }`,
+				details: { address, richListEntry: element },
+				suppressExpectedInfrastructure: false,
+			})
 			return {
 				...element,
 				addressBookEntry: {
@@ -967,10 +971,12 @@ export async function fetchSimulationStackRequestConfirmation(ethereumClientServ
 }
 
 export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
-	return reportUnexpectedError({ message: parsedRequest.data.message }, {
+	return reportUnexpectedError(parsedRequest, {
+		message: parsedRequest.data.message,
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,
 		debugId: parsedRequest.data.debugId,
+		details: parsedRequest.data,
 		suppressExpectedInfrastructure: false,
 	})
 }

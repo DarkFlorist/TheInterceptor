@@ -90,7 +90,7 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 describe('requestMakeMeRichList resilience', () => {
 	test('falls back per address and preserves the underlying error message', async () => {
 		const storageState = installBrowserMock()
-		const { requestMakeMeRichList, setFixedMakeMeRichList, setMakeCurrentAddressRich, getLatestUnexpectedError } = await loadModules()
+		const { requestMakeMeRichList, setFixedMakeMeRichList, setMakeCurrentAddressRich, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 		const failingAddress = 0x1000000000000000000000000000000000000001n
 
 		await setFixedMakeMeRichList([
@@ -118,6 +118,10 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(reply.richList[1]?.makingRich, false)
 		assert.equal(reply.richList[1]?.type, 'PreviousActiveAddress')
 		assert.equal((await getLatestUnexpectedError())?.data.message, `Failed to identify rich list address ${ checksummedAddress(failingAddress) }: boom`)
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		assert.equal(diagnostics[0]?.cause, 'boom')
+		assert.equal(diagnostics[0]?.details?.includes(checksummedAddress(failingAddress)), true)
 		assert.equal(typeof storageState.latestUnexpectedError, 'object')
 	})
 

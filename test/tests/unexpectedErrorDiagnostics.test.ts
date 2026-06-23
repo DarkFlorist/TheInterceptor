@@ -263,6 +263,27 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(typeof diagnostic?.debugId, 'string')
 	})
 
+	test('uses metadata message without dropping the original error cause', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+
+		await reportUnexpectedError(new Error('root failure'), {
+			code: 'contextual_failure',
+			message: 'Failed to refresh contextual data: root failure',
+			details: { address: '0xabc' },
+		})
+
+		const latestUnexpectedError = await getLatestUnexpectedError()
+		assert.equal(latestUnexpectedError?.data.message, 'Failed to refresh contextual data: root failure')
+		assert.equal(latestUnexpectedError?.data.code, 'contextual_failure')
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		const [diagnostic] = diagnostics
+		assert.equal(diagnostic?.message, 'Failed to refresh contextual data: root failure')
+		assert.equal(diagnostic?.cause, 'root failure')
+		assert.equal(diagnostic?.details, '{"address":"0xabc"}')
+	})
+
 	test('records local recovery diagnostics without notifying the popup', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError, reportLocalRecovery } = await modulesPromise

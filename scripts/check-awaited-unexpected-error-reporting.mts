@@ -32,13 +32,27 @@ function isReportUnexpectedErrorCall(node: ts.Node): node is ts.CallExpression {
 		&& node.expression.text === 'reportUnexpectedError'
 }
 
+function isMessagePropertyName(name: ts.PropertyName): boolean {
+	if (ts.isIdentifier(name)) return name.text === 'message'
+	if (ts.isStringLiteralLike(name)) return name.text === 'message'
+	return false
+}
+
+function isMessageObjectLiteral(expression: ts.Expression) {
+	if (!ts.isObjectLiteralExpression(expression)) return false
+	return expression.properties.some((property) => {
+		if (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property) || ts.isMethodDeclaration(property)) return isMessagePropertyName(property.name)
+		return false
+	})
+}
+
 function isWrappedErrorReport(node: ts.CallExpression) {
 	const firstArgument = node.arguments[0]
 	if (firstArgument === undefined) return false
 	const expression = skipParentheses(firstArgument)
-	return ts.isNewExpression(expression)
-		&& ts.isIdentifier(expression.expression)
-		&& expression.expression.text === 'Error'
+	if (ts.isNewExpression(expression)) return true
+	if (ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === 'Error') return true
+	return isMessageObjectLiteral(expression)
 }
 
 function isAllowedReportUsage(node: ts.CallExpression) {

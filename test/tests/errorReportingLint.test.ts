@@ -43,6 +43,8 @@ describe('unexpected error reporting lint', () => {
 				await (reportUnexpectedError(error))
 				void (reportUnexpectedError(error))
 				return (reportUnexpectedError(error))
+				await reportUnexpectedError(error, { message: 'display message' })
+				await reportUnexpectedError({ arbitrary: 'value' })
 			}
 		`)
 
@@ -68,6 +70,20 @@ describe('unexpected error reporting lint', () => {
 				await reportUnexpectedError(
 					new Error('wrapped')
 				)
+			}
+		`)
+
+		assert.notEqual(result.exitCode, 0)
+		assert.equal(result.stderr.includes('Do not wrap errors before reporting.'), true)
+	})
+
+	test('rejects object literal message wrappers', async () => {
+		const result = await runUnexpectedErrorReportingLint(`
+			async function sample(error: unknown) {
+				await reportUnexpectedError({
+					message: 'wrapped'
+				})
+				await reportUnexpectedError(({ 'message': 'wrapped' }))
 			}
 		`)
 
