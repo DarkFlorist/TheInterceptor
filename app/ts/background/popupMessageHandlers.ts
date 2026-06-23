@@ -971,7 +971,7 @@ export async function fetchSimulationStackRequestConfirmation(ethereumClientServ
 }
 
 export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
-	return reportUnexpectedError(parsedRequest, {
+	return reportUnexpectedError(parsedRequest.data.message, {
 		displayMessage: parsedRequest.data.message,
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,

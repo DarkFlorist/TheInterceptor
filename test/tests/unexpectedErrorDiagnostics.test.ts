@@ -285,6 +285,38 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.details, '{"address":"0xabc"}')
 	})
 
+	test('keeps forwarded popup error message as diagnostic cause', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await modulesPromise
+		const { reportUnexpectedErrorInWindow } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const timestamp = new Date('2026-06-23T00:00:00.000Z')
+
+		await withSilencedConsole(async () => await reportUnexpectedErrorInWindow({
+			method: 'popup_UnexpectedErrorOccured',
+			data: {
+				timestamp,
+				message: 'Popup render failed',
+				source: 'popup',
+				code: 'render_error',
+				debugId: 'popup-1234',
+			},
+		}))
+
+		const latestUnexpectedError = await getLatestUnexpectedError()
+		assert.equal(latestUnexpectedError?.data.message, 'Popup render failed')
+		assert.equal(latestUnexpectedError?.data.source, 'popup')
+		assert.equal(latestUnexpectedError?.data.code, 'render_error')
+		assert.equal(latestUnexpectedError?.data.debugId, 'popup-1234')
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		const [diagnostic] = diagnostics
+		assert.equal(diagnostic?.message, 'Popup render failed')
+		assert.equal(diagnostic?.cause, 'Popup render failed')
+		assert.equal(diagnostic?.source, 'popup')
+		assert.equal(diagnostic?.code, 'render_error')
+		assert.equal(diagnostic?.debugId, 'popup-1234')
+	})
+
 	test('records local recovery diagnostics without notifying the popup', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError, reportLocalRecovery } = await modulesPromise

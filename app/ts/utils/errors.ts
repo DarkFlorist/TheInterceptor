@@ -211,10 +211,6 @@ export async function reportUnexpectedError(error: unknown, metadata: ErrorRepor
 	}
 }
 
-export async function reportNonFatalError(error: unknown, metadata: ErrorReportMetadata = {}) {
-	await reportUnexpectedError(error, { ...metadata, code: metadata.code ?? 'non_fatal_error' })
-}
-
 export async function reportLocalRecovery(error: unknown, metadata: LocalRecoveryMetadata) {
 	const report = logLocalRecovery(error, metadata)
 	await appendErrorDiagnostic(report)
