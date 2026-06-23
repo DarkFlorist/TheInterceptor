@@ -1,5 +1,15 @@
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import { addressString } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
+
+function getPermitTokenLabel(entry: AddressBookEntry) {
+	const symbol = entry.type === 'ERC20' ? entry.symbol.trim() : ''
+	if (symbol !== '') return symbol
+	const name = entry.name.trim()
+	if (name !== '') return name
+	return addressString(entry.address)
+}
 
 export function identifySignature(data: VisualizedPersonalSignRequest) {
 	switch (data.type) {
@@ -32,22 +42,22 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign arbitrary message',
 		}
 		case 'Permit': {
-			const symbol = data.verifyingContract
+			const tokenLabel = getPermitTokenLabel(data.verifyingContract)
 			return {
-				title: `${ symbol } Permit`,
-				signingAction: `Sign ${ symbol } Permit`,
-				simulationAction: `Simulate ${ symbol } Permit`,
-				rejectAction: `Reject ${ symbol } Permit`,
+				title: `${ tokenLabel } Permit`,
+				signingAction: `Sign ${ tokenLabel } Permit`,
+				simulationAction: `Simulate ${ tokenLabel } Permit`,
+				rejectAction: `Reject ${ tokenLabel } Permit`,
 				to: data.spender
 			}
 		}
 		case 'Permit2': {
-			const symbol = 'symbol' in data.token ? data.token.symbol : '???'
+			const tokenLabel = getPermitTokenLabel(data.token)
 			return {
-				title: `${ symbol } Permit`,
-				signingAction: `Sign ${ symbol } Permit`,
-				simulationAction: `Simulate ${ symbol } Permit`,
-				rejectAction: `Reject ${ symbol } Permit`,
+				title: `${ tokenLabel } Permit`,
+				signingAction: `Sign ${ tokenLabel } Permit`,
+				simulationAction: `Simulate ${ tokenLabel } Permit`,
+				rejectAction: `Reject ${ tokenLabel } Permit`,
 				to: data.spender
 			}
 		}
