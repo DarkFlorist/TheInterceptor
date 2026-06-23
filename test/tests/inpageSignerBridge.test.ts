@@ -6,6 +6,7 @@ type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
+	readonly signerChainIdReply?: unknown
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -25,10 +26,11 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}) {
+function createFakeWindow({ onConnectedToSignerRequest, signerChainIdReply = '0x1' }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
+	const backgroundSignerChainChanges: unknown[] = []
 	const interceptorErrorPayloads: unknown[] = []
 	const signerAccounts = ['0x1111111111111111111111111111111111111111']
 	let blockRequestAccounts = false
@@ -42,7 +44,8 @@ function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}
 			signerRequests.push(method)
 			switch (method) {
 				case 'eth_chainId':
-					return '0x1'
+					if (signerChainIdReply instanceof Error) throw signerChainIdReply
+					return signerChainIdReply
 				case 'eth_accounts':
 					return signerAccounts
 				case 'eth_requestAccounts':
@@ -119,6 +122,16 @@ function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}
 						result: undefined,
 					})
 					return
+				case 'signer_chainChanged':
+					backgroundSignerChainChanges.push(request.params?.[0])
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'signer_chainChanged',
+						result: '0x',
+					})
+					return
 				default:
 					sendBackgroundMessage({
 						interceptorApproved: true,
@@ -135,6 +148,7 @@ function createFakeWindow({ onConnectedToSignerRequest }: FakeWindowOptions = {}
 		fakeWindow,
 		signerRequests,
 		backgroundEthAccountsReplies,
+		backgroundSignerChainChanges,
 		signerAccounts,
 		interceptorErrorPayloads,
 		sendBackgroundMessage,
@@ -369,6 +383,50 @@ describe('inpage signer bridge', () => {
 			assert.equal((fakeWindow.ethereum as { isInterceptor?: boolean }).isInterceptor, true)
 			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
 		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('reports signer chain id failures without defaulting to mainnet', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const previousConsoleError = console.error
+		const {
+			fakeWindow,
+			signerRequests,
+			backgroundSignerChainChanges,
+			interceptorErrorPayloads,
+		} = createFakeWindow({ signerChainIdReply: new Error('chain id unavailable') })
+		const consoleErrors: unknown[] = []
+		console.error = (...args: unknown[]) => { consoleErrors.push(args) }
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?signer-chain-id-error')
+			await waitFor(() => interceptorErrorPayloads.length === 1)
+
+			assert.deepEqual(signerRequests, ['eth_chainId'])
+			assert.deepEqual(backgroundSignerChainChanges, [])
+			assert.equal(String(interceptorErrorPayloads[0]).includes('inpage: chain id unavailable'), true)
+			assert.equal(String(interceptorErrorPayloads[0]).includes('requestMethod: eth_chainId'), true)
+			assert.equal(consoleErrors.length > 0, true)
+		} finally {
+			console.error = previousConsoleError
 			;(globalThis as { window?: unknown }).window = previousWindow
 			if (previousCustomEvent === undefined) {
 				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
