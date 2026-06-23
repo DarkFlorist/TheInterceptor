@@ -28,13 +28,13 @@ describe('bundler import rewriting', () => {
 		assert.equal(rewritten, 'import"../../vendor/webextension-polyfill/dist/browser-polyfill.js";')
 	})
 
-	test('rewrites nested vendored package imports using the vendored dependency tree', () => {
+	test('rewrites deduped vendored package imports through the root vendor tree', () => {
 		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'ox', '_esm', 'core', 'Hash.js')
 		const source = 'import { keccak_256 as noble_keccak256 } from \'@noble/hashes/sha3\';'
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, 'import { keccak_256 as noble_keccak256 } from \'../../__dependencies__/@noble/hashes/esm/sha3.js\';')
+		assert.equal(rewritten, 'import { keccak_256 as noble_keccak256 } from \'../../../@noble/hashes/esm/sha3.js\';')
 	})
 
 	test('rewrites vendored relative node_modules imports away from node_modules paths', () => {
@@ -43,7 +43,7 @@ describe('bundler import rewriting', () => {
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, 'import { keccak_256 } from \'../../../__dependencies__/@noble/hashes/esm/sha3.js\';')
+		assert.equal(rewritten, 'import { keccak_256 } from \'../../../../@noble/hashes/esm/sha3.js\';')
 	})
 
 	test('does not rewrite comment examples that are not real imports', () => {

@@ -73,6 +73,22 @@ const getPackageSubpath = (specifier: string, packageRootName: string) => specif
 	? '.'
 	: `./${ specifier.slice(packageRootName.length + 1) }`
 
+function getPackageSpecifierFromNodeModulesPathParts(pathParts: readonly string[]) {
+	const nodeModulesIndex = pathParts.indexOf('node_modules')
+	if (nodeModulesIndex === -1) return undefined
+	const dependencyPathParts = pathParts.slice(nodeModulesIndex + 1)
+	const firstPathPart = dependencyPathParts[0]
+	if (firstPathPart === undefined) return undefined
+	if (!firstPathPart.startsWith('@')) return dependencyPathParts.join('/')
+	const secondPathPart = dependencyPathParts[1]
+	if (secondPathPart === undefined) return undefined
+	return dependencyPathParts.slice(0, 2).join('/') + (dependencyPathParts.length > 2 ? `/${ dependencyPathParts.slice(2).join('/') }` : '')
+}
+
+function getPackageSpecifierFromRelativeNodeModulesImport(specifier: string) {
+	return getPackageSpecifierFromNodeModulesPathParts(specifier.split(/[\\/]+/))
+}
+
 function getVendoredLocationForNodeModulesPath(resolvedPath: string) {
 	if (!isInsideDirectory(resolvedPath, nodeModulesDirectory)) return undefined
 	const relativePathParts = path.relative(nodeModulesDirectory, resolvedPath).split(path.sep)
@@ -287,8 +303,13 @@ function getRewrittenRelativeImportPath(filePath: string, specifier: string) {
 	if (specifier.startsWith('/')) return undefined
 	const basePath = getResolverBasePath(filePath)
 	const resolvedPath = resolveExistingModuleFile(path.resolve(path.dirname(basePath), specifier))
-	if (resolvedPath === undefined) return undefined
-	const vendoredLocation = getVendoredLocationForNodeModulesPath(resolvedPath)
+	const fallbackResolvedPath = resolvedPath ?? (() => {
+		const nodeModulesPackageSpecifier = getPackageSpecifierFromRelativeNodeModulesImport(specifier)
+		if (nodeModulesPackageSpecifier === undefined) return undefined
+		return resolvePackageSpecifierFromNodeModules(nodeModulesPackageSpecifier, basePath)
+	})()
+	if (fallbackResolvedPath === undefined) return undefined
+	const vendoredLocation = getVendoredLocationForNodeModulesPath(fallbackResolvedPath)
 	if (vendoredLocation === undefined) return undefined
 	const vendoredImportPath = getRelativePath(path.dirname(filePath), vendoredLocation).replace(/\\/g, '/')
 	return vendoredImportPath === specifier ? undefined : vendoredImportPath
