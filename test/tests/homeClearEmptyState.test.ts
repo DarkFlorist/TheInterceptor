@@ -10,7 +10,7 @@ import { mockSignTransaction } from '../../app/ts/simulation/services/Simulation
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import type { RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
+import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
 import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 
@@ -128,38 +128,110 @@ const createEmptySimulationResults = (): SimulationAndVisualisationResults => ({
 	},
 })
 
+function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
+	return {
+		changeActiveAddress: () => undefined,
+		makeCurrentAddressRich: new Signal(false),
+		activeAddresses: new Signal([activeAddressEntry]),
+		tabState: new Signal<TabState | undefined>(undefined),
+		activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
+		activeSigningAddress: new Signal<bigint | undefined>(undefined),
+		useSignersAddressAsActiveAddress: new Signal(false),
+		simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults())),
+		rpcNetwork: new Signal(rpcNetwork),
+		setActiveRpcAndInformAboutIt: () => undefined,
+		simulationMode: new Signal(true),
+		tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
+		currentBlockNumber: new Signal<bigint | undefined>(101n),
+		renameAddressCallBack: () => undefined,
+		editEnsNamedHashCallBack: () => undefined,
+		rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
+		rpcEntries: new Signal([rpcNetwork]),
+		simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
+		simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
+		interceptorDisabled: new Signal(false),
+		preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
+		fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
+		numberOfAddressesMadeRich: new Signal(0),
+		openImportSimulation: () => undefined,
+		...overrides,
+	}
+}
+
+type TestDomNode = {
+	readonly tagName?: string
+	readonly childNodes?: readonly TestDomNode[]
+	readonly textContent?: string | null
+	readonly l?: Record<string, (event: unknown) => unknown>
+}
+
+function collectElements(node: TestDomNode | null | undefined, tagName: string, results: TestDomNode[] = []) {
+	if (node?.tagName === tagName.toUpperCase()) results.push(node)
+	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
+	return results
+}
+
+async function clickElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element })
+}
+
+function installBrowserMock() {
+	const previousBrowser = globalThis.browser
+	const sentMessages: unknown[] = []
+	Object.defineProperty(globalThis, 'browser', {
+		configurable: true,
+		writable: true,
+		value: {
+			runtime: {
+				lastError: null,
+				async sendMessage(message: unknown) {
+					sentMessages.push(message)
+					return undefined
+				},
+			},
+		},
+	})
+	return {
+		sentMessages,
+		restore() {
+			globalThis.browser = previousBrowser
+		},
+	}
+}
+
+function installCloseMock() {
+	const previousClose = globalThis.close
+	let closeCount = 0
+	Object.defineProperty(globalThis, 'close', {
+		configurable: true,
+		writable: true,
+		value: () => {
+			closeCount += 1
+		},
+	})
+	return {
+		get closeCount() {
+			return closeCount
+		},
+		restore() {
+			globalThis.close = previousClose
+		},
+	}
+}
+
+function hasMethod(message: unknown, method: string) {
+	return typeof message === 'object' && message !== null && 'method' in message && message.method === method
+}
+
 describe('Home popup clear empty state', () => {
 	test('rerenders to the empty-state dino when simulation results are cleared', async () => {
 		const dom = installDomMock()
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults()))
 		try {
 			await act(() => {
-				render(h(Home, {
-					changeActiveAddress: () => undefined,
-					makeCurrentAddressRich: new Signal(false),
-					activeAddresses: new Signal([activeAddressEntry]),
-					tabState: new Signal<TabState | undefined>(undefined),
-					activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
-					useSignersAddressAsActiveAddress: new Signal(false),
-					simVisResults,
-					rpcNetwork: new Signal(rpcNetwork),
-					setActiveRpcAndInformAboutIt: () => undefined,
-					simulationMode: new Signal(true),
-					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
-					currentBlockNumber: new Signal<bigint | undefined>(101n),
-					renameAddressCallBack: () => undefined,
-					editEnsNamedHashCallBack: () => undefined,
-					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
-					rpcEntries: new Signal([rpcNetwork]),
-					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
-					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
-					interceptorDisabled: new Signal(false),
-					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
-					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
-					numberOfAddressesMadeRich: new Signal(0),
-					openImportSimulation: () => undefined,
-				}), dom.document.body)
+				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
@@ -182,32 +254,10 @@ describe('Home popup clear empty state', () => {
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
 		try {
 			await act(() => {
-				render(h(Home, {
-					changeActiveAddress: () => undefined,
-					makeCurrentAddressRich: new Signal(false),
-					activeAddresses: new Signal([activeAddressEntry]),
-					tabState: new Signal<TabState | undefined>(undefined),
-					activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
-					useSignersAddressAsActiveAddress: new Signal(false),
+				render(h(Home, createHomeParams({
 					simVisResults,
-					rpcNetwork: new Signal(rpcNetwork),
-					setActiveRpcAndInformAboutIt: () => undefined,
-					simulationMode: new Signal(true),
-					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
-					currentBlockNumber: new Signal<bigint | undefined>(101n),
-					renameAddressCallBack: () => undefined,
-					editEnsNamedHashCallBack: () => undefined,
-					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
-					rpcEntries: new Signal([rpcNetwork]),
-					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
-					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
-					interceptorDisabled: new Signal(false),
-					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
-					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 					numberOfAddressesMadeRich: new Signal(2),
-					openImportSimulation: () => undefined,
-				}), dom.document.body)
+				})), dom.document.body)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Simply making 2 addresses rich'), true)
@@ -217,15 +267,39 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	test('opens the full simulation stack from the popup button', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		const closeMock = installCloseMock()
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults()))
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
+			})
+
+			const fullStackButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Full Stack'))
+			assert.ok(fullStackButton)
+
+			await act(async () => {
+				await clickElement(fullStackButton)
+			})
+
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_openSimulationStack')), true)
+			assert.equal(closeMock.closeCount, 1)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+			closeMock.restore()
+		}
+	})
+
 	test('treats a known signer account as connected even if the signerConnected flag is stale', async () => {
 		const dom = installDomMock()
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
 		try {
 			await act(() => {
-				render(h(Home, {
-					changeActiveAddress: () => undefined,
-					makeCurrentAddressRich: new Signal(false),
-					activeAddresses: new Signal([activeAddressEntry]),
+				render(h(Home, createHomeParams({
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
@@ -241,23 +315,9 @@ describe('Home popup clear empty state', () => {
 					activeSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
 					useSignersAddressAsActiveAddress: new Signal(true),
 					simVisResults,
-					rpcNetwork: new Signal(rpcNetwork),
-					setActiveRpcAndInformAboutIt: () => undefined,
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' }),
-					currentBlockNumber: new Signal<bigint | undefined>(101n),
-					renameAddressCallBack: () => undefined,
-					editEnsNamedHashCallBack: () => undefined,
-					rpcConnectionStatus: new Signal<RpcConnectionStatus>(undefined),
-					rpcEntries: new Signal([rpcNetwork]),
-					simulationUpdatingState: new Signal<'done' | 'updating' | 'failed' | undefined>('done'),
-					simulationResultState: new Signal<'done' | 'invalid' | 'corrupted' | undefined>('done'),
-					interceptorDisabled: new Signal(false),
-					preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
-					fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
-					numberOfAddressesMadeRich: new Signal(0),
-					openImportSimulation: () => undefined,
-				}), dom.document.body)
+				})), dom.document.body)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('CONNECTED'), true)
