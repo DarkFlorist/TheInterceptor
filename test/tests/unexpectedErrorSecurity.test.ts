@@ -84,9 +84,9 @@ describe('unexpected error security', () => {
 
 	test('use generic popup copy for unknown thrown values', async () => {
 		const { popupMessages } = installBrowserMock()
-		const { getLatestUnexpectedError, handleUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
+		const { getLatestUnexpectedError, reportUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
 
-		await handleUnexpectedError({ arbitrary: 'value' })
+		await reportUnexpectedError({ arbitrary: 'value' })
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)
@@ -99,9 +99,9 @@ describe('unexpected error security', () => {
 
 	test('preserve trusted internal Error messages for popup display', async () => {
 		installBrowserMock()
-		const { getLatestUnexpectedError, handleUnexpectedError } = await loadModules()
+		const { getLatestUnexpectedError, reportUnexpectedError } = await loadModules()
 
-		await handleUnexpectedError(new Error('Trusted extension failure'))
+		await reportUnexpectedError(new Error('Trusted extension failure'))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)

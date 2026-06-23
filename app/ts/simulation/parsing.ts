@@ -13,6 +13,7 @@ import { assertNever } from '../utils/typescript.js'
 import type { EthereumEvent } from '../types/ethSimulate-types.js'
 import type { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
+import { reportLocalRecovery } from '../utils/errors.js'
 
 type TokenLogHandler = (event: EthereumEvent) => TokenVisualizerResult[]
 
@@ -118,8 +119,11 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 			args: valuesWithTypes,
 		}
 	} catch (e: unknown) {
-		console.warn({ transaction })
-		console.error(e)
+		await reportLocalRecovery(e, {
+			code: 'transaction_input_parse_failed',
+			message: 'Falling back to showing unparsed calldata.',
+			details: { transaction },
+		})
 		return nonParsed
 	}
 }

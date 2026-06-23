@@ -19,6 +19,9 @@ function createBrowserMock() {
 		sentMessages.push(message)
 		return undefined
 	}
+	const defaultSetStorage = async (items: Record<string, unknown>) => {
+		Object.assign(storageState, items)
+	}
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
@@ -37,9 +40,7 @@ function createBrowserMock() {
 		storage: {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) { return getStorageItems(keys) },
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
+				set: defaultSetStorage,
 				async remove(keys: string | string[]) {
 					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 				},
@@ -80,9 +81,13 @@ function createBrowserMock() {
 			sentMessages.length = 0
 			browserMock.runtime.lastError = null
 			browserMock.runtime.sendMessage = defaultSendMessage
+			browserMock.storage.local.set = defaultSetStorage
 		},
 		setSendMessage(sendMessage: (message: RuntimeMessage) => Promise<unknown>) {
 			browserMock.runtime.sendMessage = sendMessage
+		},
+		setStorageSet(set: (items: Record<string, unknown>) => Promise<void>) {
+			browserMock.storage.local.set = set
 		},
 	}
 }
@@ -102,7 +107,7 @@ const modulesPromise = loadModules()
 
 describe('unexpected error diagnostics', () => {
 	test('recognizes expected infrastructure errors from unknown thrown values', async () => {
-		const { classifyCaughtError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } = await modulesPromise
+		const { classifyCaughtError, createInterceptorInternalError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } = await modulesPromise
 
 		assert.equal(isNewBlockAbort(new Error(NEW_BLOCK_ABORT)), true)
 		assert.equal(isNewBlockAbort(NEW_BLOCK_ABORT), true)
@@ -113,8 +118,11 @@ describe('unexpected error diagnostics', () => {
 
 		assert.equal(isFailedToFetchError(new Error('Failed to fetch')), true)
 		assert.equal(isFailedToFetchError('NetworkError when attempting to fetch resource'), true)
-		assert.equal(isFailedToFetchError({ message: 'Fetch request timed out.' }), true)
-		assert.equal(isFailedToFetchError({ message: 'Fetch request aborted.' }), true)
+		assert.equal(isFailedToFetchError(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout')), true)
+		assert.equal(isFailedToFetchError(createInterceptorInternalError('Fetch request aborted.', 'fetch_aborted')), true)
+		assert.equal(isFailedToFetchError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed')), true)
+		assert.equal(isFailedToFetchError({ message: 'Fetch request timed out.' }), false)
+		assert.equal(isFailedToFetchError({ message: 'Fetch request aborted.' }), false)
 		assert.equal(isFailedToFetchError('unrelated error'), false)
 
 		assert.equal(classifyCaughtError(NEW_BLOCK_ABORT), 'newBlockAbort')
@@ -126,20 +134,39 @@ describe('unexpected error diagnostics', () => {
 
 	test('does not report new-block aborts as unexpected errors', async () => {
 		browserMock.reset()
-		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+		const { createInterceptorInternalError, getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await handleUnexpectedError(NEW_BLOCK_ABORT)
-		await handleUnexpectedError(new Error(NEW_BLOCK_ABORT))
+		await reportUnexpectedError(NEW_BLOCK_ABORT)
+		await reportUnexpectedError(new Error(NEW_BLOCK_ABORT))
+		await reportUnexpectedError(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout'))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
 		assert.equal(browserMock.sentMessages.length, 0)
+	})
+
+	test('reports explicit expected-infrastructure diagnostics when suppression is disabled', async () => {
+		browserMock.reset()
+		const { createInterceptorInternalError, getLatestUnexpectedError, reportUnexpectedError } = await modulesPromise
+
+		await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed'), {
+			source: 'popup',
+			code: 'popup_message_listener_failed',
+			suppressExpectedInfrastructure: false,
+		})
+
+		const latestUnexpectedError = await getLatestUnexpectedError()
+		assert.equal(latestUnexpectedError?.data.message, 'Failed to fetch')
+		assert.equal(latestUnexpectedError?.data.source, 'popup')
+		assert.equal(latestUnexpectedError?.data.code, 'popup_message_listener_failed')
+		assert.equal(browserMock.sentMessages.length, 1)
 	})
 
 	test('reports wrapped new-block aborts as unexpected development errors', async () => {
 		browserMock.reset()
-		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await handleUnexpectedError(new Error(`Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`))
+		await reportUnexpectedError(new Error(`Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, `Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`)
@@ -150,14 +177,30 @@ describe('unexpected error diagnostics', () => {
 	test('records unexpected errors even when broadcasting the notification fails', async () => {
 		browserMock.reset()
 		browserMock.setSendMessage(async () => { throw new Error('broadcast failed') })
-		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await handleUnexpectedError(new Error('root failure'))
+		await reportUnexpectedError(new Error('root failure'))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'root failure')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(browserMock.sentMessages.length, 0)
+	})
+
+	test('broadcasts unexpected errors even when persistence fails', async () => {
+		browserMock.reset()
+		browserMock.setStorageSet(async () => { throw new Error('storage failed') })
+		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+
+		await reportUnexpectedError(new Error('root failure'))
+
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.equal(browserMock.sentMessages.length, 1)
+		const [message] = browserMock.sentMessages
+		assert.equal(message?.method, 'popup_UnexpectedErrorOccured')
+		const data = message?.data
+		if (typeof data !== 'object' || data === null || !('code' in data)) throw new Error('missing unexpected error data')
+		assert.equal(data.code, 'unexpected_error_persist_failed')
 	})
 
 	test('preserves caller abort reasons from fetch requests', async () => {
@@ -183,10 +226,10 @@ describe('unexpected error diagnostics', () => {
 
 	test('keeps forwarded InterceptorError diagnostics out of the popup message', async () => {
 		browserMock.reset()
-		const { handleUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
+		const { reportUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
 		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
 
-		await handleUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] })
+		await reportUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] })
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
@@ -198,15 +241,50 @@ describe('unexpected error diagnostics', () => {
 
 	test('keeps plain unexpected errors unchanged', async () => {
 		browserMock.reset()
-		const { handleUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await handleUnexpectedError(new Error('plain error'))
+		await reportUnexpectedError(new Error('plain error'))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'plain error')
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		const [diagnostic] = diagnostics
+		assert.equal(diagnostic?.message, 'plain error')
+		assert.equal(diagnostic?.cause, 'plain error')
+		assert.equal(diagnostic?.category, 'unexpected')
+		assert.equal(diagnostic?.severity, 'error')
+		assert.equal(diagnostic?.userVisible, true)
+		assert.equal(diagnostic?.source, 'internal')
+		assert.equal(diagnostic?.code, 'unexpected_error')
+		assert.equal(typeof diagnostic?.debugId, 'string')
+	})
+
+	test('records local recovery diagnostics without notifying the popup', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError, reportLocalRecovery } = await modulesPromise
+
+		await reportLocalRecovery(new Error('decode failed'), {
+			code: 'test_local_recovery',
+			message: 'Continuing after a recovered test failure.',
+			details: { tokenId: 1n },
+		})
+
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.equal(browserMock.sentMessages.length, 0)
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		const [diagnostic] = diagnostics
+		assert.equal(diagnostic?.message, 'Continuing after a recovered test failure.')
+		assert.equal(diagnostic?.cause, 'decode failed')
+		assert.equal(diagnostic?.category, 'local_recovery')
+		assert.equal(diagnostic?.severity, 'warning')
+		assert.equal(diagnostic?.userVisible, false)
+		assert.equal(diagnostic?.code, 'test_local_recovery')
+		assert.equal(diagnostic?.details, '{"tokenId":"1"}')
 	})
 
 	test('renders forwarded diagnostics directly from the message string in the existing unexpected error popup', async () => {

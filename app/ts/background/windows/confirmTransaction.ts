@@ -21,7 +21,7 @@ import {
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { JsonRpcResponseError, handleUnexpectedError, isExpectedInfrastructureError, printError } from '../../utils/errors.js'
+import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
@@ -126,7 +126,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		return true
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return false
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 	return false
 }
@@ -236,7 +236,7 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 		try {
 			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
 		} catch(e) {
-			printError(e)
+			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
 		}
 	}
 	await clearPendingTransactions()
@@ -364,7 +364,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
-			printError(error)
+			await reportLocalRecovery(error, { code: 'transaction_gas_estimation_failed', message: 'Returning a typed RPC error to the requesting page.' })
 			if (error instanceof Error) return { ...extraParams, error: { code: 123456, message: error.message, data: 'data' in error && typeof error.data === 'string' ? error.data : '0x' }, success: false }
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
@@ -446,7 +446,7 @@ export async function openConfirmTransactionDialogForMessage(
 			}
 		})
 	} catch(e) {
-		await handleUnexpectedError(e)
+		await reportUnexpectedError(e)
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'Failed to process message signing request. See Interceptor for error message')
 	}
 	const pendingTransactionData = await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier)
@@ -513,7 +513,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }
 		} catch(e: unknown) {
-			printError(e)
+			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.' })
 			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 		}
 	})

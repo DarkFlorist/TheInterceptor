@@ -4,7 +4,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
-import { handleUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -85,7 +85,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 	return await getPopupVisualisationState()
 }
@@ -137,13 +137,13 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				if (throwOnUnexpectedError) throw error
 				const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
-				await handleUnexpectedError(error)
+				await reportUnexpectedError(error)
 			}
 		})
 	} catch (error) {
 		if (throwOnUnexpectedError) throw error
 		if (isExpectedInfrastructureError(error)) return
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 }
 

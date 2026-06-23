@@ -31,7 +31,7 @@ import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-mess
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
-import { getErrorMessage, handleUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort } from '../utils/errors.js'
+import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
@@ -861,10 +861,10 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		try {
 			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
 		} catch (error) {
-			if (isNewBlockAbort(error)) throw error
+			if (isExpectedInfrastructureError(error)) throw error
 			const address = checksummedAddress(element.address)
 			const errorMessage = formatCaughtErrorMessage(error)
-			await handleUnexpectedError(new Error(`Failed to identify rich list address ${ address }: ${ errorMessage }`))
+			await reportUnexpectedError({ message: `Failed to identify rich list address ${ address }: ${ errorMessage }` }, { suppressExpectedInfrastructure: false })
 			return {
 				...element,
 				addressBookEntry: {
@@ -966,11 +966,12 @@ export async function fetchSimulationStackRequestConfirmation(ethereumClientServ
 	await resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, confirmation)
 }
 
-export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
-	return handleUnexpectedError(new Error(parsedRequest.data.message), {
+export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
+	return reportUnexpectedError({ message: parsedRequest.data.message }, {
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,
 		debugId: parsedRequest.data.debugId,
+		suppressExpectedInfrastructure: false,
 	})
 }
 

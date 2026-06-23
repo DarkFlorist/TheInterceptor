@@ -1,5 +1,6 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort } from './requests.js'
+import { reportLocalRecovery } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -50,7 +51,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return false
-		console.error(error)
+		await reportLocalRecovery(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
 	}
 	return false
 }
