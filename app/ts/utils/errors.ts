@@ -4,6 +4,7 @@ import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-ty
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'
 import { getErrorMessage, getInterceptorInternalErrorCode, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
+import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
 export { createInterceptorInternalError, getErrorMessage } from './caughtErrors.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
@@ -153,12 +154,8 @@ export function printError(error: unknown) {
 	}
 }
 
-function generateDebugId() {
-	return globalThis.crypto.randomUUID().slice(0, 8)
-}
-
 function createErrorReport(error: unknown, metadata: ErrorReportMetadata, policy: ErrorPolicyEntry, defaultCode: string, message: string): InterceptorErrorReport {
-	const debugId = metadata.debugId ?? generateDebugId()
+	const debugId = metadata.debugId ?? createErrorDebugId()
 	const source = metadata.source ?? 'internal'
 	return {
 		timestamp: new Date(),
@@ -183,19 +180,6 @@ async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 	}
 }
 
-function popupMessageFromUnexpectedReport(report: InterceptorErrorReport) {
-	return {
-		method: 'popup_UnexpectedErrorOccured' as const,
-		data: {
-			timestamp: report.timestamp,
-			message: report.message,
-			source: report.source,
-			code: report.code,
-			debugId: report.debugId,
-		}
-	}
-}
-
 export async function reportUnexpectedError(error: unknown, metadata: ErrorReportMetadata = {}) {
 	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
@@ -210,7 +194,7 @@ export async function reportUnexpectedError(error: unknown, metadata: ErrorRepor
 	printError(error)
 	console.trace()
 	await appendErrorDiagnostic(report)
-	const errorMessage = popupMessageFromUnexpectedReport(report)
+	const errorMessage = createUnexpectedErrorPopupMessage(report)
 	let messageToBroadcast = errorMessage
 	try {
 		await setLatestUnexpectedError(errorMessage)
@@ -268,17 +252,4 @@ export function reportLocalRecoveryAtAsyncBoundary(operation: () => Promise<unkn
 	void operation().catch((error: unknown) => {
 		reportLocalRecoveryBestEffort(error, metadata)
 	})
-}
-
-export function reportUnexpectedErrorAtAsyncBoundary(operation: () => Promise<unknown>, metadata: ErrorReportMetadata = {}) {
-	void operation().catch((error: unknown) => {
-		void reportUnexpectedError(error, metadata)
-	})
-}
-
-export function withUnexpectedErrorReporting<Args extends readonly unknown[]>(callback: (...args: Args) => Promise<unknown>, metadata: ErrorReportMetadata = {}) {
-	return (...args: Args) => {
-		reportUnexpectedErrorAtAsyncBoundary(async () => await callback(...args), metadata)
-		return undefined
-	}
 }

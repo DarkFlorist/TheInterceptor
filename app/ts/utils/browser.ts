@@ -1,23 +1,16 @@
-import { PopupMessage, type PopupMessage as PopupMessageType } from '../types/interceptor-messages.js'
-
-function getErrorMessage(error: unknown) {
-	if (error instanceof Error) return error.message
-	if (typeof error === 'string') return error
-	return 'Unknown popup listener error'
-}
+import { PopupMessage } from '../types/interceptor-messages.js'
+import { getErrorMessage } from './caughtErrors.js'
+import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
 
 async function reportPopupMessageListenerError(error: unknown) {
 	try {
-		const unexpectedErrorMessage: PopupMessageType = {
-			method: 'popup_UnexpectedErrorOccured',
-			data: {
-				timestamp: new Date(),
-				message: getErrorMessage(error),
-				source: 'popup',
-				code: 'popup_message_listener_failed',
-				debugId: globalThis.crypto.randomUUID().slice(0, 8),
-			}
-		}
+		const unexpectedErrorMessage = createUnexpectedErrorPopupMessage({
+			timestamp: new Date(),
+			message: getErrorMessage(error) ?? 'Unknown popup listener error',
+			source: 'popup',
+			code: 'popup_message_listener_failed',
+			debugId: createErrorDebugId(),
+		})
 		await browser.runtime.sendMessage(PopupMessage.serialize(unexpectedErrorMessage))
 	} catch (reportingError: unknown) {
 		// error-reporting: console-only fallback when the popup cannot reach the background reporter.
