@@ -48,7 +48,7 @@ class InterceptorFuture<T> implements PromiseLike<T> {
 }
 
 class EthereumJsonRpcError extends Error {
-	constructor(public readonly code: number, message: string, public readonly data?: object) {
+	constructor(public readonly code: number, message: string, public readonly data?: unknown) {
 		super(message)
 		this.name = this.constructor.name
 	}
@@ -89,7 +89,7 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	readonly error: {
 		readonly code: number,
 		readonly message: string,
-		readonly data?: object
+		readonly data?: unknown
 	}
 }
 
@@ -165,7 +165,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 			error: {
 				code,
 				message,
-				...(errorData !== undefined && typeof errorData === 'object' && errorData !== null ? { data: errorData } : {}),
+				...(errorData !== undefined ? { data: errorData } : {}),
 			},
 		}
 	}
@@ -633,12 +633,16 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
-			if (typeof reply !== 'string') return
+			if (typeof reply !== 'string') {
+				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
+				return
+			}
 			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
-		} catch(e) {
+		} catch(error: unknown) {
 			console.error('failed to get chain Id from signer')
-			console.error(e)
-			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ '0x1' ] })
+			console.error(error)
+			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', error, { requestMethod: 'eth_chainId' }))
+			return undefined
 		}
 	}
 
@@ -765,7 +769,7 @@ class InterceptorMessageListener {
 			&& maybeErrorObject.code !== undefined && typeof maybeErrorObject.code === 'number'
 			&& 'message' in maybeErrorObject && maybeErrorObject.message !== undefined && typeof maybeErrorObject.message === 'string'
 		) {
-			return new EthereumJsonRpcError(maybeErrorObject.code, maybeErrorObject.message, 'data' in maybeErrorObject && typeof maybeErrorObject.data === 'object' && maybeErrorObject.data !== null ? maybeErrorObject.data : undefined)
+			return new EthereumJsonRpcError(maybeErrorObject.code, maybeErrorObject.message, 'data' in maybeErrorObject && maybeErrorObject.data !== undefined ? maybeErrorObject.data : undefined)
 		}
 		return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', maybeErrorObject )
 	}

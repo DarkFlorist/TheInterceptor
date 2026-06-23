@@ -31,8 +31,8 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			world: 'MAIN',
 			matchOriginAsFallback: true
 		}])
-	} catch (err) {
-		console.warn(err)
+	} catch (error: unknown) {
+		await handleUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}
 }
 
