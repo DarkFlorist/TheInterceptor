@@ -1,7 +1,7 @@
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from './typescript.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from './requests.js'
+import { checkAndThrowRuntimeLastError, getTabIfExists, getWindowIfExists, isMissingBrowserTargetError, updateTabIfExists, updateWindowIfExists } from './requests.js'
 
 export type PopupOrTab = {
 	window: browser.windows.Window
@@ -27,12 +27,12 @@ export async function openPopupOrTab(createData: browser.windows._CreateCreateDa
 export async function getPopupOrTabById(popupOrTabId: PopupOrTabId): Promise<PopupOrTab | undefined> {
 	switch (popupOrTabId.type) {
 		case 'tab': {
-			const tab = await safeGetTab(popupOrTabId.id)
+			const tab = await getTabIfExists(popupOrTabId.id)
 			if (tab === undefined || tab.id === undefined) return undefined
 			return { type: 'tab', id: tab.id, tab }
 		}
 		case 'popup': {
-			const window = await safeGetWindow(popupOrTabId.id)
+			const window = await getWindowIfExists(popupOrTabId.id)
 			if (window === undefined || window.id === undefined) return undefined
 			return { type: 'popup', id: window.id, window }
 		}
@@ -44,12 +44,12 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 	try {
 		switch (popupOrTabId.type) {
 			case 'tab': {
-				const tab = await safeGetTab(popupOrTabId.id)
+				const tab = await getTabIfExists(popupOrTabId.id)
 				if (tab !== undefined) await browser.tabs.remove(popupOrTabId.id)
 				break
 			}
 			case 'popup': {
-				const window = await safeGetWindow(popupOrTabId.id)
+				const window = await getWindowIfExists(popupOrTabId.id)
 				if (window !== undefined) await browser.windows.remove(popupOrTabId.id)
 				break
 			}
@@ -57,7 +57,7 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 		}
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
-		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		if (isMissingBrowserTargetError(error)) return
 		throw error
 	}
 }

@@ -76,7 +76,7 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init: Reques
 	}
 }
 
-function isMissingBrowserTargetError(error: unknown) {
+export function isMissingBrowserTargetError(error: unknown) {
 	if (!(error instanceof Error)) return false
 	return error.message.startsWith('No tab with id')
 		|| error.message.startsWith('No window with id')
@@ -89,7 +89,7 @@ function throwIfUnexpectedBrowserTargetError(error: unknown) {
 	throw error
 }
 
-export const safeGetTab = async (tabId: number) => {
+export const getTabIfExists = async (tabId: number) => {
 	try {
 		const tab = await browser.tabs.get(tabId)
 		checkAndThrowRuntimeLastError()
@@ -100,13 +100,14 @@ export const safeGetTab = async (tabId: number) => {
 	}
 }
 
+// Missing targets return false; unexpected browser failures still propagate.
 export const doesTabExist = async (tabId: number) => {
-	const tab = await safeGetTab(tabId)
+	const tab = await getTabIfExists(tabId)
 	if (tab === undefined) return false
 	return true
 }
 
-export const safeGetWindow = async (windowId: number) => {
+export const getWindowIfExists = async (windowId: number) => {
 	try {
 		const window = await browser.windows.get(windowId)
 		checkAndThrowRuntimeLastError()
