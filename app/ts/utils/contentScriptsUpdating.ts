@@ -1,6 +1,6 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { handleUnexpectedError } from './errors.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort } from './requests.js'
+import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -32,7 +32,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			matchOriginAsFallback: true
 		}])
 	} catch (error: unknown) {
-		await handleUnexpectedError(error, { code: 'content_script_registration_failed' })
+		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}
 }
 
@@ -51,7 +51,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return false
-		await handleUnexpectedError(error, { code: 'content_script_injection_failed' })
+		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
 	}
 	return false
 }

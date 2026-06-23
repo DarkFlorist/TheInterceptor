@@ -109,6 +109,11 @@ type UnexpectedErrorParams = {
 
 export function UnexpectedError({ error, close }: UnexpectedErrorParams) {
 	if (error === undefined) return <></>
+	const metadata = [
+		error.source === undefined ? undefined : `source: ${ error.source }`,
+		error.code === undefined ? undefined : `code: ${ error.code }`,
+		error.debugId === undefined ? undefined : `debug: ${ error.debugId }`,
+	].filter((value): value is string => value !== undefined)
 	return (
 		<div class = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
 			<div style = 'display: flex; padding-bottom: 10px;'>
@@ -121,6 +126,7 @@ export function UnexpectedError({ error, close }: UnexpectedErrorParams) {
 			</div>
 			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
 				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { error.message } </p>
+				{ metadata.length > 0 ? <p class = 'paragraph' style = { 'color: var(--error-box-text); font-size: 0.8em;' }> { metadata.join(' | ') } </p> : <></> }
 			</div>
 			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
 				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>

@@ -30,8 +30,12 @@
 		"lint:catches": "bun ./scripts/check-comment-only-catches.mts",
 		"lint:quotes": "bun ./scripts/check-single-quotes.mts",
 		"lint:quotes:fix": "bun ./scripts/check-single-quotes.mts --write",
+		"lint:error-reporting": "bun ./scripts/check-awaited-unexpected-error-reporting.mts",
+		"lint:error-catches": "bun ./scripts/check-console-error-catches.mts",
+		"lint:new-block-abort": "bun ./scripts/check-new-block-abort-guards.mts",
+		"lint:fetch-error-messages": "bun ./scripts/check-raw-fetch-error-messages.mts",
 		"lint:signals": "bun ./scripts/check-signal-comparisons.mts",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:signals"
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",

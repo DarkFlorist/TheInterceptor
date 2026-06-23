@@ -610,7 +610,7 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_UnexpectedErrorOccured') {
-				unexpectedError.value = { message: parsed.data.message, timestamp: parsed.data.timestamp }
+				unexpectedError.value = parsed.data
 				return false
 			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
