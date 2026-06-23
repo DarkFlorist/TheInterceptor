@@ -91,7 +91,7 @@ function collectDiagnostics(path: string, sourceText: string) {
 		const isScopeBoundary = ts.isSourceFile(node) || ts.isBlock(node) || ts.isModuleBlock(node)
 		if (isScopeBoundary) scopes.unshift({ reportValues: new Map() })
 		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-			scopes[0]?.reportValues.set(node.name.text, node.initializer === undefined ? false : isWrappedReportExpression(node.initializer))
+			scopes[0]?.reportValues.set(node.name.text, node.initializer === undefined ? false : isWrappedReportExpression(node.initializer) || isWrappedIdentifier(node.initializer, scopes))
 		}
 		if (isReportUnexpectedErrorCall(node)) {
 			if (isWrappedErrorReport(node, scopes)) wrappedDiagnostics.push(diagnosticForNode(sourceFile, node))

@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDateMock, installDomMock } from './domMock.js'
+import { withSilencedConsole } from './consoleSilence.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 
@@ -149,11 +150,11 @@ describe('unexpected error diagnostics', () => {
 		browserMock.reset()
 		const { createInterceptorInternalError, getLatestUnexpectedError, reportUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed'), {
+		await withSilencedConsole(async () => await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed'), {
 			source: 'popup',
 			code: 'popup_message_listener_failed',
 			suppressExpectedInfrastructure: false,
-		})
+		}))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'Failed to fetch')
@@ -166,7 +167,7 @@ describe('unexpected error diagnostics', () => {
 		browserMock.reset()
 		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(new Error(`Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`))
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error(`Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`)))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, `Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`)
@@ -179,7 +180,7 @@ describe('unexpected error diagnostics', () => {
 		browserMock.setSendMessage(async () => { throw new Error('broadcast failed') })
 		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(new Error('root failure'))
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure')))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'root failure')
@@ -192,7 +193,7 @@ describe('unexpected error diagnostics', () => {
 		browserMock.setStorageSet(async () => { throw new Error('storage failed') })
 		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(new Error('root failure'))
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure')))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal(browserMock.sentMessages.length, 1)
@@ -229,7 +230,7 @@ describe('unexpected error diagnostics', () => {
 		const { reportUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
 		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
 
-		await reportUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] })
+		await withSilencedConsole(async () => await reportUnexpectedError({ method: 'InterceptorError', params: [diagnosticsMessage] }))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
@@ -243,7 +244,7 @@ describe('unexpected error diagnostics', () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(new Error('plain error'))
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('plain error')))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'plain error')
@@ -267,11 +268,11 @@ describe('unexpected error diagnostics', () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(new Error('root failure'), {
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure'), {
 			code: 'contextual_failure',
 			displayMessage: 'Failed to refresh contextual data: root failure',
 			details: { address: '0xabc' },
-		})
+		}))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'Failed to refresh contextual data: root failure')
@@ -288,11 +289,11 @@ describe('unexpected error diagnostics', () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError, reportLocalRecovery } = await modulesPromise
 
-		await reportLocalRecovery(new Error('decode failed'), {
+		await withSilencedConsole(async () => await reportLocalRecovery(new Error('decode failed'), {
 			code: 'test_local_recovery',
 			message: 'Continuing after a recovered test failure.',
 			details: { tokenId: 1n },
-		})
+		}))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal(browserMock.sentMessages.length, 0)
@@ -320,9 +321,11 @@ describe('unexpected error diagnostics', () => {
 		})
 		const { getLatestUnexpectedError, reportLocalRecoveryBestEffort } = await modulesPromise
 
-		reportLocalRecoveryBestEffort(new Error('parse failed'), {
-			code: 'test_best_effort_recovery',
-			message: 'Continuing without waiting for diagnostic persistence.',
+		await withSilencedConsole(async () => {
+			reportLocalRecoveryBestEffort(new Error('parse failed'), {
+				code: 'test_best_effort_recovery',
+				message: 'Continuing without waiting for diagnostic persistence.',
+			})
 		})
 
 		assert.equal(storageSetStarted, false)

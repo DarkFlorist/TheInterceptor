@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { withSilencedConsole } from './consoleSilence.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -123,7 +124,7 @@ describe('content script injection strategy errors', () => {
 		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
 
-		await updateContentScriptInjectionStrategyManifestV3()
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'registration failed')
@@ -136,7 +137,9 @@ describe('content script injection strategy errors', () => {
 		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
-		await getCommittedListener()(committedDetails)
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
@@ -146,7 +149,9 @@ describe('content script injection strategy errors', () => {
 		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
-		await getCommittedListener()(committedDetails)
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
 
 		for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
 		assert.equal(await getLatestUnexpectedError(), undefined)

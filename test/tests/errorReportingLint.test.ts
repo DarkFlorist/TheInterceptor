@@ -82,16 +82,22 @@ describe('unexpected error reporting lint', () => {
 			async function sample(error: unknown) {
 				const wrapped = { message: 'wrapped' }
 				const wrappedError = new Error('wrapped')
+				const alias = wrapped
+				const errorAlias = wrappedError
 				await reportUnexpectedError({
 					message: 'wrapped'
 				})
 				await reportUnexpectedError(({ 'message': 'wrapped' }))
 				await reportUnexpectedError(wrapped)
 				await reportUnexpectedError(wrappedError)
+				await reportUnexpectedError(alias)
+				await reportUnexpectedError(errorAlias)
 			}
 		`)
 
 		assert.notEqual(result.exitCode, 0)
 		assert.equal(result.stderr.includes('Do not wrap errors before reporting.'), true)
+		assert.equal(result.stderr.includes('reportUnexpectedError(alias)'), true)
+		assert.equal(result.stderr.includes('reportUnexpectedError(errorAlias)'), true)
 	})
 })

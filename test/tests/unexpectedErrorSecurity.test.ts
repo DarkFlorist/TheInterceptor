@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { withSilencedConsole } from './consoleSilence.js'
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
@@ -75,7 +76,7 @@ describe('unexpected error security', () => {
 		const { storageState, popupMessages } = installBrowserMock()
 		const { getLatestUnexpectedError, handleIterceptorError } = await loadModules()
 
-		await handleIterceptorError({ method: 'InterceptorError', params: ['phishing text'] })
+		await withSilencedConsole(async () => await handleIterceptorError({ method: 'InterceptorError', params: ['phishing text'] }))
 
 		assert.equal(storageState.latestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
@@ -86,7 +87,7 @@ describe('unexpected error security', () => {
 		const { popupMessages } = installBrowserMock()
 		const { getLatestUnexpectedError, reportUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
 
-		await reportUnexpectedError({ arbitrary: 'value' })
+		await withSilencedConsole(async () => await reportUnexpectedError({ arbitrary: 'value' }))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)
@@ -101,7 +102,7 @@ describe('unexpected error security', () => {
 		installBrowserMock()
 		const { getLatestUnexpectedError, reportUnexpectedError } = await loadModules()
 
-		await reportUnexpectedError(new Error('Trusted extension failure'))
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('Trusted extension failure')))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)
