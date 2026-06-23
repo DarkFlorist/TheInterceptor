@@ -3,12 +3,14 @@ import { describe, test } from 'bun:test'
 import { getSimulationStackNameRows, getSimulationStackNameRowsFromResults } from '../../app/ts/components/simulationExplaining/SimulationStackCompactSummary.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { createPassthroughCompleteVisualizedSimulation, type BlockTimeManipulationWithNoDelay, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationAndVisualisationResults, type SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
-import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { AddressBookEntry, ContactEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
+import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit } from '../../app/ts/types/personal-message-definitions.js'
+import { addressString } from '../../app/ts/utils/bigint.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
+const TOKEN_ADDRESS = 0x3000000000000000000000000000000000000003n
 
 const activeAddressEntry: ContactEntry = {
 	type: 'contact',
@@ -24,6 +26,15 @@ const recipientEntry: ContactEntry = {
 	name: 'Recipient',
 	address: RECIPIENT_ADDRESS,
 	entrySource: 'OnChain',
+}
+
+const tokenEntry: Erc20TokenEntry = {
+	type: 'ERC20',
+	name: 'Dai Stablecoin',
+	symbol: 'DAI',
+	decimals: 18n,
+	address: TOKEN_ADDRESS,
+	entrySource: 'User',
 }
 
 const rpcNetwork: RpcEntry = {
@@ -152,6 +163,61 @@ function createVisualizedMessage(messageIdentifier: bigint): VisualizedPersonalS
 	}
 }
 
+function createPermitMessage(messageIdentifier: bigint, verifyingContract: AddressBookEntry): VisualizedPersonalSignRequestPermit {
+	return {
+		activeAddress: activeAddressEntry,
+		rpcNetwork,
+		simulationMode: true,
+		signerName: 'NoSignerDetected',
+		quarantineReasons: [],
+		quarantine: false,
+		account: activeAddressEntry,
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		rawMessage: '0x',
+		stringifiedMessage: 'permit',
+		messageIdentifier,
+		method: 'eth_signTypedData_v4',
+		type: 'Permit',
+		message: {
+			types: {
+				EIP712Domain: [
+					{ name: 'name', type: 'string' },
+					{ name: 'version', type: 'string' },
+					{ name: 'chainId', type: 'uint256' },
+					{ name: 'verifyingContract', type: 'address' },
+				],
+				Permit: [
+					{ name: 'owner', type: 'address' },
+					{ name: 'spender', type: 'address' },
+					{ name: 'value', type: 'uint256' },
+					{ name: 'nonce', type: 'uint256' },
+					{ name: 'deadline', type: 'uint256' },
+				],
+			},
+			primaryType: 'Permit',
+			domain: {
+				name: 'Dai Stablecoin',
+				version: 1n,
+				chainId: 1n,
+				verifyingContract: TOKEN_ADDRESS,
+			},
+			message: {
+				owner: ACTIVE_ADDRESS,
+				spender: RECIPIENT_ADDRESS,
+				value: 1n,
+				nonce: 0,
+				deadline: 1,
+			},
+		},
+		owner: activeAddressEntry,
+		spender: recipientEntry,
+		verifyingContract,
+		messageHash: '0x',
+		domainHash: '0x',
+	}
+}
+
 function createResults(params: {
 	transactions?: readonly PreSimulationTransaction[]
 	signedMessages?: readonly SignedMessageTransaction[]
@@ -241,5 +307,35 @@ describe('simulation stack compact summary', () => {
 		}), 0)
 		assert.equal(simulatedRows[0]?.title, 'Arbitrary Ethereum message')
 		assert.equal(simulatedRows[0]?.status, 'simulated')
+	})
+
+	test('names Permit1 signatures with token symbols and safe fallbacks', () => {
+		const tokenRows = getSimulationStackNameRowsFromResults(createResults({
+			signedMessages: [createSignedMessage(3n)],
+			visualizedMessages: [createPermitMessage(3n, tokenEntry)],
+		}), 0)
+		assert.equal(tokenRows[0]?.title, 'DAI Permit')
+
+		const namedContractRows = getSimulationStackNameRowsFromResults(createResults({
+			signedMessages: [createSignedMessage(4n)],
+			visualizedMessages: [createPermitMessage(4n, {
+				type: 'contract',
+				name: 'Named Permit Contract',
+				address: TOKEN_ADDRESS,
+				entrySource: 'OnChain',
+			})],
+		}), 0)
+		assert.equal(namedContractRows[0]?.title, 'Named Permit Contract Permit')
+
+		const addressFallbackRows = getSimulationStackNameRowsFromResults(createResults({
+			signedMessages: [createSignedMessage(5n)],
+			visualizedMessages: [createPermitMessage(5n, {
+				type: 'contact',
+				name: '',
+				address: TOKEN_ADDRESS,
+				entrySource: 'OnChain',
+			})],
+		}), 0)
+		assert.equal(addressFallbackRows[0]?.title, `${ addressString(TOKEN_ADDRESS) } Permit`)
 	})
 })
