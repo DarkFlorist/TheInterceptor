@@ -269,7 +269,7 @@ describe('unexpected error diagnostics', () => {
 
 		await reportUnexpectedError(new Error('root failure'), {
 			code: 'contextual_failure',
-			message: 'Failed to refresh contextual data: root failure',
+			displayMessage: 'Failed to refresh contextual data: root failure',
 			details: { address: '0xabc' },
 		})
 

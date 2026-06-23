@@ -4,6 +4,7 @@ import ts from 'typescript'
 const defaultFilePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx'] as const
 
 type Diagnostic = { file: string, line: number, column: number, text: string }
+type Scope = { reportValues: Map<string, boolean> }
 
 function scriptKindForPath(path: string) {
 	if (path.endsWith('.tsx')) return ts.ScriptKind.TSX
@@ -46,13 +47,27 @@ function isMessageObjectLiteral(expression: ts.Expression) {
 	})
 }
 
-function isWrappedErrorReport(node: ts.CallExpression) {
-	const firstArgument = node.arguments[0]
-	if (firstArgument === undefined) return false
-	const expression = skipParentheses(firstArgument)
+function isWrappedReportExpression(expression: ts.Expression) {
+	expression = skipParentheses(expression)
 	if (ts.isNewExpression(expression)) return true
 	if (ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === 'Error') return true
 	return isMessageObjectLiteral(expression)
+}
+
+function isWrappedIdentifier(expression: ts.Expression, scopes: readonly Scope[]) {
+	expression = skipParentheses(expression)
+	if (!ts.isIdentifier(expression)) return false
+	for (const scope of scopes) {
+		const wrapped = scope.reportValues.get(expression.text)
+		if (wrapped !== undefined) return wrapped
+	}
+	return false
+}
+
+function isWrappedErrorReport(node: ts.CallExpression, scopes: readonly Scope[]) {
+	const firstArgument = node.arguments[0]
+	if (firstArgument === undefined) return false
+	return isWrappedReportExpression(firstArgument) || isWrappedIdentifier(firstArgument, scopes)
 }
 
 function isAllowedReportUsage(node: ts.CallExpression) {
@@ -70,13 +85,20 @@ function collectDiagnostics(path: string, sourceText: string) {
 	const sourceFile = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(path))
 	const unhandledDiagnostics: Diagnostic[] = []
 	const wrappedDiagnostics: Diagnostic[] = []
+	const scopes: Scope[] = []
 
 	const visit = (node: ts.Node) => {
+		const isScopeBoundary = ts.isSourceFile(node) || ts.isBlock(node) || ts.isModuleBlock(node)
+		if (isScopeBoundary) scopes.unshift({ reportValues: new Map() })
+		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+			scopes[0]?.reportValues.set(node.name.text, node.initializer === undefined ? false : isWrappedReportExpression(node.initializer))
+		}
 		if (isReportUnexpectedErrorCall(node)) {
-			if (isWrappedErrorReport(node)) wrappedDiagnostics.push(diagnosticForNode(sourceFile, node))
+			if (isWrappedErrorReport(node, scopes)) wrappedDiagnostics.push(diagnosticForNode(sourceFile, node))
 			if (!isAllowedReportUsage(node)) unhandledDiagnostics.push(diagnosticForNode(sourceFile, node))
 		}
 		ts.forEachChild(node, visit)
+		if (isScopeBoundary) scopes.shift()
 	}
 
 	visit(sourceFile)

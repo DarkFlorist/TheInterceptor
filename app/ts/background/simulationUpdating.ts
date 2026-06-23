@@ -160,7 +160,7 @@ async function getDelegationAddressesForSimulation(
 			const senderAddressString = addressString(senderAddress)
 			const errorMessage = getErrorMessage(error) ?? 'Unknown error'
 			await reportUnexpectedError(error, {
-				message: `Failed to retrieve EIP-7702 delegation for ${ senderAddressString }: ${ errorMessage }`,
+				displayMessage: `Failed to retrieve EIP-7702 delegation for ${ senderAddressString }: ${ errorMessage }`,
 				code: 'delegation_lookup_failed',
 				details: { senderAddress: senderAddressString },
 				suppressExpectedInfrastructure: false,
