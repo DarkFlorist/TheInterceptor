@@ -30,7 +30,8 @@
 		"lint:catches": "bun ./scripts/check-comment-only-catches.mts",
 		"lint:quotes": "bun ./scripts/check-single-quotes.mts",
 		"lint:quotes:fix": "bun ./scripts/check-single-quotes.mts --write",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes"
+		"lint:signals": "bun ./scripts/check-signal-comparisons.mts",
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:signals"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",
@@ -39,8 +40,11 @@
 		"@preact/signals": "1.1.3",
 		"funtypes": "5.1.0",
 		"preact": "10.24.2",
-		"viem": "2.48.4",
+		"viem": "2.53.1",
 		"webextension-polyfill": "0.10.0"
+	},
+	"overrides": {
+		"ws": "8.21.0"
 	},
 	"devDependencies": {
 		"@types/firefox-webext-browser": "120.0.3",
