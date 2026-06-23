@@ -141,15 +141,20 @@ describe('content script injection strategy errors', () => {
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
-	test('records unexpected manifest v2 injection failures', async () => {
+	test('records manifest v2 injection failures as local recovery diagnostics', async () => {
 		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('executeScript failed') })
-		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
+		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await getCommittedListener()(committedDetails)
 
-		const latestUnexpectedError = await getLatestUnexpectedError()
-		assert.equal(latestUnexpectedError?.data.message, 'executeScript failed')
-		assert.equal(latestUnexpectedError?.data.code, 'content_script_injection_failed')
+		for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		assert.equal(diagnostics[0]?.message, 'Leaving this navigation without early injection.')
+		assert.equal(diagnostics[0]?.cause, 'executeScript failed')
+		assert.equal(diagnostics[0]?.code, 'manifest_v2_content_script_injection_failed')
+		assert.equal(diagnostics[0]?.category, 'local_recovery')
 	})
 })

@@ -5,7 +5,6 @@ export type InterceptorErrorCategory = funtypes.Static<typeof InterceptorErrorCa
 export const InterceptorErrorCategory = funtypes.Union(
 	funtypes.Literal('expected_infrastructure'),
 	funtypes.Literal('external_service'),
-	funtypes.Literal('user_action'),
 	funtypes.Literal('local_recovery'),
 	funtypes.Literal('unexpected'),
 )

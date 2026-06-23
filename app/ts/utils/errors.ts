@@ -33,10 +33,14 @@ type ErrorPolicyEntry = {
 	userVisible: boolean
 }
 
+// Reporting policy:
+// - expected_infrastructure is benign network/block churn and is suppressed at unexpected-error boundaries.
+// - external_service is a third-party lookup failure where Interceptor can keep operating.
+// - local_recovery is an internal fallback path that should not surface a popup error.
+// - unexpected is a user-visible internal failure that should be persisted and broadcast.
 export const ERROR_REPORTING_POLICY = {
 	expectedInfrastructure: { category: 'expected_infrastructure', severity: 'info', userVisible: false },
 	externalService: { category: 'external_service', severity: 'warning', userVisible: false },
-	userAction: { category: 'user_action', severity: 'info', userVisible: false },
 	localRecovery: { category: 'local_recovery', severity: 'warning', userVisible: false },
 	unexpected: { category: 'unexpected', severity: 'error', userVisible: true },
 } satisfies Record<string, ErrorPolicyEntry>
@@ -227,6 +231,16 @@ export async function reportNonFatalError(error: unknown, metadata: ErrorReportM
 }
 
 export async function reportLocalRecovery(error: unknown, metadata: LocalRecoveryMetadata) {
+	const report = logLocalRecovery(error, metadata)
+	await appendErrorDiagnostic(report)
+}
+
+export function reportLocalRecoveryBestEffort(error: unknown, metadata: LocalRecoveryMetadata) {
+	const report = logLocalRecovery(error, metadata)
+	void appendErrorDiagnostic(report)
+}
+
+function logLocalRecovery(error: unknown, metadata: LocalRecoveryMetadata) {
 	const report = createErrorReport(error, {
 		source: metadata.source,
 		code: metadata.code,
@@ -246,12 +260,12 @@ export async function reportLocalRecovery(error: unknown, metadata: LocalRecover
 	})
 	if (report.details !== undefined) console.warn(report.details)
 	printError(error)
-	await appendErrorDiagnostic(report)
+	return report
 }
 
 export function reportLocalRecoveryAtAsyncBoundary(operation: () => Promise<unknown>, metadata: LocalRecoveryMetadata) {
 	void operation().catch((error: unknown) => {
-		void reportLocalRecovery(error, metadata)
+		reportLocalRecoveryBestEffort(error, metadata)
 	})
 }
 

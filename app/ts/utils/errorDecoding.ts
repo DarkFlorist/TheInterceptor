@@ -1,5 +1,5 @@
 import type { Abi, AbiItem } from 'viem'
-import { reportLocalRecovery } from './errors.js'
+import { reportLocalRecoveryBestEffort } from './errors.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { decodeAbiValues, decodeErrorLoose, normalizeAbi, type AbiLike } from './abiRuntime.js'
 
@@ -179,7 +179,7 @@ export const decodeEthereumError = (errorAbis: readonly AbiLike[], error: ErrorW
 		if (error.data !== undefined) return handleCustomError(errorAbis, error)
 		return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
 	} catch (decodingError: unknown) {
-		void reportLocalRecovery(decodingError, { code: 'ethereum_error_decode_failed', message: 'Returning an unknown decoded error result.' })
+		reportLocalRecoveryBestEffort(decodingError, { code: 'ethereum_error_decode_failed', message: 'Returning an unknown decoded error result.' })
 		return unknownErrorResult({ data: error.data, reason: `Failed to decode error: ${ error.message }`, name: 'unknown' })
 	}
 }

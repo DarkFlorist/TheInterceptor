@@ -287,6 +287,32 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.details, '{"tokenId":"1"}')
 	})
 
+	test('best-effort local recovery does not block on diagnostic persistence', async () => {
+		browserMock.reset()
+		let storageSetStarted = false
+		let releaseStorageSet: (() => void) | undefined
+		browserMock.setStorageSet(async () => {
+			storageSetStarted = true
+			await new Promise<void>((resolve) => {
+				releaseStorageSet = resolve
+			})
+		})
+		const { getLatestUnexpectedError, reportLocalRecoveryBestEffort } = await modulesPromise
+
+		reportLocalRecoveryBestEffort(new Error('parse failed'), {
+			code: 'test_best_effort_recovery',
+			message: 'Continuing without waiting for diagnostic persistence.',
+		})
+
+		assert.equal(storageSetStarted, false)
+		for (let index = 0; index < 10 && !storageSetStarted; index++) await Promise.resolve()
+		assert.equal(storageSetStarted, true)
+		releaseStorageSet?.()
+		await Promise.resolve()
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.equal(browserMock.sentMessages.length, 0)
+	})
+
 	test('renders forwarded diagnostics directly from the message string in the existing unexpected error popup', async () => {
 		const { UnexpectedError } = await modulesPromise
 		const dom = installDomMock()
