@@ -156,6 +156,7 @@ async function getDelegationAddressesForSimulation(
 				delegationEntry: await identifyAddress(ethereum, requestAbortController, delegationAddress),
 			}
 		} catch(error: unknown) {
+			if (error instanceof Error && isNewBlockAbort(error)) throw error
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 			await handleUnexpectedError(new Error(`Failed to retrieve EIP-7702 delegation for ${ addressString(senderAddress) }: ${ errorMessage }`), {
 				code: 'delegation_lookup_failed',

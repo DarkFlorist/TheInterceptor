@@ -55,9 +55,10 @@ function installBrowserMock() {
 
 installBrowserMock()
 
-const { ETHEREUM_LOGS_LOGGER_ADDRESS } = await import('../../app/ts/utils/constants.js')
+const { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
 const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
 
 describe('visualizeSimulatorState failed simulations', () => {
 	test('keeps fetched address metadata instead of returning an empty address book', async () => {
@@ -77,6 +78,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
+				if (request.method === 'eth_getCode') return '0x'
 				throw new Error(`Unexpected RPC method: ${ request.method }`)
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
@@ -128,5 +130,73 @@ describe('visualizeSimulatorState failed simulations', () => {
 		assert.equal(visualized.visualizedSimulationState.success, false)
 		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.from.address, 0n)
 		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.address, ETHEREUM_LOGS_LOGGER_ADDRESS)
+	})
+
+	test('propagates new-block aborts during delegation lookup without recording an unexpected error', async () => {
+		installBrowserMock()
+
+		const rpcNetwork = {
+			name: 'Test Chain',
+			chainId: 1337n,
+			httpsRpc: 'https://example.invalid',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: true,
+		}
+
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method === 'eth_getCode') throw new Error(NEW_BLOCK_ABORT)
+				throw new Error(`Unexpected RPC method: ${ request.method }`)
+			},
+		}, async () => undefined, async () => undefined, rpcNetwork)
+
+		const created = new Date('2024-01-01T00:00:00.000Z')
+		const failedSimulationState = {
+			success: false,
+			simulationStateInput: [{
+				stateOverrides: {},
+				transactions: [{
+					signedTransaction: {
+						type: '1559',
+						from: 0n,
+						nonce: 0n,
+						maxFeePerGas: 1n,
+						maxPriorityFeePerGas: 1n,
+						gas: 21_000n,
+						to: ETHEREUM_LOGS_LOGGER_ADDRESS,
+						value: 0n,
+						input: new Uint8Array(),
+						chainId: rpcNetwork.chainId,
+						hash: 1n,
+						v: 1n,
+						r: 1n,
+						s: 1n,
+					},
+					website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+					created,
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: 0n, to: ETHEREUM_LOGS_LOGGER_ADDRESS, value: 0n, input: new Uint8Array() }] },
+					transactionIdentifier: 1n,
+				}],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+				simulateWithZeroBaseFee: false,
+			}],
+			jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'simulation failed' } },
+			blockNumber: 1n,
+			blockTimestamp: created,
+			baseFeePerGas: 1n,
+			simulationConductedTimestamp: created,
+			rpcNetwork,
+		}
+
+		await assert.rejects(
+			async () => await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined),
+			(error) => error instanceof Error && error.message === NEW_BLOCK_ABORT,
+		)
+		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 })
