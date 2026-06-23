@@ -1,4 +1,4 @@
-import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
+import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
@@ -42,12 +42,36 @@ export class JsonRpcResponseError extends Error {
 	}
 }
 
-export function isFailedToFetchError(error: Error) {
-	if (error.message.includes('Fetch request timed out.') || error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
+export function getErrorMessage(error: unknown) {
+	if (error instanceof Error) return error.message
+	if (typeof error === 'string') return error
+	if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message
+	return undefined
+}
+
+export function isFailedToFetchError(error: unknown) {
+	const message = getErrorMessage(error)
+	if (message === undefined) return false
+	if (message.includes('Fetch request timed out.') || message.includes('Fetch request aborted.') || message.includes('Failed to fetch') || message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
 }
 
-export const isNewBlockAbort = (error: Error) => error.message?.includes(NEW_BLOCK_ABORT)
+export const isNewBlockAbort = (error: unknown) => getErrorMessage(error) === NEW_BLOCK_ABORT
+
+export const isWrappedNewBlockAbort = (error: unknown) => {
+	const message = getErrorMessage(error)
+	return message !== undefined && message !== NEW_BLOCK_ABORT && message.includes(NEW_BLOCK_ABORT)
+}
+
+export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'unexpected'
+
+export function classifyCaughtError(error: unknown): CaughtErrorClassification {
+	if (isNewBlockAbort(error)) return 'newBlockAbort'
+	if (isFailedToFetchError(error)) return 'failedToFetch'
+	return 'unexpected'
+}
+
+export const isExpectedInfrastructureError = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
 
 function getForwardedDiagnostics(error: unknown): string | undefined {
 	const maybeInterceptorError = InterceptorError.safeParse(error)
@@ -81,8 +105,11 @@ function generateDebugId() {
 }
 
 export async function handleUnexpectedError(error: unknown, metadata: UnexpectedErrorMetadata = {}) {
+	if (isNewBlockAbort(error)) return
 	const debugId = metadata.debugId ?? generateDebugId()
-	console.error('Unexpected Interceptor error', { debugId, source: metadata.source ?? 'internal', code: metadata.code ?? 'unexpected_error' })
+	const source = metadata.source ?? 'internal'
+	const code = metadata.code ?? (isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error')
+	console.error('Unexpected Interceptor error', { debugId, source, code })
 	printError(error)
 	console.trace()
 	const normalizedError = normalizeUnexpectedError(error)
@@ -91,11 +118,22 @@ export async function handleUnexpectedError(error: unknown, metadata: Unexpected
 		data: {
 			timestamp: new Date(),
 			message: normalizedError.message,
-			source: metadata.source ?? 'internal',
-			code: metadata.code ?? 'unexpected_error',
+			source,
+			code,
 			debugId,
 		}
 	}
-	await setLatestUnexpectedError(errorMessage)
-	await sendPopupMessageToOpenWindows(errorMessage)
+	try {
+		await setLatestUnexpectedError(errorMessage)
+	} catch (storageError: unknown) {
+		console.error('Failed to persist unexpected error.')
+		printError(storageError)
+		return
+	}
+	try {
+		await sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(errorMessage)
+	} catch (broadcastError: unknown) {
+		console.error('Failed to broadcast unexpected error to open popup windows.')
+		printError(broadcastError)
+	}
 }

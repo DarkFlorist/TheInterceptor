@@ -42,6 +42,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 		checkAndThrowRuntimeLastError()
 		return reply
 	} catch(error: unknown) {
+		if (isNewBlockAbort(error)) return
 		if (error instanceof Error) {
 			if (error.message.startsWith('No tab with id')) return
 			if (error.message.includes('the message channel is closed')) {
@@ -51,10 +52,9 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 			}
 			if (isIgnorablePortLifecycleError(error)) return
 			if (error.message.includes('Failed to fetch')) return
-			if (isNewBlockAbort(error)) return
 		}
 		console.error(error)
-		handleUnexpectedError(error)
+		await handleUnexpectedError(error)
 	}
 	return undefined
 }
@@ -175,7 +175,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
-		if (error instanceof Error && isNewBlockAbort(error)) return
+		if (isNewBlockAbort(error)) return
 		await handleUnexpectedError(error)
 	}
 }

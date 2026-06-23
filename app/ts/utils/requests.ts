@@ -69,7 +69,9 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init: Reques
 		if (requestAndTimeoutSignal.aborted) throw requestAndTimeoutSignal.reason
 		return await fetch(resource, { ...init, signal: requestAndTimeoutSignal })
 	} catch(error: unknown) {
-		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw new Error('Fetch request timed out.')
+		if (requestAbortController?.signal.aborted) throw requestAbortController.signal.reason
+		if (timeoutAbortController.signal.aborted) throw timeoutAbortController.signal.reason
+		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw new Error('Fetch request aborted.')
 		throw error
 	} finally {
 		clearTimeout(timeoutId)

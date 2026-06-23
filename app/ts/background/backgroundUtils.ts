@@ -31,7 +31,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
 }
 
-export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
 	try {
 		await browser.runtime.sendMessage(serialize(MessageToPopup, { role, ...message }))
 		checkAndThrowRuntimeLastError()
@@ -44,6 +44,14 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopupPaylo
 			}
 			if (isIgnorableExtensionMessagingError(error)) return
 		}
+		throw error
+	}
+}
+
+export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+	try {
+		await sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message, role)
+	} catch (error) {
 		await handleUnexpectedError(error)
 	}
 }

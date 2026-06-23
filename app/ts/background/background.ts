@@ -15,7 +15,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput, mockSignTransaction } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -51,7 +51,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService)
 	try {
 		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(await getCurrentSimulationInput(), ethereum))
 	} catch(error: unknown) {
-		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return PASSTHROUGH_STATE
+		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		printError(error)
 	}
 	return PASSTHROUGH_STATE
@@ -130,8 +130,8 @@ export async function refreshConfirmTransactionSimulation(
 			}
 		}
 	} catch (error) {
-		if (error instanceof Error && isNewBlockAbort(error)) return undefined
-		if (error instanceof Error && isFailedToFetchError(error)) return undefined
+		if (isNewBlockAbort(error)) return undefined
+		if (isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
 
 		const extractToAbi = async () => {
@@ -467,13 +467,13 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
-		if ((error instanceof Error && isFailedToFetchError(error))) {
+		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
 		}
 		if (error instanceof JsonRpcResponseError) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() })
 		}
-		handleUnexpectedError(error)
+		await handleUnexpectedError(error)
 		return replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result',
 			...getRequestWithDefinedParams(request),
@@ -602,7 +602,7 @@ export async function popupMessageHandler(
 		if (requestReply === undefined) return undefined
 		return PopupReplyOption.serialize(requestReply)
 	} catch(error: unknown) {
-		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return
+		if (isExpectedInfrastructureError(error)) return
 		throw error
 	}
 }

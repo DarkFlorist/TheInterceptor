@@ -21,7 +21,7 @@ import {
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isExpectedInfrastructureError, printError } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
@@ -125,7 +125,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		])
 		return true
 	} catch(error: unknown) {
-		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return false
+		if (isExpectedInfrastructureError(error)) return false
 		await handleUnexpectedError(error)
 	}
 	return false

@@ -149,7 +149,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
-				if (request.method === 'eth_getCode') throw new Error(NEW_BLOCK_ABORT)
+				if (request.method === 'eth_getCode') throw NEW_BLOCK_ABORT
 				throw new Error(`Unexpected RPC method: ${ request.method }`)
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
@@ -195,7 +195,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 
 		await assert.rejects(
 			async () => await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined),
-			(error) => error instanceof Error && error.message === NEW_BLOCK_ABORT,
+			(error) => error === NEW_BLOCK_ABORT,
 		)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
