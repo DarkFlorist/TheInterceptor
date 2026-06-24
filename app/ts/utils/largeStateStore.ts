@@ -49,9 +49,20 @@ async function runIndexedDbRequest<T>(mode: IDBTransactionMode, operation: (stor
 		const transaction = db.transaction(LARGE_STATE_STORE_NAME, mode)
 		const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
 		const request = operation(store)
-		request.onsuccess = () => resolve({ kind: 'available', value: request.result })
+		let requestResult: { value: T } | undefined
+		request.onsuccess = () => {
+			requestResult = { value: request.result }
+		}
 		request.onerror = () => reject(request.error ?? new Error(`Large state IndexedDB ${ mode } request failed`))
+		transaction.oncomplete = () => {
+			if (requestResult === undefined) {
+				reject(new Error(`Large state IndexedDB ${ mode } transaction completed before the request succeeded`))
+				return
+			}
+			resolve({ kind: 'available', value: requestResult.value })
+		}
 		transaction.onabort = () => reject(transaction.error ?? new Error(`Large state IndexedDB ${ mode } transaction aborted`))
+		transaction.onerror = () => reject(transaction.error ?? new Error(`Large state IndexedDB ${ mode } transaction failed`))
 	})
 }
 

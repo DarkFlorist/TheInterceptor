@@ -17,6 +17,7 @@ type FakeIndexedDbOptions = {
 	readonly getError?: Error
 	readonly putError?: Error
 	readonly deleteError?: Error
+	readonly putTransactionAbortAfterRequestSuccess?: Error
 	readonly transactionError?: Error
 }
 
@@ -29,18 +30,50 @@ type FakeRequest<T> = {
 	onupgradeneeded?: () => void
 }
 
+type FakeObjectStore = {
+	delete: (key: string) => FakeRequest<undefined>
+	get: (key: string) => FakeRequest<unknown>
+	put: (value: unknown, key: string) => FakeRequest<string>
+}
+
+type FakeTransaction = {
+	error?: Error
+	onabort?: () => void
+	oncomplete?: () => void
+	onerror?: () => void
+}
+
+type FakeTransactionWithStore = FakeTransaction & {
+	objectStore: () => FakeObjectStore
+}
+
 function createFakeRequest<T>(result: T): FakeRequest<T> {
 	return { result }
 }
 
-function finishFakeRequest<T>(request: FakeRequest<T>, error?: Error) {
+function finishFakeRequest<T>(
+	request: FakeRequest<T>,
+	transaction: FakeTransaction,
+	requestError: Error | undefined,
+	transactionAbortAfterRequestSuccess: Error | undefined,
+	pendingChange?: () => void,
+) {
 	queueMicrotask(() => {
-		if (error !== undefined) {
-			request.error = error
+		if (requestError !== undefined) {
+			request.error = requestError
 			request.onerror?.()
 			return
 		}
 		request.onsuccess?.()
+		queueMicrotask(() => {
+			if (transactionAbortAfterRequestSuccess !== undefined) {
+				transaction.error = transactionAbortAfterRequestSuccess
+				transaction.onabort?.()
+				return
+			}
+			pendingChange?.()
+			transaction.oncomplete?.()
+		})
 	})
 }
 
@@ -75,29 +108,10 @@ function installBrowserStorage(storageState: Record<string, unknown>) {
 
 function installFakeIndexedDb(indexedDbState: Map<string, unknown>, options: FakeIndexedDbOptions) {
 	let hasLargeStateStore = false
-	const store = {
-		get(key: string) {
-			const request = createFakeRequest(indexedDbState.get(key))
-			finishFakeRequest(request, options.getError)
-			return request
-		},
-		put(value: unknown, key: string) {
-			const request = createFakeRequest(key)
-			if (options.putError === undefined) indexedDbState.set(key, value)
-			finishFakeRequest(request, options.putError)
-			return request
-		},
-		delete(key: string) {
-			const request = createFakeRequest(undefined)
-			if (options.deleteError === undefined) indexedDbState.delete(key)
-			finishFakeRequest(request, options.deleteError)
-			return request
-		},
-	}
 	const fakeDb = {
 		createObjectStore(_name: string) {
 			hasLargeStateStore = true
-			return store
+			return undefined
 		},
 		objectStoreNames: {
 			contains(_name: string) {
@@ -106,9 +120,28 @@ function installFakeIndexedDb(indexedDbState: Map<string, unknown>, options: Fak
 		},
 		transaction(_storeName: string, _mode: string) {
 			if (options.transactionError !== undefined) throw options.transactionError
-			return {
+			let store: FakeObjectStore
+			const transaction: FakeTransactionWithStore = {
 				objectStore: () => store,
 			}
+			store = {
+				get(key: string) {
+					const request = createFakeRequest(indexedDbState.get(key))
+					finishFakeRequest(request, transaction, options.getError, undefined)
+					return request
+				},
+				put(value: unknown, key: string) {
+					const request = createFakeRequest(key)
+					finishFakeRequest(request, transaction, options.putError, options.putTransactionAbortAfterRequestSuccess, () => indexedDbState.set(key, value))
+					return request
+				},
+				delete(key: string) {
+					const request = createFakeRequest(undefined)
+					finishFakeRequest(request, transaction, options.deleteError, undefined, () => indexedDbState.delete(key))
+					return request
+				},
+			}
+			return transaction
 		},
 	}
 	const fakeIndexedDb = {
@@ -174,6 +207,15 @@ describe('large state store helpers', () => {
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
 	})
 
+	test('falls back to storage.local when IndexedDB write transaction aborts after request success', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ putTransactionAbortAfterRequestSuccess: new Error('commit failed') })
+
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+
+		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+	})
+
 	test('reads legacy storage.local when IndexedDB reads fail', async () => {
 		const { storageState } = installLargeStateEnvironment({ getError: new Error('get failed') })
 		storageState.interceptorTransactionStack = serializedStack()
@@ -185,6 +227,17 @@ describe('large state store helpers', () => {
 
 	test('keeps legacy storage.local value when IndexedDB migration writes fail', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment({ putError: new Error('put failed') })
+		storageState.interceptorTransactionStack = serializedStack()
+
+		const value = await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack)
+
+		assert.deepEqual(value, stack)
+		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+	})
+
+	test('keeps legacy storage.local value when IndexedDB migration transaction aborts after request success', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ putTransactionAbortAfterRequestSuccess: new Error('commit failed') })
 		storageState.interceptorTransactionStack = serializedStack()
 
 		const value = await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack)
