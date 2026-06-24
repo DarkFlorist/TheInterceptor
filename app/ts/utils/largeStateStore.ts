@@ -55,21 +55,41 @@ async function runIndexedDbRequest<T>(mode: IDBTransactionMode, operation: (stor
 	})
 }
 
+function warnIndexedDbRequestFailure(action: string, error: unknown) {
+	console.warn(`IndexedDB ${ action } failed for large state persistence, falling back to storage.local.`)
+	console.warn(error)
+}
+
 async function getIndexedDbValue(key: LargeStateStorageKey): Promise<IndexedDbLookup> {
-	const result = await runIndexedDbRequest('readonly', (store) => store.get(key))
-	if (result.kind === 'unavailable') return result
-	if (result.value === undefined) return { kind: 'available', found: false }
-	return { kind: 'available', found: true, value: result.value }
+	try {
+		const result = await runIndexedDbRequest('readonly', (store) => store.get(key))
+		if (result.kind === 'unavailable') return result
+		if (result.value === undefined) return { kind: 'available', found: false }
+		return { kind: 'available', found: true, value: result.value }
+	} catch (error) {
+		warnIndexedDbRequestFailure('read', error)
+		return { kind: 'unavailable' }
+	}
 }
 
 async function setIndexedDbValue(key: LargeStateStorageKey, value: unknown) {
-	const result = await runIndexedDbRequest('readwrite', (store) => store.put(value, key))
-	return result.kind === 'available'
+	try {
+		const result = await runIndexedDbRequest('readwrite', (store) => store.put(value, key))
+		return result.kind === 'available'
+	} catch (error) {
+		warnIndexedDbRequestFailure('write', error)
+		return false
+	}
 }
 
 async function removeIndexedDbValue(key: LargeStateStorageKey) {
-	const result = await runIndexedDbRequest('readwrite', (store) => store.delete(key))
-	return result.kind === 'available'
+	try {
+		const result = await runIndexedDbRequest('readwrite', (store) => store.delete(key))
+		return result.kind === 'available'
+	} catch (error) {
+		warnIndexedDbRequestFailure('delete', error)
+		return false
+	}
 }
 
 async function getLegacyLocalValue(key: LargeStateStorageKey) {
@@ -106,13 +126,8 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 			await removeLegacyLocalValue(key)
 			return undefined
 		}
-		try {
-			await setIndexedDbValue(key, legacyLocalValue)
-			await removeLegacyLocalValue(key)
-		} catch (error) {
-			console.warn(`Failed to migrate ${ key } to IndexedDB.`)
-			console.warn(error)
-		}
+		const wasMigrated = await setIndexedDbValue(key, legacyLocalValue)
+		if (wasMigrated) await removeLegacyLocalValue(key)
 		return parsedLegacyValue
 	}
 	const localValue = await getLegacyLocalValue(key)
