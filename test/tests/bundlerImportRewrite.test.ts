@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
-import { findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport } from '../../build/bundler.mts'
+import { findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
 
 const repositoryRoot = process.cwd()
 
@@ -63,6 +63,40 @@ describe('bundler import rewriting', () => {
 		assert.equal(
 			isBrowserIncompatibleRuntimeModule(path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')),
 			false,
+		)
+	})
+
+	test('keeps only reachable runtime modules and required public assets', () => {
+		const reachableFilePath = path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')
+		const reachableRuntimeFiles = new Set([reachableFilePath])
+
+		assert.equal(shouldKeepRuntimeOutputFile(reachableFilePath, reachableRuntimeFiles), true)
+		assert.equal(
+			shouldKeepRuntimeOutputFile(path.join(repositoryRoot, 'app', 'vendor', 'webextension-polyfill', 'dist', 'browser-polyfill.js'), reachableRuntimeFiles),
+			true,
+		)
+		assert.equal(
+			shouldKeepRuntimeOutputFile(path.join(repositoryRoot, 'app', 'vendor', '@darkflorist', 'address-metadata', 'images', 'tokens', '0xdac17f958d2ee523a2206206994597c13d831ec7.png'), reachableRuntimeFiles),
+			true,
+		)
+		assert.equal(
+			shouldKeepRuntimeOutputFile(path.join(repositoryRoot, 'app', 'vendor', 'preact', 'src', 'index.d.ts'), reachableRuntimeFiles),
+			false,
+		)
+		assert.equal(
+			shouldKeepRuntimeOutputFile(path.join(repositoryRoot, 'app', 'js', 'components', 'App.js.map'), reachableRuntimeFiles),
+			false,
+		)
+	})
+
+	test('strips source map comments after pruning maps', () => {
+		assert.equal(
+			stripSourceMappingUrlComment('export const ok = true;\n//# sourceMappingURL=ok.js.map\n'),
+			'export const ok = true;\n',
+		)
+		assert.equal(
+			stripSourceMappingUrlComment('export const ok = true;\n'),
+			'export const ok = true;\n',
 		)
 	})
 
