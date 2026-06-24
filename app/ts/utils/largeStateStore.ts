@@ -1,5 +1,6 @@
 import type * as funtypes from 'funtypes'
 import { serialize } from '../types/wire-types.js'
+import { assertNever } from './typescript.js'
 
 export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisualisation'
 
@@ -117,6 +118,7 @@ function getLegacyDeleteMarkerKey(key: LargeStateStorageKey): LargeStateDeleteMa
 	switch (key) {
 		case 'interceptorTransactionStack': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }interceptorTransactionStack`
 		case 'popupVisualisation': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }popupVisualisation`
+		default: return assertNever(key)
 	}
 }
 
