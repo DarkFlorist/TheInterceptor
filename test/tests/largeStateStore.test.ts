@@ -11,6 +11,13 @@ const stack: InterceptorTransactionStack = {
 	}],
 }
 
+const staleStack: InterceptorTransactionStack = {
+	operations: [{
+		type: 'TimeManipulation',
+		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 7n, deltaUnit: 'Seconds' },
+	}],
+}
+
 type StorageGetKeys = string | string[] | Record<string, unknown> | null | undefined
 
 type FakeIndexedDbOptions = {
@@ -165,8 +172,8 @@ function installLargeStateEnvironment(options: FakeIndexedDbOptions = {}) {
 	return { indexedDbState, storageState }
 }
 
-function serializedStack() {
-	return serialize(InterceptorTransactionStack, stack)
+function serializedStack(value: InterceptorTransactionStack = stack) {
+	return serialize(InterceptorTransactionStack, value)
 }
 
 afterEach(() => {
@@ -204,6 +211,17 @@ describe('large state store helpers', () => {
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
 
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+	})
+
+	test('reads storage.local fallback over stale IndexedDB after write failure', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ putError: new Error('put failed') })
+		indexedDbState.set('interceptorTransactionStack', serializedStack(staleStack))
+
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack(staleStack))
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
 	})
 
@@ -248,12 +266,15 @@ describe('large state store helpers', () => {
 	})
 
 	test('removes legacy storage.local value when IndexedDB deletes fail', async () => {
-		const { storageState } = installLargeStateEnvironment({ deleteError: new Error('delete failed') })
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ deleteError: new Error('delete failed') })
+		indexedDbState.set('interceptorTransactionStack', serializedStack())
 		storageState.interceptorTransactionStack = serializedStack()
 
 		await removeLargeStateValue('interceptorTransactionStack')
 
 		assert.equal('interceptorTransactionStack' in storageState, false)
+		assert.equal(storageState['interceptorLargeStateDeleted:interceptorTransactionStack'], true)
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), undefined)
 	})
 
 	test('falls back to storage.local when IndexedDB transactions fail', async () => {
