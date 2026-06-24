@@ -193,7 +193,8 @@ export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 
 export async function removeLargeStateValue(key: LargeStateStorageKey) {
 	if (!canUseIndexedDb()) {
-		await clearLegacyLocalState(key)
+		await removeLegacyLocalValue(key)
+		await setLegacyLocalDeleted(key)
 		return
 	}
 	const wasRemovedFromIndexedDb = await removeIndexedDbValue(key)

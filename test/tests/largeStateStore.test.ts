@@ -162,14 +162,15 @@ function installFakeIndexedDb(indexedDbState: Map<string, unknown>, options: Fak
 		},
 	}
 	Object.defineProperty(globalThis, 'indexedDB', { value: fakeIndexedDb, configurable: true, writable: true })
+	return fakeIndexedDb
 }
 
 function installLargeStateEnvironment(options: FakeIndexedDbOptions = {}) {
 	const storageState: Record<string, unknown> = {}
 	const indexedDbState = new Map<string, unknown>()
 	installBrowserStorage(storageState)
-	installFakeIndexedDb(indexedDbState, options)
-	return { indexedDbState, storageState }
+	const fakeIndexedDb = installFakeIndexedDb(indexedDbState, options)
+	return { fakeIndexedDb, indexedDbState, storageState }
 }
 
 function serializedStack(value: InterceptorTransactionStack = stack) {
@@ -275,6 +276,24 @@ describe('large state store helpers', () => {
 		assert.equal('interceptorTransactionStack' in storageState, false)
 		assert.equal(storageState['interceptorLargeStateDeleted:interceptorTransactionStack'], true)
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), undefined)
+	})
+
+	test('keeps stale IndexedDB hidden when large state is removed during an IndexedDB outage', async () => {
+		const { fakeIndexedDb, indexedDbState, storageState } = installLargeStateEnvironment()
+		indexedDbState.set('interceptorTransactionStack', serializedStack())
+		storageState.interceptorTransactionStack = serializedStack()
+		Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
+
+		await removeLargeStateValue('interceptorTransactionStack')
+
+		assert.equal('interceptorTransactionStack' in storageState, false)
+		assert.equal(storageState['interceptorLargeStateDeleted:interceptorTransactionStack'], true)
+
+		Object.defineProperty(globalThis, 'indexedDB', { value: fakeIndexedDb, configurable: true, writable: true })
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), undefined)
+		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.equal('interceptorLargeStateDeleted:interceptorTransactionStack' in storageState, false)
 	})
 
 	test('falls back to storage.local when IndexedDB transactions fail', async () => {
