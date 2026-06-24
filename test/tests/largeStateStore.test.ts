@@ -21,6 +21,7 @@ const staleStack: InterceptorTransactionStack = {
 type StorageGetKeys = string | string[] | Record<string, unknown> | null | undefined
 
 type FakeIndexedDbOptions = {
+	readonly openErrors?: readonly Error[]
 	readonly getError?: Error
 	readonly putError?: Error
 	readonly deleteError?: Error
@@ -151,10 +152,18 @@ function installFakeIndexedDb(indexedDbState: Map<string, unknown>, options: Fak
 			return transaction
 		},
 	}
+	let openAttemptCount = 0
 	const fakeIndexedDb = {
 		open(_name: string, _version?: number) {
 			const request = createFakeRequest(fakeDb)
+			const openError = options.openErrors?.[openAttemptCount]
+			openAttemptCount += 1
 			queueMicrotask(() => {
+				if (openError !== undefined) {
+					request.error = openError
+					request.onerror?.()
+					return
+				}
 				request.onupgradeneeded?.()
 				request.onsuccess?.()
 			})
@@ -213,6 +222,18 @@ describe('large state store helpers', () => {
 
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+	})
+
+	test('retries IndexedDB open after a transient open failure', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ openErrors: [new Error('open failed')] })
+
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.equal('interceptorTransactionStack' in storageState, false)
 	})
 
 	test('reads storage.local fallback over stale IndexedDB after write failure', async () => {

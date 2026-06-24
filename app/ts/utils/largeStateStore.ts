@@ -36,7 +36,7 @@ async function openLargeStateDb() {
 		indexedDbPromise = undefined
 	}
 	if (indexedDbPromise !== undefined) return indexedDbPromise
-	indexedDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+	const openPromise = new Promise<IDBDatabase>((resolve, reject) => {
 		const request = indexedDB.open(LARGE_STATE_DB_NAME, 1)
 		request.onupgradeneeded = () => {
 			const db = request.result
@@ -45,11 +45,14 @@ async function openLargeStateDb() {
 		request.onsuccess = () => resolve(request.result)
 		request.onerror = () => reject(request.error ?? new Error('Failed to open large state IndexedDB database'))
 		request.onblocked = () => reject(new Error('Large state IndexedDB database open was blocked'))
-	}).catch((error) => {
+	})
+	const retryableOpenPromise = openPromise.catch((error) => {
 		console.warn('IndexedDB unavailable for large state persistence, falling back to storage.local.')
 		console.warn(error)
+		if (indexedDbPromise === retryableOpenPromise) indexedDbPromise = undefined
 		return undefined
 	})
+	indexedDbPromise = retryableOpenPromise
 	return indexedDbPromise
 }
 
