@@ -224,6 +224,27 @@ export const EthereumAccessList = funtypes.ReadonlyArray(
 )
 export type EthereumAccessList = funtypes.Static<typeof EthereumAccessList>
 
+const EthereumEip7702AuthorizationBase = funtypes.ReadonlyObject({
+	chainId: EthereumQuantity,
+	address: EthereumAddress,
+	nonce: EthereumQuantity,
+})
+
+const EthereumUnsignedEip7702Authorization = EthereumEip7702AuthorizationBase.And(funtypes.ReadonlyPartial({
+	authority: EthereumAddress,
+	r: EthereumQuantity,
+	s: EthereumQuantity,
+	yParity: EthereumSignatureParity,
+}))
+
+const EthereumSignedEip7702Authorization = EthereumEip7702AuthorizationBase.And(funtypes.ReadonlyObject({
+	r: EthereumQuantity,
+	s: EthereumQuantity,
+	yParity: EthereumSignatureParity,
+}).And(funtypes.ReadonlyPartial({
+	authority: EthereumAddress,
+})))
+
 type EthereumUnsignedTransactionLegacy = funtypes.Static<typeof EthereumUnsignedTransactionLegacy>
 const EthereumUnsignedTransactionLegacy = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -291,11 +312,7 @@ const EthereumUnsignedTransaction7702 = funtypes.Intersect(
 		value: EthereumQuantity,
 		input: EthereumInput,
 		chainId: EthereumQuantity,
-		authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
-			chainId: EthereumQuantity,
-			address: EthereumAddress,
-			nonce: EthereumQuantity,
-		}))
+		authorizationList: funtypes.ReadonlyArray(EthereumUnsignedEip7702Authorization)
 	}).asReadonly(),
 	funtypes.Partial({
 		accessList: EthereumAccessList,
@@ -376,11 +393,7 @@ const OptionalEthereumUnsignedTransaction7702 = funtypes.Intersect(
 		value: EthereumQuantity,
 		input: EthereumInput,
 		chainId: EthereumQuantity,
-		authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
-			chainId: EthereumQuantity,
-			address: EthereumAddress,
-			nonce: EthereumQuantity,
-		}))
+		authorizationList: funtypes.ReadonlyArray(EthereumUnsignedEip7702Authorization)
 	}).asReadonly(),
 	funtypes.Partial({
 		gas: EthereumQuantity,
@@ -471,14 +484,7 @@ const EthereumSignedTransaction7702 = funtypes.Intersect(
 		value: EthereumQuantity,
 		input: EthereumInput,
 		chainId: EthereumQuantity,
-		authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
-			chainId: EthereumQuantity,
-			address: EthereumAddress,
-			nonce: EthereumQuantity,
-			r: EthereumQuantity,
-			s: EthereumQuantity,
-			yParity: EthereumSignatureParity
-		}))
+		authorizationList: funtypes.ReadonlyArray(EthereumSignedEip7702Authorization)
 	}).asReadonly(),
 	funtypes.Partial({
 		accessList: EthereumAccessList,

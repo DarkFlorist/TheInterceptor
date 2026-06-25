@@ -303,6 +303,19 @@ describe('TransactionImportanceBlock delegation notice', () => {
 		dom.restore()
 	})
 
+	test('labels zero-address authorizations as delegate clears', async () => {
+		const dom = await renderImportanceBlock(
+			create7702Transaction({ status: 'Transaction Succeeded', authorizationAddresses: [0n] }),
+			[senderEntry],
+		)
+
+		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent?.includes('cleared delegate'), true)
+		assert.equal(dom.document.body.textContent?.includes('delegated to'), false)
+
+		dom.restore()
+	})
+
 	test('shows the delegated transfer flow together with the executed send outcome', async () => {
 		const dom = await renderImportanceBlock(
 			create7702Transaction({
