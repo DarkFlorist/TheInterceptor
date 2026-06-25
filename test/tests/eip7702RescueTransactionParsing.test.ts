@@ -214,6 +214,9 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			}],
 		})
+		const [parsedAuthorization] = params.params[0].authorizationList ?? []
+		if (parsedAuthorization === undefined) throw new Error('Expected authorization to be parsed')
+		assert.equal('authority' in parsedAuthorization, false)
 		const restoreGlobals = installExtensionImportGlobals()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
@@ -292,7 +295,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		})
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip7702',
-			chainId: 1,
+			chainId: 5,
 			nonce: 7,
 			maxFeePerGas: 2n,
 			maxPriorityFeePerGas: 1n,
@@ -307,12 +310,12 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			authorizationList: [clearDelegationAuthorization],
 		})
 
-		const transaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction), 1n)
+		const transaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
 
 		assert.equal(transaction.type, '7702')
 		if (transaction.type !== '7702') throw new Error('Expected a 7702 transaction')
 		assert.equal(transaction.from, EthereumAddress.parse(sponsor.address))
-		assert.equal(transaction.chainId, 1n)
+		assert.equal(transaction.chainId, 5n)
 		assert.equal(transaction.nonce, 7n)
 		assert.deepEqual(transaction.accessList, [{
 			address: EthereumAddress.parse(accessListAddress),
@@ -332,7 +335,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip1559',
-			chainId: 1,
+			chainId: 5,
 			nonce: 7,
 			maxFeePerGas: 2n,
 			maxPriorityFeePerGas: 1n,
@@ -346,12 +349,12 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			}],
 		})
 
-		const transaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction), 1n)
+		const transaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
 
 		assert.equal(transaction.type, '1559')
 		if (transaction.type !== '1559') throw new Error('Expected a 1559 transaction')
 		assert.equal(transaction.from, EthereumAddress.parse(sponsor.address))
-		assert.equal(transaction.chainId, 1n)
+		assert.equal(transaction.chainId, 5n)
 		assert.equal(transaction.nonce, 7n)
 		assert.deepEqual(transaction.accessList, [{
 			address: EthereumAddress.parse(accessListAddress),
@@ -359,50 +362,4 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		}])
 	})
 
-	test('rejects raw EIP-1559 transactions for a different active chain', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
-		const signedTransaction = await sponsor.signTransaction({
-			type: 'eip1559',
-			chainId: 1,
-			nonce: 7,
-			maxFeePerGas: 2n,
-			maxPriorityFeePerGas: 1n,
-			gas: 50_000n,
-			to: recipientAddress,
-			value: 0n,
-			data: '0x',
-		})
-
-		await assert.rejects(
-			async () => await parseSendRawTransaction(stringToUint8Array(signedTransaction), 2n),
-			/does not match active chainId/
-		)
-	})
-
-	test('rejects raw EIP-7702 transactions for a different active chain', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
-		const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
-		const clearDelegationAuthorization = await victim.signAuthorization({
-			address: zeroAddress,
-			chainId: 1,
-			nonce: 5,
-		})
-		const signedTransaction = await sponsor.signTransaction({
-			type: 'eip7702',
-			chainId: 1,
-			nonce: 7,
-			maxFeePerGas: 2n,
-			maxPriorityFeePerGas: 1n,
-			gas: 50_000n,
-			to: recipientAddress,
-			value: 0n,
-			data: '0x',
-			authorizationList: [clearDelegationAuthorization],
-		})
-
-		await assert.rejects(
-			async () => await parseSendRawTransaction(stringToUint8Array(signedTransaction), 2n),
-			/does not match active chainId/
-		)
-	})
 })
