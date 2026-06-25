@@ -30,11 +30,9 @@ const parseToAddress = (address: `0x${ string }` | null | undefined) => {
 	return address === undefined || address === null ? null : EthereumAddress.parse(address)
 }
 
-const requireActiveChainId = (transactionChainId: number | undefined, activeChainId: bigint) => {
+const parseRequiredChainId = (transactionChainId: number | undefined) => {
 	if (transactionChainId === undefined) throw new Error('Serialized transaction is missing chainId')
-	const chainId = BigInt(transactionChainId)
-	if (chainId !== activeChainId) throw new Error(`Serialized transaction chainId ${ chainId } does not match active chainId ${ activeChainId }`)
-	return chainId
+	return BigInt(transactionChainId)
 }
 
 const parseAuthorizationParity = (yParity: number): 'even' | 'odd' => {
@@ -62,7 +60,7 @@ const parseSignedAuthorization = (authorization: {
 	}
 }
 
-export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8Array, activeChainId: bigint): Promise<EthereumUnsignedTransaction> => {
+export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8Array): Promise<EthereumUnsignedTransaction> => {
 	const serializedTransaction = dataStringWith0xStart(serializedTransactionBytes)
 	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
 
@@ -70,7 +68,7 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 		if (parsedTransaction.gas === undefined || parsedTransaction.maxFeePerGas === undefined || parsedTransaction.maxPriorityFeePerGas === undefined || parsedTransaction.nonce === undefined || parsedTransaction.r === undefined || parsedTransaction.s === undefined || parsedTransaction.yParity === undefined) {
 			throw new Error('Serialized EIP-1559 transaction is missing required fields')
 		}
-		const chainId = requireActiveChainId(parsedTransaction.chainId, activeChainId)
+		const chainId = parseRequiredChainId(parsedTransaction.chainId)
 		const unsignedTransaction = serializeTransaction({
 			type: 'eip1559',
 			chainId: Number(parsedTransaction.chainId),
@@ -107,7 +105,7 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 		if (parsedTransaction.gas === undefined || parsedTransaction.maxFeePerGas === undefined || parsedTransaction.maxPriorityFeePerGas === undefined || parsedTransaction.nonce === undefined || parsedTransaction.r === undefined || parsedTransaction.s === undefined || parsedTransaction.yParity === undefined) {
 			throw new Error('Serialized EIP-7702 transaction is missing required fields')
 		}
-		const chainId = requireActiveChainId(parsedTransaction.chainId, activeChainId)
+		const chainId = parseRequiredChainId(parsedTransaction.chainId)
 		const authorizationList = await normalizeEip7702AuthorizationList((parsedTransaction.authorizationList ?? []).map(parseSignedAuthorization))
 		const unsignedTransaction = serializeTransaction({
 			type: 'eip7702',

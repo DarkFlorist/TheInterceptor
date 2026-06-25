@@ -82,7 +82,6 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 		address: EthereumAddress,
 		nonce: EthereumQuantity,
 	}).And(funtypes.ReadonlyPartial({
-		authority: EthereumAddress,
 		r: EthereumQuantity,
 		s: EthereumQuantity,
 		yParity: EthereumSignatureParity,
