@@ -36,6 +36,7 @@ import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
+import { reportUnexpectedError } from '../../utils/errors.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -103,13 +104,13 @@ export function shouldDisableSignableMessageConfirm(params: {
 	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
 }
 
-export function getConfirmDialogDeliveryError(error: unknown): CaughtError {
+export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
 	const reason = error instanceof Error
 		? error.message
 		: typeof error === 'string'
 			? error
 			: 'Unknown error'
-	return { message: `Failed to confirm transaction: ${ reason }`, timestamp: new Date() }
+	return `Failed to confirm transaction: ${ reason }`
 }
 
 function UnderTransactions(param: UnderTransactionsParams) {
@@ -695,7 +696,12 @@ export function ConfirmTransaction() {
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
 		} catch(error) {
-			unexpectedError.value = getConfirmDialogDeliveryError(error)
+			await reportUnexpectedError(error, {
+				source: 'confirmTransaction',
+				code: 'confirm_dialog_delivery_failed',
+				displayMessage: getConfirmDialogDeliveryErrorMessage(error),
+				suppressExpectedInfrastructure: false,
+			})
 			console.warn('Failed to confirm transaction')
 			console.warn({ error })
 		}

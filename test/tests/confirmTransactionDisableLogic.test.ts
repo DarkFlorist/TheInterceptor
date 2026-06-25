@@ -24,13 +24,12 @@ describe('ConfirmTransaction signable message disable logic', () => {
 		}), false)
 	})
 
-	test('formats confirm dialog delivery failures for the visible error banner', async () => {
+	test('formats confirm dialog delivery failures for centralized reporting', async () => {
 		;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
-		const { getConfirmDialogDeliveryError } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const { getConfirmDialogDeliveryErrorMessage } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
-		const error = getConfirmDialogDeliveryError(new Error('background unavailable'))
+		const message = getConfirmDialogDeliveryErrorMessage(new Error('background unavailable'))
 
-		assert.equal(error.message, 'Failed to confirm transaction: background unavailable')
-		assert.equal(error.timestamp instanceof Date, true)
+		assert.equal(message, 'Failed to confirm transaction: background unavailable')
 	})
 })
