@@ -1,11 +1,15 @@
-import type { RpcConnectionStatus } from '../types/user-interface-types.js'
+import type { RpcConnectionStatus, RpcSlowRequest } from '../types/user-interface-types.js'
 import { TIME_BETWEEN_BLOCKS } from './constants.js'
 
-export type RpcWarningState = {
-	kind: 'none' | 'disconnected' | 'stalled'
+type RpcWarningBase = {
 	retryState: 'active' | 'paused'
 	nextRetryAt: Date | undefined
 }
+
+export type RpcWarningState = RpcWarningBase & (
+	| { kind: 'none' | 'disconnected' | 'stalled' }
+	| { kind: 'slowRequest', slowRequest: RpcSlowRequest }
+)
 
 export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {
 	return connectionStatus?.latestBlock !== undefined
@@ -29,6 +33,7 @@ export function getRpcWarningState(connectionStatus: RpcConnectionStatus): RpcWa
 	const retryState = connectionStatus.retrying ? 'active' : 'paused'
 	const nextRetryAt = getNextRpcRetryAt(connectionStatus)
 	if (connectionStatus.isConnected === false) return { kind: 'disconnected', retryState, nextRetryAt }
+	if (connectionStatus.slowRequest !== undefined) return { kind: 'slowRequest', retryState, nextRetryAt: undefined, slowRequest: connectionStatus.slowRequest }
 	if (connectionStatus.retrying && noNewBlockForOverTwoMins(connectionStatus)) return { kind: 'stalled', retryState, nextRetryAt }
 	return { kind: 'none', retryState, nextRetryAt }
 }

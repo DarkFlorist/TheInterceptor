@@ -626,6 +626,10 @@ export function ConfirmTransaction() {
 				applyNetworkData(parsed.data.rpcConnectionStatus?.latestBlock?.number, parsed.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				return false
 			}
+			if (parsed.method === 'popup_rpc_connection_status_changed') {
+				applyNetworkData(parsed.data.rpcConnectionStatus?.latestBlock?.number, parsed.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+				return false
+			}
 			if (parsed.method === 'popup_confirm_transaction_simulation_started') {
 				markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
 				return false

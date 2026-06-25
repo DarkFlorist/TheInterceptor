@@ -123,4 +123,46 @@ describe('rpcConnectionUi', () => {
 		assert.equal(warningState.kind, 'none')
 		assert.equal(warningState.retryState, 'paused')
 	})
+
+	test('treats a slow request on a healthy connection as a warning', () => {
+		const status = {
+			isConnected: true,
+			lastConnnectionAttempt: new Date('2024-01-01T00:00:12.000Z'),
+			latestBlock: makeBlock(new Date('2024-01-01T00:00:00.000Z')),
+			rpcNetwork,
+			retrying: true,
+			slowRequest: {
+				method: 'eth_call',
+				startedAt: new Date('2024-01-01T00:00:01.000Z'),
+			},
+		}
+
+		const warningState = getRpcWarningState(status)
+
+		assert.equal(warningState.kind, 'slowRequest')
+		if (warningState.kind !== 'slowRequest') throw new Error('expected a slow request warning')
+		assert.equal(warningState.slowRequest.method, 'eth_call')
+		assert.equal(shouldShowRpcWarningCountdown(warningState, new Date('2024-01-01T00:00:13.000Z')), false)
+	})
+
+	test('shows slow request warnings before stale-block warnings', () => {
+		const status = {
+			isConnected: true,
+			lastConnnectionAttempt: new Date('2024-01-01T00:03:00.000Z'),
+			latestBlock: makeBlock(new Date('2024-01-01T00:00:00.000Z')),
+			rpcNetwork,
+			retrying: true,
+			slowRequest: {
+				method: 'eth_call',
+				startedAt: new Date('2024-01-01T00:02:45.000Z'),
+			},
+		}
+
+		const warningState = getRpcWarningState(status)
+
+		assert.equal(noNewBlockForOverTwoMins(status), true)
+		assert.equal(warningState.kind, 'slowRequest')
+		if (warningState.kind !== 'slowRequest') throw new Error('expected a slow request warning')
+		assert.equal(warningState.slowRequest.method, 'eth_call')
+	})
 })
