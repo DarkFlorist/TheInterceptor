@@ -7,9 +7,13 @@ import type { BlockExplorer, RpcEntries } from '../../types/rpc.js'
 import { getRpcList } from '../../background/storageVariables.js'
 import type { Result } from 'funtypes'
 import { isValidAbiString } from '../../utils/abiRuntime.js'
+import { fetchWithTimeout } from '../../utils/requests.js'
+import { reportLocalRecovery } from '../../utils/errors.js'
+
+const BLOCK_EXPLORER_FETCH_TIMEOUT_MS = 15_000
 
 async function fetchJson(url: string): Promise<{ success: true, result: unknown } | { success: false, error: string }> {
-	const response = await fetch(url)
+	const response = await fetchWithTimeout(url, undefined, BLOCK_EXPLORER_FETCH_TIMEOUT_MS)
 	if (!response.ok) return { success: false, error: `Ethercan returned error: ${ response.status }.` }
 	return { success: true, result: await response.json() }
 }
@@ -56,15 +60,19 @@ async function fetchAbi(contractAddress: EthereumAddress, maybeExplorer: BlockEx
 	try {
 		if (maybeExplorer !== undefined) {
 			try {
-				const result = await fetch(`${ maybeExplorer.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getsourcecode&address=${ normalizedAddressString }&apiKey=${ maybeExplorer.apiKey }`)
+				const result = await fetchWithTimeout(`${ maybeExplorer.apiUrl }?chainId=${ chainId.toString() }&module=contract&action=getsourcecode&address=${ normalizedAddressString }&apiKey=${ maybeExplorer.apiKey }`, undefined, BLOCK_EXPLORER_FETCH_TIMEOUT_MS)
 				bestResult = EtherscanSourceCodeResult.safeParse(await result.json())
 				if (bestResult.success) return bestResult
 			} catch(error: unknown) {
-				console.error(`Failed to retrieve ABI for ${ normalizedAddressString } from ${ maybeExplorer.apiUrl }`)
-				console.error(error)
+				await reportLocalRecovery(error, {
+					code: 'etherscan_source_fetch_failed',
+					category: 'external_service',
+					message: 'Falling back to Sourcify.',
+					details: { address: normalizedAddressString, apiUrl: maybeExplorer.apiUrl },
+				})
 			}
 		}
-		const result = await fetch(`https://repo.sourcify.dev/contracts/full_match/${ chainId.toString(10) }/${ normalizedAddressString }/metadata.json`)
+		const result = await fetchWithTimeout(`https://repo.sourcify.dev/contracts/full_match/${ chainId.toString(10) }/${ normalizedAddressString }/metadata.json`, undefined, BLOCK_EXPLORER_FETCH_TIMEOUT_MS)
 		if (result.status === 404) return { success: false, message: 'No source available' } as const
 		const parsed = SourcifyMetadataResult.safeParse(await result.json())
 		if (parsed.success) {
@@ -76,7 +84,12 @@ async function fetchAbi(contractAddress: EthereumAddress, maybeExplorer: BlockEx
 			}] } } as const
 		}
 	} catch(error: unknown) {
-		console.error(error)
+		await reportLocalRecovery(error, {
+			code: 'sourcify_source_fetch_failed',
+			category: 'external_service',
+			message: 'Returning the best ABI lookup failure collected so far.',
+			details: { address: normalizedAddressString },
+		})
 	}
 	return bestResult
 }

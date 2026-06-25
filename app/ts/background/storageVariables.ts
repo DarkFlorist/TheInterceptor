@@ -16,6 +16,7 @@ import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
+import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -294,6 +295,33 @@ export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured
 	console.warn(rawError)
 	await browserStorageLocalRemove('latestUnexpectedError')
 	return undefined
+}
+
+const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS = 50
+const interceptorErrorDiagnosticsSemaphore = new Semaphore(1)
+
+export async function getInterceptorErrorDiagnostics(): Promise<readonly InterceptorErrorDiagnostic[]> {
+	try {
+		return (await browserStorageLocalGet('interceptorErrorDiagnostics'))?.interceptorErrorDiagnostics ?? []
+	} catch (error) {
+		console.warn('interceptorErrorDiagnostics were corrupt:')
+		console.warn(error)
+		await browserStorageLocalRemove('interceptorErrorDiagnostics')
+		return []
+	}
+}
+
+export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic) {
+	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		await browserStorageLocalSet({
+			interceptorErrorDiagnostics: [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS),
+		})
+	})
+}
+
+export async function clearInterceptorErrorDiagnostics() {
+	await browserStorageLocalRemove('interceptorErrorDiagnostics')
 }
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []

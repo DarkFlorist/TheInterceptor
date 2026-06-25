@@ -1,15 +1,26 @@
 import type * as funtypes from 'funtypes'
 import { serialize } from '../types/wire-types.js'
+import { assertNever } from './typescript.js'
 
 export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisualisation'
 
 const LARGE_STATE_DB_NAME = 'interceptorLargeState'
 const LARGE_STATE_STORE_NAME = 'largeState'
+const LARGE_STATE_DELETE_MARKER_PREFIX = 'interceptorLargeStateDeleted:'
 
 type IndexedDbLookup =
 	| { kind: 'available', found: false }
 	| { kind: 'available', found: true, value: unknown }
 	| { kind: 'unavailable' }
+
+type LegacyLocalLookup =
+	| { kind: 'deleted' }
+	| { kind: 'found', value: unknown }
+	| { kind: 'missing' }
+
+type LargeStateDeleteMarkerKey =
+	| 'interceptorLargeStateDeleted:interceptorTransactionStack'
+	| 'interceptorLargeStateDeleted:popupVisualisation'
 
 let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined 
 let indexedDbSource: IDBFactory | undefined 
@@ -25,7 +36,7 @@ async function openLargeStateDb() {
 		indexedDbPromise = undefined
 	}
 	if (indexedDbPromise !== undefined) return indexedDbPromise
-	indexedDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+	const openPromise = new Promise<IDBDatabase>((resolve, reject) => {
 		const request = indexedDB.open(LARGE_STATE_DB_NAME, 1)
 		request.onupgradeneeded = () => {
 			const db = request.result
@@ -34,11 +45,14 @@ async function openLargeStateDb() {
 		request.onsuccess = () => resolve(request.result)
 		request.onerror = () => reject(request.error ?? new Error('Failed to open large state IndexedDB database'))
 		request.onblocked = () => reject(new Error('Large state IndexedDB database open was blocked'))
-	}).catch((error) => {
+	})
+	const retryableOpenPromise = openPromise.catch((error) => {
 		console.warn('IndexedDB unavailable for large state persistence, falling back to storage.local.')
 		console.warn(error)
+		if (indexedDbPromise === retryableOpenPromise) indexedDbPromise = undefined
 		return undefined
 	})
+	indexedDbPromise = retryableOpenPromise
 	return indexedDbPromise
 }
 
@@ -49,41 +63,91 @@ async function runIndexedDbRequest<T>(mode: IDBTransactionMode, operation: (stor
 		const transaction = db.transaction(LARGE_STATE_STORE_NAME, mode)
 		const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
 		const request = operation(store)
-		request.onsuccess = () => resolve({ kind: 'available', value: request.result })
+		let requestResult: { value: T } | undefined
+		request.onsuccess = () => {
+			requestResult = { value: request.result }
+		}
 		request.onerror = () => reject(request.error ?? new Error(`Large state IndexedDB ${ mode } request failed`))
+		transaction.oncomplete = () => {
+			if (requestResult === undefined) {
+				reject(new Error(`Large state IndexedDB ${ mode } transaction completed before the request succeeded`))
+				return
+			}
+			resolve({ kind: 'available', value: requestResult.value })
+		}
 		transaction.onabort = () => reject(transaction.error ?? new Error(`Large state IndexedDB ${ mode } transaction aborted`))
+		transaction.onerror = () => reject(transaction.error ?? new Error(`Large state IndexedDB ${ mode } transaction failed`))
 	})
 }
 
+function warnIndexedDbRequestFailure(action: string, error: unknown) {
+	console.warn(`IndexedDB ${ action } failed for large state persistence, falling back to storage.local.`)
+	console.warn(error)
+}
+
 async function getIndexedDbValue(key: LargeStateStorageKey): Promise<IndexedDbLookup> {
-	const result = await runIndexedDbRequest('readonly', (store) => store.get(key))
-	if (result.kind === 'unavailable') return result
-	if (result.value === undefined) return { kind: 'available', found: false }
-	return { kind: 'available', found: true, value: result.value }
+	try {
+		const result = await runIndexedDbRequest('readonly', (store) => store.get(key))
+		if (result.kind === 'unavailable') return result
+		if (result.value === undefined) return { kind: 'available', found: false }
+		return { kind: 'available', found: true, value: result.value }
+	} catch (error) {
+		warnIndexedDbRequestFailure('read', error)
+		return { kind: 'unavailable' }
+	}
 }
 
 async function setIndexedDbValue(key: LargeStateStorageKey, value: unknown) {
-	const result = await runIndexedDbRequest('readwrite', (store) => store.put(value, key))
-	return result.kind === 'available'
+	try {
+		const result = await runIndexedDbRequest('readwrite', (store) => store.put(value, key))
+		return result.kind === 'available'
+	} catch (error) {
+		warnIndexedDbRequestFailure('write', error)
+		return false
+	}
 }
 
 async function removeIndexedDbValue(key: LargeStateStorageKey) {
-	const result = await runIndexedDbRequest('readwrite', (store) => store.delete(key))
-	return result.kind === 'available'
+	try {
+		const result = await runIndexedDbRequest('readwrite', (store) => store.delete(key))
+		return result.kind === 'available'
+	} catch (error) {
+		warnIndexedDbRequestFailure('delete', error)
+		return false
+	}
 }
 
-async function getLegacyLocalValue(key: LargeStateStorageKey) {
-	const localValue = await browser.storage.local.get(key)
-	if (!Object.prototype.hasOwnProperty.call(localValue, key)) return undefined
-	return localValue[key]
+function getLegacyDeleteMarkerKey(key: LargeStateStorageKey): LargeStateDeleteMarkerKey {
+	switch (key) {
+		case 'interceptorTransactionStack': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }interceptorTransactionStack`
+		case 'popupVisualisation': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }popupVisualisation`
+		default: return assertNever(key)
+	}
+}
+
+async function getLegacyLocalLookup(key: LargeStateStorageKey): Promise<LegacyLocalLookup> {
+	const deleteMarkerKey = getLegacyDeleteMarkerKey(key)
+	const localValue = await browser.storage.local.get([key, deleteMarkerKey])
+	if (Object.prototype.hasOwnProperty.call(localValue, key)) return { kind: 'found', value: localValue[key] }
+	if (localValue[deleteMarkerKey] === true) return { kind: 'deleted' }
+	return { kind: 'missing' }
 }
 
 async function removeLegacyLocalValue(key: LargeStateStorageKey) {
 	await browser.storage.local.remove(key)
 }
 
+async function clearLegacyLocalState(key: LargeStateStorageKey) {
+	await browser.storage.local.remove([key, getLegacyDeleteMarkerKey(key)])
+}
+
+async function setLegacyLocalDeleted(key: LargeStateStorageKey) {
+	await browser.storage.local.set({ [getLegacyDeleteMarkerKey(key)]: true })
+}
+
 async function setLegacyLocalValue(key: LargeStateStorageKey, value: unknown) {
 	await browser.storage.local.set({ [key]: value })
+	await browser.storage.local.remove(getLegacyDeleteMarkerKey(key))
 }
 
 function parseSerializedValue<T>(codec: funtypes.Codec<T>, value: unknown) {
@@ -92,6 +156,21 @@ function parseSerializedValue<T>(codec: funtypes.Codec<T>, value: unknown) {
 }
 
 export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>): Promise<T | undefined> {
+	const legacyLocalValue = await getLegacyLocalLookup(key)
+	if (legacyLocalValue.kind === 'found') {
+		const parsedLegacyValue = parseSerializedValue(codec, legacyLocalValue.value)
+		if (parsedLegacyValue !== undefined) {
+			const wasMigrated = await setIndexedDbValue(key, legacyLocalValue.value)
+			if (wasMigrated) await clearLegacyLocalState(key)
+			return parsedLegacyValue
+		}
+		await removeLegacyLocalValue(key)
+	}
+	if (legacyLocalValue.kind === 'deleted') {
+		const wasRemoved = await removeIndexedDbValue(key)
+		if (wasRemoved) await clearLegacyLocalState(key)
+		return undefined
+	}
 	const indexedDbValue = await getIndexedDbValue(key)
 	if (indexedDbValue.kind === 'available') {
 		if (indexedDbValue.found) {
@@ -99,27 +178,7 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 			if (parsedIndexedDbValue !== undefined) return parsedIndexedDbValue
 			await removeIndexedDbValue(key)
 		}
-		const legacyLocalValue = await getLegacyLocalValue(key)
-		if (legacyLocalValue === undefined) return undefined
-		const parsedLegacyValue = parseSerializedValue(codec, legacyLocalValue)
-		if (parsedLegacyValue === undefined) {
-			await removeLegacyLocalValue(key)
-			return undefined
-		}
-		try {
-			await setIndexedDbValue(key, legacyLocalValue)
-			await removeLegacyLocalValue(key)
-		} catch (error) {
-			console.warn(`Failed to migrate ${ key } to IndexedDB.`)
-			console.warn(error)
-		}
-		return parsedLegacyValue
 	}
-	const localValue = await getLegacyLocalValue(key)
-	if (localValue === undefined) return undefined
-	const parsedLocalValue = parseSerializedValue(codec, localValue)
-	if (parsedLocalValue !== undefined) return parsedLocalValue
-	await removeLegacyLocalValue(key)
 	return undefined
 }
 
@@ -128,7 +187,7 @@ export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 	if (canUseIndexedDb()) {
 		const wasStoredInIndexedDb = await setIndexedDbValue(key, serializedValue)
 		if (wasStoredInIndexedDb) {
-			await removeLegacyLocalValue(key)
+			await clearLegacyLocalState(key)
 			return
 		}
 	}
@@ -136,8 +195,18 @@ export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 }
 
 export async function removeLargeStateValue(key: LargeStateStorageKey) {
-	if (canUseIndexedDb()) await removeIndexedDbValue(key)
+	if (!canUseIndexedDb()) {
+		await removeLegacyLocalValue(key)
+		await setLegacyLocalDeleted(key)
+		return
+	}
+	const wasRemovedFromIndexedDb = await removeIndexedDbValue(key)
+	if (wasRemovedFromIndexedDb) {
+		await clearLegacyLocalState(key)
+		return
+	}
 	await removeLegacyLocalValue(key)
+	await setLegacyLocalDeleted(key)
 }
 
 export function estimateSerializedStateBytes<T>(codec: funtypes.Codec<T>, value: T) {
