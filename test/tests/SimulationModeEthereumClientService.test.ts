@@ -288,6 +288,31 @@ describe('SimulationModeEthereumClientService', () => {
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 
+		test('mockSignTransaction preserves signed 7702 authorization tuples', async () => {
+			const signedAuthorization = {
+				chainId: 5n,
+				address: 0x000000009b1d0af20d8c6d0a44e162d11f9b8f00n,
+				nonce: 3n,
+				authority: 0x0000000000000000000000000000000000000004n,
+				r: 0x11n,
+				s: 0x22n,
+				yParity: 'odd' as const,
+			}
+			const signed = mockSignTransaction({
+				...example7702Transaction,
+				authorizationList: [signedAuthorization],
+			})
+
+			assert.equal(signed.type, '7702')
+			if (signed.type !== '7702') throw new Error('wrong transaction type')
+			const [authorization] = signed.authorizationList
+			if (authorization === undefined) throw new Error('authorization missing')
+			assert.equal(authorization.r, signedAuthorization.r)
+			assert.equal(authorization.s, signedAuthorization.s)
+			assert.equal(authorization.yParity, signedAuthorization.yParity)
+			assert.equal(authorization.authority, signedAuthorization.authority)
+		})
+
 		test('recoverAddress should fail for mocked transaction', async () => {
 			const signed = EthereumSignedTransactionToSignedTransaction(mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
@@ -729,6 +754,43 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
 		})
 
+		test('getBaseFeeAdjustedTransactions adjusts type-7702 fee-market transactions', async () => {
+			requestHandler.balance = 50n
+			requestHandler.ethGetBalanceCalls.length = 0
+			requestHandler.ethSimulateV1Calls.length = 0
+			const parentBlock = await ethereum.getBlock(undefined)
+			const transaction = {
+				signedTransaction: mockSignTransaction({
+					...example7702Transaction,
+					nonce: 0n,
+					maxFeePerGas: 999n,
+					maxPriorityFeePerGas: 100n,
+					gas: 10n,
+					value: 0n,
+				}),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ type: '7702', authorizationList: [] }]},
+				transactionIdentifier: 26n,
+			} as const
+			const currentBlock = {
+				stateOverrides: {},
+				transactions: [transaction],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+				simulateWithZeroBaseFee: false,
+			} as const
+
+			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			assert.deepEqual(adjusted, getBaseFeeAdjustedTransactions(parentBlock, currentBlock.transactions, balances))
+			const adjustedTransaction = adjusted[0]?.signedTransaction
+			if (adjustedTransaction === undefined || adjustedTransaction.type !== '7702') throw new Error('missing adjusted 7702 transaction')
+			assert.equal(adjustedTransaction.maxFeePerGas, 5n)
+			assert.equal(adjustedTransaction.maxPriorityFeePerGas, 5n)
+			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
+			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
+		})
+
 		test('getBaseFeeAdjustedTransactions skips prefix simulation when conservative balance can afford desired fees', async () => {
 			requestHandler.balance = 100_000n
 			requestHandler.ethGetBalanceCalls.length = 0
@@ -804,6 +866,50 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
 		})
 
+		test('getBaseFeeAdjustmentBalances tracks explicit type-7702 max fee in conservative balance', async () => {
+			requestHandler.balance = 100_000n
+			requestHandler.ethGetBalanceCalls.length = 0
+			requestHandler.ethSimulateV1Calls.length = 0
+			const parentBlock = await ethereum.getBlock(undefined)
+			const makeTransaction = (nonce: bigint, identifier: bigint, maxFeePerGas: bigint | undefined) => ({
+				signedTransaction: mockSignTransaction({
+					...example7702Transaction,
+					nonce,
+					maxFeePerGas: maxFeePerGas ?? 999n,
+					maxPriorityFeePerGas: 100n,
+					gas: 10n,
+					value: 0n,
+				}),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: maxFeePerGas === undefined ? [{ type: '7702', authorizationList: [] }] : [{ type: '7702', authorizationList: [], maxFeePerGas }]},
+				transactionIdentifier: identifier,
+			} as const)
+			const currentBlock = {
+				stateOverrides: {},
+				transactions: [
+					makeTransaction(0n, 27n, undefined),
+					makeTransaction(1n, 28n, 200n),
+					makeTransaction(2n, 29n, undefined),
+				],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+				simulateWithZeroBaseFee: false,
+			} as const
+
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			assert.equal(adjusted.length, 3)
+			const firstAdjusted = adjusted[0]?.signedTransaction
+			const secondAdjusted = adjusted[1]?.signedTransaction
+			const thirdAdjusted = adjusted[2]?.signedTransaction
+			if (firstAdjusted?.type !== '7702' || secondAdjusted?.type !== '7702' || thirdAdjusted?.type !== '7702') throw new Error('wrong transaction type')
+			assert.equal(firstAdjusted.maxFeePerGas, 284n)
+			assert.equal(secondAdjusted.maxFeePerGas, 200n)
+			assert.equal(thirdAdjusted.maxFeePerGas, 284n)
+			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
+			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
+		})
+
 		test('simulateEstimateGasFromInput omits gas when input gas is omitted', async () => {
 			requestHandler.ethSimulateV1Calls.length = 0
 			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, [], {
@@ -828,6 +934,96 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, explicitGas)
+		})
+
+		test('simulateEstimateGasFromInput validates and projects signed 7702 authorizations', async () => {
+			requestHandler.ethSimulateV1Calls.length = 0
+			const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+			const clearDelegationAuthorization = await victim.signAuthorization({
+				address: '0x0000000000000000000000000000000000000000',
+				chainId: 5,
+				nonce: 3,
+			})
+			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, [], {
+				type: '7702',
+				from: exampleTransaction.from,
+				to: exampleTransaction.to,
+				value: exampleTransaction.value,
+				input: exampleTransaction.input,
+				authorizationList: [{
+					chainId: BigInt(clearDelegationAuthorization.chainId),
+					address: BigInt(clearDelegationAuthorization.address),
+					nonce: BigInt(clearDelegationAuthorization.nonce),
+					authority: 0x0000000000000000000000000000000000000004n,
+					r: BigInt(clearDelegationAuthorization.r),
+					s: BigInt(clearDelegationAuthorization.s),
+					yParity: clearDelegationAuthorization.yParity === 0 ? 'even' : 'odd',
+				}],
+			})
+
+			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
+			const [authorization] = requestHandler.ethSimulateV1Calls.at(-1)?.lastCallAuthorizationList ?? []
+			if (authorization === undefined) throw new Error('authorization missing')
+			assert.deepEqual(authorization, {
+				chainId: BigInt(clearDelegationAuthorization.chainId),
+				address: BigInt(clearDelegationAuthorization.address),
+				nonce: BigInt(clearDelegationAuthorization.nonce),
+			})
+			assert.equal('authority' in authorization, false)
+			assert.equal('r' in authorization, false)
+			assert.equal('s' in authorization, false)
+			assert.equal('yParity' in authorization, false)
+		})
+
+		test('simulateEstimateGasFromInput rejects partial signed 7702 authorizations', async () => {
+			await assert.rejects(
+				async () => await simulateEstimateGasFromInput(ethereum, undefined, [], {
+					type: '7702',
+					from: exampleTransaction.from,
+					to: exampleTransaction.to,
+					value: exampleTransaction.value,
+					input: exampleTransaction.input,
+					authorizationList: [{
+						chainId: 5n,
+						address: 0n,
+						nonce: 3n,
+						authority: 0x0000000000000000000000000000000000000004n,
+						r: 0x11n,
+						s: 0x22n,
+					}],
+				}),
+				/EIP-7702 authorization signature is missing required fields/
+			)
+		})
+
+		test('simulateEstimateGas rejects partial signed 7702 authorizations', async () => {
+			await assert.rejects(
+				async () => await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState({
+					success: true,
+					simulationStateInput: [],
+					simulatedBlocks: [],
+					blockNumber,
+					blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+					baseFeePerGas: 1n,
+					simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+					rpcNetwork,
+				}), {
+					type: '7702',
+					from: exampleTransaction.from,
+					to: exampleTransaction.to,
+					value: exampleTransaction.value,
+					input: exampleTransaction.input,
+					authorizationList: [{
+						chainId: 5n,
+						address: 0n,
+						nonce: 3n,
+						authority: 0x0000000000000000000000000000000000000004n,
+						r: 0x11n,
+						s: 0x22n,
+					}],
+				}),
+				/EIP-7702 authorization signature is missing required fields/
+			)
 		})
 
 		test('simulatedCallFromInput omits gas when gasLimit is omitted', async () => {

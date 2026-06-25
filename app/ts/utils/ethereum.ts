@@ -96,10 +96,13 @@ export interface IUnsignedTransaction7702 {
 		readonly storageKeys: readonly bigint[]
 	}[]
 	readonly authorizationList: readonly {
-		chainId: bigint
-		address: bigint
-		nonce: bigint
-		authority?: bigint
+		readonly chainId: bigint
+		readonly address: bigint
+		readonly nonce: bigint
+		readonly authority?: bigint
+		readonly yParity?: 'even' | 'odd'
+		readonly r?: bigint
+		readonly s?: bigint
 	}[]
 }
 

@@ -36,6 +36,7 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
+import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -357,12 +358,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}
-	const authorizationList = transactionDetails.authorizationList?.map((authorization) => ({
-		chainId: authorization.chainId,
-		address: authorization.address,
-		nonce: authorization.nonce,
-		...(authorization.authority === undefined ? {} : { authority: authorization.authority }),
-	}))
+	const authorizationList = transactionDetails.authorizationList === undefined ? undefined : await normalizeEip7702AuthorizationList(transactionDetails.authorizationList)
 	const transactionWithoutGas = transactionDetails.type === '7702' || authorizationList !== undefined
 		? {
 			...transactionWithoutGasBase,

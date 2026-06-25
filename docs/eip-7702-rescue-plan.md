@@ -43,4 +43,3 @@ Bouquet should add a rescue mode that:
 3. Inserts the sponsored clear-delegation transaction before funding and token sweep transactions.
 4. Accounts for the victim authorization nonce increment before victim-signed follow-up transactions.
 5. Submits the complete ordered bundle privately.
-
