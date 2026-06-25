@@ -10,6 +10,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../t
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyObject({
@@ -67,6 +68,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	interceptorDisabled: funtypes.Boolean,
 	interceptorStartSleepingTimestamp: funtypes.Number,
 	latestUnexpectedError: UnexpectedErrorOccured,
+	interceptorErrorDiagnostics: funtypes.ReadonlyArray(InterceptorErrorDiagnostic),
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
@@ -104,6 +106,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('idsOfOpenedTabs'),
 	funtypes.Literal('interceptorStartSleepingTimestamp'),
 	funtypes.Literal('latestUnexpectedError'),
+	funtypes.Literal('interceptorErrorDiagnostics'),
 	funtypes.Literal('ensNameHashes'),
 	funtypes.Literal('ensLabelHashes'),
 	funtypes.Literal('preSimulationBlockTimeManipulation'),

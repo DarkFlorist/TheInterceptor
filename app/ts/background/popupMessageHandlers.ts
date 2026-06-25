@@ -31,7 +31,7 @@ import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-mess
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
-import { handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
@@ -54,7 +54,7 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
-const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : 'Unknown error'
+const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? 'Unknown error'
 
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
 const importSimulationStackFailure = (message: string): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: false, message })
@@ -384,8 +384,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				])
 				return
 			} catch(error: unknown) {
-				if (error instanceof Error && isNewBlockAbort(error)) return
-				if (error instanceof Error && isFailedToFetchError(error)) return
+				if (isExpectedInfrastructureError(error)) return
 				throw error
 			}
 		}
@@ -866,9 +865,14 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		try {
 			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
 		} catch (error) {
+			if (isExpectedInfrastructureError(error)) throw error
 			const address = checksummedAddress(element.address)
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-			await handleUnexpectedError(new Error(`Failed to identify rich list address ${ address }: ${ errorMessage }`))
+			const errorMessage = formatCaughtErrorMessage(error)
+			await reportUnexpectedError(error, {
+				displayMessage: `Failed to identify rich list address ${ address }: ${ errorMessage }`,
+				details: { address, richListEntry: element },
+				suppressExpectedInfrastructure: false,
+			})
 			return {
 				...element,
 				addressBookEntry: {
@@ -970,10 +974,14 @@ export async function fetchSimulationStackRequestConfirmation(ethereumClientServ
 	await resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, confirmation)
 }
 
-export async function handleUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
-	return handleUnexpectedError(new Error(parsedRequest.data.message), {
+export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
+	return reportUnexpectedError(parsedRequest.data.message, {
+		displayMessage: parsedRequest.data.message,
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,
+		debugId: parsedRequest.data.debugId,
+		details: parsedRequest.data,
+		suppressExpectedInfrastructure: false,
 	})
 }
 
@@ -1032,7 +1040,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 			})) }
 		})
 	} catch (error) {
-		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ getErrorMessage(error) }`)
+		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)
 	}
 
 	const updatedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, updatedStack)
@@ -1044,7 +1052,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
 		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)
 	} catch (error) {
-		return importSimulationStackFailure(`Imported stack was stored (${ formatEstimatedBytes(updatedStackBytes) }), but updating the visualized simulation failed: ${ getErrorMessage(error) }`)
+		return importSimulationStackFailure(`Imported stack was stored (${ formatEstimatedBytes(updatedStackBytes) }), but updating the visualized simulation failed: ${ formatCaughtErrorMessage(error) }`)
 	}
 
 	return importSimulationStackSuccess()
