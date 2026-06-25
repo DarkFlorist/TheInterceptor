@@ -56,10 +56,14 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopupPaylo
 	}
 }
 
+export async function sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport(message: PopupMessage) {
+	await browser.runtime.sendMessage(serialize(PopupMessage, message))
+	checkAndThrowRuntimeLastError()
+}
+
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	try {
-		await browser.runtime.sendMessage(serialize(PopupMessage, message))
-		checkAndThrowRuntimeLastError()
+		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport(message)
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isIgnorableExtensionMessagingError(error)) return

@@ -1,12 +1,12 @@
 import { useEffect } from 'preact/hooks'
-import { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
+import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
@@ -111,6 +111,21 @@ export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
 			? error
 			: 'Unknown error'
 	return `Failed to confirm transaction: ${ reason }`
+}
+
+export async function sendConfirmDialogMessage(message: TransactionConfirmation): Promise<CaughtError | undefined> {
+	try {
+		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport(message)
+	} catch(error) {
+		const errorMessage = await reportUnexpectedError(error, {
+			source: 'confirmTransaction',
+			code: 'confirm_dialog_delivery_failed',
+			displayMessage: getConfirmDialogDeliveryErrorMessage(error),
+			suppressExpectedInfrastructure: false,
+		})
+		return errorMessage?.data
+	}
+	return undefined
 }
 
 function UnderTransactions(param: UnderTransactionsParams) {
@@ -693,18 +708,8 @@ export function ConfirmTransaction() {
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		try {
-			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
-		} catch(error) {
-			await reportUnexpectedError(error, {
-				source: 'confirmTransaction',
-				code: 'confirm_dialog_delivery_failed',
-				displayMessage: getConfirmDialogDeliveryErrorMessage(error),
-				suppressExpectedInfrastructure: false,
-			})
-			console.warn('Failed to confirm transaction')
-			console.warn({ error })
-		}
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
+		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	async function reject() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
@@ -727,11 +732,12 @@ export function ConfirmTransaction() {
 			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
 		}
 
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
 			action: 'reject',
 			errorString: getPossibleErrorString(),
 		} })
+		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	const refreshMetadata = async () => {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return
