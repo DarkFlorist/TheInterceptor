@@ -45,7 +45,6 @@ function installBrowserMock() {
 
 function StackVisualizerHookProbe() {
 	useLiveSimulationHomeData({
-		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: false,
 	})
@@ -54,7 +53,6 @@ function StackVisualizerHookProbe() {
 
 function CrossTabStackVisualizerHookProbe() {
 	const { tabState } = useLiveSimulationHomeData({
-		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: false,
 		filterByTabId: false,
@@ -122,7 +120,7 @@ function createHomePageUpdate(tabId: number, popupRefreshGeneration: number, ico
 }
 
 describe('simulation visualizer open replies', () => {
-	test('stack visualizer hook answers the visualizer-open probe but not the main-popup probe', async () => {
+	test('stack visualizer hook answers the visualizer-open probe', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()
 		try {
@@ -135,10 +133,6 @@ describe('simulation visualizer open replies', () => {
 			const visualizerReply = sendRuntimeMessage(listener, { method: 'popup_isSimulationVisualizerOpen' })
 			assert.equal(visualizerReply.returned, true)
 			assert.deepEqual(visualizerReply.response, { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: true } })
-
-			const mainPopupReply = sendRuntimeMessage(listener, { method: 'popup_isMainPopupWindowOpen' })
-			assert.equal(mainPopupReply.returned, undefined)
-			assert.equal(mainPopupReply.response, undefined)
 		} finally {
 			dom.restore()
 		}

@@ -21,6 +21,7 @@ import { addressEditEntry } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformanceOnce } from '../utils/popupPerformance.js'
+import { createUnexpectedErrorPopupMessage } from '../utils/unexpectedErrorPopupMessage.js'
 import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
@@ -122,7 +123,6 @@ export function App() {
 		simulationMode,
 		numberOfAddressesMadeRich,
 	} = useLiveSimulationHomeData({
-		answerMainPopupOpen: true,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		onInitialSettings(settings: Settings) {
@@ -274,7 +274,15 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
-	function onRenderError(error: Error) { unexpectedError.value = { method: 'popup_UnexpectedErrorOccured', data: { message: error.message, timestamp: new Date(), source: 'popup', code: 'render_error', debugId: undefined } } }
+	function onRenderError(error: Error) {
+		unexpectedError.value = createUnexpectedErrorPopupMessage({
+			timestamp: new Date(),
+			message: error.message,
+			source: 'popup',
+			code: 'render_error',
+			debugId: undefined,
+		})
+	}
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
 		boundaryResetKey.value += 1

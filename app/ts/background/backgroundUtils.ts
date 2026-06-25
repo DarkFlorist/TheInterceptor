@@ -4,7 +4,7 @@ import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 
@@ -31,7 +31,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
 }
 
-export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
 	try {
 		await browser.runtime.sendMessage(serialize(MessageToPopup, { role, ...message }))
 		checkAndThrowRuntimeLastError()
@@ -44,7 +44,15 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopupPaylo
 			}
 			if (isIgnorableExtensionMessagingError(error)) return
 		}
-		await handleUnexpectedError(error)
+		throw error
+	}
+}
+
+export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+	try {
+		await sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message, role)
+	} catch (error) {
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -56,7 +64,7 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 		if (error instanceof Error) {
 			if (isIgnorableExtensionMessagingError(error)) return
 		}
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -82,7 +90,7 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 			if (isIgnorableExtensionMessagingError(error)) return undefined
 			if (error.message?.includes('Could not establish connection.')) return undefined
 		}
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 		return undefined
 	}
 }
@@ -132,11 +140,6 @@ export async function requestPopupAbiAndNameFromBlockExplorer(data: PopupRequest
 export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'popup_requestIdentifyAddress'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestIdentifyAddress', data })
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
-}
-
-export async function requestIsMainPopupWindowOpen() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
-	return reply?.method === 'popup_isMainPopupWindowOpen' ? reply : undefined
 }
 
 export async function requestIsSimulationDataConsumerOpen() {

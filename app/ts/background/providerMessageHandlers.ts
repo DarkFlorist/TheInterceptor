@@ -9,7 +9,7 @@ import { resolveSignerChainChange } from './windows/changeChain.js'
 import type { ApprovalState } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { addressString } from '../utils/bigint.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -136,7 +136,7 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 						}
 					})
 				} catch(e) {
-					await handleUnexpectedError(e)
+					await reportUnexpectedError(e)
 				}
 				return doNotReply
 				}

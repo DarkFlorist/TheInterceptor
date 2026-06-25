@@ -18,6 +18,7 @@ import { ImportSimulationStack } from './ImportSimulationStack.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { createUnexpectedErrorPopupMessage } from '../../utils/unexpectedErrorPopupMessage.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -67,7 +68,6 @@ export function SimulationStackPage() {
 		unexpectedError,
 		numberOfAddressesMadeRich,
 	} = useLiveSimulationHomeData({
-		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		filterByTabId: false,
@@ -100,7 +100,13 @@ export function SimulationStackPage() {
 	}
 
 	function onRenderError(error: Error) {
-		unexpectedError.value = { method: 'popup_UnexpectedErrorOccured', data: { message: error.message, timestamp: new Date(), source: 'simulationStack', code: 'render_error', debugId: undefined } }
+		unexpectedError.value = createUnexpectedErrorPopupMessage({
+			timestamp: new Date(),
+			message: error.message,
+			source: 'simulationStack',
+			code: 'render_error',
+			debugId: undefined,
+		})
 	}
 
 	async function clearUnexpectedError() {
@@ -136,15 +142,15 @@ export function SimulationStackPage() {
 				/>
 				{ isEmpty.value ?
 					<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
-				: currentResults.kind === 'passthrough' ?
-					<SimulationStackCompactSummary
-						simulationAndVisualisationResults = { simVisResults }
-						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
-					/>
-				: <div class = { simulationResultState.value === 'invalid' || simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
-					{ currentResults.value.visualizedSimulationState.success === false ?
-						<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
-					: <></> }
+					: currentResults.kind === 'passthrough' ?
+						<SimulationStackCompactSummary
+							simulationAndVisualisationResults = { simVisResults }
+							numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
+						/>
+					: <div class = { simulationResultState.value === 'invalid' || simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
+						{ currentResults.value.visualizedSimulationState.success === false ?
+							<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simulatable.` }/>
+						: <></> }
 					<SimulationStackCompactSummary
 						simulationAndVisualisationResults = { simVisResults }
 						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
@@ -165,30 +171,32 @@ export function SimulationStackPage() {
 						rpcConnectionStatus = { rpcConnectionStatus }
 					/>
 				</div> }
-			</ErrorBoundary> }
-		</div>
-		<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
-			{ modalState.value.page === 'modifyAddress' ?
-				<AddNewAddress
-					setActiveAddressAndInformAboutIt = { undefined }
-					modifyAddressWindowState = { modalState.value.state }
-					close = { () => { modalState.value = { page: 'noModal' } } }
-					activeAddress = { activeSimulationAddress.value }
-					rpcEntries = { rpcEntries }
-				/>
-			: <></> }
-			{ modalState.value.page === 'editEnsNamedHash' ?
-				<EditEnsLabelHash
-					close = { () => { modalState.value = { page: 'noModal' } } }
-					editEnsNamedHashWindowState = { modalState.value.state }
-				/>
-			: <></> }
-			{ modalState.value.page === 'importSimulation' ?
-				<ImportSimulationStack
-					close = { () => { modalState.value = { page: 'noModal' } } }
-					simulationInput = { modalState.value.state }
-				/>
-			: <></> }
-		</div>
-	</main>
-}
+				</ErrorBoundary> }
+			</div>
+			<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+				<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
+					{ modalState.value.page === 'modifyAddress' ?
+						<AddNewAddress
+							setActiveAddressAndInformAboutIt = { undefined }
+							modifyAddressWindowState = { modalState.value.state }
+							close = { () => { modalState.value = { page: 'noModal' } } }
+							activeAddress = { activeSimulationAddress.value }
+							rpcEntries = { rpcEntries }
+						/>
+					: <></> }
+					{ modalState.value.page === 'editEnsNamedHash' ?
+						<EditEnsLabelHash
+							close = { () => { modalState.value = { page: 'noModal' } } }
+							editEnsNamedHashWindowState = { modalState.value.state }
+						/>
+					: <></> }
+					{ modalState.value.page === 'importSimulation' ?
+						<ImportSimulationStack
+							close = { () => { modalState.value = { page: 'noModal' } } }
+							simulationInput = { modalState.value.state }
+						/>
+					: <></> }
+				</ErrorBoundary>
+			</div>
+		</main>
+	}

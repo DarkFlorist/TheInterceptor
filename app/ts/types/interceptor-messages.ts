@@ -889,10 +889,6 @@ const PopupInitiateExportSettings = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ fileContents: funtypes.String }),
 }).asReadonly()
 
-const PopupIsMainPopupWindowOpen = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
-}).asReadonly()
-
 const messageToPopupPayloadCodecs: [
 	typeof MessageToPopupSimple,
 	typeof WebsiteIconChanged,
@@ -916,7 +912,6 @@ const messageToPopupPayloadCodecs: [
 	typeof RetrieveWebsiteAccessReply,
 	typeof UpdateHomePage,
 	typeof FetchSimulationStackRequest,
-	typeof PopupIsMainPopupWindowOpen,
 ] = [
 	MessageToPopupSimple,
 	WebsiteIconChanged,
@@ -940,7 +935,6 @@ const messageToPopupPayloadCodecs: [
 	RetrieveWebsiteAccessReply,
 	UpdateHomePage,
 	FetchSimulationStackRequest,
-	PopupIsMainPopupWindowOpen,
 ]
 
 export type MessageToPopupPayload = funtypes.Static<(typeof messageToPopupPayloadCodecs)[number]>

@@ -95,9 +95,6 @@ function createBrowserMock(): BrowserMock {
 				if (message.method === 'popup_isSimulationVisualizerOpen') {
 					return { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: popupIsOpen } }
 				}
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: popupIsOpen } }
-				}
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),

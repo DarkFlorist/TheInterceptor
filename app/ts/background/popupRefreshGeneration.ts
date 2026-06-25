@@ -1,11 +1,15 @@
 import { getPopupRefreshGeneration as getPopupRefreshGenerationFromStorage, setPopupRefreshGeneration } from './storageVariables.js'
+import { reportLocalRecoveryAtAsyncBoundary } from '../utils/errors.js'
 
 let popupRefreshGeneration = 0
 
 const persistPopupRefreshGeneration = (value: number) => {
-	void setPopupRefreshGeneration(value).catch((error) => {
-		console.warn('Could not persist popup refresh generation:')
-		console.warn(error)
+	reportLocalRecoveryAtAsyncBoundary(async () => {
+		await setPopupRefreshGeneration(value)
+	}, {
+		code: 'popup_refresh_generation_persist_failed',
+		message: 'Continuing with the in-memory popup refresh generation.',
+		details: { popupRefreshGeneration: value },
 	})
 }
 

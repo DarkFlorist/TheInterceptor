@@ -14,7 +14,6 @@ import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 
 type LiveSimulationHomeDataOptions = {
-	answerMainPopupOpen: boolean
 	answerSimulationDataConsumerOpen: boolean
 	requestFreshHomeDataOnMount: boolean
 	filterByTabId?: boolean
@@ -140,10 +139,6 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		const replyPopupMessageListener = (msg: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
 			const maybeRequest = PopupMessageReplyRequests.safeParse(msg)
 			if (maybeRequest.success) {
-				if (maybeRequest.value.method === 'popup_isMainPopupWindowOpen' && options.answerMainPopupOpen) {
-					sendResponse({ method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } })
-					return true
-				}
 				// Historical wire name: both the popup and the full stack tab consume live simulation data.
 				if (maybeRequest.value.method === 'popup_isSimulationVisualizerOpen' && options.answerSimulationDataConsumerOpen) {
 					sendResponse({ method: 'popup_isSimulationVisualizerOpen', data: { isOpen: true } })

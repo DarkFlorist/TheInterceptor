@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { withSilencedConsole } from './consoleSilence.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -123,7 +124,7 @@ describe('content script injection strategy errors', () => {
 		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
 
-		await updateContentScriptInjectionStrategyManifestV3()
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'registration failed')
@@ -136,20 +137,29 @@ describe('content script injection strategy errors', () => {
 		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
-		await getCommittedListener()(committedDetails)
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
-	test('records unexpected manifest v2 injection failures', async () => {
+	test('records manifest v2 injection failures as local recovery diagnostics', async () => {
 		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('executeScript failed') })
-		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
+		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
-		await getCommittedListener()(committedDetails)
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
 
-		const latestUnexpectedError = await getLatestUnexpectedError()
-		assert.equal(latestUnexpectedError?.data.message, 'executeScript failed')
-		assert.equal(latestUnexpectedError?.data.code, 'content_script_injection_failed')
+		for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		const diagnostics = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostics.length, 1)
+		assert.equal(diagnostics[0]?.message, 'Leaving this navigation without early injection.')
+		assert.equal(diagnostics[0]?.cause, 'executeScript failed')
+		assert.equal(diagnostics[0]?.code, 'manifest_v2_content_script_injection_failed')
+		assert.equal(diagnostics[0]?.category, 'local_recovery')
 	})
 })
