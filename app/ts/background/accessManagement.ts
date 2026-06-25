@@ -17,7 +17,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -47,7 +47,9 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 			settings,
 			requestAccessForAddress?.address,
 		)
-		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration).catch(handleUnexpectedError)
+		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration).catch((error: unknown) => {
+			void reportUnexpectedError(error)
+		})
 		return 'hasAccess'
 	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
@@ -347,7 +349,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	} catch (error) {
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 	// update port connections and disconnect from ports that should not have access anymore
 	const updatePromises = [...websiteTabConnections.entries()].map(async ([_tab, tabConnection]) => {
@@ -362,7 +364,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await Promise.all(updatePromises)
 	} catch (error) {
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
 		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
@@ -370,7 +372,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await Promise.all(iconRefreshPromises)
 	} catch (error) {
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 	return popupRefreshGeneration
 }

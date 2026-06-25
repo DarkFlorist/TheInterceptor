@@ -13,6 +13,7 @@ import { type EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSi
 import { XMarkIcon } from './icons.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
+import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
 
 type RpcProbeResult = {
 	chainId: bigint
@@ -26,9 +27,11 @@ type ConfigureRpcContext = {
 
 const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undefined)
 
-const throwImprovedError = (error: Error, url: string) => {
-	if (error.message.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
-	if (error.message.startsWith('Failed to fetch')) throw new Error('Failed to connect to the RPC.')
+const throwImprovedError = (error: unknown, url: string, fallbackMessage: string) => {
+	const message = error instanceof Error ? error.message : undefined
+	if (message?.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
+	if (isBrowserFetchTransportError(error)) throw new Error('Failed to connect to the RPC.')
+	if (!(error instanceof Error)) throw new Error(fallbackMessage)
 	throw error
 }
 
@@ -41,9 +44,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			const chainId = await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }, undefined, false, 10000)
 			return { chainId: EthereumQuantity.parse(chainId) }
 		} catch(error: unknown) {
-			if (error instanceof Error) return throwImprovedError(error, url)
-			console.warn('RPC chain id error', error)
-			throw new Error('Unable to fetch network information from the RPC.')
+			return throwImprovedError(error, url, 'Unable to fetch network information from the RPC.')
 		}
 	}
 
@@ -88,9 +89,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error: unknown) {
 			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
-			if (error instanceof Error) return throwImprovedError(error, url)
-			console.warn('RPC eth_simulateV1 validation error', error)
-			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
+			return throwImprovedError(error, url, 'The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
 		}
 	}
 

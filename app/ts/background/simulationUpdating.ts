@@ -19,7 +19,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
-import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -156,9 +156,14 @@ async function getDelegationAddressesForSimulation(
 				delegationEntry: await identifyAddress(ethereum, requestAbortController, delegationAddress),
 			}
 		} catch(error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-			await handleUnexpectedError(new Error(`Failed to retrieve EIP-7702 delegation for ${ addressString(senderAddress) }: ${ errorMessage }`), {
+			if (isExpectedInfrastructureError(error)) throw error
+			const senderAddressString = addressString(senderAddress)
+			const errorMessage = getErrorMessage(error) ?? 'Unknown error'
+			await reportUnexpectedError(error, {
+				displayMessage: `Failed to retrieve EIP-7702 delegation for ${ senderAddressString }: ${ errorMessage }`,
 				code: 'delegation_lookup_failed',
+				details: { senderAddress: senderAddressString },
+				suppressExpectedInfrastructure: false,
 			})
 			return undefined
 		}
@@ -388,9 +393,8 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum, requestAbortController, events, inputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
-			if (error instanceof Error && isNewBlockAbort(error)) return prevState
-			if (error instanceof Error && isFailedToFetchError(error)) return prevState
-			handleUnexpectedError(error)
+			if (isExpectedInfrastructureError(error)) return prevState
+			await reportUnexpectedError(error)
 			return prevState
 		}
 	})

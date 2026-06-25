@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { withSilencedConsole } from './consoleSilence.js'
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
@@ -75,7 +76,7 @@ describe('unexpected error security', () => {
 		const { storageState, popupMessages } = installBrowserMock()
 		const { getLatestUnexpectedError, handleIterceptorError } = await loadModules()
 
-		await handleIterceptorError({ method: 'InterceptorError', params: ['phishing text'] })
+		await withSilencedConsole(async () => await handleIterceptorError({ method: 'InterceptorError', params: ['phishing text'] }))
 
 		assert.equal(storageState.latestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
@@ -84,9 +85,9 @@ describe('unexpected error security', () => {
 
 	test('use generic popup copy for unknown thrown values', async () => {
 		const { popupMessages } = installBrowserMock()
-		const { getLatestUnexpectedError, handleUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
+		const { getLatestUnexpectedError, reportUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
 
-		await handleUnexpectedError({ arbitrary: 'value' })
+		await withSilencedConsole(async () => await reportUnexpectedError({ arbitrary: 'value' }))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)
@@ -99,9 +100,9 @@ describe('unexpected error security', () => {
 
 	test('preserve trusted internal Error messages for popup display', async () => {
 		installBrowserMock()
-		const { getLatestUnexpectedError, handleUnexpectedError } = await loadModules()
+		const { getLatestUnexpectedError, reportUnexpectedError } = await loadModules()
 
-		await handleUnexpectedError(new Error('Trusted extension failure'))
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('Trusted extension failure')))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.notEqual(latestUnexpectedError, undefined)

@@ -1,5 +1,6 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError } from './requests.js'
+import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -30,8 +31,8 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			world: 'MAIN',
 			matchOriginAsFallback: true
 		}])
-	} catch (err) {
-		console.warn(err)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}
 }
 
@@ -50,7 +51,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (isMissingBrowserTargetError(error)) return false
-		console.error(error)
+		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
 	}
 	return false
 }

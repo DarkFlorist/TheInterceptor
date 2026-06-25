@@ -28,6 +28,7 @@ import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../utils/popupPerformance.js'
 import { getRpcWarningState, shouldShowRpcWarningCountdown } from '../utils/rpcConnectionUi.js'
 import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
+import { createUnexpectedErrorPopupMessage } from '../utils/unexpectedErrorPopupMessage.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
@@ -478,7 +479,15 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
-	function onRenderError(error: Error) { unexpectedError.value = { method: 'popup_UnexpectedErrorOccured', data: { message: error.message, timestamp: new Date(), source: 'popup', code: 'render_error', debugId: undefined } } }
+	function onRenderError(error: Error) {
+		unexpectedError.value = createUnexpectedErrorPopupMessage({
+			timestamp: new Date(),
+			message: error.message,
+			source: 'popup',
+			code: 'render_error',
+			debugId: undefined,
+		})
+	}
 	async function clearUnexpectedError() {
 		unexpectedError.value = undefined
 		boundaryResetKey.value += 1
