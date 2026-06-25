@@ -13,9 +13,24 @@ import {
 	JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
 	JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED,
 	JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE,
+	TIME_BETWEEN_BLOCKS,
 } from '../../utils/constants.js'
 
 type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
+export type SlowRpcRequest = {
+	requestId: number
+	rpcUrl: string
+	method: string
+	startedAt: Date
+}
+export type RpcRequestLifecycleCallbackName = 'onSlowRequest' | 'onSlowRequestSettled'
+
+export type RpcRequestLifecycleCallbacks = {
+	expectedDurationMs?: number
+	onSlowRequest?: (request: SlowRpcRequest) => void | Promise<void>
+	onSlowRequestSettled?: (request: SlowRpcRequest) => void | Promise<void>
+	onLifecycleCallbackError?: (error: unknown, request: SlowRpcRequest, callbackName: RpcRequestLifecycleCallbackName) => void | Promise<void>
+}
 
 const TRANSIENT_HTTP_STATUS_CODES = new Set([
 	HTTP_STATUS_REQUEST_TIMEOUT,
@@ -47,19 +62,23 @@ function shouldCacheResponse(response: ResolvedResponse) {
 	return !isNonCacheableJsonRpcError(response.response)
 }
 
+const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
+
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId = 1
 	private caching: boolean
 	private pendingCache: Map<string, Future<ResolvedResponse>>
 	private cache: Map<string, ResolvedResponse>
+	private rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks
 	public rpcUrl: string
 
-	constructor(rpcUrl: string, caching = false) {
+	constructor(rpcUrl: string, caching = false, rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {}) {
 		this.rpcUrl = rpcUrl
 		this.caching = caching
 		this.cache = new Map()
 		this.pendingCache = new Map()
+		this.rpcRequestLifecycleCallbacks = rpcRequestLifecycleCallbacks
 	}
 
 	public readonly clearCache = () => { this.cache = new Map() }
@@ -73,6 +92,54 @@ export class EthereumJSONRpcRequestHandler {
 		}
 	}
 
+	private readonly reportLifecycleCallbackError = (error: unknown, request: SlowRpcRequest, callbackName: RpcRequestLifecycleCallbackName) => {
+		const errorReporter = this.rpcRequestLifecycleCallbacks.onLifecycleCallbackError
+		if (errorReporter === undefined) return
+		try {
+			void Promise.resolve(errorReporter(error, request, callbackName)).catch((reportingError: unknown) => {
+				console.warn('RPC request lifecycle error reporter failed.')
+				console.warn(reportingError)
+			})
+		} catch(reportingError: unknown) {
+			console.warn('RPC request lifecycle error reporter failed.')
+			console.warn(reportingError)
+		}
+	}
+
+	private readonly callRpcRequestLifecycleCallback = (callbackName: RpcRequestLifecycleCallbackName, request: SlowRpcRequest) => {
+		const callback = this.rpcRequestLifecycleCallbacks[callbackName]
+		if (callback === undefined) return
+		try {
+			void Promise.resolve(callback(request)).catch((error: unknown) => {
+				this.reportLifecycleCallbackError(error, request, callbackName)
+			})
+		} catch(error: unknown) {
+			this.reportLifecycleCallbackError(error, request, callbackName)
+		}
+	}
+
+	private readonly fetchWithSlowRequestWarning = async (request: EthereumJsonRpcRequest, requestId: number, payload: RequestInit, timeoutMs: number, requestAbortController: AbortController | undefined) => {
+		const startedAt = new Date()
+		const slowRequest = {
+			requestId,
+			rpcUrl: this.rpcUrl,
+			method: request.method,
+			startedAt,
+		}
+		let wasSlowRequestReported = false
+		const expectedDurationMs = this.rpcRequestLifecycleCallbacks.expectedDurationMs ?? DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS
+		const warningTimeoutId = setTimeout(() => {
+			wasSlowRequestReported = true
+			this.callRpcRequestLifecycleCallback('onSlowRequest', slowRequest)
+		}, expectedDurationMs)
+		try {
+			return await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
+		} finally {
+			clearTimeout(warningTimeoutId)
+			if (wasSlowRequestReported) this.callRpcRequestLifecycleCallback('onSlowRequestSettled', slowRequest)
+		}
+	}
+
 	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		const payload = {
@@ -83,7 +150,7 @@ export class EthereumJSONRpcRequestHandler {
 		if (!this.caching) {
 			const startedAt = performance.now()
 			try {
-				const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
+				const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
 				return await this.resolveResponse(response)
 			} finally {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
@@ -101,7 +168,7 @@ export class EthereumJSONRpcRequestHandler {
 		this.pendingCache.set(hash, future)
 		const startedAt = performance.now()
 		try {
-			const response = await fetchWithTimeout(this.rpcUrl, payload, timeoutMs, requestAbortController)
+			const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
 			const responseObject = await this.resolveResponse(response)
 			if (shouldCacheResponse(responseObject)) this.cache.set(hash, responseObject)
 			future.resolve(responseObject)
