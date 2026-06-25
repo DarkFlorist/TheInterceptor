@@ -18,6 +18,7 @@ type LiveSimulationHomeDataOptions = {
 	answerSimulationDataConsumerOpen: boolean
 	requestFreshHomeDataOnMount: boolean
 	filterByTabId?: boolean
+	requireActiveSimulationAddress?: boolean
 	onInitialSettings?: (settings: Settings) => void
 }
 
@@ -64,7 +65,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			activeSimulationAddress: bigint | undefined,
 			namedTokenIds: readonly NamedTokenId[],
 		): void => {
-			if (activeSimulationAddress === undefined || simState.kind === 'passthrough') {
+			if ((options.requireActiveSimulationAddress !== false && activeSimulationAddress === undefined) || simState.kind === 'passthrough') {
 				simVisResults.value = PASSTHROUGH_STATE
 				return
 			}

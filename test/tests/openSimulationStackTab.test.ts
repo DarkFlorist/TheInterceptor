@@ -4,6 +4,7 @@ import { describe, test } from 'bun:test'
 type TabRecord = {
 	readonly id: number
 	readonly url?: string
+	readonly windowId?: number
 }
 
 type TabCreateDetails = {
@@ -18,6 +19,13 @@ type TabUpdateDetails = {
 	}
 }
 
+type WindowUpdateDetails = {
+	readonly windowId: number
+	readonly update: {
+		readonly focused?: boolean
+	}
+}
+
 type OpenedTabIds = {
 	addressBook: number | undefined
 	settingsView: number | undefined
@@ -27,13 +35,15 @@ type OpenedTabIds = {
 
 type StorageState = {
 	idsOfOpenedTabs?: OpenedTabIds
+	currentTabId?: number
 }
 
-function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds | undefined, updateShouldFail = false) {
+function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds | undefined, updateShouldFail = false, currentTabId?: number) {
 	const createdTabs: TabCreateDetails[] = []
 	const updatedTabs: TabUpdateDetails[] = []
-	const storageState: StorageState = { idsOfOpenedTabs: openedTabs }
-	const getStorageValue = (key: string) => key === 'idsOfOpenedTabs' ? storageState.idsOfOpenedTabs : undefined
+	const updatedWindows: WindowUpdateDetails[] = []
+	const storageState: StorageState = { idsOfOpenedTabs: openedTabs, currentTabId }
+	const getStorageValue = (key: string) => key === 'idsOfOpenedTabs' ? storageState.idsOfOpenedTabs : key === 'currentTabId' ? storageState.currentTabId : undefined
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
 		writable: true,
@@ -64,7 +74,13 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 				async update(tabId: number, update: TabUpdateDetails['update']) {
 					if (updateShouldFail) return undefined
 					updatedTabs.push({ tabId, update })
-					return { id: tabId }
+					return tabs.find((tab) => tab.id === tabId)
+				},
+			},
+			windows: {
+				async update(windowId: number, update: WindowUpdateDetails['update']) {
+					updatedWindows.push({ windowId, update })
+					return { id: windowId }
 				},
 			},
 		},
@@ -74,11 +90,15 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 		writable: true,
 		value: { runtime: { id: 'test-extension' } },
 	})
-	return { createdTabs, updatedTabs, storageState }
+	return { createdTabs, updatedTabs, updatedWindows, storageState }
 }
 
 async function loadOpenNewTab() {
 	return (await import('../../app/ts/background/popupMessageHandlers.js')).openNewTab
+}
+
+async function loadGetLastKnownCurrentTabId() {
+	return (await import('../../app/ts/background/popupMessageHandlers.js')).getLastKnownCurrentTabId
 }
 
 const emptyOpenedTabs = (): OpenedTabIds => ({
@@ -97,6 +117,17 @@ describe('open simulation stack tab', () => {
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true } }])
+	})
+
+	test('focuses the existing simulation stack tab window without opening a duplicate', async () => {
+		const { createdTabs, updatedTabs, updatedWindows } = installBrowserMock([{ id: 42, windowId: 7 }], { ...emptyOpenedTabs(), simulationStack: 42 })
+		const openNewTab = await loadOpenNewTab()
+
+		await openNewTab('simulationStack')
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true } }])
+		assert.deepEqual(updatedWindows, [{ windowId: 7, update: { focused: true } }])
 	})
 
 	test('opens and stores a new simulation stack tab when none is tracked', async () => {
@@ -130,5 +161,15 @@ describe('open simulation stack tab', () => {
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/simulationStackV3.html' }])
 		assert.equal(storageState.idsOfOpenedTabs?.simulationStack, 99)
+	})
+
+	test('keeps the stored website tab when the active tab is the extension simulation stack page', async () => {
+		const { storageState } = installBrowserMock([{ id: 77, url: '/html3/simulationStackV3.html' }], emptyOpenedTabs(), false, 12)
+		const getLastKnownCurrentTabId = await loadGetLastKnownCurrentTabId()
+
+		const tabId = await getLastKnownCurrentTabId()
+
+		assert.equal(tabId, 12)
+		assert.equal(storageState.currentTabId, 12)
 	})
 })

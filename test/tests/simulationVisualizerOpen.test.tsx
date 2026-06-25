@@ -4,8 +4,11 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
 import { SimulationStackPage } from '../../app/ts/components/pages/SimulationStackPage.js'
+import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import type { Settings, UpdateHomePage } from '../../app/ts/types/interceptor-messages.js'
+import type { BlockTimeManipulation, CompleteVisualizedSimulation, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
+import { UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
+import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => boolean | undefined
@@ -121,6 +124,103 @@ function createHomePageUpdate(tabId: number, popupRefreshGeneration: number, ico
 	}
 }
 
+function createPreSimulationTransaction(transactionIdentifier: bigint): PreSimulationTransaction {
+	const sendTransactionParams = {
+		from: 0x1000000000000000000000000000000000000001n,
+		to: 0x2000000000000000000000000000000000000002n,
+		value: 0n,
+		input: new Uint8Array(),
+		gas: 21_000n,
+		maxFeePerGas: 1n,
+		maxPriorityFeePerGas: 1n,
+	}
+	const transaction: EthereumUnsignedTransaction = {
+		type: '1559',
+		...sendTransactionParams,
+		nonce: transactionIdentifier,
+		chainId: 1n,
+	}
+	const signedTransaction = mockSignTransaction(transaction)
+	return {
+		signedTransaction,
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		originalRequestParameters: {
+			method: 'eth_sendTransaction',
+			params: [sendTransactionParams],
+		},
+		transactionIdentifier,
+	}
+}
+
+function createSerializableSettings(): Settings {
+	return {
+		...settings,
+		activeSimulationAddress: undefined,
+		activeRpcNetwork: {
+			...settings.activeRpcNetwork,
+			chainId: 1n,
+		},
+	}
+}
+
+function createSimulatedCompleteVisualizedSimulation(serializableSettings: Settings): CompleteVisualizedSimulation {
+	const blockTimeManipulation: BlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }
+	const simulationStateInput = [{
+		stateOverrides: {},
+		transactions: [createPreSimulationTransaction(1n)],
+		signedMessages: [],
+		blockTimeManipulation,
+		simulateWithZeroBaseFee: false,
+	}]
+	return {
+		addressBookEntries: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		namedTokenIds: [],
+		simulationState: {
+			kind: 'simulated',
+			value: {
+				success: true,
+				simulationStateInput,
+				simulatedBlocks: [],
+				blockNumber: 100n,
+				blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+				baseFeePerGas: 1n,
+				simulationConductedTimestamp: new Date('2024-01-01T00:00:05.000Z'),
+				rpcNetwork: serializableSettings.activeRpcNetwork,
+			},
+		},
+		simulationUpdatingState: 'done',
+		simulationResultState: 'done',
+		simulationId: 1,
+		visualizedSimulationState: {
+			success: true,
+			visualizedBlocks: [{
+				simulatedAndVisualizedTransactions: [],
+				visualizedPersonalSignRequests: [],
+				blockTimeManipulation,
+			}],
+		},
+		numberOfAddressesMadeRich: 0,
+	}
+}
+
+function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
+	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason)
+	const serializableSettings = createSerializableSettings()
+	return {
+		...update,
+		data: {
+			...update.data,
+			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings),
+			settings: serializableSettings,
+			rpcEntries: [serializableSettings.activeRpcNetwork],
+			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+		},
+	}
+}
+
 describe('simulation visualizer open replies', () => {
 	test('stack visualizer hook answers the visualizer-open probe but not the main-popup probe', async () => {
 		const dom = installDomMock()
@@ -184,6 +284,27 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Simply making 2 addresses rich'), true)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer page shows stack operations without an active simulation address', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(13, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 		} finally {
 			dom.restore()
