@@ -6,14 +6,14 @@ import { clearTabStates, getPrimaryRpcForChain, getRpcConnectionStatus, removeTa
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
+import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { reportUnexpectedError, isExpectedInfrastructureError, printError } from '../utils/errors.js'
+import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep, setRpcConnectionStatusRetryPublisher } from './sleeping.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
@@ -70,7 +70,15 @@ const rpcRequestLifecycleCallbacks = {
 		slowRpcRequests.delete(slowRpcRequestKey(request))
 		silenceChromeUnCaughtPromise(publishSlowRpcRequestStatus())
 	},
-}
+	onLifecycleCallbackError: (error, request, callbackName) => {
+		reportLocalRecoveryBestEffort(error, {
+			source: 'rpc_request_lifecycle',
+			code: 'rpc_request_lifecycle_callback_failed',
+			message: `RPC request lifecycle callback ${ callbackName } failed.`,
+			details: { callbackName, request },
+		})
+	},
+} satisfies RpcRequestLifecycleCallbacks
 
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	try {
