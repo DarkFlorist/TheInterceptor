@@ -96,9 +96,9 @@ function CompactDelegationAddress({ addressBookEntry }: { addressBookEntry: Addr
 	</div>
 }
 
-function DelegationNotice({ signer, authorizationList, addressMetadata, renameAddressCallBack }: {
-	signer: AddressBookEntry
-	authorizationList: readonly { address: bigint }[]
+function DelegationNotice({ defaultSigner, authorizationList, addressMetadata, renameAddressCallBack }: {
+	defaultSigner: AddressBookEntry
+	authorizationList: readonly { address: bigint, authority?: bigint }[]
 	addressMetadata: ReadonlySignal<readonly AddressBookEntry[]>
 	renameAddressCallBack: RenameAddressCallBack
 }) {
@@ -114,22 +114,25 @@ function DelegationNotice({ signer, authorizationList, addressMetadata, renameAd
 			</a>
 			<p class = 'paragraph delegation-flow-title'>Delegated execution</p>
 		</div>
-		<div class = 'delegation-flow-row'>
-			<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(signer) }>
-				<CompactDelegationAddress addressBookEntry = { signer } />
-			</button>
-			<div class = 'delegation-flow-connector'>
-				<p class = 'paragraph delegation-flow-label'>delegated to</p>
-				<DelegationFlowArrow />
-			</div>
-			<div class = 'delegation-flow-targets'>
-				{ authorizationList.map((authorization, index) => {
-					const entry = getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)
-					return <button type = 'button' class = 'delegation-flow-address-button' key = { `${ authorization.address.toString() }-${ index }` } onClick = { () => renameAddressCallBack(entry) }>
-						<CompactDelegationAddress addressBookEntry = { entry } />
+		<div class = 'delegation-flow-column'>
+			{ authorizationList.map((authorization, index) => {
+				const signer = authorization.authority === undefined ? defaultSigner : getAddressBookEntryOrAFiller(addressMetadata.value, authorization.authority)
+				const entry = getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)
+				return <div class = 'delegation-flow-row' key = { `${ authorization.address.toString() }-${ authorization.authority?.toString() ?? defaultSigner.address.toString() }-${ index }` }>
+					<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(signer) }>
+						<CompactDelegationAddress addressBookEntry = { signer } />
 					</button>
-				}) }
-			</div>
+					<div class = 'delegation-flow-connector'>
+						<p class = 'paragraph delegation-flow-label'>{ authorization.address === 0n ? 'cleared delegate' : 'delegated to' }</p>
+						<DelegationFlowArrow />
+					</div>
+					<div class = 'delegation-flow-targets'>
+						<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(entry) }>
+						<CompactDelegationAddress addressBookEntry = { entry } />
+						</button>
+					</div>
+				</div>
+			}) }
 		</div>
 	</div>
 }
@@ -140,14 +143,14 @@ function getDelegationNotice(
 	renameAddressCallBack: RenameAddressCallBack
 ) {
 	if (transaction.type === '7702' && transaction.authorizationList.length > 0) return <DelegationNotice
-		signer = { transaction.from }
+		defaultSigner = { transaction.from }
 		authorizationList = { transaction.authorizationList }
 		addressMetadata = { addressMetadata }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 	if (transaction.delegationAddress === undefined) return undefined
 	return <DelegationNotice
-		signer = { transaction.from }
+		defaultSigner = { transaction.from }
 		authorizationList = { [{ address: transaction.delegationAddress.address }] }
 		addressMetadata = { addressMetadata }
 		renameAddressCallBack = { renameAddressCallBack }
