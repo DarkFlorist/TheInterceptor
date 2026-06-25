@@ -74,8 +74,9 @@ export function removeWindowTabListeners(onCloseWindow: (id: number) => void, on
 
 export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
 	if (popupOrTab.type === 'tab') {
-		const tab = await browser.tabs.get(popupOrTab.id)
-		if (tab !== undefined && tab.windowId !== undefined) await browser.windows.update(tab.windowId, { drawAttention: true, focused: true })
+		const tab = await getTabIfExists(popupOrTab.id)
+		if (tab === undefined) return undefined
+		if (tab.windowId !== undefined) await updateWindowIfExists(tab.windowId, { drawAttention: true, focused: true })
 		return await updateTabIfExists(popupOrTab.id, { active: true, highlighted: true })
 	}
 	return await updateWindowIfExists(popupOrTab.id, { drawAttention: true, focused: true })
