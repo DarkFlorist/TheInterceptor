@@ -34,7 +34,7 @@ describe('bundler import rewriting', () => {
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, 'import { keccak_256 as noble_keccak256 } from \'../../__dependencies__/@noble/hashes/esm/sha3.js\';')
+		assert.equal(rewritten, 'import { keccak_256 as noble_keccak256 } from \'../../../@noble/hashes/esm/sha3.js\';')
 	})
 
 	test('rewrites vendored relative node_modules imports away from node_modules paths', () => {
@@ -43,7 +43,7 @@ describe('bundler import rewriting', () => {
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, 'import { keccak_256 } from \'../../../__dependencies__/@noble/hashes/esm/sha3.js\';')
+		assert.equal(rewritten, 'import { keccak_256 } from \'../../../../@noble/hashes/esm/sha3.js\';')
 	})
 
 	test('does not rewrite comment examples that are not real imports', () => {

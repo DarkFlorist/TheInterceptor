@@ -71,6 +71,7 @@ export function SimulationStackPage() {
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		filterByTabId: false,
+		requireActiveSimulationAddress: false,
 	})
 	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
