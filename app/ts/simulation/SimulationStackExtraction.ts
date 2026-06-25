@@ -44,7 +44,7 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 	const simulatedTransactions = simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
-		const maxPriorityFeePerGas = transaction.preSimulationTransaction.signedTransaction.type === '1559' ? transaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas : 0n
+		const maxPriorityFeePerGas = 'maxPriorityFeePerGas' in transaction.preSimulationTransaction.signedTransaction ? transaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas : 0n
 		return {
 			...transaction.preSimulationTransaction.signedTransaction,
 			...transaction.ethSimulateV1CallResult,
