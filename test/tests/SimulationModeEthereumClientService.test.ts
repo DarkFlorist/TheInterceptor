@@ -1533,6 +1533,44 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(receipt.logs[0]?.blockNumber, receipt.blockNumber)
 			})
 
+			test('state-based 7702 receipt omits authorization list fields', async () => {
+				const simulationStateInput = [{
+					stateOverrides: {},
+					transactions: [{
+						signedTransaction: mockSignTransaction({
+							...example7702Transaction,
+							nonce: 0n,
+							authorizationList: [{
+								chainId: 1n,
+								address: 0x000000009b1d0af20d8c6d0a44e162d11f9b8f00n,
+								nonce: 0n,
+								authority: example7702Transaction.from,
+								r: 1n,
+								s: 2n,
+								yParity: 'even',
+							}],
+						}),
+						website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+						created: new Date(),
+						originalRequestParameters: { method: 'eth_sendTransaction', params: [{ type: '7702', authorizationList: [] }]},
+						transactionIdentifier: 15n,
+					}],
+					signedMessages: [],
+					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+					simulateWithZeroBaseFee: false,
+				}] as const
+
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const transactionHash = simulationStateInput[0].transactions[0]?.signedTransaction.hash
+				if (transactionHash === undefined) throw new Error('transaction hash missing')
+				const receipt = await getReceiptFromState(simulationState, transactionHash)
+				if (receipt === null) throw new Error('receipt missing')
+
+				assert.equal(receipt.type, '7702')
+				assert.equal('authorizationList' in receipt, false)
+			})
+
 			test('state-based logs honor the first simulated execution block hash after gas splitting', async () => {
 				const splitSimulationStateInput = [{
 					stateOverrides: {},

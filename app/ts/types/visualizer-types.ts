@@ -139,7 +139,9 @@ export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject
 	transactionIdentifier: EthereumQuantity,
 	success: funtypes.Literal(true),
 	transaction: EthereumUnsignedTransaction,
-})
+}).And(funtypes.ReadonlyPartial({
+	signedTransaction: EthereumSendableSignedTransaction,
+}))
 
 export type FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumUnsignedTransaction>
 export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({

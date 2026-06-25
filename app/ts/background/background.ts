@@ -52,6 +52,10 @@ const INTERNAL_PROVIDER_METHODS = [
 
 const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
 
+const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction) => (
+	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction)
+)
+
 export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
 	try {
 		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(await getCurrentSimulationInput(), ethereum))
@@ -88,7 +92,7 @@ export async function refreshConfirmTransactionSimulation(
 	try {
 			const getNewVisualizedSimulationState = async () => {
 				const simulationStateWithNewTransaction = transactionToSimulate.success ? appendTransactionsToInput(simulationInput, [{
-				signedTransaction: mockSignTransaction(transactionToSimulate.transaction),
+				signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
 				website: transactionToSimulate.website,
 				created: transactionToSimulate.created,
 					originalRequestParameters: transactionToSimulate.originalRequestParameters,

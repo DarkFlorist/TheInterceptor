@@ -897,10 +897,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				blobGasUsed: GAS_PER_BLOB * BigInt(signedTransaction.blobVersionedHashes.length),
 				blobGasPrice: signedTransaction.maxFeePerBlobGas,
 			}
-			case '7702': return {
-				type: signedTransaction.type,
-				authorizationList: signedTransaction.authorizationList
-			}
+			case '7702': return { type: signedTransaction.type }
 			default: assertNever(signedTransaction)
 		}
 	}
