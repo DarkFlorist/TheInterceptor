@@ -244,9 +244,9 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
-export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
+export const formSendRawTransaction = async(_ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
 	return {
-		transaction: await parseSendRawTransaction(sendRawTransactionParams.params[0], ethereumClientService.getChainId()),
+		transaction: await parseSendRawTransaction(sendRawTransactionParams.params[0]),
 		website,
 		created,
 		originalRequestParameters: sendRawTransactionParams,
