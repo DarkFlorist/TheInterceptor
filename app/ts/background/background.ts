@@ -574,6 +574,7 @@ export async function popupMessageHandler(
 				case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
 				case 'popup_setEnsNameForHash': return await setEnsNameForHash(parsedRequest)
 				case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
+				case 'popup_openSimulationStack': return await openNewTab('simulationStack')
 				case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess(parsedRequest)
 				case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(websiteTabConnections, parsedRequest)
@@ -594,7 +595,7 @@ export async function popupMessageHandler(
 				case 'popup_requestCompleteVisualizedSimulation': return await requestCompleteVisualizedSimulation(ethereum, tokenPriceService)
 				case 'popup_requestSimulationMetadata': return await requestSimulationMetadata(ethereum)
 				case 'popup_requestIdentifyAddress': return await requestIdentifyAddress(ethereum, parsedRequest)
-				case 'popup_isMainPopupWindowOpen': return
+				case 'popup_isSimulationVisualizerOpen': return
 				default: assertUnreachable(parsedRequest)
 			}
 		}

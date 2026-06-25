@@ -130,9 +130,9 @@ const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-type RequestIsMainWindowOpen = funtypes.Static<typeof RequestIsMainWindowOpen>
-const RequestIsMainWindowOpen = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
+type RequestIsSimulationVisualizerOpen = funtypes.Static<typeof RequestIsSimulationVisualizerOpen>
+const RequestIsSimulationVisualizerOpen = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_isSimulationVisualizerOpen'),
 	data: funtypes.ReadonlyObject({
 		isOpen: funtypes.Boolean,
 	})
@@ -166,7 +166,7 @@ type PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: typeof RequestSimulationMetadataReply
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
-	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
+	popup_isSimulationVisualizerOpen: typeof RequestIsSimulationVisualizerOpen
 	popup_readyAndListening: typeof PopupReadyAndListeningReply
 }
 
@@ -181,7 +181,7 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
-	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
+	popup_isSimulationVisualizerOpen: RequestIsSimulationVisualizerOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
 }
 
@@ -206,7 +206,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSimulationStack'), data: InterceptorSimulationExport }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isSimulationVisualizerOpen') }),
 	funtypes.ReadonlyObject({
 		method: funtypes.Literal('popup_readyAndListening'),
 		data: funtypes.ReadonlyObject({
@@ -234,7 +234,7 @@ export type PopupReplyOption =
 	| RequestSimulationMetadataReply
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
-	| RequestIsMainWindowOpen
+	| RequestIsSimulationVisualizerOpen
 	| PopupReadyAndListeningReply
 	| undefined
 
@@ -249,7 +249,7 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
-	RequestIsMainWindowOpen,
+	RequestIsSimulationVisualizerOpen,
 	PopupReadyAndListeningReply,
 	funtypes.Undefined,
 )

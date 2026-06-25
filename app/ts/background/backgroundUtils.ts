@@ -142,9 +142,9 @@ export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'po
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
-export async function requestIsMainPopupWindowOpen() {
-	const reply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
-	return reply?.method === 'popup_isMainPopupWindowOpen' ? reply : undefined
+export async function requestIsSimulationDataConsumerOpen() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_isSimulationVisualizerOpen' })
+	return reply?.method === 'popup_isSimulationVisualizerOpen' ? reply : undefined
 }
 
 export async function sendPopupReadyAndListening(page: PopupReadyAndListeningPage): Promise<PopupOrTabId | undefined> {
@@ -165,7 +165,7 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack'
+type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) return `/html/${ file }.html`

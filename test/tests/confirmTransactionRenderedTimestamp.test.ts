@@ -24,9 +24,6 @@ function createBrowserMock() {
 			lastError: null as browser.runtime._LastError | undefined | null,
 			async sendMessage(message: unknown) {
 				for (const listener of [...listeners]) listener(message)
-				if (message?.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
-				}
 				if (message?.method === 'popup_readyAndListening') {
 					return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
 				}

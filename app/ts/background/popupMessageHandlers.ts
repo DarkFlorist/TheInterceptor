@@ -25,7 +25,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -88,8 +88,19 @@ export async function getLastKnownCurrentTabId() {
 	const tabId = await tabIdPromise
 	// skip restricted or insufficient permission tabs
 	if (tabs[0]?.id === undefined || tabs[0]?.url === undefined) return tabId
-	if (tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
+	if (isExtensionOwnedPageUrl(tabs[0].url)) return tabId
+	if (tabId !== tabs[0].id) await saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
+}
+
+function isExtensionOwnedPageUrl(urlString: string) {
+	if (urlString.startsWith('/html/') || urlString.startsWith('/html3/')) return true
+	try {
+		const url = new URL(urlString)
+		return url.protocol === 'chrome-extension:' || url.protocol === 'moz-extension:'
+	} catch {
+		return false
+	}
 }
 
 export async function popupReadyAndListening(ethereum: EthereumClientService, page: PopupReadyAndListeningPage) {
@@ -470,7 +481,7 @@ export async function getAddressBookData(parsed: GetAddressBookData) {
 	})
 }
 
-export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess') => {
+export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack') => {
 	const openInNewTab = async () => {
 		const tab = await browser.tabs.create({ url: getHtmlFile(tabName) })
 		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })
@@ -483,7 +494,8 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
 	const tab = await updateTabIfExists(addressBookTab.id, { active: true, highlighted: true })
-	if (tab === undefined) await openInNewTab()
+	if (tab === undefined) return await openInNewTab()
+	if (tab?.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })
 }
 
 export async function requestNewHomeData(
