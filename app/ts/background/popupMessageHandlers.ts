@@ -698,7 +698,11 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 
 // reload all connected tabs of the same origin and the current webpage
 function isMissingTabReloadError(error: unknown) {
-	return error instanceof Error && error.message.startsWith('No tab with id')
+	const message = getErrorMessage(error)
+	return message !== undefined && (
+		message.startsWith('No tab with id')
+		|| message.includes('Invalid tab ID')
+	)
 }
 
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
@@ -711,7 +715,7 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
 			if (isMissingTabReloadError(error)) continue
-			await handleUnexpectedError(error, { code: 'connected_tab_reload_failed' })
+			await reportUnexpectedError(error, { code: 'connected_tab_reload_failed' })
 		}
 	}
 }

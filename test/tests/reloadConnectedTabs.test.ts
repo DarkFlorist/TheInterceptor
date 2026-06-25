@@ -95,6 +95,17 @@ describe('reloadConnectedTabs', () => {
 		assert.deepEqual(sentMessages, [])
 	})
 
+	test('ignores Firefox invalid tab reload errors', async () => {
+		const { sentMessages, reloadedTabs } = installBrowserMock(new Error('Invalid tab ID: 10'))
+		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
+
+		await reloadConnectedTabs(websiteTabConnections)
+
+		assert.deepEqual(reloadedTabs, [10])
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.deepEqual(sentMessages, [])
+	})
+
 	test('records unexpected reload failures', async () => {
 		const { reloadedTabs } = installBrowserMock(new Error('reload failed'))
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
