@@ -25,7 +25,8 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		param.addNewAddress()
 	}
 
-	const signerAddressName = param.activeAddresses.value.find((x) => x.address === getSignerAccount() )?.name
+	const activeAddresses = param.activeAddresses.value
+	const signerAddressName = activeAddresses.find((x) => x.address === getSignerAccount() )?.name
 
 	return ( <>
 		<div class = 'modal-background'> </div>
@@ -71,28 +72,25 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						</div>
 					</li>
 
-					{ param.activeAddresses === undefined
-						? <></>
-						: param.activeAddresses.value.map((activeAddress) => (
-							<li key = { activeAddress.address.toString() }>
-								<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
-									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
-										<BigAddress
-											addressBookEntry = { activeAddress }
-											noCopying = { true }
-											noEditAddress = { true }
-											renameAddressCallBack = { param.renameAddressCallBack }
-										/>
-										{ isSignerConnected(activeAddress.address) ?
-											<div class = 'content' style = 'color: var(--text-color)'>
-												<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
-											</div> : <></>
-										}
-									</div>
+					{ activeAddresses.map((activeAddress) => (
+						<li key = { activeAddress.address.toString() }>
+							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
+								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
+									<BigAddress
+										addressBookEntry = { activeAddress }
+										noCopying = { true }
+										noEditAddress = { true }
+										renameAddressCallBack = { param.renameAddressCallBack }
+									/>
+									{ isSignerConnected(activeAddress.address) ?
+										<div class = 'content' style = 'color: var(--text-color)'>
+											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
+										</div> : <></>
+									}
 								</div>
-							</li>
-						) )
-					}
+							</div>
+						</li>
+					) ) }
 
 				</ul>
 			</section>

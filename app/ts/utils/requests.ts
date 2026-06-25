@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
+import { createInterceptorInternalError, getErrorMessage, isBrowserFetchTransportError } from './caughtErrors.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({
@@ -63,13 +64,16 @@ export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b:
 
 export async function fetchWithTimeout(resource: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) {
 	const timeoutAbortController = new AbortController()
-	const timeoutId = setTimeout(() => timeoutAbortController.abort(new Error('Fetch request timed out.')), timeoutMs)
+	const timeoutId = setTimeout(() => timeoutAbortController.abort(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout')), timeoutMs)
 	const requestAndTimeoutSignal = requestAbortController === undefined ? timeoutAbortController.signal : anySignal([timeoutAbortController.signal, requestAbortController.signal])
 	try {
 		if (requestAndTimeoutSignal.aborted) throw requestAndTimeoutSignal.reason
 		return await fetch(resource, { ...init, signal: requestAndTimeoutSignal })
 	} catch(error: unknown) {
-		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw new Error('Fetch request timed out.')
+		if (requestAbortController?.signal.aborted) throw requestAbortController.signal.reason
+		if (timeoutAbortController.signal.aborted) throw timeoutAbortController.signal.reason
+		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw createInterceptorInternalError('Fetch request aborted.', 'fetch_aborted')
+		if (isBrowserFetchTransportError(error)) throw createInterceptorInternalError(getErrorMessage(error) ?? 'Fetch request failed.', 'fetch_transport_failed')
 		throw error
 	} finally {
 		clearTimeout(timeoutId)

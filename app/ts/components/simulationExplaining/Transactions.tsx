@@ -31,13 +31,15 @@ import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { useEffect } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import { Blockie } from '../subcomponents/SVGBlockie.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -74,35 +76,125 @@ export type TransactionImportanceBlockParams = {
 	rpcNetwork: ReadonlySignal<RpcNetwork>
 }
 
+function DelegationFlowArrow() {
+	return <div aria-hidden = 'true' class = 'delegation-flow-arrow'>
+		<ArrowIcon color = 'var(--subtitle-text-color)' />
+	</div>
+}
+
+function CompactDelegationAddress({ addressBookEntry }: { addressBookEntry: AddressBookEntry }) {
+	const address = checksummedAddress(addressBookEntry.address)
+	const showSecondaryLine = addressBookEntry.name !== address
+	return <div class = 'delegation-flow-address' title = { address }>
+		<span class = 'delegation-flow-address-icon'>
+			<Blockie address = { addressBookEntry.address } />
+		</span>
+		<span class = 'delegation-flow-address-text'>
+			<span class = 'delegation-flow-address-primary'>{ addressBookEntry.name }</span>
+			{ showSecondaryLine ? <span class = 'delegation-flow-address-secondary'>{ address }</span> : <></> }
+		</span>
+	</div>
+}
+
+function DelegationNotice({ signer, authorizationList, addressMetadata, renameAddressCallBack }: {
+	signer: AddressBookEntry
+	authorizationList: readonly { address: bigint }[]
+	addressMetadata: ReadonlySignal<readonly AddressBookEntry[]>
+	renameAddressCallBack: RenameAddressCallBack
+}) {
+	return <div class = 'delegation-flow-banner'>
+		<div class = 'delegation-flow-header'>
+			<a
+				class = 'tag delegation-flow-badge'
+				href = 'https://eips.ethereum.org/EIPS/eip-7702'
+				target = '_blank'
+				rel = 'noreferrer'
+			>
+				7702
+			</a>
+			<p class = 'paragraph delegation-flow-title'>Delegated execution</p>
+		</div>
+		<div class = 'delegation-flow-row'>
+			<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(signer) }>
+				<CompactDelegationAddress addressBookEntry = { signer } />
+			</button>
+			<div class = 'delegation-flow-connector'>
+				<p class = 'paragraph delegation-flow-label'>delegated to</p>
+				<DelegationFlowArrow />
+			</div>
+			<div class = 'delegation-flow-targets'>
+				{ authorizationList.map((authorization, index) => {
+					const entry = getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)
+					return <button type = 'button' class = 'delegation-flow-address-button' key = { `${ authorization.address.toString() }-${ index }` } onClick = { () => renameAddressCallBack(entry) }>
+						<CompactDelegationAddress addressBookEntry = { entry } />
+					</button>
+				}) }
+			</div>
+		</div>
+	</div>
+}
+
+function getDelegationNotice(
+	transaction: MaybeSimulatedTransaction['transaction'],
+	addressMetadata: ReadonlySignal<readonly AddressBookEntry[]>,
+	renameAddressCallBack: RenameAddressCallBack
+) {
+	if (transaction.type === '7702' && transaction.authorizationList.length > 0) return <DelegationNotice
+		signer = { transaction.from }
+		authorizationList = { transaction.authorizationList }
+		addressMetadata = { addressMetadata }
+		renameAddressCallBack = { renameAddressCallBack }
+	/>
+	if (transaction.delegationAddress === undefined) return undefined
+	return <DelegationNotice
+		signer = { transaction.from }
+		authorizationList = { [{ address: transaction.delegationAddress.address }] }
+		addressMetadata = { addressMetadata }
+		renameAddressCallBack = { renameAddressCallBack }
+	/>
+}
+
+function ConnectedDelegationStack({ delegationNotice, children }: { delegationNotice: ComponentChildren, children: ComponentChildren }) {
+	if (delegationNotice === undefined || delegationNotice === null) return <>{ children }</>
+	return <div style = 'display: grid; gap: 8px;'>
+		{ delegationNotice }
+		{ children }
+	</div>
+}
+
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
-	if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
-	if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
-	const transactionIdentification = identifyTransaction(param.simTx)
-	switch (transactionIdentification.type) {
-		case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
-		case 'SimpleTokenApproval': {
-			const approval = transactionIdentification.identifiedTransaction.events[0]
-			if (approval === undefined || approval.type !== 'TokenEvent') throw new Error('approval was undefined')
-			return <SimpleTokenApprovalVisualisation
-				approval = { approval.logInformation }
-				transactionGasses = { transactionIdentification.identifiedTransaction }
-				rpcNetwork = { transactionIdentification.identifiedTransaction.transaction.rpcNetwork }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
+	const delegationNotice = getDelegationNotice(param.simTx.transaction, param.addressMetadata, param.renameAddressCallBack)
+	const content = (() => {
+		if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
+		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
+		const transactionIdentification = identifyTransaction(param.simTx)
+		switch (transactionIdentification.type) {
+			case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
+			case 'SimpleTokenApproval': {
+				const approval = transactionIdentification.identifiedTransaction.events[0]
+				if (approval === undefined || approval.type !== 'TokenEvent') throw new Error('approval was undefined')
+				return <SimpleTokenApprovalVisualisation
+					approval = { approval.logInformation }
+					transactionGasses = { transactionIdentification.identifiedTransaction }
+					rpcNetwork = { transactionIdentification.identifiedTransaction.transaction.rpcNetwork }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+			}
+			case 'Swap': {
+				const identifiedSwap = identifySwap(param.simTx)
+				if (identifiedSwap === undefined) throw new Error('Not a swap!')
+				return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack }/>
+			}
+			case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
+			case 'ContractDeployment':
+			case 'ContractFallbackMethod':
+			case 'ArbitraryContractExecution': return <CatchAllVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetadata = { param.addressMetadata } rpcNetwork = { param.rpcNetwork }/>
+			case 'GovernanceVote': return <GovernanceVoteVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } activeAddress = { param.activeAddress } simTx = { param.simTx } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } renameAddressCallBack = { param.renameAddressCallBack }/>
+			default: assertNever(transactionIdentification)
 		}
-		case 'Swap': {
-			const identifiedSwap = identifySwap(param.simTx)
-			if (identifiedSwap === undefined) throw new Error('Not a swap!')
-			return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack }/>
-		}
-		case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
-		case 'ContractDeployment':
-		case 'ContractFallbackMethod':
-		case 'ArbitraryContractExecution': return <CatchAllVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetadata = { param.addressMetadata } rpcNetwork = { param.rpcNetwork }/>
-		case 'GovernanceVote': return <GovernanceVoteVisualizer editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } activeAddress = { param.activeAddress } simTx = { param.simTx } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } renameAddressCallBack = { param.renameAddressCallBack }/>
-		default: assertNever(transactionIdentification)
-	}
+	})()
+	return <ConnectedDelegationStack delegationNotice = { delegationNotice }>{ content }</ConnectedDelegationStack>
 }
 
 export function SenderReceiver({ from, to, renameAddressCallBack }: { from: AddressBookEntry, to: AddressBookEntry | undefined, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {

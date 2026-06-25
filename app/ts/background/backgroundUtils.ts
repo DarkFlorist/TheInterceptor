@@ -4,12 +4,13 @@ import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
-import { handleUnexpectedError } from '../utils/errors.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
+import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 
-function isIgnorableClosedMessageChannelError(error: Error) {
-	return error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
-		|| error.message?.includes('The message port closed before a response was received')
+function isIgnorableExtensionMessagingError(error: Error) {
+	return isIgnorablePortLifecycleError(error)
+		|| error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
 }
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
@@ -30,7 +31,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
 }
 
-export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
 	try {
 		await browser.runtime.sendMessage(serialize(MessageToPopup, { role, ...message }))
 		checkAndThrowRuntimeLastError()
@@ -41,9 +42,17 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopupPaylo
 				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
 				return
 			}
-			if (isIgnorableClosedMessageChannelError(error)) return
+			if (isIgnorableExtensionMessagingError(error)) return
 		}
-		await handleUnexpectedError(error)
+		throw error
+	}
+}
+
+export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
+	try {
+		await sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message, role)
+	} catch (error) {
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -53,9 +62,9 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		if (error instanceof Error) {
-			if (isIgnorableClosedMessageChannelError(error)) return
+			if (isIgnorableExtensionMessagingError(error)) return
 		}
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -78,10 +87,10 @@ export async function sendPopupMessageWithReply<Request extends PopupRequests>(m
 		return parsePopupReply(message, response)
 	} catch (error) {
 		if (error instanceof Error) {
-			if (isIgnorableClosedMessageChannelError(error)) return undefined
+			if (isIgnorableExtensionMessagingError(error)) return undefined
 			if (error.message?.includes('Could not establish connection.')) return undefined
 		}
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 		return undefined
 	}
 }

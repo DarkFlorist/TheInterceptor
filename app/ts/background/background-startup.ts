@@ -11,7 +11,7 @@ import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/Ethe
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { handleUnexpectedError, isNewBlockAbort, printError } from '../utils/errors.js'
+import { reportUnexpectedError, isExpectedInfrastructureError, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
@@ -42,6 +42,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 		checkAndThrowRuntimeLastError()
 		return reply
 	} catch(error: unknown) {
+		if (isExpectedInfrastructureError(error)) return
 		if (error instanceof Error) {
 			if (error.message.startsWith('No tab with id')) return
 			if (error.message.includes('the message channel is closed')) {
@@ -50,11 +51,8 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 				return
 			}
 			if (isIgnorablePortLifecycleError(error)) return
-			if (error.message.includes('Failed to fetch')) return
-			if (isNewBlockAbort(error)) return
 		}
-		console.error(error)
-		handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 	return undefined
 }
@@ -142,9 +140,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		console.error(error)
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -175,8 +172,8 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
-		if (error instanceof Error && isNewBlockAbort(error)) return
-		await handleUnexpectedError(error)
+		if (isExpectedInfrastructureError(error)) return
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -194,7 +191,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		await updateExtensionBadge()
 		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	} catch(error) {
-		await handleUnexpectedError(error)
+		await reportUnexpectedError(error)
 	}
 }
 

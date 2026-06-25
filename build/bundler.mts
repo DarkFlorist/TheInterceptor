@@ -61,6 +61,10 @@ const forbiddenRuntimeModules = new Set([
 	path.join(vendorDirectory, 'viem', '_esm', 'ens', 'index.js'),
 	path.join(vendorDirectory, 'viem', '_esm', 'accounts', 'index.js'),
 ])
+const requiredRuntimeAssetPaths = new Set([
+	path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
+])
+const addressMetadataImagesDirectory = path.join(vendorDirectory, '@darkflorist', 'address-metadata', 'images')
 const getResolverBasePath = (filePath: string) => filePath.startsWith(`${ vendorDirectory }${ path.sep }`)
 	? path.join(nodeModulesDirectory, path.relative(vendorDirectory, filePath))
 	: filePath
@@ -72,6 +76,22 @@ const getPackageRootName = (specifier: string) => specifier.startsWith('@')
 const getPackageSubpath = (specifier: string, packageRootName: string) => specifier === packageRootName
 	? '.'
 	: `./${ specifier.slice(packageRootName.length + 1) }`
+
+function getPackageSpecifierFromNodeModulesPathParts(pathParts: readonly string[]) {
+	const nodeModulesIndex = pathParts.indexOf('node_modules')
+	if (nodeModulesIndex === -1) return undefined
+	const dependencyPathParts = pathParts.slice(nodeModulesIndex + 1)
+	const firstPathPart = dependencyPathParts[0]
+	if (firstPathPart === undefined) return undefined
+	if (!firstPathPart.startsWith('@')) return dependencyPathParts.join('/')
+	const secondPathPart = dependencyPathParts[1]
+	if (secondPathPart === undefined) return undefined
+	return dependencyPathParts.slice(0, 2).join('/') + (dependencyPathParts.length > 2 ? `/${ dependencyPathParts.slice(2).join('/') }` : '')
+}
+
+function getPackageSpecifierFromRelativeNodeModulesImport(specifier: string) {
+	return getPackageSpecifierFromNodeModulesPathParts(specifier.split(/[\\/]+/))
+}
 
 function getVendoredLocationForNodeModulesPath(resolvedPath: string) {
 	if (!isInsideDirectory(resolvedPath, nodeModulesDirectory)) return undefined
@@ -287,8 +307,13 @@ function getRewrittenRelativeImportPath(filePath: string, specifier: string) {
 	if (specifier.startsWith('/')) return undefined
 	const basePath = getResolverBasePath(filePath)
 	const resolvedPath = resolveExistingModuleFile(path.resolve(path.dirname(basePath), specifier))
-	if (resolvedPath === undefined) return undefined
-	const vendoredLocation = getVendoredLocationForNodeModulesPath(resolvedPath)
+	const fallbackResolvedPath = resolvedPath ?? (() => {
+		const nodeModulesPackageSpecifier = getPackageSpecifierFromRelativeNodeModulesImport(specifier)
+		if (nodeModulesPackageSpecifier === undefined) return undefined
+		return resolvePackageSpecifierFromNodeModules(nodeModulesPackageSpecifier, basePath)
+	})()
+	if (fallbackResolvedPath === undefined) return undefined
+	const vendoredLocation = getVendoredLocationForNodeModulesPath(fallbackResolvedPath)
 	if (vendoredLocation === undefined) return undefined
 	const vendoredImportPath = getRelativePath(path.dirname(filePath), vendoredLocation).replace(/\\/g, '/')
 	return vendoredImportPath === specifier ? undefined : vendoredImportPath
@@ -392,6 +417,7 @@ async function bundleChromeRuntimeEntrypoints() {
 function getRuntimeFiles() {
 	return [
 		path.join(directoryOfThisFile, '..', 'app', 'js'),
+		path.join(directoryOfThisFile, '..', 'app', 'inpage', 'js'),
 		path.join(directoryOfThisFile, '..', 'app', 'vendor'),
 	]
 }
@@ -473,6 +499,48 @@ export function findForbiddenRuntimeModulesInRuntimeFiles() {
 		.map((filePath) => ({ filePath }))
 }
 
+export function shouldKeepRuntimeOutputFile(filePath: string, reachableRuntimeFiles: ReadonlySet<string>) {
+	return reachableRuntimeFiles.has(filePath)
+		|| requiredRuntimeAssetPaths.has(filePath)
+		|| isInsideDirectory(filePath, addressMetadataImagesDirectory)
+}
+
+function removeEmptyChildDirectories(directoryPath: string) {
+	for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue
+		const childDirectoryPath = path.join(directoryPath, entry.name)
+		removeEmptyChildDirectories(childDirectoryPath)
+		if (fs.readdirSync(childDirectoryPath).length === 0) fs.rmdirSync(childDirectoryPath)
+	}
+}
+
+function pruneRuntimeOutputFiles(reachableRuntimeFiles: ReadonlySet<string>) {
+	for (const folder of getRuntimeFiles()) {
+		if (!fs.existsSync(folder)) continue
+		for (const filePath of getFiles(folder)) {
+			if (shouldKeepRuntimeOutputFile(filePath, reachableRuntimeFiles)) continue
+			fs.rmSync(filePath, { force: true })
+		}
+		removeEmptyChildDirectories(folder)
+	}
+}
+
+export function stripSourceMappingUrlComment(text: string) {
+	return text.replace(/(?:\r?\n)?\/\/# sourceMappingURL=.*(?:\r?\n)?$/u, '\n')
+}
+
+function stripSourceMappingUrlCommentsInRuntimeFiles() {
+	for (const folder of getRuntimeFiles()) {
+		if (!fs.existsSync(folder)) continue
+		for (const filePath of getFiles(folder)) {
+			if (path.extname(filePath) !== '.js' && path.extname(filePath) !== '.mjs') continue
+			const text = fs.readFileSync(filePath, 'utf8')
+			const stripped = stripSourceMappingUrlComment(text)
+			if (stripped !== text) fs.writeFileSync(filePath, stripped)
+		}
+	}
+}
+
 export async function replaceImportsInJSFiles() {
 	await bundleChromeRuntimeEntrypoints()
 	for (const folder of getRuntimeFiles()) {
@@ -495,6 +563,8 @@ export async function replaceImportsInJSFiles() {
 	if (forbiddenRuntimeModuleIssues.length > 0) {
 		throw new Error(`Browser-incompatible runtime modules remain after bundling:\n${ formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues) }`)
 	}
+	pruneRuntimeOutputFiles(new Set(collectRuntimeDependencyGraph().files))
+	stripSourceMappingUrlCommentsInRuntimeFiles()
 }
 
 if (import.meta.main) {
