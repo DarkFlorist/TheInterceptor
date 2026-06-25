@@ -6,7 +6,12 @@ type RuntimeMessage = {
 	readonly method?: string
 }
 
-function installBrowserMock(reloadError: Error) {
+type BrowserMockOptions = {
+	readonly reloadError?: Error
+	readonly reloadErrorsByTab?: ReadonlyMap<number, Error>
+}
+
+function installBrowserMock(options: BrowserMockOptions) {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 	const reloadedTabs: number[] = []
@@ -46,7 +51,8 @@ function installBrowserMock(reloadError: Error) {
 				async update() { return undefined },
 				async reload(tabId: number) {
 					reloadedTabs.push(tabId)
-					throw reloadError
+					const tabError = options.reloadErrorsByTab?.get(tabId) ?? options.reloadError
+					if (tabError !== undefined) throw tabError
 				},
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
@@ -82,10 +88,14 @@ async function loadModules() {
 }
 
 const websiteTabConnections: WebsiteTabConnections = new Map([[10, { connections: {} }]])
+const multiTabWebsiteTabConnections: WebsiteTabConnections = new Map([
+	[10, { connections: {} }],
+	[11, { connections: {} }],
+])
 
 describe('reloadConnectedTabs', () => {
 	test('ignores tabs that disappeared before reload', async () => {
-		const { sentMessages, reloadedTabs } = installBrowserMock(new Error('No tab with id: 10.'))
+		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadError: new Error('No tab with id: 10.') })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(websiteTabConnections)
@@ -96,7 +106,7 @@ describe('reloadConnectedTabs', () => {
 	})
 
 	test('ignores Firefox invalid tab reload errors', async () => {
-		const { sentMessages, reloadedTabs } = installBrowserMock(new Error('Invalid tab ID: 10'))
+		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadError: new Error('Invalid tab ID: 10') })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(websiteTabConnections)
@@ -107,13 +117,36 @@ describe('reloadConnectedTabs', () => {
 	})
 
 	test('records unexpected reload failures', async () => {
-		const { reloadedTabs } = installBrowserMock(new Error('reload failed'))
+		const { reloadedTabs } = installBrowserMock({ reloadError: new Error('reload failed') })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
 
 		await reloadConnectedTabs(websiteTabConnections)
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.deepEqual(reloadedTabs, [10])
+		assert.equal(latestUnexpectedError?.data.message, 'reload failed')
+		assert.equal(latestUnexpectedError?.data.code, 'connected_tab_reload_failed')
+	})
+
+	test('continues reloading later tabs after a missing-tab race', async () => {
+		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('No tab with id: 10.')]]) })
+		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
+
+		await reloadConnectedTabs(multiTabWebsiteTabConnections)
+
+		assert.deepEqual(reloadedTabs, [10, 11])
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.deepEqual(sentMessages, [])
+	})
+
+	test('continues reloading later tabs after an unexpected reload failure', async () => {
+		const { reloadedTabs } = installBrowserMock({ reloadErrorsByTab: new Map([[10, new Error('reload failed')]]) })
+		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
+
+		await reloadConnectedTabs(multiTabWebsiteTabConnections)
+
+		const latestUnexpectedError = await getLatestUnexpectedError()
+		assert.deepEqual(reloadedTabs, [10, 11])
 		assert.equal(latestUnexpectedError?.data.message, 'reload failed')
 		assert.equal(latestUnexpectedError?.data.code, 'connected_tab_reload_failed')
 	})
