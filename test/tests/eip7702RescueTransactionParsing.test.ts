@@ -1,9 +1,11 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { type EthereumJsonRpcRequest, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import { type EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { WebsiteCreatedEthereumUnsignedTransaction } from '../../app/ts/types/visualizer-types.js'
+import { PendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage as PendingTransactionOrSignableMessageType } from '../../app/ts/types/accessRequest.js'
 import { EthereumAddress, EthereumBlockHeader, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
-import { privateKeyToAccount } from '../../app/ts/utils/viem.js'
-import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { keccak256, privateKeyToAccount } from '../../app/ts/utils/viem.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { parseSendRawTransaction } from '../../app/ts/utils/sendRawTransactionParsing.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
@@ -61,6 +63,8 @@ const createEip7702TransactionParsingRequestHandler = () => ({
 		switch (rpcRequest.method) {
 			case 'eth_getBlockByNumber':
 				return serialize(EthereumBlockHeader, makeFakeBlock(1n))
+			case 'eth_blockNumber':
+				return serialize(EthereumQuantity, 1n)
 			case 'eth_getTransactionCount':
 				return serialize(EthereumQuantity, 7n)
 			case 'eth_getBalance':
@@ -108,6 +112,196 @@ function installExtensionImportGlobals() {
 	return () => {
 		restoreGlobalProperty('browser', browserDescriptor)
 		restoreGlobalProperty('chrome', chromeDescriptor)
+	}
+}
+
+function installBrowserMock() {
+	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome')
+	const storageState: Record<string, unknown> = {}
+	const postedMessages: unknown[] = []
+	const browserMock = {
+		runtime: {
+			lastError: null,
+			getManifest: () => ({ manifest_version: 3 }),
+			async sendMessage(message: unknown) {
+				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isMainPopupWindowOpen') {
+					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+				}
+				return undefined
+			},
+		},
+		storage: {
+			local: {
+				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					if (keys === undefined || keys === null) return { ...storageState }
+					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+				},
+				async set(items: Record<string, unknown>) {
+					Object.assign(storageState, items)
+				},
+				async remove(keys: string | string[]) {
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+				},
+			},
+		},
+		tabs: {
+			async get() { return undefined },
+			async update() { return undefined },
+		},
+		windows: {
+			async get() { return undefined },
+			async update() { return undefined },
+		},
+	}
+	Object.defineProperty(globalThis, 'browser', {
+		value: browserMock,
+		configurable: true,
+		writable: true,
+	})
+	Object.defineProperty(globalThis, 'chrome', {
+		value: { runtime: { id: 'test-extension' } },
+		configurable: true,
+		writable: true,
+	})
+	return {
+		postedMessages,
+		storageState,
+		websiteTabConnections: new Map([[1, {
+			connections: {
+				'1-0x0': {
+					port: {
+						name: 'test',
+						disconnect: () => undefined,
+						postMessage: (message: unknown) => {
+							postedMessages.push(message)
+						},
+						onDisconnect: { addListener: () => undefined, removeListener: () => undefined },
+						onMessage: { addListener: () => undefined, removeListener: () => undefined },
+					},
+					socket: { tabId: 1, connectionName: 0n },
+					websiteOrigin: 'https://example.com',
+					approved: true,
+					wantsToConnect: false,
+				},
+			},
+		}]]),
+		restore() {
+			restoreGlobalProperty('browser', browserDescriptor)
+			restoreGlobalProperty('chrome', chromeDescriptor)
+		},
+	}
+}
+
+function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction) {
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+	const pendingTransaction: PendingTransactionOrSignableMessageType = {
+		type: 'Transaction',
+		transactionOrMessageCreationStatus: 'Simulated',
+		popupOrTabId: { type: 'popup', id: 1 },
+		originalRequestParameters: transactionToSimulate.originalRequestParameters,
+		uniqueRequestIdentifier,
+		simulationMode: true,
+		activeAddress: transactionToSimulate.transaction.from,
+		created: transactionToSimulate.created,
+		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		transactionToSimulate,
+		website: transactionToSimulate.website,
+		approvalStatus: { status: 'WaitingForUser' },
+		popupVisualisation: {
+			statusCode: 'success',
+			data: {
+				activeAddress: transactionToSimulate.transaction.from,
+				simulationMode: true,
+				simulationStartedTimestamp: transactionToSimulate.created,
+				uniqueRequestIdentifier,
+				transactionToSimulate,
+				signerName: 'NoSignerDetected',
+				addressBookEntries: [],
+				tokenPriceEstimates: [],
+				tokenPriceQuoteToken: undefined,
+				namedTokenIds: [],
+				simulationState: {
+					success: true,
+					simulationStateInput: [],
+					simulatedBlocks: [],
+					blockNumber: 1n,
+					blockTimestamp: transactionToSimulate.created,
+					baseFeePerGas: 1n,
+					simulationConductedTimestamp: transactionToSimulate.created,
+					rpcNetwork,
+				},
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [],
+				},
+			},
+		},
+	}
+	return PendingTransactionOrSignableMessage.parse(serialize(PendingTransactionOrSignableMessage, pendingTransaction))
+}
+
+async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes: Uint8Array) {
+	const browserMock = installBrowserMock()
+	try {
+		const [
+			{ browserStorageLocalSet2 },
+			{ formSendRawTransaction, resolvePendingTransactionOrMessage },
+			{ getInterceptorTransactionStack },
+		] = await Promise.all([
+			import('../../app/ts/utils/storageUtils.js'),
+			import('../../app/ts/background/windows/confirmTransaction.js'),
+			import('../../app/ts/background/storageVariables.js'),
+		])
+		const request = SendRawTransactionParams.parse({
+			method: 'eth_sendRawTransaction',
+			params: [dataStringWith0xStart(signedTransactionBytes)],
+		})
+		const transactionToSimulate = await formSendRawTransaction(
+			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+			request,
+			{ websiteOrigin: 'test', icon: undefined, title: undefined },
+			new Date('2024-01-01T00:00:00.000Z'),
+			1n,
+		)
+		const signedTransaction = transactionToSimulate.signedTransaction
+		if (signedTransaction === undefined) throw new Error('Expected raw transaction to carry the original signed transaction')
+		const pendingTransaction = makeSimulatedPendingRawTransaction(transactionToSimulate)
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+
+		await resolvePendingTransactionOrMessage(
+			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+			{} as never,
+			browserMock.websiteTabConnections,
+			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
+		)
+
+		const [postedMessage] = browserMock.postedMessages
+		assert.equal(typeof postedMessage, 'object')
+		if (typeof postedMessage !== 'object' || postedMessage === null || !('result' in postedMessage)) throw new Error('Expected a posted transaction result')
+		assert.equal(postedMessage.result, EthereumBytes32.serialize(signedTransaction.hash))
+		const stack = await getInterceptorTransactionStack()
+		const [operation] = stack.operations
+		if (operation === undefined || operation.type !== 'Transaction') throw new Error('Expected accepted raw transaction in stack')
+		assert.equal(operation.preSimulationTransaction.signedTransaction.hash, signedTransaction.hash)
+		assert.equal(operation.preSimulationTransaction.signedTransaction.r, signedTransaction.r)
+		assert.equal(operation.preSimulationTransaction.signedTransaction.s, signedTransaction.s)
+		assert.notEqual(operation.preSimulationTransaction.signedTransaction.r, 0n)
+		assert.notEqual(operation.preSimulationTransaction.signedTransaction.s, 0n)
+		if (signedTransaction.type === '7702') {
+			if (operation.preSimulationTransaction.signedTransaction.type !== '7702') throw new Error('Expected accepted raw 7702 transaction in stack')
+			const [expectedAuthorization] = signedTransaction.authorizationList
+			const [actualAuthorization] = operation.preSimulationTransaction.signedTransaction.authorizationList
+			if (expectedAuthorization === undefined || actualAuthorization === undefined) throw new Error('Expected accepted raw 7702 authorization in stack')
+			assert.equal(actualAuthorization.authority, expectedAuthorization.authority)
+			assert.equal(actualAuthorization.r, expectedAuthorization.r)
+			assert.equal(actualAuthorization.s, expectedAuthorization.s)
+			assert.equal(actualAuthorization.yParity, expectedAuthorization.yParity)
+		}
+	} finally {
+		browserMock.restore()
 	}
 }
 
@@ -310,13 +504,19 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			authorizationList: [clearDelegationAuthorization],
 		})
 
-		const transaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
+		const parsedTransaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
+		const transaction = parsedTransaction.transaction
 
 		assert.equal(transaction.type, '7702')
 		if (transaction.type !== '7702') throw new Error('Expected a 7702 transaction')
+		assert.equal(parsedTransaction.signedTransaction.type, '7702')
+		if (parsedTransaction.signedTransaction.type !== '7702') throw new Error('Expected a signed 7702 transaction')
 		assert.equal(transaction.from, EthereumAddress.parse(sponsor.address))
 		assert.equal(transaction.chainId, 5n)
 		assert.equal(transaction.nonce, 7n)
+		assert.equal(parsedTransaction.signedTransaction.hash, EthereumBytes32.parse(keccak256(stringToUint8Array(signedTransaction))))
+		assert.notEqual(parsedTransaction.signedTransaction.r, 0n)
+		assert.notEqual(parsedTransaction.signedTransaction.s, 0n)
 		assert.deepEqual(transaction.accessList, [{
 			address: EthereumAddress.parse(accessListAddress),
 			storageKeys: [EthereumBytes32.parse(accessListStorageKey)],
@@ -329,6 +529,10 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		assert.equal(authorization.r, BigInt(clearDelegationAuthorization.r))
 		assert.equal(authorization.s, BigInt(clearDelegationAuthorization.s))
 		assert.equal(authorization.yParity, clearDelegationAuthorization.yParity === 0 ? 'even' : 'odd')
+		const [signedAuthorization] = parsedTransaction.signedTransaction.authorizationList
+		if (signedAuthorization === undefined) throw new Error('Expected signed authorization to be parsed')
+		assert.equal(signedAuthorization.r, BigInt(clearDelegationAuthorization.r))
+		assert.equal(signedAuthorization.s, BigInt(clearDelegationAuthorization.s))
 	})
 
 	test('parses raw EIP-1559 transactions with signed chain and access list', async () => {
@@ -349,17 +553,64 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			}],
 		})
 
-		const transaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
+		const parsedTransaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
+		const transaction = parsedTransaction.transaction
 
 		assert.equal(transaction.type, '1559')
 		if (transaction.type !== '1559') throw new Error('Expected a 1559 transaction')
+		assert.equal(parsedTransaction.signedTransaction.type, '1559')
+		if (parsedTransaction.signedTransaction.type !== '1559') throw new Error('Expected a signed 1559 transaction')
 		assert.equal(transaction.from, EthereumAddress.parse(sponsor.address))
 		assert.equal(transaction.chainId, 5n)
 		assert.equal(transaction.nonce, 7n)
+		assert.equal(parsedTransaction.signedTransaction.hash, EthereumBytes32.parse(keccak256(stringToUint8Array(signedTransaction))))
+		assert.notEqual(parsedTransaction.signedTransaction.r, 0n)
+		assert.notEqual(parsedTransaction.signedTransaction.s, 0n)
 		assert.deepEqual(transaction.accessList, [{
 			address: EthereumAddress.parse(accessListAddress),
 			storageKeys: [EthereumBytes32.parse(accessListStorageKey)],
 		}])
+	})
+
+	test('accepting a raw EIP-1559 transaction preserves the original signed transaction hash', async () => {
+		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const signedTransaction = await sponsor.signTransaction({
+			type: 'eip1559',
+			chainId: 5,
+			nonce: 7,
+			maxFeePerGas: 2n,
+			maxPriorityFeePerGas: 1n,
+			gas: 50_000n,
+			to: recipientAddress,
+			value: 0n,
+			data: '0x',
+		})
+
+		await assertAcceptPreservesRawSignedTransaction(stringToUint8Array(signedTransaction))
+	})
+
+	test('accepting a raw EIP-7702 transaction preserves the original signed transaction hash and authorizations', async () => {
+		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const clearDelegationAuthorization = await victim.signAuthorization({
+			address: zeroAddress,
+			chainId: 5,
+			nonce: 5,
+		})
+		const signedTransaction = await sponsor.signTransaction({
+			type: 'eip7702',
+			chainId: 5,
+			nonce: 7,
+			maxFeePerGas: 2n,
+			maxPriorityFeePerGas: 1n,
+			gas: 50_000n,
+			to: recipientAddress,
+			value: 0n,
+			data: '0x',
+			authorizationList: [clearDelegationAuthorization],
+		})
+
+		await assertAcceptPreservesRawSignedTransaction(stringToUint8Array(signedTransaction))
 	})
 
 })

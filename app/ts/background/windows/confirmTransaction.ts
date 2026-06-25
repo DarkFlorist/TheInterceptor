@@ -205,7 +205,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
 		case 'Transaction': {
-			const signedTransaction = mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction)
+			const signedTransaction = getSignedTransactionForConfirmedTransaction(pendingTransactionOrMessage.transactionToSimulate)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
 			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
@@ -244,9 +244,15 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
+const getSignedTransactionForConfirmedTransaction = (transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction) => (
+	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction)
+)
+
 export const formSendRawTransaction = async(_ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
+	const parsedTransaction = await parseSendRawTransaction(sendRawTransactionParams.params[0])
 	return {
-		transaction: await parseSendRawTransaction(sendRawTransactionParams.params[0]),
+		transaction: parsedTransaction.transaction,
+		signedTransaction: parsedTransaction.signedTransaction,
 		website,
 		created,
 		originalRequestParameters: sendRawTransactionParams,

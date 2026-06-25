@@ -1,7 +1,7 @@
-import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
+import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { dataStringWith0xStart, stringToUint8Array } from './bigint.js'
-import { normalizeEip7702AuthorizationList } from './eip7702Authorization.js'
+import { normalizeEip7702AuthorizationList, type NormalizedEip7702Authorization } from './eip7702Authorization.js'
 import {
 	keccak256,
 	parseTransaction as parseSerializedTransaction,
@@ -60,9 +60,27 @@ const parseSignedAuthorization = (authorization: {
 	}
 }
 
-export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8Array): Promise<EthereumUnsignedTransaction> => {
+const requireSignedAuthorization = (authorization: NormalizedEip7702Authorization) => {
+	if (authorization.r === undefined || authorization.s === undefined || authorization.yParity === undefined) {
+		throw new Error('Serialized EIP-7702 authorization is missing required signature fields')
+	}
+	return {
+		...authorization,
+		r: authorization.r,
+		s: authorization.s,
+		yParity: authorization.yParity,
+	}
+}
+
+export type ParsedSendRawTransaction = {
+	transaction: EthereumUnsignedTransaction
+	signedTransaction: EthereumSendableSignedTransaction
+}
+
+export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8Array): Promise<ParsedSendRawTransaction> => {
 	const serializedTransaction = dataStringWith0xStart(serializedTransactionBytes)
 	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
+	const hash = EthereumBytes32.parse(keccak256(serializedTransaction))
 
 	if (parsedTransaction.type === 'eip1559') {
 		if (parsedTransaction.gas === undefined || parsedTransaction.maxFeePerGas === undefined || parsedTransaction.maxPriorityFeePerGas === undefined || parsedTransaction.nonce === undefined || parsedTransaction.r === undefined || parsedTransaction.s === undefined || parsedTransaction.yParity === undefined) {
@@ -86,8 +104,8 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 			s: parsedTransaction.s,
 			yParity: parsedTransaction.yParity,
 		})
-		return {
-			type: '1559',
+		const transaction = {
+			type: '1559' as const,
 			from: EthereumAddress.parse(from),
 			chainId,
 			nonce: BigInt(parsedTransaction.nonce),
@@ -99,6 +117,16 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 			input: stringToUint8Array(parsedTransaction.data ?? '0x'),
 			accessList: parseAccessList(parsedTransaction.accessList),
 		}
+		return {
+			transaction,
+			signedTransaction: {
+				...transaction,
+				r: BigInt(parsedTransaction.r),
+				s: BigInt(parsedTransaction.s),
+				yParity: parseAuthorizationParity(parsedTransaction.yParity),
+				hash,
+			},
+		}
 	}
 
 	if (parsedTransaction.type === 'eip7702') {
@@ -106,7 +134,7 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 			throw new Error('Serialized EIP-7702 transaction is missing required fields')
 		}
 		const chainId = parseRequiredChainId(parsedTransaction.chainId)
-		const authorizationList = await normalizeEip7702AuthorizationList((parsedTransaction.authorizationList ?? []).map(parseSignedAuthorization))
+		const authorizationList = (await normalizeEip7702AuthorizationList((parsedTransaction.authorizationList ?? []).map(parseSignedAuthorization))).map(requireSignedAuthorization)
 		const unsignedTransaction = serializeTransaction({
 			type: 'eip7702',
 			chainId: Number(parsedTransaction.chainId),
@@ -125,8 +153,8 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 			s: parsedTransaction.s,
 			yParity: parsedTransaction.yParity,
 		})
-		return {
-			type: '7702',
+		const transaction = {
+			type: '7702' as const,
 			from: EthereumAddress.parse(from),
 			chainId,
 			nonce: BigInt(parsedTransaction.nonce),
@@ -138,6 +166,16 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 			input: stringToUint8Array(parsedTransaction.data ?? '0x'),
 			accessList: parseAccessList(parsedTransaction.accessList),
 			authorizationList,
+		}
+		return {
+			transaction,
+			signedTransaction: {
+				...transaction,
+				r: BigInt(parsedTransaction.r),
+				s: BigInt(parsedTransaction.s),
+				yParity: parseAuthorizationParity(parsedTransaction.yParity),
+				hash,
+			},
 		}
 	}
 
