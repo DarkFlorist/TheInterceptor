@@ -35,6 +35,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerfo
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -317,70 +318,9 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
-const isSerializedEip1559Transaction = (transaction: `0x${ string }`): transaction is `0x02${ string }` => transaction.startsWith('0x02')
-const recoverSerializedEip1559TransactionAddress = async (serializedTransaction: `0x02${ string }`) => {
-	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
-	if (parsedTransaction.type !== 'eip1559') throw new Error('Expected EIP-1559 transaction')
-	if (parsedTransaction.chainId === undefined || parsedTransaction.gas === undefined || parsedTransaction.maxFeePerGas === undefined || parsedTransaction.maxPriorityFeePerGas === undefined || parsedTransaction.nonce === undefined || parsedTransaction.r === undefined || parsedTransaction.s === undefined) {
-		throw new Error('Serialized transaction is missing required signature fields')
-	}
-	const unsignedTransaction = serializeTransaction({
-		type: 'eip1559',
-		chainId: Number(parsedTransaction.chainId),
-		nonce: parsedTransaction.nonce,
-		maxFeePerGas: parsedTransaction.maxFeePerGas,
-		maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
-		gas: parsedTransaction.gas,
-		to: parsedTransaction.to,
-		value: parsedTransaction.value,
-		data: parsedTransaction.data,
-		accessList: parsedTransaction.accessList,
-	})
-	return await recoverAddress({
-		hash: keccak256(unsignedTransaction),
-		signature: {
-			r: parsedTransaction.r,
-			s: parsedTransaction.s,
-			yParity: parsedTransaction.yParity ?? 0,
-		},
-	})
-}
-
 export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
-	const serializedTransaction = dataStringWith0xStart(sendRawTransactionParams.params[0])
-	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
-	if (parsedTransaction.type !== 'eip1559') throw new Error('No support for non-1559 transactions')
-	if (!isSerializedEip1559Transaction(serializedTransaction)) throw new Error('Expected serialized EIP-1559 transaction')
-	const from = await recoverSerializedEip1559TransactionAddress(serializedTransaction)
-	if (parsedTransaction.gas === undefined) throw new Error('Unable to parse gas from serialized transaction')
-	if (parsedTransaction.nonce === undefined) throw new Error('Unable to parse nonce from serialized transaction')
-	const transactionDetails = {
-		from: EthereumAddress.parse(from),
-		input: stringToUint8Array(parsedTransaction.data ?? '0x'),
-		gas: parsedTransaction.gas,
-		value: parsedTransaction.value,
-		...(parsedTransaction.to === undefined || parsedTransaction.to === null ? {} : { to: EthereumAddress.parse(parsedTransaction.to) }),
-		...(parsedTransaction.maxPriorityFeePerGas === undefined ? {} : { maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas }),
-		...(parsedTransaction.maxFeePerGas === undefined ? {} : { maxFeePerGas: parsedTransaction.maxFeePerGas }),
-	}
-
-	if (transactionDetails.maxFeePerGas === undefined) throw new Error('No support for non-1559 transactions')
-
-	const transaction = {
-		type: '1559' as const,
-		from: transactionDetails.from,
-		chainId: ethereumClientService.getChainId(),
-		nonce: BigInt(parsedTransaction.nonce),
-		maxFeePerGas: transactionDetails.maxFeePerGas,
-		maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas ? transactionDetails.maxPriorityFeePerGas : 0n,
-		to: transactionDetails.to === undefined ? null : transactionDetails.to,
-		value: transactionDetails.value ? transactionDetails.value : 0n,
-		input: transactionDetails.input,
-		accessList: [],
-		gas: transactionDetails.gas,
-	}
 	return {
-		transaction,
+		transaction: await parseSendRawTransaction(sendRawTransactionParams.params[0], ethereumClientService.getChainId()),
 		website,
 		created,
 		originalRequestParameters: sendRawTransactionParams,
@@ -406,8 +346,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const getFeePerGas = async (gasLimit: bigint) => {
 		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
 	}
-	const transactionWithoutGas = {
-		type: '1559' as const,
+	const transactionWithoutGasBase = {
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
@@ -418,6 +357,22 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}
+	const authorizationList = transactionDetails.authorizationList?.map((authorization) => ({
+		chainId: authorization.chainId,
+		address: authorization.address,
+		nonce: authorization.nonce,
+		...(authorization.authority === undefined ? {} : { authority: authorization.authority }),
+	}))
+	const transactionWithoutGas = transactionDetails.type === '7702' || authorizationList !== undefined
+		? {
+			...transactionWithoutGasBase,
+			type: '7702' as const,
+			authorizationList: authorizationList ?? [],
+		}
+		: {
+			...transactionWithoutGasBase,
+			type: '1559' as const,
+		}
 	const extraParams = {
 		website,
 		created,

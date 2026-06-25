@@ -295,7 +295,9 @@ const EthereumUnsignedTransaction7702 = funtypes.Intersect(
 			chainId: EthereumQuantity,
 			address: EthereumAddress,
 			nonce: EthereumQuantity,
-		}))
+		}).And(funtypes.ReadonlyPartial({
+			authority: EthereumAddress,
+		})))
 	}).asReadonly(),
 	funtypes.Partial({
 		accessList: EthereumAccessList,
@@ -380,7 +382,9 @@ const OptionalEthereumUnsignedTransaction7702 = funtypes.Intersect(
 			chainId: EthereumQuantity,
 			address: EthereumAddress,
 			nonce: EthereumQuantity,
-		}))
+		}).And(funtypes.ReadonlyPartial({
+			authority: EthereumAddress,
+		})))
 	}).asReadonly(),
 	funtypes.Partial({
 		gas: EthereumQuantity,
@@ -478,7 +482,9 @@ const EthereumSignedTransaction7702 = funtypes.Intersect(
 			r: EthereumQuantity,
 			s: EthereumQuantity,
 			yParity: EthereumSignatureParity
-		}))
+		}).And(funtypes.ReadonlyPartial({
+			authority: EthereumAddress,
+		})))
 	}).asReadonly(),
 	funtypes.Partial({
 		accessList: EthereumAccessList,

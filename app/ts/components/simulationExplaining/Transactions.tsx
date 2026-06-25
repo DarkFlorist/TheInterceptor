@@ -127,8 +127,17 @@ function DelegationNotice({ signer, delegates, renameAddressCallBack }: {
 					return <button type = 'button' class = 'delegation-flow-address-button' key = { `${ delegate.address.toString() }-${ index }` } onClick = { () => renameAddressCallBack(delegate) }>
 						<CompactDelegationAddress addressBookEntry = { delegate } />
 					</button>
-				}) }
-			</div>
+					<div class = 'delegation-flow-connector'>
+						<p class = 'paragraph delegation-flow-label'>{ authorization.address === 0n ? 'cleared delegate' : 'delegated to' }</p>
+						<DelegationFlowArrow />
+					</div>
+					<div class = 'delegation-flow-targets'>
+						<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(entry) }>
+						<CompactDelegationAddress addressBookEntry = { entry } />
+						</button>
+					</div>
+				</div>
+			}) }
 		</div>
 	</div>
 }

@@ -99,6 +99,7 @@ export interface IUnsignedTransaction7702 {
 		chainId: bigint
 		address: bigint
 		nonce: bigint
+		authority?: bigint
 	}[]
 }
 
@@ -121,6 +122,7 @@ type ISignedTransaction7702 = {
 		chainId: bigint,
 		address: bigint,
 		nonce: bigint,
+		authority?: bigint,
 		yParity: 'even' | 'odd',
 		r: bigint,
 		s: bigint
