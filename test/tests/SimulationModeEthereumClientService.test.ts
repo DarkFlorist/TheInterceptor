@@ -6,9 +6,9 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -92,7 +92,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 		public rejectOmittedGas = false
 		public balance = 0n
 		public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
-		public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, lastCallGas: bigint | undefined }[] = []
+		public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, lastCallGas: bigint | undefined, traceTransfers: boolean | undefined, validation: boolean | undefined, parentBlockTag: EthSimulateV1BlockTag | undefined }[] = []
 
 		public clearCache = () => undefined
 
@@ -122,7 +122,7 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 						})()
 						: undefined
 					const blockStateCallCount = rpcRequest.params[0]?.blockStateCalls.length ?? 0
-					this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount, lastCallGas })
+					this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount, lastCallGas, traceTransfers: rpcRequest.params[0].traceTransfers, validation: rpcRequest.params[0].validation, parentBlockTag: rpcRequest.params[1] })
 					if (this.rejectOmittedGas && lastCallGas === undefined) {
 						throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'gas required' } })
 					}
@@ -184,6 +184,31 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 			simulateWithZeroBaseFee: false,
 		}] as const
+
+		const createDappEthSimulateV1Payload = (): EthSimulateV1Params['params'][0] => ({
+			blockStateCalls: [{
+				calls: [{
+					type: '1559',
+					from: exampleTransaction.from,
+					nonce: 0n,
+					maxFeePerGas: 1n,
+					maxPriorityFeePerGas: 1n,
+					gas: 21_000n,
+					to: exampleTransaction.to,
+					value: 0n,
+					input: new Uint8Array(),
+					chainId: exampleTransaction.chainId,
+					accessList: [],
+				}],
+			}],
+			traceTransfers: false,
+			validation: true,
+		})
+
+		const createDappEthSimulateV1Request = (blockTag: EthSimulateV1BlockTag | undefined = 'latest'): EthSimulateV1Params => ({
+			method: 'eth_simulateV1',
+			params: blockTag === undefined ? [createDappEthSimulateV1Payload()] : [createDappEthSimulateV1Payload(), blockTag],
+		})
 
 		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
@@ -741,6 +766,48 @@ const zeroBytes256 = `0x${'0'.repeat(512)}`
 				await getSimulatedBalanceFromInput(ethereum, undefined, toResolvedSimulationInput(emptySimulationStateInput), exampleTransaction.from, 'pending')
 
 				assert.deepEqual(requestHandler.ethGetBalanceCalls[0]?.params, [exampleTransaction.from, 'pending'])
+			})
+
+			test('input-based eth_simulateV1 prepends simulated stack for latest parent block', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request())
+
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.traceTransfers, false)
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.validation, true)
+				assert.equal(result.length, 1)
+				assert.equal(result[0]?.calls.length, 1)
+			})
+
+			test('input-based eth_simulateV1 does not prepend simulated stack for explicit parent block', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(blockNumber))
+
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
+				assert.equal(result.length, 1)
+			})
+
+			test('input-based eth_simulateV1 preserves explicit parent block hashes', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+				const parentBlockHash = '0x000000000000000000000000000000000000000000000000000000000000abcd'
+
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(parentBlockHash))
+
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, parentBlockHash)
+				assert.equal(result.length, 1)
+			})
+
+			test('input-based eth_simulateV1 treats a missing parent block as latest', async () => {
+				requestHandler.ethSimulateV1Calls.length = 0
+
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(undefined))
+
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
+				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, blockNumber)
+				assert.equal(result.length, 1)
 			})
 
 			test('input-based simulated block hash is deterministic and round-trips through getBlockByHash', async () => {
