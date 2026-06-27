@@ -56,11 +56,7 @@ const isInsideDirectory = (candidatePath: string, directoryPath: string) => {
 	const relativePath = path.relative(directoryPath, candidatePath)
 	return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
-const forbiddenRuntimeModules = new Set([
-	path.join(vendorDirectory, 'viem', '_esm', 'utils', 'index.js'),
-	path.join(vendorDirectory, 'viem', '_esm', 'ens', 'index.js'),
-	path.join(vendorDirectory, 'viem', '_esm', 'accounts', 'index.js'),
-])
+const forbiddenRuntimeModules = new Set<string>()
 const requiredRuntimeAssetPaths = new Set([
 	path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
 ])
@@ -376,7 +372,7 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
 	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'js', 'utils', 'viem.js'),
+	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
 function getExistingRuntimeEntrypointPaths() {
@@ -489,7 +485,7 @@ export function isBrowserIncompatibleRuntimeModule(filePath: string) {
 
 function formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues: readonly ForbiddenRuntimeModuleIssue[]) {
 	return forbiddenRuntimeModuleIssues
-		.map(({ filePath }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: do not import the viem barrel entrypoint in MV3 runtime code`)
+		.map(({ filePath }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: do not import browser-incompatible runtime modules in MV3 runtime code`)
 		.join('\n')
 }
 

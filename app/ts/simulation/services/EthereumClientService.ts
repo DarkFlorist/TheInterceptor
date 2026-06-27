@@ -1,7 +1,7 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { keccak256 } from '../../utils/viem.js'
+import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'

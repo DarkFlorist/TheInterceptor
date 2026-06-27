@@ -12,7 +12,7 @@ import type {
 	DecodeEventLogReturnType,
 	DecodeFunctionDataReturnType,
 	Hex,
-} from 'viem'
+} from './ethereumPrimitives.js'
 import {
 	parseAbiItem,
 	parseAbiParameters,
@@ -25,7 +25,7 @@ import {
 	bytesToHex,
 	toEventSelector,
 	toFunctionSelector,
-} from './viem.js'
+} from './ethereumPrimitives.js'
 
 export type AbiLike = string | readonly (string | AbiItem)[]
 

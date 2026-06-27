@@ -17,7 +17,7 @@ import {
 	recoverAddress,
 	parseTransaction as parseSerializedTransaction,
 	serializeTransaction,
-} from '../../utils/viem.js'
+} from '../../utils/ethereumPrimitives.js'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
