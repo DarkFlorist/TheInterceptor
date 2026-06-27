@@ -1,14 +1,11 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity } from './wire-types.js'
-import { PureGroupedSolidityType } from './solidityType.js'
+import { SolidityVariable as SolidityVariableRuntime } from './solidityType.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 import { MaybeENSLabelHash, MaybeENSNameHash } from './ens.js'
 
-export type SolidityVariable = funtypes.Static<typeof SolidityVariable>
-export const SolidityVariable = funtypes.ReadonlyObject({
-	typeValue: PureGroupedSolidityType,
-	paramName: funtypes.String
-})
+export type SolidityVariable = import('./solidityType.js').SolidityVariable
+export const SolidityVariable = SolidityVariableRuntime
 
 export type EnrichedEthereumInputData = funtypes.Static<typeof EnrichedEthereumInputData>
 export const EnrichedEthereumInputData = funtypes.Union(
@@ -20,7 +17,7 @@ export const EnrichedEthereumInputData = funtypes.Union(
 		input: EthereumInput,
 		type: funtypes.Literal('Parsed'),
 		name: funtypes.String, // eg. 'Transfer'
-		args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
+		args: funtypes.ReadonlyArray(SolidityVariableRuntime),
 	}),
 )
 
@@ -30,7 +27,7 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('Parsed'),
 	name: funtypes.String, // eg. 'Transfer'
 	signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
-	args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
+	args: funtypes.ReadonlyArray(SolidityVariableRuntime),
 	address: EthereumAddress,
 	loggersAddressBookEntry: AddressBookEntry,
 	data: EthereumInput,
