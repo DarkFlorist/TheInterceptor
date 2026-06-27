@@ -11,7 +11,7 @@ import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptRespon
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import type { EthSimulateV1BlockHeader, EthSimulateV1CallResult, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
+import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import type { BlockCalls as SimulateBlockCalls } from '../../types/ethSimulate-types.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
@@ -1035,6 +1035,38 @@ export const getSimulatedBlockNumberFromInput = async (
 	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
 	if (context === undefined) return await ethereumClientService.getBlockNumber(requestAbortController)
 	return context.parentBlock.number + BigInt(context.executionBlocks.length)
+}
+
+const shouldApplySimulationInputToEthSimulateV1 = (blockTag: EthSimulateV1BlockTag) => blockTag === 'latest' || blockTag === 'pending'
+const getEthSimulateV1ParentBlockTag = (request: EthSimulateV1Params): EthSimulateV1BlockTag => {
+	const parentBlockTag = request.params[1]
+	return parentBlockTag === undefined ? 'latest' : parentBlockTag
+}
+
+export const ethSimulateV1FromInput = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationStateInput: ResolvedSimulationInput,
+	request: EthSimulateV1Params,
+): Promise<EthSimulateV1Result> => {
+	if (!shouldApplySimulationInputToEthSimulateV1(getEthSimulateV1ParentBlockTag(request))) {
+		return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	}
+	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+	if (context === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+
+	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls
+	const payload: EthSimulateV1Params['params'][0] = {
+		...request.params[0],
+		blockStateCalls: [...simulationPrefixBlockStateCalls, ...request.params[0].blockStateCalls],
+	}
+	const prefixedRequest: EthSimulateV1Params = {
+		method: request.method,
+		params: [payload, context.parentBlock.number],
+	}
+	const result = await ethereumClientService.ethSimulateV1Request(prefixedRequest, requestAbortController)
+	if (result.length < simulationPrefixBlockStateCalls.length) throw new Error('eth_simulateV1 returned fewer blocks than the prepared simulation prefix')
+	return result.slice(simulationPrefixBlockStateCalls.length)
 }
 
 export async function getSimulatedBlockFromInput(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: ResolvedSimulationInput, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>

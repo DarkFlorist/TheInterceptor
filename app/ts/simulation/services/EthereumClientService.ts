@@ -226,7 +226,7 @@ export class EthereumClientService {
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
 		if (parentBlock === null) throw new Error('The latest block is null')
-		const call = {
+		const call: EthSimulateV1Params = {
 			method: 'eth_simulateV1',
 			params: [{
 				blockStateCalls: blockStateCalls,
@@ -234,8 +234,12 @@ export class EthereumClientService {
 				validation: false,
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
-		] } as const
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(call))
+		] }
+		return await this.ethSimulateV1Request(call, requestAbortController)
+	}
+
+	public readonly ethSimulateV1Request = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
+		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
