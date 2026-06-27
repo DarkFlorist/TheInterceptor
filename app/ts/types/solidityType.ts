@@ -16,8 +16,8 @@ const SignedBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'
 export const SignedBigInt = funtypes.String.withParser(SignedBigIntParser)
 export type SignedBigInt = funtypes.Static<typeof SignedBigInt>
 
-export type PureGroupedSolidityType = funtypes.Static<typeof PureGroupedSolidityType>
-export const PureGroupedSolidityType = funtypes.Union(
+export type PureFlatGroupedSolidityType = funtypes.Static<typeof PureFlatGroupedSolidityType>
+const PureFlatGroupedSolidityType = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('signedInteger'), value: SignedBigInt }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('unsignedInteger'), value: EthereumQuantity }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes'), value: EthereumData }),
@@ -34,6 +34,26 @@ export const PureGroupedSolidityType = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('string[]'), value: funtypes.ReadonlyArray(funtypes.String) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('address[]'), value: funtypes.ReadonlyArray(EthereumAddress) }),
 )
+
+export type SolidityVariable = {
+	readonly typeValue: PureGroupedSolidityType
+	readonly paramName: string
+}
+
+export type PureGroupedSolidityType = PureFlatGroupedSolidityType
+	| { readonly type: 'tuple', readonly value: readonly SolidityVariable[] }
+	| { readonly type: 'tuple[]', readonly value: readonly (readonly SolidityVariable[])[] }
+
+export const PureGroupedSolidityType: funtypes.Runtype<PureGroupedSolidityType> = funtypes.Lazy(() => funtypes.Union(
+	PureFlatGroupedSolidityType,
+	funtypes.ReadonlyObject({ type: funtypes.Literal('tuple'), value: funtypes.ReadonlyArray(SolidityVariable) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('tuple[]'), value: funtypes.ReadonlyArray(funtypes.ReadonlyArray(SolidityVariable)) }),
+))
+
+export const SolidityVariable: funtypes.Runtype<SolidityVariable> = funtypes.Lazy(() => funtypes.ReadonlyObject({
+	typeValue: PureGroupedSolidityType,
+	paramName: funtypes.String
+}))
 
 export type EnrichedGroupedSolidityType = funtypes.Static<typeof EnrichedGroupedSolidityType>
 export const EnrichedGroupedSolidityType = funtypes.Union(
