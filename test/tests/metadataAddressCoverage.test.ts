@@ -14,6 +14,8 @@ const OPERATOR_ADDRESS = 0x4000000000000000000000000000000000000004n
 const TX_FROM_ADDRESS = 0x5000000000000000000000000000000000000005n
 const TX_TO_ADDRESS = 0x6000000000000000000000000000000000000006n
 const INPUT_ADDRESS = 0x7000000000000000000000000000000000000007n
+const STRUCT_OWNER_ADDRESS = 0x8000000000000000000000000000000000000008n
+const STRUCT_TOKEN_ADDRESS = 0x9000000000000000000000000000000000000009n
 
 const toAddressSet = (addresses: readonly bigint[]) => new Set(addresses.map((address) => addressString(address)))
 const ZERO_BLOCK_TIME_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' } satisfies SimulationStateInput[number]['blockTimeManipulation']
@@ -186,6 +188,46 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 		assert.equal(addressSet.has(addressString(TO_ADDRESS)), true)
 		assert.equal(addressSet.has(addressString(TOKEN_ADDRESS)), true)
 		assert.equal(addressSet.has(addressString(OPERATOR_ADDRESS)), true)
+		assertCommonAddresses(addresses)
+	})
+
+	test('covers addresses nested in tuple parsed args', () => {
+		const addresses = getAddressesForEvent({
+			type: 'Parsed',
+			address: TOKEN_ADDRESS,
+			isParsed: 'Parsed',
+			name: 'OrderFilled',
+			signature: 'OrderFilled((address,uint256),(address,uint256)[])',
+			args: [
+				{
+					paramName: 'order',
+					typeValue: {
+						type: 'tuple',
+						value: [
+							toAddressArg('owner', STRUCT_OWNER_ADDRESS),
+							{ paramName: 'amount', typeValue: { type: 'unsignedInteger', value: 1n } },
+						],
+					},
+				},
+				{
+					paramName: 'fills',
+					typeValue: {
+						type: 'tuple[]',
+						value: [[
+							toAddressArg('token', STRUCT_TOKEN_ADDRESS),
+							{ paramName: 'amount', typeValue: { type: 'unsignedInteger', value: 2n } },
+						]],
+					},
+				},
+			],
+			loggersAddressBookEntry: { type: 'contract', name: 'Exchange', address: TOKEN_ADDRESS, entrySource: 'User' },
+			data: new Uint8Array(),
+			topics: [],
+		})
+		const addressSet = toAddressSet(addresses)
+		assert.equal(addressSet.has(addressString(STRUCT_OWNER_ADDRESS)), true)
+		assert.equal(addressSet.has(addressString(STRUCT_TOKEN_ADDRESS)), true)
+		assert.equal(addressSet.has(addressString(TOKEN_ADDRESS)), true)
 		assertCommonAddresses(addresses)
 	})
 })
