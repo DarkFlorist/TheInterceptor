@@ -207,6 +207,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
 			if (!isReplyForCurrentTransaction(reply)) return false
+			resetGovernanceSimulationRequest()
 			simulateExecutionReply.value = reply
 			return false
 		}

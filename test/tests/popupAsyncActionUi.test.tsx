@@ -109,10 +109,12 @@ function isDisabled(element: TestDomNode | undefined) {
 
 function createDeferred<T>() {
 	let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined
-	const promise = new Promise<T>((resolve) => {
+	let rejectPromise: (reason?: unknown) => void = () => undefined
+	const promise = new Promise<T>((resolve, reject) => {
 		resolvePromise = resolve
+		rejectPromise = reject
 	})
-	return { promise, resolve: resolvePromise }
+	return { promise, resolve: resolvePromise, reject: rejectPromise }
 }
 
 function createSimulationFailureReply(transactionOrMessageIdentifier: bigint, errorMessage: string) {
@@ -159,6 +161,8 @@ async function settleAsyncUpdates() {
 	await new Promise((resolve) => setTimeout(resolve, 0))
 	await Promise.resolve()
 }
+
+const ASYNC_CHANNEL_CLOSED_ERROR = 'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
 
 describe('popup async action UI', () => {
 	test('shows ABI lookup progress and a missing-reply error in AddNewAddress', async () => {
@@ -373,6 +377,71 @@ describe('popup async action UI', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('Simulating governance execution failed because the background page did not return a reply.'), true)
 		assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
+		dom.restore()
+	})
+
+	test('matching governance broadcasts clear later missing direct-reply errors', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferredReply = createDeferred<unknown>()
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) === 'popup_simulateGovernanceContractExecution') return deferredReply.promise
+			return undefined
+		}
+
+		const governanceTransaction = {
+			transactionIdentifier: 5n,
+			transaction: {
+				to: {
+					type: 'contract',
+					name: 'Governance',
+					address: 0x1n,
+					entrySource: 'User',
+					abi: '[]',
+					chainId: 1n,
+				},
+			},
+		} as unknown as import('../../app/ts/types/visualizer-types.js').SimulatedAndVisualizedTransaction
+
+		await act(() => {
+			render(h(modules.GovernanceVoteVisualizer, {
+				simTx: governanceTransaction,
+				activeAddress: signal(0x2n),
+				renameAddressCallBack: () => undefined,
+				editEnsNamedHashCallBack: () => undefined,
+				governanceVoteInputParameters: {
+					proposalId: 42n,
+					support: true,
+					reason: undefined,
+					params: undefined,
+					signature: undefined,
+					voter: undefined,
+				},
+			}), dom.document.body)
+		})
+
+		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+		if (simulateButton === undefined) throw new Error('Expected governance simulation button to render')
+
+		await act(async () => {
+			await clickElement(simulateButton)
+		})
+
+		await act(async () => {
+			await emitRuntimeMessage(createSimulationFailureBroadcast(5n, 'governance broadcast reply'))
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('governance broadcast reply'), true)
+
+		await act(async () => {
+			deferredReply.resolve(undefined)
+			await deferredReply.promise
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('governance broadcast reply'), true)
+		assert.equal(dom.document.body.textContent?.includes('Simulating governance execution failed because the background page did not return a reply.'), false)
 		dom.restore()
 	})
 
@@ -602,6 +671,147 @@ describe('popup async action UI', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Simulating Gnosis Safe execution failed because the background page did not return a reply.'), true)
+		dom.restore()
+	})
+
+	test('matching Gnosis broadcasts clear later closed-channel direct-reply errors', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferredReply = createDeferred<unknown>()
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) === 'popup_simulateGnosisSafeTransaction') return deferredReply.promise
+			return undefined
+		}
+
+		const activeAddress = {
+			type: 'contact' as const,
+			name: 'Signer',
+			address: 0x2n,
+			entrySource: 'User' as const,
+			chainId: 1n,
+		}
+		const zeroAddressEntry = {
+			type: 'contact' as const,
+			name: '0x0 Address',
+			address: 0n,
+			entrySource: 'Interceptor' as const,
+			chainId: 1n,
+		}
+		const gnosisSafeMessage: import('../../app/ts/types/personal-message-definitions.js').VisualizedPersonalSignRequestSafeTx = {
+			activeAddress,
+			rpcNetwork: {
+				name: 'Ethereum Mainnet',
+				chainId: 1n,
+				httpsRpc: 'https://rpc.example',
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: false,
+			},
+			simulationMode: true,
+			signerName: 'NoSignerDetected',
+			quarantineReasons: [],
+			quarantine: false,
+			account: activeAddress,
+			website: { websiteOrigin: 'https://safe.example', icon: undefined, title: undefined },
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			rawMessage: '{}',
+			stringifiedMessage: '{}',
+			messageIdentifier: 7n,
+			method: 'eth_signTypedData_v4',
+			type: 'SafeTx',
+			message: {
+				types: {
+					SafeTx: [
+						{ name: 'to', type: 'address' },
+						{ name: 'value', type: 'uint256' },
+						{ name: 'data', type: 'bytes' },
+						{ name: 'operation', type: 'uint8' },
+						{ name: 'safeTxGas', type: 'uint256' },
+						{ name: 'baseGas', type: 'uint256' },
+						{ name: 'gasPrice', type: 'uint256' },
+						{ name: 'gasToken', type: 'address' },
+						{ name: 'refundReceiver', type: 'address' },
+						{ name: 'nonce', type: 'uint256' },
+					],
+					EIP712Domain: [
+						{ name: 'chainId', type: 'uint256' },
+						{ name: 'verifyingContract', type: 'address' },
+					],
+				},
+				primaryType: 'SafeTx',
+				domain: {
+					chainId: 1n,
+					verifyingContract: activeAddress.address,
+				},
+				message: {
+					to: 0x3n,
+					value: 0n,
+					data: new Uint8Array(),
+					operation: 0n,
+					safeTxGas: 0n,
+					baseGas: 0n,
+					gasPrice: 0n,
+					gasToken: zeroAddressEntry.address,
+					refundReceiver: zeroAddressEntry.address,
+					nonce: 1n,
+				},
+			},
+			parsedMessageDataAddressBookEntries: [],
+			parsedMessageData: { type: 'NonParsed', input: new Uint8Array() },
+			gasToken: zeroAddressEntry,
+			to: {
+				type: 'contact',
+				name: 'Recipient',
+				address: 0x3n,
+				entrySource: 'User',
+				chainId: 1n,
+			},
+			refundReceiver: zeroAddressEntry,
+			verifyingContract: {
+				type: 'contract',
+				name: 'Safe',
+				address: activeAddress.address,
+				entrySource: 'User',
+				abi: '[]',
+				chainId: 1n,
+			},
+			messageHash: '0x1',
+			domainHash: '0x2',
+			safeTxHash: '0x3',
+		}
+
+		await act(() => {
+			render(h(modules.GnosisSafeVisualizer, {
+				gnosisSafeMessage,
+				activeAddress: activeAddress.address,
+				renameAddressCallBack: () => undefined,
+				editEnsNamedHashCallBack: () => undefined,
+			}), dom.document.body)
+		})
+
+		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution'))
+		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
+
+		await act(async () => {
+			await clickElement(simulateButton)
+		})
+
+		await act(async () => {
+			await emitRuntimeMessage(createSimulationFailureBroadcast(7n, 'Gnosis broadcast reply'))
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('Gnosis broadcast reply'), true)
+
+		await act(async () => {
+			deferredReply.reject(new Error(ASYNC_CHANNEL_CLOSED_ERROR))
+			await deferredReply.promise.catch(() => undefined)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('Gnosis broadcast reply'), true)
+		assert.equal(dom.document.body.textContent?.includes('Simulating Gnosis Safe execution failed because the background page did not return a reply.'), false)
 		dom.restore()
 	})
 

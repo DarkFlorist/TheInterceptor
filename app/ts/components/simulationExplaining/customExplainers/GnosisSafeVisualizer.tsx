@@ -124,6 +124,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
 			if (!isReplyForCurrentMessage(reply)) return false
+			resetGnosisSimulationRequest()
 			simulateExecutionReply.value = reply
 			return false
 		}
