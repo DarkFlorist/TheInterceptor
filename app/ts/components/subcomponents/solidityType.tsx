@@ -1,6 +1,6 @@
 import type { JSX } from 'preact/jsx-runtime'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { EnrichedGroupedSolidityType, PureGroupedSolidityType } from '../../types/solidityType.js'
+import type { EnrichedGroupedSolidityType, PureGroupedSolidityType, SolidityVariable } from '../../types/solidityType.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
@@ -10,6 +10,8 @@ import { insertBetweenElements } from './misc.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
+const tupleGroupStyle = 'display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 0.25em; max-width: 100%; min-width: 0;'
+const tupleFieldStyle = 'display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 0.125em; max-width: 100%; min-width: 0;'
 export const StringElement = ({ text }: { text: string }) => <p class = 'paragraph' style = { textStyle }>{ text }</p>
 
 const JsxArray = ( { array }: { array: JSX.Element[] }) => <>
@@ -17,6 +19,24 @@ const JsxArray = ( { array }: { array: JSX.Element[] }) => <>
 		{ insertBetweenElements(array, <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
 	<StringElement text = ']'/>
 </>
+
+const PureTupleComponent = ({ tuple }: { tuple: readonly SolidityVariable[] }) => <div style = { tupleGroupStyle }>
+	<StringElement text = '{'/>
+		{ insertBetweenElements(tuple.map((variable, index) => <div key = { index } style = { tupleFieldStyle }>
+			<p style = { textStyle } class = 'paragraph'> { `${ variable.paramName } =` }&nbsp;</p>
+			<PureSolidityTypeComponent valueType = { variable.typeValue } />
+		</div>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+	<StringElement text = '}'/>
+</div>
+
+const TupleComponentWithAddressBook = ({ tuple, addressMetaData, renameAddressCallBack }: { tuple: readonly SolidityVariable[], addressMetaData: SignalOrValue<readonly AddressBookEntry[]>, renameAddressCallBack: RenameAddressCallBack }) => <div style = { tupleGroupStyle }>
+	<StringElement text = '{'/>
+		{ insertBetweenElements(tuple.map((variable, index) => <div key = { index } style = { tupleFieldStyle }>
+			<p style = { textStyle } class = 'paragraph'> { `${ variable.paramName } =` }&nbsp;</p>
+			<EnrichedSolidityTypeComponentWithAddressBook valueType = { variable.typeValue } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
+		</div>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+	<StringElement text = '}'/>
+</div>
 
 function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolidityType }) {
 	switch(valueType.type) {
@@ -34,6 +54,8 @@ function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolid
 		case 'unsignedInteger[]':
 		case 'signedInteger[]': return <StringElement text = { `[${ valueType.value.toString() }]` } />
 		case 'string[]': return <StringElement text = { `[${ valueType.value.map((a) => `"${ a }"`) }]` } />
+		case 'tuple': return <PureTupleComponent tuple = { valueType.value } />
+		case 'tuple[]': return <JsxArray array = { valueType.value.map((tuple, index) => <PureTupleComponent key = { index } tuple = { tuple } />) } />
 		default: assertNever(valueType)
 	}
 }
@@ -42,6 +64,8 @@ export function EnrichedSolidityTypeComponentWithAddressBook({ valueType, addres
 	switch(valueType.type) {
 		case 'address': return <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(resolveSignal(addressMetaData), valueType.value) } renameAddressCallBack = { renameAddressCallBack } />
 		case 'address[]': return <JsxArray array = { valueType.value.map((value) => <SmallAddress key = { value.toString() } addressBookEntry = { getAddressBookEntryOrAFiller(resolveSignal(addressMetaData), value) } renameAddressCallBack = { renameAddressCallBack } />) }/>
+		case 'tuple': return <TupleComponentWithAddressBook tuple = { valueType.value } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
+		case 'tuple[]': return <JsxArray array = { valueType.value.map((tuple, index) => <TupleComponentWithAddressBook key = { index } tuple = { tuple } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />) } />
 		default: return <PureSolidityTypeComponent valueType = { valueType } />
 	}
 }
