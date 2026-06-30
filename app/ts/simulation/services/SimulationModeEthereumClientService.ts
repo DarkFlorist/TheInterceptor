@@ -1,6 +1,6 @@
 import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
-import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, type EthereumBytes32, type EthereumSendableSignedTransaction, type EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
+import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction, type EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
@@ -119,6 +119,14 @@ const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinim
 
 const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0
 
+const getResolvedSimulationInputValue = (
+	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
+): SimulationStateInputMinimalData | undefined => {
+	if (simulationStateInput === undefined) return undefined
+	if (!('kind' in simulationStateInput)) return simulationStateInput
+	return simulationStateInput.kind === 'passthrough' ? undefined : simulationStateInput.value
+}
+
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 
 const getHashOfSimulatedBlockFromInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, blockDelta: number) => {
@@ -131,12 +139,7 @@ const createPreparedSimulationExecutionContext = async (
 	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
 	baseBlockTag: EthereumBlockTag = 'latest',
 ): Promise<PreparedSimulationExecutionContext | undefined> => {
-	if (simulationStateInput === undefined) return undefined
-	const resolvedSimulationInput = 'kind' in simulationStateInput
-		? simulationStateInput.kind === 'passthrough'
-			? undefined
-			: simulationStateInput.value
-		: simulationStateInput
+	const resolvedSimulationInput = getResolvedSimulationInputValue(simulationStateInput)
 	if (resolvedSimulationInput === undefined) return undefined
 	if (isEmptySimulationInput(resolvedSimulationInput)) return undefined
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
@@ -1037,10 +1040,80 @@ export const getSimulatedBlockNumberFromInput = async (
 	return context.parentBlock.number + BigInt(context.executionBlocks.length)
 }
 
-const shouldApplySimulationInputToEthSimulateV1 = (blockTag: EthSimulateV1BlockTag) => blockTag === 'latest' || blockTag === 'pending'
 const getEthSimulateV1ParentBlockTag = (request: EthSimulateV1Params): EthSimulateV1BlockTag => {
 	const parentBlockTag = request.params[1]
 	return parentBlockTag === undefined ? 'latest' : parentBlockTag
+}
+
+const isEthSimulateV1BlockHashTag = (blockTag: EthSimulateV1BlockTag) => typeof blockTag === 'string' && /^0x[a-fA-F0-9]{64}$/.test(blockTag)
+const ETH_SIMULATE_V1_VALIDATION_WITH_SIMULATION_STACK_MESSAGE = 'eth_simulateV1 validation: true cannot be applied on top of the Interceptor simulation stack because eth_simulateV1 validation is request-wide.'
+
+const throwEthSimulateV1ValidationWithSimulationStackError = () => {
+	throw new JsonRpcResponseError({
+		jsonrpc: '2.0',
+		id: 1,
+		error: {
+			code: -32602,
+			message: ETH_SIMULATE_V1_VALIDATION_WITH_SIMULATION_STACK_MESSAGE,
+		},
+	})
+}
+
+const shouldPrepareEthSimulateV1SimulationContext = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	blockTag: EthSimulateV1BlockTag,
+) => {
+	if (blockTag === 'latest' || blockTag === 'pending' || isEthSimulateV1BlockHashTag(blockTag)) return true
+	if (typeof blockTag !== 'bigint') return false
+	const latestBlockNumber = await ethereumClientService.getBlockNumber(requestAbortController)
+	return blockTag > latestBlockNumber
+}
+
+const shouldPrepareEthSimulateV1SimulationContextForBlockTag = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	blockTag: EthSimulateV1BlockTag,
+) => {
+	if (!isEthSimulateV1BlockHashTag(blockTag)) return await shouldPrepareEthSimulateV1SimulationContext(ethereumClientService, requestAbortController, blockTag)
+	const realBlock = await ethereumClientService.getBlockByHash(EthereumBytes32.parse(blockTag), requestAbortController, false)
+	return realBlock === null
+}
+
+const getEthSimulateV1SimulationPrefixBlockCount = (
+	context: PreparedSimulationExecutionContext,
+	blockTag: EthSimulateV1BlockTag,
+) => {
+	if (blockTag === 'latest' || blockTag === 'pending') return context.executionBlocks.length
+	if (typeof blockTag === 'bigint') {
+		if (blockTag <= context.parentBlock.number) return undefined
+		if (blockTag > context.parentBlock.number + BigInt(context.executionBlocks.length)) return undefined
+		return Number(blockTag - context.parentBlock.number)
+	}
+	if (isEthSimulateV1BlockHashTag(blockTag)) {
+		const blockIndex = context.executionBlocks.findIndex((block) => block.blockHash === BigInt(blockTag))
+		return blockIndex === -1 ? undefined : blockIndex + 1
+	}
+	return undefined
+}
+
+const getEthSimulateV1VisibleParentHash = (
+	context: PreparedSimulationExecutionContext,
+	simulationPrefixBlockCount: number,
+) => {
+	if (simulationPrefixBlockCount === 0) return context.parentBlock.hash
+	const visibleParentBlock = context.executionBlocks[simulationPrefixBlockCount - 1]
+	if (visibleParentBlock === undefined) throw new Error('eth_simulateV1 simulation prefix block index overflow')
+	return visibleParentBlock.blockHash
+}
+
+const withEthSimulateV1VisibleParentHash = (
+	result: EthSimulateV1Result,
+	parentHash: bigint,
+): EthSimulateV1Result => {
+	const [firstResultBlock, ...remainingResultBlocks] = result
+	if (firstResultBlock === undefined) return result
+	return [{ ...firstResultBlock, parentHash }, ...remainingResultBlocks]
 }
 
 export const ethSimulateV1FromInput = async (
@@ -1049,16 +1122,39 @@ export const ethSimulateV1FromInput = async (
 	simulationStateInput: ResolvedSimulationInput,
 	request: EthSimulateV1Params,
 ): Promise<EthSimulateV1Result> => {
-	if (!shouldApplySimulationInputToEthSimulateV1(getEthSimulateV1ParentBlockTag(request))) {
+	const resolvedSimulationInput = getResolvedSimulationInputValue(simulationStateInput)
+	if (resolvedSimulationInput === undefined || isEmptySimulationInput(resolvedSimulationInput)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+
+	const parentBlockTag = getEthSimulateV1ParentBlockTag(request)
+	let shouldPrepareSimulationContext: boolean
+	try {
+		shouldPrepareSimulationContext = await shouldPrepareEthSimulateV1SimulationContextForBlockTag(ethereumClientService, requestAbortController, parentBlockTag)
+	} catch (error) {
+		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		throw error
+	}
+	if (!shouldPrepareSimulationContext) {
 		return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
 	}
-	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+
+	let context: PreparedSimulationExecutionContext | undefined
+	try {
+		context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, resolvedSimulationInput)
+	} catch (error) {
+		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		throw error
+	}
 	if (context === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
 
-	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls
+	const simulationPrefixBlockCount = getEthSimulateV1SimulationPrefixBlockCount(context, parentBlockTag)
+	if (simulationPrefixBlockCount === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (request.params[0].validation === true) throwEthSimulateV1ValidationWithSimulationStackError()
+
+	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
 	const payload: EthSimulateV1Params['params'][0] = {
 		...request.params[0],
 		blockStateCalls: [...simulationPrefixBlockStateCalls, ...request.params[0].blockStateCalls],
+		validation: false,
 	}
 	const prefixedRequest: EthSimulateV1Params = {
 		method: request.method,
@@ -1066,7 +1162,10 @@ export const ethSimulateV1FromInput = async (
 	}
 	const result = await ethereumClientService.ethSimulateV1Request(prefixedRequest, requestAbortController)
 	if (result.length < simulationPrefixBlockStateCalls.length) throw new Error('eth_simulateV1 returned fewer blocks than the prepared simulation prefix')
-	return result.slice(simulationPrefixBlockStateCalls.length)
+	return withEthSimulateV1VisibleParentHash(
+		result.slice(simulationPrefixBlockStateCalls.length),
+		getEthSimulateV1VisibleParentHash(context, simulationPrefixBlockCount),
+	)
 }
 
 export async function getSimulatedBlockFromInput(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: ResolvedSimulationInput, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
