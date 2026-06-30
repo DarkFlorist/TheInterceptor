@@ -3,8 +3,10 @@ import { afterEach, describe, test } from 'bun:test'
 import { signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
+import { type GovernanceVoteInputParameters, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
+import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
 
@@ -163,6 +165,138 @@ async function settleAsyncUpdates() {
 }
 
 const ASYNC_CHANNEL_CLOSED_ERROR = 'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
+
+function createGovernanceVoteInputParameters(proposalId: bigint): GovernanceVoteInputParameters {
+	return {
+		proposalId,
+		support: true,
+		reason: undefined,
+		params: undefined,
+		signature: undefined,
+		voter: undefined,
+	}
+}
+
+function createGovernanceTransactionFixture(transactionIdentifier: bigint): SimulatedAndVisualizedTransaction {
+	const governanceTransactionFixture = {
+		transactionIdentifier,
+		transaction: {
+			to: {
+				type: 'contract',
+				name: 'Governance',
+				address: 0x1n,
+				entrySource: 'User',
+				abi: '[]',
+				chainId: 1n,
+			},
+		},
+	} satisfies Pick<SimulatedAndVisualizedTransaction, 'transactionIdentifier' | 'transaction'>
+
+	// GovernanceVoteVisualizer only reads transactionIdentifier and transaction.to in these tests.
+	return governanceTransactionFixture as SimulatedAndVisualizedTransaction
+}
+
+const gnosisSignerAddress = {
+	type: 'contact' as const,
+	name: 'Signer',
+	address: 0x2n,
+	entrySource: 'User' as const,
+	chainId: 1n,
+}
+
+const zeroAddressEntry = {
+	type: 'contact' as const,
+	name: '0x0 Address',
+	address: 0n,
+	entrySource: 'Interceptor' as const,
+	chainId: 1n,
+}
+
+function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPersonalSignRequestSafeTx {
+	return {
+		activeAddress: gnosisSignerAddress,
+		rpcNetwork: {
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			httpsRpc: 'https://rpc.example',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		},
+		simulationMode: true,
+		signerName: 'NoSignerDetected',
+		quarantineReasons: [],
+		quarantine: false,
+		account: gnosisSignerAddress,
+		website: { websiteOrigin: 'https://safe.example', icon: undefined, title: undefined },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		rawMessage: '{}',
+		stringifiedMessage: '{}',
+		messageIdentifier,
+		method: 'eth_signTypedData_v4',
+		type: 'SafeTx',
+		message: {
+			types: {
+				SafeTx: [
+					{ name: 'to', type: 'address' },
+					{ name: 'value', type: 'uint256' },
+					{ name: 'data', type: 'bytes' },
+					{ name: 'operation', type: 'uint8' },
+					{ name: 'safeTxGas', type: 'uint256' },
+					{ name: 'baseGas', type: 'uint256' },
+					{ name: 'gasPrice', type: 'uint256' },
+					{ name: 'gasToken', type: 'address' },
+					{ name: 'refundReceiver', type: 'address' },
+					{ name: 'nonce', type: 'uint256' },
+				],
+				EIP712Domain: [
+					{ name: 'chainId', type: 'uint256' },
+					{ name: 'verifyingContract', type: 'address' },
+				],
+			},
+			primaryType: 'SafeTx',
+			domain: {
+				chainId: 1n,
+				verifyingContract: gnosisSignerAddress.address,
+			},
+			message: {
+				to: 0x3n,
+				value: 0n,
+				data: new Uint8Array(),
+				operation: 0n,
+				safeTxGas: 0n,
+				baseGas: 0n,
+				gasPrice: 0n,
+				gasToken: zeroAddressEntry.address,
+				refundReceiver: zeroAddressEntry.address,
+				nonce: 1n,
+			},
+		},
+		parsedMessageDataAddressBookEntries: [],
+		parsedMessageData: { type: 'NonParsed', input: new Uint8Array() },
+		gasToken: zeroAddressEntry,
+		to: {
+			type: 'contact',
+			name: 'Recipient',
+			address: 0x3n,
+			entrySource: 'User',
+			chainId: 1n,
+		},
+		refundReceiver: zeroAddressEntry,
+		verifyingContract: {
+			type: 'contract',
+			name: 'Safe',
+			address: gnosisSignerAddress.address,
+			entrySource: 'User',
+			abi: '[]',
+			chainId: 1n,
+		},
+		messageHash: '0x1',
+		domainHash: '0x2',
+		safeTxHash: '0x3',
+	}
+}
 
 describe('popup async action UI', () => {
 	test('shows ABI lookup progress and a missing-reply error in AddNewAddress', async () => {
@@ -327,34 +461,13 @@ describe('popup async action UI', () => {
 		const deferredReply = createDeferred<unknown>()
 		runtimeSendMessage = async () => deferredReply.promise
 
-		const governanceTransaction = {
-			transactionIdentifier: 5n,
-			transaction: {
-				to: {
-					type: 'contract',
-					name: 'Governance',
-					address: 0x1n,
-					entrySource: 'User',
-					abi: '[]',
-					chainId: 1n,
-				},
-			},
-		} as unknown as import('../../app/ts/types/visualizer-types.js').SimulatedAndVisualizedTransaction
-
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
-				simTx: governanceTransaction,
+				simTx: createGovernanceTransactionFixture(5n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
-				governanceVoteInputParameters: {
-					proposalId: 42n,
-					support: true,
-					reason: undefined,
-					params: undefined,
-					signature: undefined,
-					voter: undefined,
-				},
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
 			}), dom.document.body)
 		})
 
@@ -389,34 +502,13 @@ describe('popup async action UI', () => {
 			return undefined
 		}
 
-		const governanceTransaction = {
-			transactionIdentifier: 5n,
-			transaction: {
-				to: {
-					type: 'contract',
-					name: 'Governance',
-					address: 0x1n,
-					entrySource: 'User',
-					abi: '[]',
-					chainId: 1n,
-				},
-			},
-		} as unknown as import('../../app/ts/types/visualizer-types.js').SimulatedAndVisualizedTransaction
-
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
-				simTx: governanceTransaction,
+				simTx: createGovernanceTransactionFixture(5n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
-				governanceVoteInputParameters: {
-					proposalId: 42n,
-					support: true,
-					reason: undefined,
-					params: undefined,
-					signature: undefined,
-					voter: undefined,
-				},
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
 			}), dom.document.body)
 		})
 
@@ -455,38 +547,13 @@ describe('popup async action UI', () => {
 			return undefined
 		}
 
-		const firstGovernanceTransaction = {
-			transactionIdentifier: 5n,
-			transaction: {
-				to: {
-					type: 'contract',
-					name: 'Governance',
-					address: 0x1n,
-					entrySource: 'User',
-					abi: '[]',
-					chainId: 1n,
-				},
-			},
-		} as unknown as import('../../app/ts/types/visualizer-types.js').SimulatedAndVisualizedTransaction
-		const secondGovernanceTransaction = {
-			...firstGovernanceTransaction,
-			transactionIdentifier: 6n,
-		}
-
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
-				simTx: firstGovernanceTransaction,
+				simTx: createGovernanceTransactionFixture(5n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
-				governanceVoteInputParameters: {
-					proposalId: 42n,
-					support: true,
-					reason: undefined,
-					params: undefined,
-					signature: undefined,
-					voter: undefined,
-				},
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
 			}), dom.document.body)
 		})
 
@@ -499,18 +566,11 @@ describe('popup async action UI', () => {
 
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
-				simTx: secondGovernanceTransaction,
+				simTx: createGovernanceTransactionFixture(6n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
-				governanceVoteInputParameters: {
-					proposalId: 43n,
-					support: true,
-					reason: undefined,
-					params: undefined,
-					signature: undefined,
-					voter: undefined,
-				},
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(43n),
 			}), dom.document.body)
 		})
 
@@ -546,108 +606,10 @@ describe('popup async action UI', () => {
 		const deferredReply = createDeferred<unknown>()
 		runtimeSendMessage = async () => deferredReply.promise
 
-		const activeAddress = {
-			type: 'contact' as const,
-			name: 'Signer',
-			address: 0x2n,
-			entrySource: 'User' as const,
-			chainId: 1n,
-		}
-		const zeroAddressEntry = {
-			type: 'contact' as const,
-			name: '0x0 Address',
-			address: 0n,
-			entrySource: 'Interceptor' as const,
-			chainId: 1n,
-		}
-		const gnosisSafeMessage: import('../../app/ts/types/personal-message-definitions.js').VisualizedPersonalSignRequestSafeTx = {
-			activeAddress,
-			rpcNetwork: {
-				name: 'Ethereum Mainnet',
-				chainId: 1n,
-				httpsRpc: 'https://rpc.example',
-				currencyName: 'Ether',
-				currencyTicker: 'ETH',
-				primary: true,
-				minimized: false,
-			},
-			simulationMode: true,
-			signerName: 'NoSignerDetected',
-			quarantineReasons: [],
-			quarantine: false,
-			account: activeAddress,
-			website: { websiteOrigin: 'https://safe.example', icon: undefined, title: undefined },
-			created: new Date('2024-01-01T00:00:00.000Z'),
-			rawMessage: '{}',
-			stringifiedMessage: '{}',
-			messageIdentifier: 7n,
-			method: 'eth_signTypedData_v4',
-			type: 'SafeTx',
-			message: {
-				types: {
-					SafeTx: [
-						{ name: 'to', type: 'address' },
-						{ name: 'value', type: 'uint256' },
-						{ name: 'data', type: 'bytes' },
-						{ name: 'operation', type: 'uint8' },
-						{ name: 'safeTxGas', type: 'uint256' },
-						{ name: 'baseGas', type: 'uint256' },
-						{ name: 'gasPrice', type: 'uint256' },
-						{ name: 'gasToken', type: 'address' },
-						{ name: 'refundReceiver', type: 'address' },
-						{ name: 'nonce', type: 'uint256' },
-					],
-					EIP712Domain: [
-						{ name: 'chainId', type: 'uint256' },
-						{ name: 'verifyingContract', type: 'address' },
-					],
-				},
-				primaryType: 'SafeTx',
-				domain: {
-					chainId: 1n,
-					verifyingContract: activeAddress.address,
-				},
-				message: {
-					to: 0x3n,
-					value: 0n,
-					data: new Uint8Array(),
-					operation: 0n,
-					safeTxGas: 0n,
-					baseGas: 0n,
-					gasPrice: 0n,
-					gasToken: zeroAddressEntry.address,
-					refundReceiver: zeroAddressEntry.address,
-					nonce: 1n,
-				},
-			},
-			parsedMessageDataAddressBookEntries: [],
-			parsedMessageData: { type: 'NonParsed', input: new Uint8Array() },
-			gasToken: zeroAddressEntry,
-			to: {
-				type: 'contact',
-				name: 'Recipient',
-				address: 0x3n,
-				entrySource: 'User',
-				chainId: 1n,
-			},
-			refundReceiver: zeroAddressEntry,
-			verifyingContract: {
-				type: 'contract',
-				name: 'Safe',
-				address: activeAddress.address,
-				entrySource: 'User',
-				abi: '[]',
-				chainId: 1n,
-			},
-			messageHash: '0x1',
-			domainHash: '0x2',
-			safeTxHash: '0x3',
-		}
-
 		await act(() => {
 			render(h(modules.GnosisSafeVisualizer, {
-				gnosisSafeMessage,
-				activeAddress: activeAddress.address,
+				gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+				activeAddress: gnosisSignerAddress.address,
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
@@ -683,108 +645,10 @@ describe('popup async action UI', () => {
 			return undefined
 		}
 
-		const activeAddress = {
-			type: 'contact' as const,
-			name: 'Signer',
-			address: 0x2n,
-			entrySource: 'User' as const,
-			chainId: 1n,
-		}
-		const zeroAddressEntry = {
-			type: 'contact' as const,
-			name: '0x0 Address',
-			address: 0n,
-			entrySource: 'Interceptor' as const,
-			chainId: 1n,
-		}
-		const gnosisSafeMessage: import('../../app/ts/types/personal-message-definitions.js').VisualizedPersonalSignRequestSafeTx = {
-			activeAddress,
-			rpcNetwork: {
-				name: 'Ethereum Mainnet',
-				chainId: 1n,
-				httpsRpc: 'https://rpc.example',
-				currencyName: 'Ether',
-				currencyTicker: 'ETH',
-				primary: true,
-				minimized: false,
-			},
-			simulationMode: true,
-			signerName: 'NoSignerDetected',
-			quarantineReasons: [],
-			quarantine: false,
-			account: activeAddress,
-			website: { websiteOrigin: 'https://safe.example', icon: undefined, title: undefined },
-			created: new Date('2024-01-01T00:00:00.000Z'),
-			rawMessage: '{}',
-			stringifiedMessage: '{}',
-			messageIdentifier: 7n,
-			method: 'eth_signTypedData_v4',
-			type: 'SafeTx',
-			message: {
-				types: {
-					SafeTx: [
-						{ name: 'to', type: 'address' },
-						{ name: 'value', type: 'uint256' },
-						{ name: 'data', type: 'bytes' },
-						{ name: 'operation', type: 'uint8' },
-						{ name: 'safeTxGas', type: 'uint256' },
-						{ name: 'baseGas', type: 'uint256' },
-						{ name: 'gasPrice', type: 'uint256' },
-						{ name: 'gasToken', type: 'address' },
-						{ name: 'refundReceiver', type: 'address' },
-						{ name: 'nonce', type: 'uint256' },
-					],
-					EIP712Domain: [
-						{ name: 'chainId', type: 'uint256' },
-						{ name: 'verifyingContract', type: 'address' },
-					],
-				},
-				primaryType: 'SafeTx',
-				domain: {
-					chainId: 1n,
-					verifyingContract: activeAddress.address,
-				},
-				message: {
-					to: 0x3n,
-					value: 0n,
-					data: new Uint8Array(),
-					operation: 0n,
-					safeTxGas: 0n,
-					baseGas: 0n,
-					gasPrice: 0n,
-					gasToken: zeroAddressEntry.address,
-					refundReceiver: zeroAddressEntry.address,
-					nonce: 1n,
-				},
-			},
-			parsedMessageDataAddressBookEntries: [],
-			parsedMessageData: { type: 'NonParsed', input: new Uint8Array() },
-			gasToken: zeroAddressEntry,
-			to: {
-				type: 'contact',
-				name: 'Recipient',
-				address: 0x3n,
-				entrySource: 'User',
-				chainId: 1n,
-			},
-			refundReceiver: zeroAddressEntry,
-			verifyingContract: {
-				type: 'contract',
-				name: 'Safe',
-				address: activeAddress.address,
-				entrySource: 'User',
-				abi: '[]',
-				chainId: 1n,
-			},
-			messageHash: '0x1',
-			domainHash: '0x2',
-			safeTxHash: '0x3',
-		}
-
 		await act(() => {
 			render(h(modules.GnosisSafeVisualizer, {
-				gnosisSafeMessage,
-				activeAddress: activeAddress.address,
+				gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+				activeAddress: gnosisSignerAddress.address,
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
@@ -825,108 +689,10 @@ describe('popup async action UI', () => {
 			return undefined
 		}
 
-		const activeAddress = {
-			type: 'contact' as const,
-			name: 'Signer',
-			address: 0x2n,
-			entrySource: 'User' as const,
-			chainId: 1n,
-		}
-		const zeroAddressEntry = {
-			type: 'contact' as const,
-			name: '0x0 Address',
-			address: 0n,
-			entrySource: 'Interceptor' as const,
-			chainId: 1n,
-		}
-		const makeGnosisSafeMessage = (messageIdentifier: bigint): import('../../app/ts/types/personal-message-definitions.js').VisualizedPersonalSignRequestSafeTx => ({
-			activeAddress,
-			rpcNetwork: {
-				name: 'Ethereum Mainnet',
-				chainId: 1n,
-				httpsRpc: 'https://rpc.example',
-				currencyName: 'Ether',
-				currencyTicker: 'ETH',
-				primary: true,
-				minimized: false,
-			},
-			simulationMode: true,
-			signerName: 'NoSignerDetected',
-			quarantineReasons: [],
-			quarantine: false,
-			account: activeAddress,
-			website: { websiteOrigin: 'https://safe.example', icon: undefined, title: undefined },
-			created: new Date('2024-01-01T00:00:00.000Z'),
-			rawMessage: '{}',
-			stringifiedMessage: '{}',
-			messageIdentifier,
-			method: 'eth_signTypedData_v4',
-			type: 'SafeTx',
-			message: {
-				types: {
-					SafeTx: [
-						{ name: 'to', type: 'address' },
-						{ name: 'value', type: 'uint256' },
-						{ name: 'data', type: 'bytes' },
-						{ name: 'operation', type: 'uint8' },
-						{ name: 'safeTxGas', type: 'uint256' },
-						{ name: 'baseGas', type: 'uint256' },
-						{ name: 'gasPrice', type: 'uint256' },
-						{ name: 'gasToken', type: 'address' },
-						{ name: 'refundReceiver', type: 'address' },
-						{ name: 'nonce', type: 'uint256' },
-					],
-					EIP712Domain: [
-						{ name: 'chainId', type: 'uint256' },
-						{ name: 'verifyingContract', type: 'address' },
-					],
-				},
-				primaryType: 'SafeTx',
-				domain: {
-					chainId: 1n,
-					verifyingContract: activeAddress.address,
-				},
-				message: {
-					to: 0x3n,
-					value: 0n,
-					data: new Uint8Array(),
-					operation: 0n,
-					safeTxGas: 0n,
-					baseGas: 0n,
-					gasPrice: 0n,
-					gasToken: zeroAddressEntry.address,
-					refundReceiver: zeroAddressEntry.address,
-					nonce: 1n,
-				},
-			},
-			parsedMessageDataAddressBookEntries: [],
-			parsedMessageData: { type: 'NonParsed', input: new Uint8Array() },
-			gasToken: zeroAddressEntry,
-			to: {
-				type: 'contact',
-				name: 'Recipient',
-				address: 0x3n,
-				entrySource: 'User',
-				chainId: 1n,
-			},
-			refundReceiver: zeroAddressEntry,
-			verifyingContract: {
-				type: 'contract',
-				name: 'Safe',
-				address: activeAddress.address,
-				entrySource: 'User',
-				abi: '[]',
-				chainId: 1n,
-			},
-			messageHash: '0x1',
-			domainHash: '0x2',
-			safeTxHash: '0x3',
-		})
-
 		await act(() => {
 			render(h(modules.GnosisSafeVisualizer, {
-				gnosisSafeMessage: makeGnosisSafeMessage(7n),
-				activeAddress: activeAddress.address,
+				gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+				activeAddress: gnosisSignerAddress.address,
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
@@ -941,8 +707,8 @@ describe('popup async action UI', () => {
 
 		await act(() => {
 			render(h(modules.GnosisSafeVisualizer, {
-				gnosisSafeMessage: makeGnosisSafeMessage(8n),
-				activeAddress: activeAddress.address,
+				gnosisSafeMessage: createGnosisSafeMessageFixture(8n),
+				activeAddress: gnosisSignerAddress.address,
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
