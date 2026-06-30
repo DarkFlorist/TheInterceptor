@@ -3,8 +3,9 @@ import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '.
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { type EnrichedGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, type SolidityType } from '../types/solidityType.js'
+import { type EnrichedGroupedSolidityType, type PureFlatGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, SolidityType, type SolidityVariable } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
+import type { AbiParameter } from 'viem'
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {
@@ -125,8 +126,88 @@ export async function parseSolidityValueByTypeEnriched(ethereumClientService: Et
 
 const SignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, SignedBigInt)
 const UnsignedIntegerType = funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt, EthereumQuantity).withConstraint((number) => BigInt(number) >= 0n)
+const removeSingleArraySuffix = (type: string) => type.replace(/\[[^\]]*\]$/, '')
 
-export function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArray: boolean): PureGroupedSolidityType {
+const hasTupleComponents = (parameter: AbiParameter): parameter is AbiParameter & { readonly components: readonly AbiParameter[] } => {
+	return 'components' in parameter
+}
+
+const hasHashValue = (value: unknown): value is { readonly hash: unknown } => {
+	return typeof value === 'object' && value !== null && 'hash' in value
+}
+
+const isIndexedTopicHash = (value: unknown): value is string => {
+	return typeof value === 'string' && /^0x[a-fA-F0-9]{64}$/.test(value)
+}
+
+const parseIndexedHash = (value: unknown): PureFlatGroupedSolidityType | undefined => {
+	if (hasHashValue(value)) return { type: 'fixedBytes', value: EthereumData.parse(value.hash) }
+	if (isIndexedTopicHash(value)) return { type: 'fixedBytes', value: EthereumData.parse(value) }
+	return undefined
+}
+
+const isIndexedAbiParameter = (parameter: AbiParameter): parameter is AbiParameter & { readonly indexed: true } => {
+	return 'indexed' in parameter && parameter.indexed === true
+}
+
+const getAbiParameterName = (parameter: AbiParameter, fallbackName: string | undefined) => {
+	if (parameter.name !== undefined && parameter.name !== '') return parameter.name
+	if (fallbackName !== undefined) return fallbackName
+	if (parameter.name === '') return ''
+	throw new Error('missing parameter name')
+}
+
+const getTupleComponentValue = (tupleValue: unknown, component: AbiParameter, index: number) => {
+	if (Array.isArray(tupleValue)) return tupleValue[index]
+	if (typeof tupleValue !== 'object' || tupleValue === null) throw new Error('tuple value is not an object or array')
+	if (component.name !== undefined && component.name !== '') {
+		const namedValue = Reflect.get(tupleValue, component.name)
+		if (namedValue !== undefined) return namedValue
+	}
+	return Reflect.get(tupleValue, index)
+}
+
+const parseAbiParameterToSolidityVariable = (parameter: AbiParameter, value: unknown, fallbackName: string | undefined): SolidityVariable => {
+	return {
+		paramName: getAbiParameterName(parameter, fallbackName),
+		typeValue: parseAbiParameterToSolidityValue(parameter, value),
+	}
+}
+
+const parseTupleComponents = (components: readonly AbiParameter[], value: unknown) => {
+	return components.map((component, index) => parseAbiParameterToSolidityVariable(component, getTupleComponentValue(value, component, index), `field${ index }`))
+}
+
+const parseTupleArray = (components: readonly AbiParameter[], value: unknown) => {
+	if (!Array.isArray(value)) throw new Error('tuple array value is not an array')
+	return value.map((tupleValue) => parseTupleComponents(components, tupleValue))
+}
+
+export function parseAbiParameterToSolidityValue(parameter: AbiParameter, value: unknown): PureGroupedSolidityType {
+	const scalarAbiType = removeSingleArraySuffix(parameter.type)
+	const isArray = scalarAbiType !== parameter.type
+	const indexedHash = isIndexedAbiParameter(parameter) ? parseIndexedHash(value) : undefined
+	if (indexedHash !== undefined) return indexedHash
+	if (scalarAbiType === 'tuple') {
+		if (!hasTupleComponents(parameter)) throw new Error(`missing tuple components for ${ parameter.type }`)
+		if (isArray) return { type: 'tuple[]', value: parseTupleArray(parameter.components, value) }
+		return { type: 'tuple', value: parseTupleComponents(parameter.components, value) }
+	}
+	const verifiedSolidityType = SolidityType.safeParse(scalarAbiType)
+	if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ parameter.type }`)
+	return parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray)
+}
+
+export function parseAbiParametersToSolidityVariables(parameters: readonly AbiParameter[], values: readonly unknown[]) {
+	if (values.length !== parameters.length) throw new Error('ABI parameter/value length mismatch')
+	return values.map((value, index) => {
+		const parameter = parameters[index]
+		if (parameter === undefined) throw new Error('missing ABI parameter')
+		return parseAbiParameterToSolidityVariable(parameter, value, undefined)
+	})
+}
+
+export function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArray: boolean): PureFlatGroupedSolidityType {
 	const categorized = getSolidityTypeCategory(type)
 	if (isArray) {
 		switch (categorized) {
