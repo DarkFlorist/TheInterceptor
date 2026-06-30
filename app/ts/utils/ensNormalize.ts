@@ -19,7 +19,7 @@ const NSM_MAX = 4;
 function decode_arithmetic(bytes: any) {
 	let pos = 0;
 	function u16() { return (bytes[pos++] << 8) | bytes[pos++]; }
-	
+
 	// decode the frequency table
 	let symbol_count = u16();
 	let total = 1;
@@ -34,7 +34,7 @@ function decode_arithmetic(bytes: any) {
 	pos += skip;
 
 	let read_width = 0;
-	let read_buffer = 0; 
+	let read_buffer = 0;
 	function read_bit() {
 		if (read_width == 0) {
 			// this will read beyond end of buffer
@@ -96,7 +96,7 @@ function decode_arithmetic(bytes: any) {
 			default: return x - 1;
 		}
 	});
-}	
+}
 
 // returns an iterator which returns the next symbol
 function read_payload(v: any) {
@@ -108,7 +108,7 @@ function read_compressed_payload(s: any) {
 }
 
 // unsafe in the sense:
-// expected well-formed Base64 w/o padding 
+// expected well-formed Base64 w/o padding
 // 20220922: added for https://github.com/adraffy/ens-normalize.js/issues/4
 function unsafe_atob(s: any) {
 	let lookup: any[] = [];
@@ -126,7 +126,7 @@ function unsafe_atob(s: any) {
 }
 
 // eg. [0,1,2,3...] => [0,-1,1,-2,...]
-function signed(i: any) { 
+function signed(i: any) {
 	return (i & 1) ? (~i >> 1) : (i >> 1);
 }
 
@@ -153,7 +153,7 @@ function read_sorted(next: any, prev: any = 0) {
 }
 
 function read_sorted_arrays(next: any) {
-	return read_array_while(() => { 
+	return read_array_while(() => {
 		let v = read_sorted(next);
 		if (v.length) return v;
 		return undefined;
@@ -197,7 +197,7 @@ function read_transposed(n: any, w: any, next: any) {
 	}
 	return m;
 }
- 
+
 // returns [[x, ys], [x+dx, ys+dy], [x+2*dx, ys+2*dy], ...]
 // where dx/dy = steps, n = run size, w = length of y
 function read_linear_table(w: any, next: any) {
@@ -216,7 +216,7 @@ function read_linear_table(w: any, next: any) {
 
 // return [[x, ys...], ...]
 // where w = length of y
-function read_replacement_table(w: any, next: any) { 
+function read_replacement_table(w: any, next: any) {
 	let n = 1 + next();
 	let m = read_transposed(n, 1+w, next);
 	return m.map((v: any) => [v[0], v.slice(1)]);
@@ -225,7 +225,7 @@ function read_replacement_table(w: any, next: any) {
 
 function read_trie(next: any) {
 	let ret: any[] = [];
-	let sorted = read_sorted(next); 
+	let sorted = read_sorted(next);
 	expand(decode([]), []);
 	return ret; // not sorted
 	function decode(Q: any) { // characters that lead into this node
@@ -240,7 +240,7 @@ function read_trie(next: any) {
 	function expand({S, B}: any, cps: any, saved?: any) {
 		if (S & 4 && saved === cps[cps.length-1]) return;
 		if (S & 2) saved = cps[cps.length-1];
-		if (S & 1) ret.push(cps); 
+		if (S & 1) ret.push(cps);
 		for (let br of B) {
 			for (let cp of br.Q) {
 				expand(br, [...cps, cp], saved);
@@ -295,7 +295,7 @@ function array_replace(v: any, a: any, b: any) {
 	while (true) {
 		let next = v.indexOf(a, prev);
 		if (next < 0) break;
-		v[next] = b; 
+		v[next] = b;
 		prev = next + 1;
 	}
 }
@@ -483,7 +483,7 @@ function composed_from_decomposed(v: any) {
 		}
 	}
 	if (prev_cp >= 0) {
-		ret.push(prev_cp, ...stack);	
+		ret.push(prev_cp, ...stack);
 	}
 	return ret;
 }
@@ -523,13 +523,13 @@ let MAPPED: any, IGNORED: any, CM: any, NSM: any, ESCAPE: any, GROUPS: any, WHOL
 
 function init() {
 	if (MAPPED) return;
-	
+
 	let r = read_compressed_payload(COMPRESSED$1);
 	const read_sorted_array = () => read_sorted(r);
 	const read_sorted_set = () => new Set(read_sorted_array());
 	const set_add_many = (set: any, v: any) => v.forEach((x: any) => set.add(x));
 
-	MAPPED = new Map<any, any>(read_mapped(r).map((entry: any) => [entry[0], entry[1]])); 
+	MAPPED = new Map<any, any>(read_mapped(r).map((entry: any) => [entry[0], entry[1]]));
 	IGNORED = read_sorted_set(); // ignored characters are not valid, so just read raw codepoints
 
 	/*
@@ -544,7 +544,7 @@ function init() {
 	CM = read_sorted_array();
 	NSM = new Set(read_sorted_array().map((i: any) => CM[i]));
 	CM = new Set(CM);
-	
+
 	ESCAPE = read_sorted_set(); // characters that should not be printed
 	read_sorted_set();
 
@@ -556,7 +556,7 @@ function init() {
 		let set = new Set();
 		read_sorted_array().forEach((i: any) => set_add_many(set, chunks[i]));
 		set_add_many(set, read_sorted_array());
-		return set; 
+		return set;
 	};
 		GROUPS = read_array_while((i: any) => {
 		// minifier property mangling seems unsafe
@@ -593,7 +593,7 @@ function init() {
 	WHOLE_MAP = new Map();
 	let wholes = read_sorted_array().concat(Array_from(WHOLE_VALID)).sort((a: any, b: any) => a-b); // must be sorted
 	wholes.forEach((cp: any, i: any) => {
-		let d = r(); 
+		let d = r();
 		let w = wholes[i] = d ? wholes[i-d] : {V: [], M: new Map()};
 		w.V.push(cp); // add to member set
 		if (!WHOLE_VALID.has(cp)) {
@@ -644,16 +644,16 @@ function init() {
 	// add all decomposed parts
 	// see derive: "Valid is Closed (via Brute-force)"
 	set_add_many(VALID, nfd(VALID));
-	
+
 	// decode emoji
-	// 20230719: emoji are now fully-expanded to avoid quirk logic 
+	// 20230719: emoji are now fully-expanded to avoid quirk logic
 	EMOJI_LIST = read_trie(r).map((v: any) => Emoji.from(v)).sort(compare_arrays);
 	EMOJI_ROOT = new Map(); // this has approx 7K nodes (2+ per emoji)
 	for (let cps of EMOJI_LIST) {
-		// 20230719: change to *slightly* stricter algorithm which disallows 
+		// 20230719: change to *slightly* stricter algorithm which disallows
 		// insertion of misplaced FE0F in emoji sequences (matching ENSIP-15)
-		// example: beautified [A B] (eg. flag emoji) 
-		//  before: allow: [A FE0F B], error: [A FE0F FE0F B] 
+		// example: beautified [A B] (eg. flag emoji)
+		//  before: allow: [A FE0F B], error: [A FE0F FE0F B]
 		//   after: error: both
 		// note: this code now matches ENSNormalize.{cs,java} logic
 			let prev: any[] = [EMOJI_ROOT];
@@ -661,7 +661,7 @@ function init() {
 			let next = prev.map((node: any) => {
 				let child = node.get(cp);
 				if (!child) {
-					// should this be object? 
+					// should this be object?
 					// (most have 1-2 items, few have many)
 					// 20230719: no, v8 default map is 4?
 					child = new Map();
@@ -688,7 +688,7 @@ function quoted_cp(cp: any) {
 }
 
 // 20230211: some messages can be mixed-directional and result in spillover
-// use 200E after a quoted string to force the remainder of a string from 
+// use 200E after a quoted string to force the remainder of a string from
 // acquring the direction of the quote
 // https://www.w3.org/International/questions/qa-bidi-unicode-controls#exceptions
 function bidi_qq(s: any) {
@@ -728,7 +728,7 @@ function check_fenced(cps: any) {
 	if (last == n) throw error_placement(`trailing ${prev}`);
 }
 
-// create a safe to print string 
+// create a safe to print string
 // invisibles are escaped
 // leading cm uses placeholder
 // if cps exceed max, middle truncate with ellipsis
@@ -768,8 +768,8 @@ function should_escape(cp: any) {
 	return ESCAPE.has(cp);
 }
 
-// return all supported emoji as fully-qualified emoji 
-// ordered by length then lexicographic 
+// return all supported emoji as fully-qualified emoji
+// ordered by length then lexicographic
 function ens_emoji() {
 	init();
 	return EMOJI_LIST.map((x: any) => x.slice()); // emoji are exposed so copy
@@ -845,7 +845,7 @@ function split(name: any, nf: any, ef: any) {
 				// 20230120: change to strict
 				// https://discuss.ens.domains/t/ens-name-normalization-2nd/14564/59
 				throw new Error(`empty label`);
-			} 
+			}
 			let norm = info.output = tokens.flat();
 			check_leading_underscore(norm);
 			let emoji = info.emoji = token_count > 1 || tokens[0].is_emoji; // same as: tokens.some(x => x.is_emoji);
@@ -868,14 +868,14 @@ function split(name: any, nf: any, ef: any) {
 						let cps = tokens[i];
 						if (!cps.is_emoji && CM.has(cps[0])) { // every text token has emoji neighbors, eg. EtEEEtEt...
 							// bidi_qq() not needed since emoji is LTR and cps is a CM
-							throw error_placement(`emoji + combining mark: "${str_from_cps(tokens[i-1])} + ${safe_str_from_cps([cps[0]])}"`); 
+							throw error_placement(`emoji + combining mark: "${str_from_cps(tokens[i-1])} + ${safe_str_from_cps([cps[0]])}"`);
 						}
 					}
 					check_fenced(norm);
 					let unique = Array_from(new Set(chars));
 					let [g] = determine_group(unique); // take the first match
 					// see derive: "Matching Groups have Same CM Style"
-					// alternative: could form a hybrid type: Latin/Japanese/...	
+					// alternative: could form a hybrid type: Latin/Japanese/...
 					check_group(g, chars); // need text in order
 					check_whole(g, unique); // only need unique text (order would be required for multiple-char confusables)
 					type = g.N;
@@ -904,7 +904,7 @@ function check_whole(group: any, unique: any) {
 			maker = maker ? maker.filter((g: any) => set.has(g)) : Array_from(set);
 			if (!maker.length) return; // confusable intersection is empty
 		} else {
-			shared.push(cp); 
+			shared.push(cp);
 		}
 	}
 	if (maker) {
@@ -928,7 +928,7 @@ function determine_group(unique: any) {
 		// but that code isn't currently necessary
 		let gs = groups.filter((g: any) => group_has_cp(g, cp));
 		if (!gs.length) {
-			if (!GROUPS.some((g: any) => group_has_cp(g, cp))) { 
+			if (!GROUPS.some((g: any) => group_has_cp(g, cp))) {
 				// the character was composed of valid parts
 				// but it's NFC form is invalid
 				// 20230716: change to more exact statement, see: ENSNormalize.{cs,java}
@@ -956,7 +956,7 @@ function flatten(split: any) {
 			// don't print label again if just a single label
 			let msg = error.message;
 			// bidi_qq() only necessary if msg is digits
-			throw new Error(split.length == 1 ? msg : `Invalid label ${bidi_qq(safe_str_from_cps(input, 63))}: ${msg}`); 
+			throw new Error(split.length == 1 ? msg : `Invalid label ${bidi_qq(safe_str_from_cps(input, 63))}: ${msg}`);
 		}
 		return str_from_cps(output);
 	}).join(STOP_CH);
@@ -964,7 +964,7 @@ function flatten(split: any) {
 
 function error_disallowed(cp: any) {
 	// TODO: add cp to error?
-	return new Error(`disallowed character: ${quoted_cp(cp)}`); 
+	return new Error(`disallowed character: ${quoted_cp(cp)}`);
 }
 function error_group_member(g: any, cp: any) {
 	let quoted = quoted_cp(cp);
@@ -991,7 +991,7 @@ function check_group(g: any, cps: any) {
 			// there are 3 cases:
 			//   1. illegal cm for wrong group => mixture error
 			//   2. illegal cm for same group => cm error
-			//       requires set of whitelist cm per group: 
+			//       requires set of whitelist cm per group:
 			//        eg. new Set([...g.P, ...g.Q].flatMap(nfc).filter(cp => CM.has(cp)))
 			//   3. wrong group => mixture error
 			throw error_group_member(g, cp);
@@ -1040,7 +1040,7 @@ function check_group(g: any, cps: any) {
 	for (let i = 0, e = cps.length; i < e; ) {
 		let cp = cps[i++];
 		let seqs = cm_whitelist && M.get(cp);
-		if (seqs) { 
+		if (seqs) {
 			// list of codepoints that can follow
 			// if this exists, this will always be 1+
 			let j = i;
@@ -1056,7 +1056,7 @@ function check_group(g: any, cps: any) {
 				let u = UNIQUE.get(cp);
 				if (u && u !== g) {
 					// if both scripts are restricted this error is confusing
-					// because we don't differentiate RestrictedA from RestrictedB 
+					// because we don't differentiate RestrictedA from RestrictedB
 					if (!u.R) quoted = `${quoted} is ${u.N}`;
 					break;
 				}

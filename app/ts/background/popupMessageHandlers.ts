@@ -697,17 +697,25 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 }
 
 // reload all connected tabs of the same origin and the current webpage
-async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefesh = Array.from(websiteTabConnections.entries()).map(([tabId]) => tabId)
+function isMissingTabReloadError(error: unknown) {
+	const message = getErrorMessage(error)
+	return message !== undefined && (
+		message.startsWith('No tab with id')
+		|| message.includes('Invalid tab ID')
+	)
+}
+
+export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
+	const tabIdsToRefresh = Array.from(websiteTabConnections.entries()).map(([tabId]) => tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
-	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
-	for (const tabId of new Set(withCurrentTabid)) {
+	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
+	for (const tabId of new Set(withCurrentTabId)) {
 		try {
 			await browser.tabs.reload(tabId)
 			checkAndThrowRuntimeLastError()
-		} catch (e) {
-			console.warn('Failed to reload tab')
-			console.warn(e)
+		} catch (error) {
+			if (isMissingTabReloadError(error)) continue
+			await reportUnexpectedError(error, { code: 'connected_tab_reload_failed' })
 		}
 	}
 }
@@ -971,7 +979,7 @@ export async function fetchSimulationStackRequestConfirmation(ethereumClientServ
 }
 
 export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
-	return reportUnexpectedError(parsedRequest.data.message, {
+	await reportUnexpectedError(parsedRequest.data.message, {
 		displayMessage: parsedRequest.data.message,
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,
