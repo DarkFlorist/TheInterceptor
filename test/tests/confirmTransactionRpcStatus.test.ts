@@ -22,9 +22,6 @@ function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessage
 					if (sendMessageOverride !== undefined) return await sendMessageOverride(message, sentMessages)
 					if (typeof message === 'object' && message !== null && 'method' in message) {
 						const typedMessage = message as { method?: string }
-						if (typedMessage.method === 'popup_isMainPopupWindowOpen') {
-							return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-						}
 						if (typedMessage.method === 'popup_readyAndListening') {
 							return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
 						}

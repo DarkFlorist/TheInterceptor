@@ -92,8 +92,8 @@ function createBrowserMock(): BrowserMock {
 			lastError: null,
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: popupIsOpen } }
+				if (message.method === 'popup_isSimulationVisualizerOpen') {
+					return { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: popupIsOpen } }
 				}
 				return undefined
 			},

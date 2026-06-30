@@ -14,12 +14,7 @@ function createBrowserMock() {
 	const browserMock = {
 		runtime: {
 			lastError: null as unknown,
-			async sendMessage(message: RuntimeMessage) {
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-				}
-				return undefined
-			},
+			async sendMessage(_message: RuntimeMessage) { return undefined },
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },

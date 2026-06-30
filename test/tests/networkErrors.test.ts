@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Signal } from '@preact/signals'
 import { describe, test } from 'bun:test'
+import { NetworkErrors } from '../../app/ts/components/subcomponents/NetworkErrors.js'
 import { installDateMock, installDomMock } from './domMock.js'
 
 function installBrowserMock() {
@@ -73,7 +74,6 @@ describe('NetworkErrors', () => {
 	test('shows a paused disconnect immediately on first render', async () => {
 		installBrowserMock()
 		const dom = installDomMock()
-		const { NetworkErrors } = await import('../../app/ts/components/App.js')
 
 		await act(() => {
 			render(h(NetworkErrors, {
@@ -95,7 +95,6 @@ describe('NetworkErrors', () => {
 		installBrowserMock()
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:00.000Z')
-		const { NetworkErrors } = await import('../../app/ts/components/App.js')
 
 		await act(() => {
 			render(h(NetworkErrors, {
