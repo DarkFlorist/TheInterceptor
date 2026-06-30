@@ -39,4 +39,17 @@ describe('background messageSending port lifecycle', () => {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [] })
 		})
 	})
+
+	test('ignores invalid tab target errors after posting to a content-script port', () => {
+		installBrowserMock()
+		const port = {
+			postMessage() {
+				throw new Error('Invalid tab ID: 12')
+			},
+		} as unknown as browser.runtime.Port
+
+		assert.doesNotThrow(() => {
+			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [] })
+		})
+	})
 })

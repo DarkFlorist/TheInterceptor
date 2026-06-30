@@ -1,7 +1,7 @@
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from './typescript.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from './requests.js'
+import { checkAndThrowRuntimeLastError, isMissingBrowserTargetError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from './requests.js'
 
 export type PopupOrTab = {
 	window: browser.windows.Window
@@ -57,7 +57,7 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 		}
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
-		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		if (isMissingBrowserTargetError(error)) return
 		throw error
 	}
 }
@@ -74,8 +74,9 @@ export function removeWindowTabListeners(onCloseWindow: (id: number) => void, on
 
 export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
 	if (popupOrTab.type === 'tab') {
-		const tab = await browser.tabs.get(popupOrTab.id)
-		if (tab !== undefined && tab.windowId !== undefined) await browser.windows.update(tab.windowId, { drawAttention: true, focused: true })
+		const tab = await safeGetTab(popupOrTab.id)
+		if (tab === undefined) return undefined
+		if (tab.windowId !== undefined) await updateWindowIfExists(tab.windowId, { drawAttention: true, focused: true })
 		return await updateTabIfExists(popupOrTab.id, { active: true, highlighted: true })
 	}
 	return await updateWindowIfExists(popupOrTab.id, { drawAttention: true, focused: true })

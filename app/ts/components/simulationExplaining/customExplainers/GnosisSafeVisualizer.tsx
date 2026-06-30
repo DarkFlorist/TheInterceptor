@@ -1,5 +1,5 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
-import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, requestPopupSimulateGnosisSafeTransaction } from '../../../background/backgroundUtils.js'
 import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
@@ -8,19 +8,23 @@ import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { Transaction } from '../Transactions.js'
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
+import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
+import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
 
 type ShowSuccessOrFailureParams = {
-	gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx
 	activeAddress: ReadonlySignal<bigint | undefined>
 	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
+	gnosisSimulationState: AsyncStates
+	requestErrorText: string | undefined
+	requestToSimulate: () => void
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGnosisSafeTransaction', data: { gnosisSafeMessage } })
+const GNOSIS_SIMULATION_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Simulating Gnosis Safe execution')
 
-const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
+const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSimulationState, requestErrorText, requestToSimulate }: ShowSuccessOrFailureParams) => {
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
 	const simTx = useComputed(() => {
@@ -51,30 +55,36 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	})
 
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: flex; justify-content: center;'>
-			<button
-				class = { 'button is-primary' }
-				onClick = { () => requestToSimulate(gnosisSafeMessage) }
-				disabled = { false }
-			>
-				Simulate execution
-			</button>
+		return <div style = 'display: grid; row-gap: 10px;'>
+			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
+			<div style = 'display: flex; justify-content: center;'>
+				<AsyncActionButton
+					class = 'button is-primary'
+					state = { gnosisSimulationState }
+					text = 'Simulate execution'
+					pendingText = 'Simulating...'
+					onClick = { requestToSimulate }
+				/>
+			</div>
 		</div>
 	}
 
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content' >
+		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { errorText }/>
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content' >
+		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
 	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
 
-	return <div style = 'display: grid; grid-template-rows: max-content' >
+	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 		<Transaction
 			simTx = { simTx.value }
 			simulationAndVisualisationResults = { results.value }
@@ -97,6 +107,12 @@ type GnosisSafeVisualizerParams = {
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
+	const { value: gnosisSimulationRequest, waitFor: waitForGnosisSimulation, reset: resetGnosisSimulationRequest } = useAsyncState<void>()
+	const requestErrorText = useComputed(() => gnosisSimulationRequest.value.state === 'rejected' ? gnosisSimulationRequest.value.error.message : undefined)
+	const currentMessageIdentifier = useRef(param.gnosisSafeMessage.messageIdentifier)
+	currentMessageIdentifier.current = param.gnosisSafeMessage.messageIdentifier
+
+	const isReplyForCurrentMessage = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentMessageIdentifier.current
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -107,7 +123,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			if (parsed.method !== 'popup_simulateExecutionReply') return false
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return false
+			if (!isReplyForCurrentMessage(reply)) return false
 			simulateExecutionReply.value = reply
 			return false
 		}
@@ -118,7 +134,17 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
 		simulateExecutionReply.value = undefined
+		resetGnosisSimulationRequest()
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
+
+	const requestToSimulate = () => {
+		waitForGnosisSimulation(async () => {
+			const reply = await requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage })
+			if (reply === undefined) throw new Error(GNOSIS_SIMULATION_REPLY_MISSING_ERROR)
+			if (param.gnosisSafeMessage.messageIdentifier !== currentMessageIdentifier.current || !isReplyForCurrentMessage(reply)) return
+			simulateExecutionReply.value = reply
+		})
+	}
 
 	if (activeAddress.value === undefined) return <></>
 	return <>
@@ -132,8 +158,10 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		<div class = 'notification dashed-notification'>
 			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
 			<ShowSuccessOrFailure
-				gnosisSafeMessage = { param.gnosisSafeMessage }
 				simulateExecutionReply = { simulateExecutionReply }
+				gnosisSimulationState = { gnosisSimulationRequest.value.state }
+				requestErrorText = { requestErrorText.value }
+				requestToSimulate = { requestToSimulate }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				activeAddress = { activeAddress }
@@ -141,7 +169,13 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		</div>
 		{ simulateExecutionReply.value === undefined ? <></> :
 			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
-				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
+				<AsyncActionButton
+					class = 'button is-primary is-small'
+					state = { gnosisSimulationRequest.value.state }
+					text = 'Refresh simulation'
+					pendingText = 'Simulating...'
+					onClick = { requestToSimulate }
+				/>
 			</div>
 		}
 	</>

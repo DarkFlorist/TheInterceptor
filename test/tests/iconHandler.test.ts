@@ -20,6 +20,7 @@ const tabsById = new Map<number, MockTab>()
 const onUpdatedListeners: Listener[] = []
 const fetchCalls: string[] = []
 const warnings: string[] = []
+let tabGetError: Error | undefined
 
 function installSuccessfulFileReader(result: string) {
 	function SuccessfulFileReader(this: { result: string | undefined, onabort?: () => void, onerror?: () => void, onloadend?: () => void, readAsDataURL: (_blob: Blob) => void }) {
@@ -66,7 +67,10 @@ function installBrowserMock() {
 		},
 		tabs: {
 			async query() { return [] },
-			async get(tabId: number) { return tabsById.get(tabId) },
+			async get(tabId: number) {
+				if (tabGetError !== undefined) throw tabGetError
+				return tabsById.get(tabId)
+			},
 			async update() { return undefined },
 			async create() { return undefined },
 			async reload() { return undefined },
@@ -119,6 +123,7 @@ afterEach(() => {
 	onUpdatedListeners.splice(0, onUpdatedListeners.length)
 	fetchCalls.splice(0, fetchCalls.length)
 	warnings.splice(0, warnings.length)
+	tabGetError = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	Object.defineProperty(globalThis, 'FileReader', {
 		configurable: true,
@@ -144,6 +149,13 @@ afterAll(() => {
 const { retrieveWebsiteDetails } = await import('../../app/ts/background/iconHandler.js')
 
 describe('retrieveWebsiteDetails favicon handling', () => {
+	test('rethrows unexpected tab lookup failures', async () => {
+		tabGetError = new Error('tabs permission missing')
+
+		await assert.rejects(async () => await retrieveWebsiteDetails(13), /tabs permission missing/)
+		assert.equal(onUpdatedListeners.length, 0)
+	})
+
 	test('returns no icon and does not fetch when favIconUrl is undefined', async () => {
 		tabsById.set(1, { id: 1, status: 'complete', title: 'Undefined favicon', url: 'https://undefined.test' })
 

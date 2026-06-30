@@ -80,38 +80,58 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init: Reques
 	}
 }
 
-export const safeGetTab = async (tabId: number) => {
+export function isMissingBrowserTargetError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return error.message.startsWith('No tab with id')
+		|| error.message.startsWith('No window with id')
+		|| error.message.includes('Invalid tab ID')
+		|| error.message.includes('Invalid window ID')
+}
+
+function throwIfUnexpectedBrowserTargetError(error: unknown) {
+	if (isMissingBrowserTargetError(error)) return
+	throw error
+}
+
+export const getTabIfExists = async (tabId: number) => {
 	try {
 		const tab = await browser.tabs.get(tabId)
 		checkAndThrowRuntimeLastError()
 		return tab
-	} catch (e: unknown){
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
 
+export const safeGetTab = getTabIfExists
+
 export const doesTabExist = async (tabId: number) => {
-	const tab = await safeGetTab(tabId)
+	const tab = await getTabIfExists(tabId)
 	if (tab === undefined) return false
 	return true
 }
 
-export const safeGetWindow = async (windowId: number) => {
+export const getWindowIfExists = async (windowId: number) => {
 	try {
-		const tab = await browser.windows.get(windowId)
+		const window = await browser.windows.get(windowId)
 		checkAndThrowRuntimeLastError()
-		return tab
-	} catch (e: unknown){
+		return window
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
+
+export const safeGetWindow = getWindowIfExists
 
 export const updateTabIfExists = async (tabId: number, updateProperties: browser.tabs._UpdateUpdateProperties) => {
 	try {
 		const tab = await browser.tabs.update(tabId, updateProperties)
 		checkAndThrowRuntimeLastError()
 		return tab
-	} catch (e: unknown){
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }
@@ -121,7 +141,8 @@ export const updateWindowIfExists = async (windowId: number, updateProperties: b
 		const window = await browser.windows.update(windowId, updateProperties)
 		checkAndThrowRuntimeLastError()
 		return window
-	} catch (e: unknown){
+	} catch (e: unknown) {
+		throwIfUnexpectedBrowserTargetError(e)
 		return undefined
 	}
 }

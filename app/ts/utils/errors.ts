@@ -209,6 +209,7 @@ export async function reportUnexpectedError(error: unknown, metadata: ErrorRepor
 		console.error('Failed to broadcast unexpected error to open popup windows.')
 		printError(broadcastError)
 	}
+	return errorMessage
 }
 
 export async function reportLocalRecovery(error: unknown, metadata: LocalRecoveryMetadata) {
