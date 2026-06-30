@@ -306,7 +306,9 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 				r: EthereumQuantity,
 				s: EthereumQuantity,
 				yParity: funtypes.Union(funtypes.Literal('even'), funtypes.Literal('odd')),
-			})),
+			}).And(funtypes.ReadonlyPartial({
+				authority: EthereumAddress,
+			}))),
 		}),
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('4844'),

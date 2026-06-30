@@ -6,7 +6,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAIL
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { Abi } from 'viem'
 import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/viem.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -23,6 +23,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -260,12 +261,48 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions
 }
 
-type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input'> & Partial<Pick<IUnsignedTransaction1559, 'gasLimit' | 'accessList'>>
+type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input'> & Partial<Pick<IUnsignedTransaction1559, 'gasLimit' | 'accessList'>>
+type Simulated7702BlockCall = Pick<IUnsignedTransaction7702, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input' | 'authorizationList'> & Partial<Pick<IUnsignedTransaction7702, 'gasLimit' | 'accessList'>>
+type SimulatedBlockCall = Simulated1559BlockCall | Simulated7702BlockCall
 
-const createSimulated1559BlockCall = (transaction: Simulated1559BlockCall): SimulateBlockCalls['calls'][number] => {
+type IUnsigned7702Authorization = IUnsignedTransaction7702['authorizationList'][number]
+type ISigned7702Authorization = IUnsigned7702Authorization & {
+	readonly yParity: 'even' | 'odd'
+	readonly r: bigint
+	readonly s: bigint
+}
+
+const has7702AuthorizationSignature = (authorization: IUnsigned7702Authorization): authorization is ISigned7702Authorization => {
+	return authorization.r !== undefined && authorization.s !== undefined && authorization.yParity !== undefined
+}
+
+const hasPartial7702AuthorizationSignature = (authorization: IUnsigned7702Authorization) => {
+	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
+}
+
+const mockSign7702Authorization = (authorization: IUnsigned7702Authorization): ISigned7702Authorization => {
+	if (has7702AuthorizationSignature(authorization)) return authorization
+	if (hasPartial7702AuthorizationSignature(authorization)) throw new Error('EIP-7702 authorization signature is missing required fields')
+	return { ...authorization, r: 0n, s: 0n, yParity: 'even' }
+}
+
+const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBlockCalls['calls'][number] => {
 	const { gasLimit, maxFeePerGas, accessList, ...transactionWithoutOptionalGasFields } = transaction
+	if (transactionWithoutOptionalGasFields.type === '7702') {
+		const { authorizationList, ...transactionWithoutOptionalAuthorizationMetadata } = transactionWithoutOptionalGasFields
+		return {
+			...transactionWithoutOptionalAuthorizationMetadata,
+			authorizationList: authorizationList.map((authorization) => ({
+				chainId: authorization.chainId,
+				address: authorization.address,
+				nonce: authorization.nonce,
+			})),
+			accessList: accessList ?? [],
+			...(maxFeePerGas === 0n ? {} : { maxFeePerGas }),
+			...(gasLimit === undefined ? {} : { gas: gasLimit }),
+		}
+	}
 	return {
-		type: '1559' as const,
 		...transactionWithoutOptionalGasFields,
 		accessList: accessList ?? [],
 		...(maxFeePerGas === 0n ? {} : { maxFeePerGas }),
@@ -277,7 +314,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	context: PreparedSimulationExecutionContext | undefined,
-	transaction: Simulated1559BlockCall,
+	transaction: SimulatedBlockCall,
 	extraOverrides: StateOverrides = {},
 	simulateWithZeroBaseFee = false,
 ) => {
@@ -289,7 +326,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...(context?.prepared.request.params[0].blockStateCalls ?? []),
 		{
-			calls: [createSimulated1559BlockCall(transaction)],
+			calls: [createSimulatedBlockCall(transaction)],
 			blockOverrides: {
 				...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
@@ -307,7 +344,7 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationStateInput: SimulationStateInputMinimalData | undefined,
-	transaction: Simulated1559BlockCall,
+	transaction: SimulatedBlockCall,
 	extraOverrides: StateOverrides = {},
 	simulateWithZeroBaseFee = false,
 ) => {
@@ -321,6 +358,10 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	)
 }
 
+const normalizeEstimateGasAuthorizationList = async (data: PartialEthereumTransaction) => {
+	return data.authorizationList === undefined ? undefined : await normalizeEip7702AuthorizationList(data.authorizationList)
+}
+
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, data: PartialEthereumTransaction, blockDelta: number | undefined = undefined): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> => {
 	if (simulationState.kind === 'passthrough') return { gas: await ethereumClientService.estimateGas(data, requestAbortController) }
 	const currentState = simulationState.value
@@ -332,8 +373,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	const simulatedBlockIncrement = blockDelta === undefined ? currentState.simulatedBlocks.length || 0 : blockDelta
 	const maxGas = simulationGasLeft(currentState.simulatedBlocks[simulatedBlockIncrement] || undefined, block)
 
-	const estimateGasTransaction = {
-		type: '1559' as const,
+	const estimateGasTransactionBase = {
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
@@ -347,6 +387,17 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
+	const authorizationList = await normalizeEstimateGasAuthorizationList(data)
+	const estimateGasTransaction = data.type === '7702' || authorizationList !== undefined
+		? {
+			...estimateGasTransactionBase,
+			type: '7702' as const,
+			authorizationList: authorizationList ?? [],
+		}
+		: {
+			...estimateGasTransactionBase,
+			type: '1559' as const,
+		}
 	try {
 		const lastResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, currentState.simulationStateInput, estimateGasTransaction, {}, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
@@ -378,7 +429,7 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 	}
 	if (unsignedTransaction.type === '7702') {
 		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-		const authorizationList = unsignedTransaction.authorizationList.map((element) => ({ ...element, ...signatureParams }))
+		const authorizationList = unsignedTransaction.authorizationList.map(mockSign7702Authorization)
 		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams, authorizationList })))
 		if (transaction.type !== '7702') throw new Error('types do not match')
 		return { ...transaction, ...signatureParams, hash, authorizationList }
@@ -693,9 +744,16 @@ const subtractMaxGasCost = (balance: bigint, value: bigint, gasLimit: bigint, ma
 	return balance > maxCost ? balance - maxCost : 0n
 }
 
-const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction) => {
+type FeeMarketSignedTransaction = Extract<EthereumSendableSignedTransaction, { type: '1559' | '7702' }>
+type FeeMarketPreSimulationTransaction = PreSimulationTransaction & { readonly signedTransaction: FeeMarketSignedTransaction }
+
+const isFeeMarketPreSimulationTransaction = (transaction: PreSimulationTransaction): transaction is FeeMarketPreSimulationTransaction => {
+	return transaction.signedTransaction.type === '1559' || transaction.signedTransaction.type === '7702'
+}
+
+const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction): transaction is FeeMarketPreSimulationTransaction => {
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
-		&& transaction.signedTransaction.type === '1559'
+		&& isFeeMarketPreSimulationTransaction(transaction)
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
 }
 
@@ -705,7 +763,6 @@ const getBaseFeeAdjustedTransaction = (
 	balance: bigint,
 ) => {
 	if (!usesInterceptorFilledMaxFeePerGas(transaction)) return transaction
-	if (transaction.signedTransaction.type !== '1559') return transaction
 	const feePerGas = getTransactionFeesForBaseFee(
 		parentBaseFeePerGas,
 		transaction.signedTransaction.maxPriorityFeePerGas,
@@ -770,7 +827,7 @@ export const getBaseFeeAdjustmentBalances = async (
 	for (const transaction of currentBlock.transactions) {
 		if (!usesInterceptorFilledMaxFeePerGas(transaction)) {
 			if (transaction.originalRequestParameters.method === 'eth_sendTransaction'
-				&& transaction.signedTransaction.type === '1559'
+				&& isFeeMarketPreSimulationTransaction(transaction)
 				&& hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
 			) {
 				const conservativeBalance = conservativeBalances.get(transaction.signedTransaction.from)
@@ -786,7 +843,6 @@ export const getBaseFeeAdjustmentBalances = async (
 			adjustedTransactions.push(getBaseFeeAdjustedTransactionWithBalances(parentBlock, transaction, balances))
 			continue
 		}
-		if (transaction.signedTransaction.type !== '1559') throw new Error('Expected 1559 transaction for interceptor-filled max fee per gas')
 		const desiredMaxFeePerGas = getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, transaction.signedTransaction.maxPriorityFeePerGas)
 		const conservativeBalance = conservativeBalances.get(transaction.signedTransaction.from)
 		const balance = conservativeBalance !== undefined && canAffordMaxGasCost(conservativeBalance, transaction.signedTransaction.value, transaction.signedTransaction.gas, desiredMaxFeePerGas)
@@ -794,7 +850,7 @@ export const getBaseFeeAdjustmentBalances = async (
 			: await getBalanceBeforeSimulationInputTransaction(ethereumClientService, requestAbortController, parentBlock, simulationInputBeforeBlock, currentBlock, adjustedTransactions, transaction.signedTransaction.from)
 		balances.set(transaction.transactionIdentifier, balance)
 		const adjustedTransaction = getBaseFeeAdjustedTransactionWithBalances(parentBlock, transaction, balances)
-		if (adjustedTransaction.signedTransaction.type !== '1559') throw new Error('Expected 1559 transaction after base fee adjustment')
+		if (!isFeeMarketPreSimulationTransaction(adjustedTransaction)) throw new Error('Expected fee-market transaction after base fee adjustment')
 		conservativeBalances.set(transaction.signedTransaction.from, subtractMaxGasCost(balance, transaction.signedTransaction.value, transaction.signedTransaction.gas, adjustedTransaction.signedTransaction.maxFeePerGas))
 		adjustedTransactions.push(adjustedTransaction)
 	}
@@ -1236,8 +1292,7 @@ export const simulateEstimateGasFromInput = async (
 	if (fallbackBlock === null) throw new Error('The latest block is null')
 	const simulatedBlockIncrement = blockDelta === undefined ? context?.executionBlocks.length ?? 0 : blockDelta
 	const maxGas = max(fallbackBlock.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimitFromInput(context?.prepared.rpcBlocks[simulatedBlockIncrement]), 0n)
-	const estimateGasTransaction = {
-		type: '1559' as const,
+	const estimateGasTransactionBase = {
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
@@ -1249,6 +1304,17 @@ export const simulateEstimateGasFromInput = async (
 		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
+	const authorizationList = await normalizeEstimateGasAuthorizationList(data)
+	const estimateGasTransaction = data.type === '7702' || authorizationList !== undefined
+		? {
+			...estimateGasTransactionBase,
+			type: '7702' as const,
+			authorizationList: authorizationList ?? [],
+		}
+		: {
+			...estimateGasTransactionBase,
+			type: '1559' as const,
+		}
 	try {
 		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, {}, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }

@@ -19,6 +19,7 @@ export {
 	toEventSelector,
 	toFunctionSelector,
 	recoverAddress,
+	recoverAuthorizationAddress,
 	hashMessage,
 	hashStruct,
 	hashTypedData,
