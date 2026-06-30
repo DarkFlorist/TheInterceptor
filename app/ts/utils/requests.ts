@@ -104,8 +104,7 @@ export const getTabIfExists = async (tabId: number) => {
 	}
 }
 
-export const safeGetTab = getTabIfExists
-
+// Missing targets return false; unexpected browser failures still propagate.
 export const doesTabExist = async (tabId: number) => {
 	const tab = await getTabIfExists(tabId)
 	if (tab === undefined) return false
@@ -122,8 +121,6 @@ export const getWindowIfExists = async (windowId: number) => {
 		return undefined
 	}
 }
-
-export const safeGetWindow = getWindowIfExists
 
 export const updateTabIfExists = async (tabId: number, updateProperties: browser.tabs._UpdateUpdateProperties) => {
 	try {

@@ -6,7 +6,7 @@ import { TabIcon, type TabState, type WebsiteTabConnections } from '../types/use
 import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { checkAndPrintRuntimeLastError, doesTabExist, isMissingBrowserTargetError, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
@@ -14,7 +14,7 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
-const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'timed out'
+const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'Timed out waiting for tab to finish loading.'
 
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	const storedWebsiteAccess = await getWebsiteAccess()
@@ -70,7 +70,8 @@ async function waitForLoadedTab(tabId: number) {
 
 	try {
 		browser.tabs.onUpdated.addListener(listener)
-		const tab = await safeGetTab(tabId)
+		const tab = await getTabIfExists(tabId)
+		if (tab === undefined) return undefined
 		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
@@ -79,7 +80,7 @@ async function waitForLoadedTab(tabId: number) {
 		} finally {
 			if (timeout !== undefined) clearTimeout(timeout)
 		}
-		return await safeGetTab(tabId)
+		return await getTabIfExists(tabId)
 	} finally {
 		browser.tabs.onUpdated.removeListener(listener)
 		checkAndPrintRuntimeLastError()
@@ -133,9 +134,7 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 		if (isMissingBrowserTargetError(error)) return { title: undefined, icon: undefined }
 		throw error
 	}
-	if (loadedTab === undefined) {
-		return { title: undefined, icon: undefined }
-	}
+	if (loadedTab === undefined) return { title: undefined, icon: undefined }
 
 	if (websiteOrigin !== undefined) {
 		const { cachedIcon, hasStoredWebsiteAccess } = await getCachedWebsiteIcon(tabId, websiteOrigin)
@@ -149,12 +148,12 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
 	// below is my attempt to try to get favicon...
-	while ((await safeGetTab(tabId))?.favIconUrl === undefined) {
+	while ((await getTabIfExists(tabId))?.favIconUrl === undefined) {
 		await new Promise(resolve => setTimeout(resolve, 100))
 		maxRetries--
 		if (maxRetries <= 0) break // timeout
 	}
-	const tab = await safeGetTab(tabId)
+	const tab = await getTabIfExists(tabId)
 	const pageUrl = tab?.url ?? 'unknown'
 	const failToLoadFavicon = (reason: string) => {
 		console.warn(`Failed to load favicon for tab ${ tabId } (${ pageUrl }): ${ reason }`)

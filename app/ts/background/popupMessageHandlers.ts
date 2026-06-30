@@ -43,6 +43,7 @@ import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/f
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -598,7 +599,7 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }
 	}
-	await sendPopupMessageToOpenWindows(reply)
+	await sendPopupMessageToOpenWindows(serializeSimulateExecutionReply(reply))
 	return reply
 }
 
@@ -608,7 +609,7 @@ export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClie
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
 	}
-	await sendPopupMessageToOpenWindows(reply)
+	await sendPopupMessageToOpenWindows(serializeSimulateExecutionReply(reply))
 	return reply
 }
 

@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState } from './visualizer-types.js'
-import { EthereumQuantity } from './wire-types.js'
+import { EthereumQuantity, serialize } from './wire-types.js'
 
 export type SimulateExecutionReplyData = funtypes.Static<typeof SimulateExecutionReplyData>
 export const SimulateExecutionReplyData = funtypes.Union(
@@ -36,3 +36,7 @@ export const SimulateExecutionReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateExecutionReply'),
 	data: SimulateExecutionReplyData,
 }).asReadonly()
+
+export function serializeSimulateExecutionReply(reply: SimulateExecutionReply) {
+	return serialize(SimulateExecutionReply, reply)
+}
