@@ -9,7 +9,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
@@ -44,7 +44,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return
 		if (error instanceof Error) {
-			if (error.message.startsWith('No tab with id')) return
+			if (isMissingBrowserTargetError(error)) return
 			if (error.message.includes('the message channel is closed')) {
 				// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
 				// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
@@ -131,7 +131,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
+		void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
@@ -140,7 +140,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		if (isMissingBrowserTargetError(error)) return
 		await reportUnexpectedError(error)
 	}
 }
