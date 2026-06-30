@@ -111,12 +111,16 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 }
 
 async function loadModules() {
+	const storageVariables = await import('../../app/ts/background/storageVariables.js')
+	const sleeping = await import('../../app/ts/background/sleeping.js')
+	sleeping.setRpcConnectionStatusRetryPublisher(async (_method, rpcConnectionStatus) => await storageVariables.setRpcConnectionStatus(rpcConnectionStatus))
 	return {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/storageVariables.js'),
+		...storageVariables,
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
+		...sleeping,
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
 		...await import('../../app/ts/simulation/services/priceEstimator.js'),
 	}

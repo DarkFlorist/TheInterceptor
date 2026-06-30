@@ -2,18 +2,20 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
+import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { reportUnexpectedError, isExpectedInfrastructureError, printError } from '../utils/errors.js'
+import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
-import { checkIfInterceptorShouldSleep } from './sleeping.js'
+import { checkIfInterceptorShouldSleep, setRpcConnectionStatusRetryPublisher } from './sleeping.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
@@ -30,11 +32,53 @@ import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
 let resetActiveRpcNetwork: ResetSimulationServices | undefined
+const slowRpcRequests = new Map<string, SlowRpcRequest>()
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
 	return simulationServices
 }
+
+async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
+	await setRpcConnectionStatus(rpcConnectionStatus)
+	await updateExtensionBadge()
+	await sendPopupMessageToOpenWindows({ method, data: { rpcConnectionStatus } })
+}
+
+const rpcConnectionStatusPublisher = createRpcConnectionStatusPublisher({
+	getEthereumClientService: () => getSimulationServices().ethereum,
+	getRpcConnectionStatus,
+	publishRpcConnectionStatus,
+	slowRpcRequests,
+})
+setRpcConnectionStatusRetryPublisher(rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+
+async function publishSlowRpcRequestStatus() {
+	try {
+		await rpcConnectionStatusPublisher.publishSlowRpcRequestStatus()
+	} catch(error: unknown) {
+		await reportUnexpectedError(error)
+	}
+}
+
+const rpcRequestLifecycleCallbacks = {
+	onSlowRequest: (request: SlowRpcRequest) => {
+		slowRpcRequests.set(slowRpcRequestKey(request), request)
+		silenceChromeUnCaughtPromise(publishSlowRpcRequestStatus())
+	},
+	onSlowRequestSettled: (request: SlowRpcRequest) => {
+		slowRpcRequests.delete(slowRpcRequestKey(request))
+		silenceChromeUnCaughtPromise(publishSlowRpcRequestStatus())
+	},
+	onLifecycleCallbackError: (error, request, callbackName) => {
+		reportLocalRecoveryBestEffort(error, {
+			source: 'rpc_request_lifecycle',
+			code: 'rpc_request_lifecycle_callback_failed',
+			message: `RPC request lifecycle callback ${ callbackName } failed.`,
+			details: { callbackName, request },
+		})
+	},
+} satisfies RpcRequestLifecycleCallbacks
 
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	try {
@@ -156,21 +200,17 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await updateExtensionBadge()
+		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
-				await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
 		}
-		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
 		if (isExpectedInfrastructureError(error)) return
 		await reportUnexpectedError(error)
@@ -187,9 +227,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await updateExtensionBadge()
-		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus)
 	} catch(error) {
 		await reportUnexpectedError(error)
 	}
@@ -203,9 +241,9 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
-	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	resetActiveRpcNetwork = (rpcNetwork) => {
-		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 	}
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
