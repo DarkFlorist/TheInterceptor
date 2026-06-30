@@ -480,7 +480,7 @@ describe('TransactionImportanceBlock proxied transfers', () => {
 		dom.restore()
 	})
 
-	test('treats small explicit forwarding recipients as payment fees', async () => {
+	test('shows explicit proxy fee recipients in the primary transfer view', async () => {
 		const transaction = createProxyPaymentTransaction({
 			events: [
 				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth }),
@@ -492,18 +492,22 @@ describe('TransactionImportanceBlock proxied transfers', () => {
 
 		assert.equal(identified.type, 'ProxyTokenTransfer')
 		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
-		assert.equal(identified.title, 'ETH Transfer with fee via Proxy')
+		assert.equal(identified.title, 'ETH Transfer to many via Proxy')
 		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
 			{ address: recipientEntry.address, amountDelta: 95n * eth },
+			{ address: feeCollectorEntry.address, amountDelta: 5n * eth },
 		])
+		assert.equal(identified.identifiedTransaction.sourceTransfer.to.address, proxyEntry.address)
 
 		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, feeCollectorEntry, nativeTokenEntry])
 		const text = renderedText(dom)
 
 		assert.equal(text.includes('Send100ETH'), true)
 		assert.equal(text.includes('Receive95ETH'), true)
+		assert.equal(text.includes('Receive5ETH'), true)
+		assert.equal(text.includes('Finalrecipients'), true)
 		assert.equal(text.includes('Actualrecipient'), true)
-		assert.equal(text.includes('Feecollector'), false)
+		assert.equal(text.includes('Feecollector'), true)
 
 		dom.restore()
 	})
@@ -569,7 +573,7 @@ describe('TransactionImportanceBlock proxied transfers', () => {
 		dom.restore()
 	})
 
-	test('treats small explicit fee recipients separately from multisend payment recipients', async () => {
+	test('shows explicit fee recipients alongside other proxy recipients', async () => {
 		const transaction = createProxyPaymentTransaction({
 			events: [
 				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth }),
@@ -582,10 +586,11 @@ describe('TransactionImportanceBlock proxied transfers', () => {
 
 		assert.equal(identified.type, 'ProxyTokenTransfer')
 		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
-		assert.equal(identified.title, 'ETH Transfer to many with fee via Proxy')
+		assert.equal(identified.title, 'ETH Transfer to many via Proxy')
 		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
 			{ address: recipientEntry.address, amountDelta: 50n * eth },
 			{ address: secondRecipientEntry.address, amountDelta: 45n * eth },
+			{ address: feeCollectorEntry.address, amountDelta: 5n * eth },
 		])
 
 		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, secondRecipientEntry, feeCollectorEntry, nativeTokenEntry])
@@ -594,10 +599,11 @@ describe('TransactionImportanceBlock proxied transfers', () => {
 		assert.equal(text.includes('Send100ETH'), true)
 		assert.equal(text.includes('Receive50ETH'), true)
 		assert.equal(text.includes('Receive45ETH'), true)
+		assert.equal(text.includes('Receive5ETH'), true)
 		assert.equal(text.includes('Finalrecipients'), true)
 		assert.equal(text.includes('Actualrecipient'), true)
 		assert.equal(text.includes('Secondrecipient'), true)
-		assert.equal(text.includes('Feecollector'), false)
+		assert.equal(text.includes('Feecollector'), true)
 
 		dom.restore()
 	})

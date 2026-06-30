@@ -6,8 +6,6 @@ import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { extractTokenEvents } from '../../../background/metadataUtils.js'
-import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 
 type BeforeAfterAddressWithAmount = BeforeAfterAddress & { amount: bigint }
 
@@ -48,16 +46,10 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 	</div>
 }
 
-const getTokenTransferAmount = (tokenResult: TokenVisualizerResultWithMetadata) => tokenResult.isApproval || tokenResult.type === 'ERC721' ? 1n : tokenResult.amount
-
 
 export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedProxyTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	// proxy send to multiple addresses
-	const transfer = extractTokenEvents(simTx.events).find((tokenEvent) => (
-		tokenEvent.from.address === simTx.transferedFrom.entry.address
-		&& getTokenTransferAmount(tokenEvent) === simTx.transferedFrom.amountDelta
-	))
-	if (transfer === undefined) throw new Error('transfer was undefined')
+	const transfer = simTx.sourceTransfer
 	const asset = getAsset(transfer, renameAddressCallBack)
 	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance

@@ -14,7 +14,7 @@ import type { EthereumAddress, EthereumQuantity } from '../../types/wire-types.j
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { deduplicateByFunction } from '../../utils/array.js'
 import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
-import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -174,6 +174,7 @@ export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Inte
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
+		sourceTransfer: TokenVisualizerResultWithMetadata,
 		transferRoute: funtypes.ReadonlyArray(AddressBookEntry),
 		transferedFrom: EntryAmount,
 		transferedTo: funtypes.ReadonlyArray(EntryAmount),
@@ -206,11 +207,6 @@ const isEnoughForwardedForProxyPayment = (forwardedAmount: bigint, sentAmount: b
 	sentAmount > 0n
 	&& forwardedAmount <= sentAmount
 	&& forwardedAmount * PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR >= sentAmount * PROXY_TRANSFER_MINIMUM_FORWARDED_NUMERATOR
-)
-
-const isSmallProxyPaymentFee = (amount: bigint, sentAmount: bigint) => (
-	amount > 0n
-	&& amount * PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR <= sentAmount * (PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR - PROXY_TRANSFER_MINIMUM_FORWARDED_NUMERATOR)
 )
 
 const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress,  amount: EthereumQuantity }[]) => {
@@ -262,29 +258,19 @@ function analyzeProxyTokenTransfer(transaction: SimulatedAndVisualizedTransactio
 	if (nonDuplicatedPath.length === 0) return undefined
 	const forwardedAmount = positiveDeadEnds.reduce((prev, current) => prev + current.amount, 0n)
 	if (!isEnoughForwardedForProxyPayment(forwardedAmount, sentAmount)) return undefined
-	const displayedDeadEnds = [...positiveDeadEnds]
-		.sort((left, right) => left.amount < right.amount ? -1 : left.amount > right.amount ? 1 : 0)
-		.reduce((remainingDeadEnds, candidate) => {
-			const remainingAmountWithoutCandidate = remainingDeadEnds.reduce((prev, current) => prev + current.amount, 0n) - candidate.amount
-			if (isSmallProxyPaymentFee(candidate.amount, sentAmount) && isEnoughForwardedForProxyPayment(remainingAmountWithoutCandidate, sentAmount)) {
-				return remainingDeadEnds.filter((deadEnd) => deadEnd !== candidate)
-			}
-			return remainingDeadEnds
-		}, positiveDeadEnds)
-	const transferRoute = deduplicateByFunction(displayedDeadEnds.flatMap(({ path }) => path.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
+	const transferRoute = deduplicateByFunction(positiveDeadEnds.flatMap(({ path }) => path.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
 	if (transferRoute === undefined) throw new Error('no path found')
-	const transferedTo = displayedDeadEnds.map((deadEnd) => {
+	const transferedTo = positiveDeadEnds.map((deadEnd) => {
 		const destinationEntry = deadEnd.path[deadEnd.path.length - 1]
 		if (destinationEntry === undefined) throw new Error('path was missing')
 		return { entry: destinationEntry.data, amountDelta: deadEnd.amount }
 	})
-	const displayedAmount = transferedTo.reduce((total, destination) => total + destination.amountDelta, 0n)
 	return {
 		sourceTransfer: senderLog,
 		transferRoute,
 		transferedFrom: { entry: senderLog.from, amountDelta: sentAmount },
 		transferedTo,
-		hasTransferFee: displayedAmount !== sentAmount || displayedDeadEnds.length !== positiveDeadEnds.length,
+		hasTransferFee: forwardedAmount !== sentAmount,
 	}
 }
 
@@ -342,6 +328,7 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 				identifiedTransaction: {
 					...simTx,
 					transaction: { ...simTx.transaction, to: transactionTo },
+					sourceTransfer: proxyTokenTransfer.sourceTransfer,
 					transferRoute: proxyTokenTransfer.transferRoute,
 					transferedFrom: proxyTokenTransfer.transferedFrom,
 					transferedTo: proxyTokenTransfer.transferedTo,
