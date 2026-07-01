@@ -144,6 +144,18 @@ describe('content script injection strategy errors', () => {
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
+	test('keeps invalid-tab manifest v2 injection failures ignored', async () => {
+		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('Invalid tab ID: 42') })
+		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
+
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
 	test('records manifest v2 injection failures as local recovery diagnostics', async () => {
 		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('executeScript failed') })
 		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()

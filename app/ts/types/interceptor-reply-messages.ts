@@ -6,6 +6,8 @@ import { CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
+import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
+import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -166,6 +168,8 @@ type PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: typeof RequestSimulationMetadataReply
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
+	popup_simulateGovernanceContractExecution: typeof PopupSimulateExecutionReply
+	popup_simulateGnosisSafeTransaction: typeof PopupSimulateExecutionReply
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
 	popup_readyAndListening: typeof PopupReadyAndListeningReply
 }
@@ -181,6 +185,8 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
+	popup_simulateGovernanceContractExecution: PopupSimulateExecutionReply,
+	popup_simulateGnosisSafeTransaction: PopupSimulateExecutionReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
 }
@@ -198,6 +204,8 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
+	RequestSimulateGovernanceContractExecution,
+	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -234,6 +242,7 @@ export type PopupReplyOption =
 	| RequestSimulationMetadataReply
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
+	| funtypes.Static<typeof PopupSimulateExecutionReply>
 	| RequestIsMainWindowOpen
 	| PopupReadyAndListeningReply
 	| undefined
@@ -249,6 +258,7 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
+	PopupSimulateExecutionReply,
 	RequestIsMainWindowOpen,
 	PopupReadyAndListeningReply,
 	funtypes.Undefined,

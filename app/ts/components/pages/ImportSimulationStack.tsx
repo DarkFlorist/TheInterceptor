@@ -2,10 +2,12 @@ import { useEffect } from 'preact/hooks'
 import { Notice } from '../subcomponents/Error.js'
 import { type ComponentChildren, createRef } from 'preact'
 import { XMarkIcon } from '../subcomponents/icons.js'
-import { type Signal, useComputed, useSignal } from '@preact/signals'
+import { type Signal, useComputed } from '@preact/signals'
 import { isJSON } from '../../utils/json.js'
-import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { InterceptorSimulationExport } from '../../types/visualizer-types.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
 
 type SimulationInputParams = {
 	input: Signal<string>
@@ -33,10 +35,11 @@ type ImportSimulationStackParam = {
 }
 
 export function ImportSimulationStack(param: ImportSimulationStackParam) {
-	const importError = useSignal<string | undefined>(undefined)
-	const isImporting = useSignal(false)
+	const { value: importRequestState, waitFor: waitForImport } = useAsyncState<void>()
+	const isImporting = useComputed(() => importRequestState.value.state === 'pending')
+	const importError = useComputed(() => importRequestState.value.state === 'rejected' ? importRequestState.value.error.message : undefined)
 
-	const isSubmitButtonDisabled = useComputed(() => errorString.value !== undefined || param.simulationInput.value.trim().length === 0 || isImporting.value )
+	const isSubmitButtonDisabled = useComputed(() => errorString.value !== undefined || param.simulationInput.value.trim().length === 0 || isImporting.value)
 	const isValid = useComputed(() => errorString.value === undefined)
 
 	const errorString = useComputed(() => {
@@ -54,24 +57,14 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 		</p>
 	}
 
-	const importStack = async () => {
+	const importStack = () => {
 		const trimmed = param.simulationInput.value.trim()
-		importError.value = undefined
-		isImporting.value = true
-		try {
+		waitForImport(async () => {
 			const reply = await sendPopupMessageWithReply({ method: 'popup_importSimulationStack', data: InterceptorSimulationExport.parse(JSON.parse(trimmed)) })
-			if (reply === undefined) {
-				importError.value = 'Import failed because the background page did not return a reply.'
-				return
-			}
-			if (!reply.ok) {
-				importError.value = reply.message
-				return
-			}
+			if (reply === undefined) throw new Error(getMissingPopupReplyErrorMessage('Importing the simulation stack'))
+			if (!reply.ok) throw new Error(reply.message)
 			param.close()
-		} finally {
-			isImporting.value = false
-		}
+		})
 	}
 
 	return ( <>
@@ -86,7 +79,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 				<div class = 'card-header-title'>
 					<p class = 'paragraph'> { 'Import Interceptor Simulation Stack' } </p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close } disabled = { isImporting.value }>
 					<XMarkIcon />
 				</button>
 			</header>
@@ -110,7 +103,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { importStack } disabled = { isSubmitButtonDisabled.value }> { isImporting.value ? 'Importing...' : 'Import' } </button>
+				<AsyncActionButton class = 'button is-success is-primary' state = { importRequestState.value.state } text = 'Import' pendingText = 'Importing...' onClick = { importStack } disabled = { isSubmitButtonDisabled.value } />
 			</footer>
 		</div>
 	</> )

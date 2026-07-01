@@ -116,7 +116,7 @@ export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
 export async function sendConfirmDialogMessage(message: TransactionConfirmation): Promise<CaughtError | undefined> {
 	try {
 		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport(message)
-	} catch(error) {
+	} catch (error) {
 		const errorMessage = await reportUnexpectedError(error, {
 			source: 'confirmTransaction',
 			code: 'confirm_dialog_delivery_failed',
