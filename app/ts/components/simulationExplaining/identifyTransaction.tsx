@@ -9,12 +9,12 @@ import { CompoundGovernanceAbi } from '../../utils/abi.js'
 import { addressString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
 import type { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
-import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import type { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { deduplicateByFunction } from '../../utils/array.js'
 import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
+import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -125,7 +125,6 @@ type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<typeof Si
 const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: TransactionWithAddressBookEntries
 	})
 )
@@ -148,7 +147,6 @@ export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Stat
 export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
 	})
 )
@@ -175,11 +173,40 @@ export type SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Stati
 export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
+		sourceTransfer: TokenVisualizerResultWithMetadata,
 		transferRoute: funtypes.ReadonlyArray(AddressBookEntry),
+		transferedFrom: EntryAmount,
 		transferedTo: funtypes.ReadonlyArray(EntryAmount),
 	})
+)
+
+type ProxyTokenTransferAnalysis = {
+	sourceTransfer: TokenVisualizerResultWithMetadata
+	transferRoute: readonly AddressBookEntry[]
+	transferedFrom: EntryAmount
+	transferedTo: readonly EntryAmount[]
+	hasTransferFee: boolean
+}
+
+const PROXY_TRANSFER_MINIMUM_FORWARDED_NUMERATOR = 95n
+const PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR = 100n
+
+const getTokenTransferAmount = (tokenResult: TokenVisualizerResultWithMetadata) => tokenResult.isApproval || tokenResult.type === 'ERC721' ? 1n : tokenResult.amount
+
+const getTokenId = (tokenResult: TokenVisualizerResultWithMetadata) => 'tokenId' in tokenResult ? tokenResult.tokenId : undefined
+
+const isContractLikeAddressBookEntry = (entry: AddressBookEntry) => (
+	entry.type === 'contract'
+	|| entry.type === 'ERC20'
+	|| entry.type === 'ERC721'
+	|| entry.type === 'ERC1155'
+)
+
+const isEnoughForwardedForProxyPayment = (forwardedAmount: bigint, sentAmount: bigint) => (
+	sentAmount > 0n
+	&& forwardedAmount <= sentAmount
+	&& forwardedAmount * PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR >= sentAmount * PROXY_TRANSFER_MINIMUM_FORWARDED_NUMERATOR
 )
 
 const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress,  amount: EthereumQuantity }[]) => {
@@ -191,42 +218,61 @@ const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress
 	return netSums
 }
 
-function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
+function analyzeProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): ProxyTokenTransferAnalysis | undefined {
+	if (transaction.transaction.to === undefined) return undefined
 	const tokenResults = extractTokenEvents(transaction.events)
 	// no ENS logs allowed in proxy token transfer
-	if (transaction.events.some((x) => x.type === 'ENS')) return false
+	if (transaction.events.some((x) => x.type === 'ENS')) return undefined
 	// there need to be atleast two token logs (otherwise its a simple send)
-	if (tokenResults.length < 2) return false
+	if (tokenResults.length < 2) return undefined
 
 	// no burning allowed
-	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return false
-	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return false
+	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return undefined
+	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return undefined
 
 	// no approvals allowed
-	if (tokenResults.filter((result) => result.isApproval).length !== 0) return false
+	if (tokenResults.filter((result) => result.isApproval).length !== 0) return undefined
 	// sender has only one token leaving by logs (gas fees are not in logs)
 	const senderLogs = tokenResults.filter((result) => result.from.address === transaction.transaction.from.address)
 	const senderLog = senderLogs[0]
-	if (senderLogs.length !== 1 || senderLog === undefined) return false
+	if (senderLogs.length !== 1 || senderLog === undefined) return undefined
+	if (!isContractLikeAddressBookEntry(senderLog.to)) return undefined
 	// sender does not receive any tokens
-	if (tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return false
+	if (tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return undefined
 	// only one token of specific address is being transacted in the logs
-	if (tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
+	if (tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return undefined
 	// only one token id (or undefined) is mentioned inte the logs
-	if (new Set(tokenResults.map((result) => 'tokenId' in result ? result.tokenId : undefined)).size !== 1) return false
+	if (new Set(tokenResults.map((result) => getTokenId(result))).size !== 1) return undefined
 	// can find a path
-	const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
+	const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: getTokenTransferAmount(tokenResult) }))
 	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
-	if (deadEnds.size === 0) return false
-	const nonDuplicatedPath = Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1))
-	if (nonDuplicatedPath.length === 0) return false
-	// the sum of all currency in dead ends, must equal to the sum sent initially (multiplied by -1)
+	if (deadEnds.size === 0) return undefined
 	const netSums = getNetSums(edges)
-	const deadEndSum = Array.from(deadEnds).map((deadEnd) => netSums.get(deadEnd[0]) || 0n).reduce((prev, current) => prev + current, 0n)
-	if (netSums.get(transaction.transaction.from.address) !== -deadEndSum) return false
-	return true
+	const sentAmount = -(netSums.get(transaction.transaction.from.address) || 0n)
+	if (sentAmount <= 0n) return undefined
+	const positiveDeadEnds = Array.from(deadEnds)
+		.map(([address, path]) => ({ address, path, amount: netSums.get(address) || 0n }))
+		.filter((deadEnd) => deadEnd.amount > 0n)
+	if (positiveDeadEnds.length === 0) return undefined
+	const nonDuplicatedPath = positiveDeadEnds.flatMap(({ path }) => path.slice(0, -1))
+	if (nonDuplicatedPath.length === 0) return undefined
+	const forwardedAmount = positiveDeadEnds.reduce((prev, current) => prev + current.amount, 0n)
+	if (!isEnoughForwardedForProxyPayment(forwardedAmount, sentAmount)) return undefined
+	const transferRoute = deduplicateByFunction(positiveDeadEnds.flatMap(({ path }) => path.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
+	if (transferRoute === undefined) throw new Error('no path found')
+	const transferedTo = positiveDeadEnds.map((deadEnd) => {
+		const destinationEntry = deadEnd.path[deadEnd.path.length - 1]
+		if (destinationEntry === undefined) throw new Error('path was missing')
+		return { entry: destinationEntry.data, amountDelta: deadEnd.amount }
+	})
+	return {
+		sourceTransfer: senderLog,
+		transferRoute,
+		transferedFrom: { entry: senderLog.from, amountDelta: sentAmount },
+		transferedTo,
+		hasTransferFee: forwardedAmount !== sentAmount,
+	}
 }
-const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isProxyTokenTransfer(simTx) ? simTx : undefined)
 
 export function identifyTransaction(simTx: MaybeSimulatedTransaction): IdentifiedTransaction {
 	if (simTx.transactionStatus === 'Transaction Succeeded') {
@@ -257,40 +303,35 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 			}
 		}
 
-		if (getProxyTokenTransferOrUndefined(simTx)) {
-			const tokenResult = tokenResults[0]
+		const proxyTokenTransfer = analyzeProxyTokenTransfer(simTx)
+		if (proxyTokenTransfer !== undefined) {
+			const transactionTo = simTx.transaction.to
+			if (transactionTo === undefined) throw new Error('proxy transfer transaction destination missing')
+			const tokenResult = proxyTokenTransfer.sourceTransfer
 			if (tokenResult === undefined) throw new Error('token result were undefined')
 			const symbol = tokenResult.token.symbol
-			const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
-			const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
-
-			const transferRoute = deduplicateByFunction(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
-			const netSums = getNetSums(edges)
-			if (transferRoute === undefined) throw new Error('no path found')
-			const texts = deadEnds.size > 1 ? {
-				title: `${ symbol } Transfer to many via Proxy`,
-				signingAction: `Transfer ${ symbol } to many via Proxy`,
-				simulationAction: `Simulate ${ symbol } Transfer to many via Proxy`,
-				rejectAction: `Reject ${ symbol } Transfer via to many Proxy`,
+			const feeText = proxyTokenTransfer.hasTransferFee ? ' with fee' : ''
+			const texts = proxyTokenTransfer.transferedTo.length > 1 ? {
+				title: `${ symbol } Transfer to many${ feeText } via Proxy`,
+				signingAction: `Transfer ${ symbol } to many${ feeText } via Proxy`,
+				simulationAction: `Simulate ${ symbol } Transfer to many${ feeText } via Proxy`,
+				rejectAction: `Reject ${ symbol } Transfer to many${ feeText } via Proxy`,
 			} : {
-				title: `${ symbol } Transfer via Proxy`,
-				signingAction: `Transfer ${ symbol } via Proxy`,
-				simulationAction: `Simulate ${ symbol } Transfer via Proxy`,
-				rejectAction: `Reject ${ symbol } Transfer via Proxy`,
+				title: `${ symbol } Transfer${ feeText } via Proxy`,
+				signingAction: `Transfer ${ symbol }${ feeText } via Proxy`,
+				simulationAction: `Simulate ${ symbol } Transfer${ feeText } via Proxy`,
+				rejectAction: `Reject ${ symbol } Transfer${ feeText } via Proxy`,
 			}
 			return {
 				type: 'ProxyTokenTransfer',
 				...texts,
 				identifiedTransaction: {
 					...simTx,
-					transferRoute,
-					transferedTo: Array.from(netSums).map(([address, amountDelta]) => {
-						const deadEnd = deadEnds.get(address)
-						if (deadEnd === undefined) return undefined
-						const destinationEntry = deadEnd[deadEnd.length - 1]
-						if (destinationEntry === undefined) throw new Error('path was missing')
-						return { entry: destinationEntry.data, amountDelta }
-					}).filter((x): x is EntryAmount => x !== undefined && x.amountDelta !== 0n)
+					transaction: { ...simTx.transaction, to: transactionTo },
+					sourceTransfer: proxyTokenTransfer.sourceTransfer,
+					transferRoute: proxyTokenTransfer.transferRoute,
+					transferedFrom: proxyTokenTransfer.transferedFrom,
+					transferedTo: proxyTokenTransfer.transferedTo,
 				}
 			}
 		}

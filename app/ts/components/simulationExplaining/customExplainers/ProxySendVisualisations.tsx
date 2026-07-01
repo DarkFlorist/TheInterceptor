@@ -6,7 +6,6 @@ import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { extractTokenEvents } from '../../../background/metadataUtils.js'
 
 type BeforeAfterAddressWithAmount = BeforeAfterAddress & { amount: bigint }
 
@@ -20,6 +19,7 @@ type ProxyMultiSendParams = {
 }
 
 function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCallBack, viaProxypath } : ProxyMultiSendParams) {
+	const recipientLabel = receivers.length === 1 ? 'Final recipient' : 'Final recipients'
 	return <div class = 'notification transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
@@ -30,7 +30,7 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<AddressBeforeAfter { ...sender } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { asset } />
 		</div>
-		<p class = 'paragraph'> Final recipients </p>
+		<p class = 'paragraph'> { recipientLabel } </p>
 		{ receivers.map((receiver) => <>
 			<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 				<p class = 'paragraph' style = 'justify-self: right;'> Receive&nbsp;</p>
@@ -49,14 +49,15 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 
 export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedProxyTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	// proxy send to multiple addresses
-	const transfer = extractTokenEvents(simTx.events)[0]
-	if (transfer === undefined) throw new Error('transfer was undefined')
+	const transfer = simTx.sourceTransfer
 	const asset = getAsset(transfer, renameAddressCallBack)
 	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
+	const displayedReceivedAmount = simTx.transferedTo.reduce((sum, destination) => sum + destination.amountDelta, 0n)
+	const isSingleRecipientWithoutFee = simTx.transferedTo.length === 1 && displayedReceivedAmount === simTx.transferedFrom.amountDelta
 
-	if (simTx.transferedTo.length === 1) {
+	if (isSingleRecipientWithoutFee) {
 		// proxy send to a single address
 		const receiver = simTx.transferedTo[0]?.entry
 		if (receiver === undefined) throw new Error('receiver was undefined')
@@ -68,7 +69,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 			asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }
 			sender = { {
 				address: transfer.from,
-				beforeAndAfter: senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
+				beforeAndAfter: senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + simTx.transferedFrom.amountDelta + senderGasFees, after: senderAfter },
 			} }
 			receiver = { {
 				address: receiver,
@@ -83,7 +84,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 		asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }
 		sender = { {
 			address: transfer.from,
-			beforeAndAfter: senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
+			beforeAndAfter: senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + simTx.transferedFrom.amountDelta + senderGasFees, after: senderAfter },
 		} }
 		receivers = { simTx.transferedTo.map((destination) => {
 			const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === destination.entry.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
