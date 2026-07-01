@@ -4,11 +4,12 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { TransactionImportanceBlock } from '../../app/ts/components/simulationExplaining/Transactions.js'
+import { identifyTransaction } from '../../app/ts/components/simulationExplaining/identifyTransaction.js'
 import { installDomMock } from './domMock.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import type { MaybeSimulatedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { MaybeSimulatedTransaction, TokenBalancesAfter } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 
 const senderEntry: AddressBookEntry = {
@@ -39,6 +40,34 @@ const recipientEntry: AddressBookEntry = {
 	entrySource: 'User',
 }
 
+const proxyEntry: AddressBookEntry = {
+	type: 'contract',
+	name: 'Payment proxy',
+	address: 0x5555555555555555555555555555555555555555n,
+	entrySource: 'OnChain',
+}
+
+const contactIntermediateEntry: AddressBookEntry = {
+	type: 'contact',
+	name: 'Non-contract intermediary',
+	address: 0x5555555555555555555555555555555555555556n,
+	entrySource: 'User',
+}
+
+const feeCollectorEntry: AddressBookEntry = {
+	type: 'contact',
+	name: 'Fee collector',
+	address: 0x6666666666666666666666666666666666666666n,
+	entrySource: 'User',
+}
+
+const secondRecipientEntry: AddressBookEntry = {
+	type: 'contact',
+	name: 'Second recipient',
+	address: 0x7777777777777777777777777777777777777777n,
+	entrySource: 'User',
+}
+
 const nativeTokenEntry: Erc20TokenEntry = {
 	type: 'ERC20',
 	name: 'Ether',
@@ -46,6 +75,15 @@ const nativeTokenEntry: Erc20TokenEntry = {
 	decimals: 18n,
 	address: ETHEREUM_LOGS_LOGGER_ADDRESS,
 	entrySource: 'Interceptor',
+}
+
+const erc20TokenEntry: Erc20TokenEntry = {
+	type: 'ERC20',
+	name: 'Mock Token',
+	symbol: 'MOCK',
+	decimals: 18n,
+	address: 0x8888888888888888888888888888888888888888n,
+	entrySource: 'User',
 }
 
 const rpcNetwork: RpcNetwork = {
@@ -57,6 +95,8 @@ const rpcNetwork: RpcNetwork = {
 	primary: true,
 	minimized: false,
 }
+
+const eth = 10n ** 18n
 
 function createAuthorization(address: bigint, nonce: bigint) {
 	return {
@@ -209,27 +249,95 @@ function createDelegatedSelfCallTransaction({
 	}
 }
 
-function createNativeTransferEvent(): TokenEvent {
+function createProxyPaymentTransaction({
+	events,
+	to = proxyEntry,
+	value = 100n,
+	tokenBalancesAfter = [],
+}: {
+	events: readonly TokenEvent[]
+	to?: AddressBookEntry
+	value?: bigint
+	tokenBalancesAfter?: TokenBalancesAfter
+}): MaybeSimulatedTransaction {
+	return {
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+		transactionIdentifier: 3n,
+		originalRequestParameters: {
+			method: 'eth_sendTransaction',
+			params: [{
+				from: senderEntry.address,
+				to: to.address,
+				value,
+				input: new Uint8Array(),
+				gas: 21_000n,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+				type: '0x2',
+			}],
+		},
+		transaction: {
+			from: senderEntry,
+			to,
+			value,
+			input: new Uint8Array(),
+			rpcNetwork,
+			hash: 0x1236n,
+			gas: 21_000n,
+			nonce: 9n,
+			type: '1559',
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+		},
+		transactionStatus: 'Transaction Succeeded',
+		tokenBalancesAfter,
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 0n,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		events,
+	}
+}
+
+function createTransferEvent({
+	from,
+	to,
+	amount,
+	token = nativeTokenEntry,
+}: {
+	from: AddressBookEntry
+	to: AddressBookEntry
+	amount: bigint
+	token?: Erc20TokenEntry
+}): TokenEvent {
 	return {
 		type: 'TokenEvent',
 		isParsed: 'Parsed',
 		name: 'Transfer',
 		signature: 'Transfer(address,address,uint256)',
 		args: [],
-		address: nativeTokenEntry.address,
-		loggersAddressBookEntry: nativeTokenEntry,
+		address: token.address,
+		loggersAddressBookEntry: token,
 		data: new Uint8Array(),
 		topics: [],
 		logInformation: {
 			type: 'ERC20',
 			logObject: undefined,
-			from: senderEntry,
-			to: recipientEntry,
-			token: nativeTokenEntry,
-			amount: 1n,
+			from,
+			to,
+			token,
+			amount,
 			isApproval: false,
 		},
 	}
+}
+
+function createNativeTransferEvent(): TokenEvent {
+	return createTransferEvent({ from: senderEntry, to: recipientEntry, amount: 1n })
 }
 
 async function renderImportanceBlock(simTx: MaybeSimulatedTransaction, addressMetadata: readonly AddressBookEntry[]) {
@@ -248,6 +356,8 @@ async function renderImportanceBlock(simTx: MaybeSimulatedTransaction, addressMe
 
 	return dom
 }
+
+const renderedText = (dom: ReturnType<typeof installDomMock>) => dom.document.body.textContent?.replace(/\s+/g, '') ?? ''
 
 describe('TransactionImportanceBlock delegation notice', () => {
 	test('shows authorization flow details for failed-to-simulate 7702 transactions', async () => {
@@ -337,5 +447,176 @@ describe('TransactionImportanceBlock delegation notice', () => {
 		assert.equal(dom.document.body.textContent?.includes('Send'), true)
 
 		dom.restore()
+	})
+})
+
+describe('TransactionImportanceBlock proxied transfers', () => {
+	test('renders retained-fee proxied ETH payments as transfers to the final recipient', async () => {
+		const transaction = createProxyPaymentTransaction({
+			events: [
+				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth }),
+				createTransferEvent({ from: proxyEntry, to: recipientEntry, amount: 95n * eth }),
+			],
+		})
+		const identified = identifyTransaction(transaction)
+
+		assert.equal(identified.type, 'ProxyTokenTransfer')
+		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
+		assert.equal(identified.title, 'ETH Transfer with fee via Proxy')
+		assert.equal(identified.identifiedTransaction.transferedFrom.amountDelta, 100n * eth)
+		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
+			{ address: recipientEntry.address, amountDelta: 95n * eth },
+		])
+
+		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, nativeTokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('Send100ETH'), true)
+		assert.equal(text.includes('Receive95ETH'), true)
+		assert.equal(text.includes('Finalrecipient'), true)
+		assert.equal(text.includes('Actualrecipient'), true)
+		assert.equal(text.includes('Paymentproxy'), true)
+
+		dom.restore()
+	})
+
+	test('shows explicit proxy fee recipients in the primary transfer view', async () => {
+		const transaction = createProxyPaymentTransaction({
+			events: [
+				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth }),
+				createTransferEvent({ from: proxyEntry, to: recipientEntry, amount: 95n * eth }),
+				createTransferEvent({ from: proxyEntry, to: feeCollectorEntry, amount: 5n * eth }),
+			],
+		})
+		const identified = identifyTransaction(transaction)
+
+		assert.equal(identified.type, 'ProxyTokenTransfer')
+		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
+		assert.equal(identified.title, 'ETH Transfer to many via Proxy')
+		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
+			{ address: recipientEntry.address, amountDelta: 95n * eth },
+			{ address: feeCollectorEntry.address, amountDelta: 5n * eth },
+		])
+		assert.equal(identified.identifiedTransaction.sourceTransfer.to.address, proxyEntry.address)
+
+		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, feeCollectorEntry, nativeTokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('Send100ETH'), true)
+		assert.equal(text.includes('Receive95ETH'), true)
+		assert.equal(text.includes('Receive5ETH'), true)
+		assert.equal(text.includes('Finalrecipients'), true)
+		assert.equal(text.includes('Actualrecipient'), true)
+		assert.equal(text.includes('Feecollector'), true)
+
+		dom.restore()
+	})
+
+	test('renders retained-fee proxied ERC20 payments as token transfers to the final recipient', async () => {
+		const transaction = createProxyPaymentTransaction({
+			value: 0n,
+			events: [
+				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth, token: erc20TokenEntry }),
+				createTransferEvent({ from: proxyEntry, to: recipientEntry, amount: 95n * eth, token: erc20TokenEntry }),
+			],
+		})
+		const identified = identifyTransaction(transaction)
+
+		assert.equal(identified.type, 'ProxyTokenTransfer')
+		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
+		assert.equal(identified.title, 'MOCK Transfer with fee via Proxy')
+		assert.equal(identified.identifiedTransaction.transferedFrom.amountDelta, 100n * eth)
+		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
+			{ address: recipientEntry.address, amountDelta: 95n * eth },
+		])
+
+		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, erc20TokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('Send100MOCK'), true)
+		assert.equal(text.includes('Receive95MOCK'), true)
+		assert.equal(text.includes('Finalrecipient'), true)
+		assert.equal(text.includes('Actualrecipient'), true)
+		assert.equal(text.includes('Paymentproxy'), true)
+
+		dom.restore()
+	})
+
+	test('renders exact proxy multisends as transfers to multiple final recipients', async () => {
+		const transaction = createProxyPaymentTransaction({
+			events: [
+				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth }),
+				createTransferEvent({ from: proxyEntry, to: recipientEntry, amount: 40n * eth }),
+				createTransferEvent({ from: proxyEntry, to: secondRecipientEntry, amount: 60n * eth }),
+			],
+		})
+		const identified = identifyTransaction(transaction)
+
+		assert.equal(identified.type, 'ProxyTokenTransfer')
+		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
+		assert.equal(identified.title, 'ETH Transfer to many via Proxy')
+		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
+			{ address: recipientEntry.address, amountDelta: 40n * eth },
+			{ address: secondRecipientEntry.address, amountDelta: 60n * eth },
+		])
+
+		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, secondRecipientEntry, nativeTokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('Send100ETH'), true)
+		assert.equal(text.includes('Receive40ETH'), true)
+		assert.equal(text.includes('Receive60ETH'), true)
+		assert.equal(text.includes('Finalrecipients'), true)
+		assert.equal(text.includes('Actualrecipient'), true)
+		assert.equal(text.includes('Secondrecipient'), true)
+
+		dom.restore()
+	})
+
+	test('shows explicit fee recipients alongside other proxy recipients', async () => {
+		const transaction = createProxyPaymentTransaction({
+			events: [
+				createTransferEvent({ from: senderEntry, to: proxyEntry, amount: 100n * eth }),
+				createTransferEvent({ from: proxyEntry, to: recipientEntry, amount: 50n * eth }),
+				createTransferEvent({ from: proxyEntry, to: secondRecipientEntry, amount: 45n * eth }),
+				createTransferEvent({ from: proxyEntry, to: feeCollectorEntry, amount: 5n * eth }),
+			],
+		})
+		const identified = identifyTransaction(transaction)
+
+		assert.equal(identified.type, 'ProxyTokenTransfer')
+		if (identified.type !== 'ProxyTokenTransfer') throw new Error('Expected proxy transfer identification')
+		assert.equal(identified.title, 'ETH Transfer to many via Proxy')
+		assert.deepEqual(identified.identifiedTransaction.transferedTo.map(({ entry, amountDelta }) => ({ address: entry.address, amountDelta })), [
+			{ address: recipientEntry.address, amountDelta: 50n * eth },
+			{ address: secondRecipientEntry.address, amountDelta: 45n * eth },
+			{ address: feeCollectorEntry.address, amountDelta: 5n * eth },
+		])
+
+		const dom = await renderImportanceBlock(transaction, [senderEntry, proxyEntry, recipientEntry, secondRecipientEntry, feeCollectorEntry, nativeTokenEntry])
+		const text = renderedText(dom)
+
+		assert.equal(text.includes('Send100ETH'), true)
+		assert.equal(text.includes('Receive50ETH'), true)
+		assert.equal(text.includes('Receive45ETH'), true)
+		assert.equal(text.includes('Receive5ETH'), true)
+		assert.equal(text.includes('Finalrecipients'), true)
+		assert.equal(text.includes('Actualrecipient'), true)
+		assert.equal(text.includes('Secondrecipient'), true)
+		assert.equal(text.includes('Feecollector'), true)
+
+		dom.restore()
+	})
+
+	test('does not treat non-contract intermediaries as payment proxies', () => {
+		const transaction = createProxyPaymentTransaction({
+			to: contactIntermediateEntry,
+			events: [
+				createTransferEvent({ from: senderEntry, to: contactIntermediateEntry, amount: 100n * eth }),
+				createTransferEvent({ from: contactIntermediateEntry, to: recipientEntry, amount: 100n * eth }),
+			],
+		})
+
+		assert.notEqual(identifyTransaction(transaction).type, 'ProxyTokenTransfer')
 	})
 })
