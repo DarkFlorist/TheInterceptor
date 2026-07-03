@@ -1,5 +1,4 @@
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { version, gitCommitSha } from '../../version.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -35,29 +34,37 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 	resetSimulation: () => void
 	disableReset: Signal<boolean>
 }) {
-	return <div style = 'display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap; padding: 1rem 0; min-width: 0;'>
-		<h1 class = 'h1' style = 'margin: 0; min-width: 0;'>Simulation Stack</h1>
-		<div style = 'display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; flex-wrap: wrap; min-width: 0;'>
-			<button class = 'btn btn--outline is-small' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
+	return <header class = 'simulation-stack-page-header'>
+		<div class = 'simulation-stack-page-title'>
+			<h1>Simulation Stack</h1>
+			<p>Review and adjust the transactions queued for simulation.</p>
+		</div>
+		<div class = 'simulation-stack-page-actions'>
+			<button class = 'btn btn--outline is-small' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 					<ImportIcon/>
 				</span>
 				<span>Import</span>
 			</button>
-			<button class = 'btn is-small is-danger' disabled = { disableReset.value } onClick = { resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
+			<button class = 'btn btn--destructive is-small' type = 'button' disabled = { disableReset.value } onClick = { resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 					<BroomIcon />
 				</span>
 				<span>Clear</span>
 			</button>
 		</div>
-	</div>
+	</header>
 }
 
 function RichAddressesTitleCard({ numberOfAddressesMadeRich }: { numberOfAddressesMadeRich: number }) {
 	if (numberOfAddressesMadeRich === 0) return <></>
 	return <section class = 'card' style = 'margin: 10px 0;'>
 		<header class = 'card-header'>
+			<div class = 'card-header-icon unset-cursor'>
+				<span class = 'icon'>
+					<img src = '../img/success-icon.svg' width = '24' height = '24' />
+				</span>
+			</div>
 			<p class = 'card-header-title' style = 'white-space: nowrap;'>
 				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
 			</p>
@@ -187,18 +194,8 @@ export function SimulationStackPage() {
 
 	const currentResults = simVisResults.value
 
-	return <main style = 'background-color: var(--bg-color); min-height: 100vh;'>
-		<div style = 'max-width: 1100px; margin: 0 auto; padding: 0 1rem 2rem;'>
-			<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation' style = 'margin: 0 -1rem 1rem;'>
-				<div class = 'navbar-brand'>
-					<a class = 'navbar-item' style = 'cursor: unset; max-width: 100%; min-width: 0;'>
-						<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32' style = 'flex: 0 0 auto;'/>
-						<p style = 'color: var(--text-color); padding-left: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>THE INTERCEPTOR
-							<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
-						</p>
-					</a>
-				</div>
-			</nav>
+	return <main>
+		<div class = 'layout simulation-stack-page'>
 			<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 			<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 			{ rpcNetwork.value?.httpsRpc === undefined && rpcNetwork.value !== undefined ?
@@ -211,10 +208,10 @@ export function SimulationStackPage() {
 					disableReset = { disableReset }
 				/>
 				{ isEmpty.value ?
-					<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+					<article class = 'simulation-stack-page-content'><DinoSays text = { 'Give me some transactions to munch on!' } /></article>
 				: currentResults.kind === 'passthrough' ?
-					<RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } />
-				: <div class = { simulationResultState.value === 'invalid' || simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
+					<article class = 'simulation-stack-page-content'><RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } /></article>
+				: <article class = { `simulation-stack-page-content${ simulationResultState.value === 'invalid' || simulationUpdatingState.value === 'failed' ? ' blur' : '' }` }>
 					{ currentResults.value.visualizedSimulationState.success === false ?
 						<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
 					: <></> }
@@ -235,7 +232,7 @@ export function SimulationStackPage() {
 						renameAddressCallBack = { renameAddressCallBack }
 						rpcConnectionStatus = { rpcConnectionStatus }
 					/>
-				</div> }
+				</article> }
 			</ErrorBoundary> }
 		</div>
 		<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>

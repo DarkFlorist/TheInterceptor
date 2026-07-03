@@ -59,6 +59,22 @@ describe('narrow text layout CSS', () => {
 		assert.match(css, /@keyframes simulation-stack-row-target-pulse/)
 	})
 
+	test('lets simulation stack rows use the available page width', async () => {
+		const css = await Bun.file('app/css/interceptor.css').text()
+
+		const simulationStackPage = expectRule(css, '.simulation-stack-page')
+		assert.match(simulationStackPage, /--grid-column\s*:\s*1 \/ -1\s*;/)
+		assert.match(simulationStackPage, /width\s*:\s*100%\s*;/)
+		assert.doesNotMatch(simulationStackPage, /1100px/)
+
+		const simulationStackContentList = expectRule(css, '.simulation-stack-page-content > ul')
+		assert.match(simulationStackContentList, /margin\s*:\s*0\s*;/)
+		assert.match(simulationStackContentList, /width\s*:\s*100%\s*;/)
+
+		const simulationStackContentRow = expectRule(css, '.simulation-stack-page-content > ul > .simulation-stack-row')
+		assert.match(simulationStackContentRow, /margin\s*:\s*10px 0\s*;/)
+	})
+
 	test('uses flexible button height and stacks address book card actions at ultra-narrow widths', async () => {
 		const css = await Bun.file('app/css/interceptor.css').text()
 

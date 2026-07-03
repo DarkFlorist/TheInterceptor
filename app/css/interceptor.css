@@ -2092,6 +2092,66 @@ header:has(form[role='search']) h1 {
 	min-width: 0;
 }
 
+.simulation-stack-page {
+	--grid-column: 1 / -1;
+	box-sizing: border-box;
+	width: 100%;
+	justify-self: center;
+	padding-inline: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.simulation-stack-page-header {
+	display: flex;
+	column-gap: 1rem;
+	row-gap: 0.75rem;
+	justify-content: space-between;
+	align-items: center;
+	flex-wrap: wrap;
+	padding: 1rem 0;
+}
+
+.simulation-stack-page-title {
+	min-width: 0;
+	flex: 1 1 16rem;
+}
+
+.simulation-stack-page-title h1 {
+	color: var(--text-color);
+	font-size: 1.5rem;
+	line-height: 1.15;
+}
+
+.simulation-stack-page-title p {
+	color: var(--disabled-text-color);
+	font-size: 0.875rem;
+	line-height: 1.25;
+	margin-top: 0.25rem;
+}
+
+.simulation-stack-page-actions {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.simulation-stack-page-content {
+	min-width: 0;
+	padding: 1rem 0 2rem;
+}
+
+.simulation-stack-page-content > ul {
+	margin: 0;
+	min-width: 0;
+	width: 100%;
+}
+
+.simulation-stack-page-content > ul > .simulation-stack-row {
+	margin: 10px 0;
+}
+
 [role=option]:has([type=radio]) {
 	--heading-color: var(--text-color);
 	--heading-weight: normal;

@@ -95,6 +95,14 @@ function hasCompactStackCard(root: TestDomNode) {
 	return collectElements(root, 'header').some((header) => header.textContent?.replace(/\s+/g, ' ').trim() === 'Stack')
 }
 
+function hasClass(node: TestDomNode, className: string) {
+	return node.getAttribute?.('class')?.split(/\s+/).includes(className) === true
+}
+
+function findElementByClass(root: TestDomNode, tagName: string, className: string) {
+	return collectElements(root, tagName).find((element) => hasClass(element, className))
+}
+
 function installQueuedAnimationFrames() {
 	const animationFrames: FrameRequestCallback[] = []
 	globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
@@ -320,6 +328,12 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(dom.document.body.textContent?.includes('Simply making 2 addresses rich'), true)
 			assert.equal(hasCompactStackCard(dom.document.body), false)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+			assert.equal(collectElements(dom.document.body, 'nav').some((nav) => hasClass(nav, 'window-header')), false)
+			assert.ok(findElementByClass(dom.document.body, 'div', 'simulation-stack-page'))
+			const richHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Simply making 2 addresses rich') === true)
+			assert.ok(richHeader)
+			assert.ok(findElementByClass(richHeader, 'div', 'card-header-icon'))
+			assert.ok(findElementByClass(richHeader, 'p', 'card-header-title'))
 		} finally {
 			dom.restore()
 		}
