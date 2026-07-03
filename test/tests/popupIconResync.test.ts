@@ -15,7 +15,7 @@ function installBrowserMock() {
 	const sentMessages: unknown[] = []
 	let messageListener: RuntimeMessageListener | undefined
 
-	Object.defineProperty(globalThis, 'browser', { value: {
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: unknown) {
@@ -74,7 +74,7 @@ function installBrowserMock() {
 		},
 	}, writable: true })
 
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, writable: true })
+	Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: { id: 'test-extension' } }, writable: true })
 
 	return { messageListener: () => messageListener, sentMessages }
 }
