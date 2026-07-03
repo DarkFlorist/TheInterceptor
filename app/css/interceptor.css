@@ -265,6 +265,30 @@ html, body {
 	padding: 0;
 }
 
+.stack-card-header > .card-header-icon {
+	flex: 0 0 auto;
+	padding: 0.55rem 0.35rem 0.55rem 0.55rem;
+}
+
+.stack-card-header > .card-header-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding-left: 0.35rem;
+	padding-right: 0.5rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.stack-card-header > .card-header-website {
+	flex: 0 1 min(11rem, 42%);
+	padding: 0.55rem 0.5rem;
+}
+
+.stack-card-header > .card-header-website--flush {
+	padding: 0;
+}
+
 .website-origin-text {
 	display: flex;
 	align-items: center;
@@ -584,6 +608,10 @@ li {
 .card {
 	background-color: var(--card-bg-color);
 	box-shadow: 0 1px 4px 1px rgba(0, 0, 0, 0.5);
+}
+
+.simulation-summary-card {
+	margin: 10px;
 }
 
 .card-content {
@@ -2097,7 +2125,7 @@ header:has(form[role='search']) h1 {
 	box-sizing: border-box;
 	width: 100%;
 	justify-self: center;
-	padding-inline: clamp(0.75rem, 2vw, 1.5rem);
+	padding-inline: 0;
 }
 
 .simulation-stack-page-header {
@@ -2107,7 +2135,7 @@ header:has(form[role='search']) h1 {
 	justify-content: space-between;
 	align-items: center;
 	flex-wrap: wrap;
-	padding: 1rem 0;
+	padding: 1rem clamp(0.75rem, 2vw, 1.5rem);
 }
 
 .simulation-stack-page-title {
@@ -2139,7 +2167,7 @@ header:has(form[role='search']) h1 {
 
 .simulation-stack-page-content {
 	min-width: 0;
-	padding: 1rem 0 2rem;
+	padding: 1rem clamp(0.75rem, 2vw, 1.5rem) 2rem;
 }
 
 .simulation-stack-page-content > ul {
@@ -2149,6 +2177,10 @@ header:has(form[role='search']) h1 {
 }
 
 .simulation-stack-page-content > ul > .simulation-stack-row {
+	margin: 10px 0;
+}
+
+.simulation-stack-page-content > .simulation-summary-card {
 	margin: 10px 0;
 }
 

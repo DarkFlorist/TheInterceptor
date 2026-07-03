@@ -17,9 +17,9 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
-import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
@@ -584,16 +584,19 @@ type TransactionHeaderParams = {
 	simTx: MaybeSimulatedTransaction
 	removeTransactionOrSignedMessage?: () => void
 	onHeaderClick?: () => void
+	headerActionLabel?: string
+	ariaExpanded?: boolean
 }
 
-export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onHeaderClick } : TransactionHeaderParams) {
+export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onHeaderClick, headerActionLabel, ariaExpanded } : TransactionHeaderParams) {
 	const icon = useComputed(() => {
 		if (simTx.transactionStatus === 'Failed To Simulate' || simTx.transactionStatus === 'Transaction Failed') return '../img/error-icon.svg'
 		if (simTx.quarantine) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
+	const actionLabel = headerActionLabel ?? 'Open this transaction in the full simulation stack'
 	return <header
-		class = { `card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		class = { `card-header stack-card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
 		onClick = { onHeaderClick }
 		onKeyDown = { (event) => {
 			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
@@ -603,8 +606,9 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onH
 		} }
 		role = { onHeaderClick === undefined ? undefined : 'button' }
 		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
-		title = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
-		aria-label = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
+		title = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-label = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-expanded = { onHeaderClick === undefined ? undefined : ariaExpanded }
 	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
@@ -631,9 +635,10 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onH
 	</header>
 }
 
-export function TransactionHeaderForFailedToSimulate({ website, onHeaderClick } : { website: Website, onHeaderClick?: () => void }) {
+export function TransactionHeaderForFailedToSimulate({ website, onHeaderClick, headerActionLabel, ariaExpanded } : { website: Website, onHeaderClick?: () => void, headerActionLabel?: string, ariaExpanded?: boolean }) {
+	const actionLabel = headerActionLabel ?? 'Open this transaction in the full simulation stack'
 	return <header
-		class = { `card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		class = { `card-header stack-card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
 		onClick = { onHeaderClick }
 		onKeyDown = { (event) => {
 			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
@@ -643,8 +648,9 @@ export function TransactionHeaderForFailedToSimulate({ website, onHeaderClick } 
 		} }
 		role = { onHeaderClick === undefined ? undefined : 'button' }
 		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
-		title = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
-		aria-label = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
+		title = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-label = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-expanded = { onHeaderClick === undefined ? undefined : ariaExpanded }
 	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
@@ -732,14 +738,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			? '../img/warning-sign.svg'
 			: '../img/success-icon.svg'
 
-	const exportEthSimulateInput = async () => {
-		const reply = await requestPopupInterceptorSimulationInput()
-		if (reply === undefined) return
-		return reply.ethSimulateV1InputString
-	}
-
 	return (
-		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
+		<div class = 'card simulation-summary-card' style = 'background-color: var(--card-bg-color);'>
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -793,23 +793,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
-					<div class = 'log-cell'>
-						<CopyToClipboard
-							copyFunction = { exportEthSimulateInput }
-							copyMessage = 'Interceptor Simulation input copied!'
-							classNames = { 'btn btn--outline is-small' }
-						>
-							<p class = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
-								<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-									<ExportIcon/>
-								</span>
-								<span>Export Simulation Stack</span>
-							</p>
-						</CopyToClipboard>
-					</div>
-
-					<div class = 'log-cell' style = 'justify-content: center;'> </div>
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto;'>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { getSimulationDisplayBlockNumber(simulationAndVisualisationResults.blockNumber, simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }

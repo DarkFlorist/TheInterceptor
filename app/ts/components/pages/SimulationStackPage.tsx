@@ -1,12 +1,13 @@
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
-import { BroomIcon, ImportIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
+import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
@@ -34,10 +35,15 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 	resetSimulation: () => void
 	disableReset: Signal<boolean>
 }) {
+	const exportSimulationStack = async () => {
+		const reply = await requestPopupInterceptorSimulationInput()
+		if (reply === undefined) return
+		await clipboardCopy(reply.ethSimulateV1InputString)
+	}
 	return <header class = 'simulation-stack-page-header'>
 		<div class = 'simulation-stack-page-title'>
 			<h1>Simulation Stack</h1>
-			<p>Review and adjust the transactions queued for simulation.</p>
+			<p>Import, export, and adjust the simulation stack.</p>
 		</div>
 		<div class = 'simulation-stack-page-actions'>
 			<button class = 'btn btn--outline is-small' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
@@ -45,6 +51,20 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 					<ImportIcon/>
 				</span>
 				<span>Import</span>
+			</button>
+			<button
+				class = 'btn btn--outline is-small'
+				type = 'button'
+				onClick = { exportSimulationStack }
+				title = 'Export simulation stack'
+				aria-label = 'Export simulation stack'
+				data-hint-clickable-hide-timer-ms = { 1500 }
+				data-hint = 'Interceptor Simulation input copied!'
+			>
+				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+					<ExportIcon/>
+				</span>
+				<span>Export</span>
 			</button>
 			<button class = 'btn btn--destructive is-small' type = 'button' disabled = { disableReset.value } onClick = { resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
@@ -59,7 +79,7 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 function RichAddressesTitleCard({ numberOfAddressesMadeRich }: { numberOfAddressesMadeRich: number }) {
 	if (numberOfAddressesMadeRich === 0) return <></>
 	return <section class = 'card' style = 'margin: 10px 0;'>
-		<header class = 'card-header'>
+		<header class = 'card-header stack-card-header'>
 			<div class = 'card-header-icon unset-cursor'>
 				<span class = 'icon'>
 					<img src = '../img/success-icon.svg' width = '24' height = '24' />

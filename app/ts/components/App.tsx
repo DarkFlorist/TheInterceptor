@@ -341,7 +341,6 @@ export function App() {
 							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
 							fixedAddressRichList = { fixedAddressRichList }
 							numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
-							openImportSimulation = { () => { appPage.value = { page: 'ImportSimulation', state: new Signal('') } } }
 						/>
 
 					</> }

@@ -42,6 +42,21 @@ describe('narrow text layout CSS', () => {
 		assert.match(cardHeaderWebsite, /min-width\s*:\s*0\s*;/)
 		assert.match(cardHeaderWebsite, /max-width\s*:\s*100%\s*;/)
 
+		const stackCardHeaderIcon = expectRule(css, '.stack-card-header > .card-header-icon')
+		assert.match(stackCardHeaderIcon, /padding\s*:\s*0\.55rem 0\.35rem 0\.55rem 0\.55rem\s*;/)
+
+		const stackCardHeaderTitle = expectRule(css, '.stack-card-header > .card-header-title')
+		assert.match(stackCardHeaderTitle, /flex\s*:\s*1 1 auto\s*;/)
+		assert.match(stackCardHeaderTitle, /min-width\s*:\s*0\s*;/)
+		assert.match(stackCardHeaderTitle, /padding-left\s*:\s*0\.35rem\s*;/)
+		assert.match(stackCardHeaderTitle, /overflow\s*:\s*hidden\s*;/)
+		assert.match(stackCardHeaderTitle, /text-overflow\s*:\s*ellipsis\s*;/)
+		assert.match(stackCardHeaderTitle, /white-space\s*:\s*nowrap\s*;/)
+
+		const stackCardHeaderWebsite = expectRule(css, '.stack-card-header > .card-header-website')
+		assert.match(stackCardHeaderWebsite, /flex\s*:\s*0 1 min\(11rem,\s*42%\)\s*;/)
+		assert.match(stackCardHeaderWebsite, /padding\s*:\s*0\.55rem 0\.5rem\s*;/)
+
 		const websiteOriginText = expectRule(css, '.website-origin-text')
 		assert.match(websiteOriginText, /display\s*:\s*flex\s*;/)
 		assert.match(websiteOriginText, /min-width\s*:\s*0\s*;/)
@@ -65,7 +80,20 @@ describe('narrow text layout CSS', () => {
 		const simulationStackPage = expectRule(css, '.simulation-stack-page')
 		assert.match(simulationStackPage, /--grid-column\s*:\s*1 \/ -1\s*;/)
 		assert.match(simulationStackPage, /width\s*:\s*100%\s*;/)
+		assert.match(simulationStackPage, /padding-inline\s*:\s*0\s*;/)
 		assert.doesNotMatch(simulationStackPage, /1100px/)
+
+		const simulationStackHeader = expectRule(css, '.simulation-stack-page-header')
+		assert.match(simulationStackHeader, /padding\s*:\s*1rem clamp\(0\.75rem,\s*2vw,\s*1\.5rem\)\s*;/)
+
+		const simulationStackSummaryCard = expectRule(css, '.simulation-summary-card')
+		assert.match(simulationStackSummaryCard, /margin\s*:\s*10px\s*;/)
+
+		const simulationStackPageSummaryCard = expectRule(css, '.simulation-stack-page-content > .simulation-summary-card')
+		assert.match(simulationStackPageSummaryCard, /margin\s*:\s*10px 0\s*;/)
+
+		const simulationStackContent = expectRule(css, '.simulation-stack-page-content')
+		assert.match(simulationStackContent, /padding\s*:\s*1rem clamp\(0\.75rem,\s*2vw,\s*1\.5rem\) 2rem\s*;/)
 
 		const simulationStackContentList = expectRule(css, '.simulation-stack-page-content > ul')
 		assert.match(simulationStackContentList, /margin\s*:\s*0\s*;/)

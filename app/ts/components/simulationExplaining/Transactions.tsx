@@ -235,19 +235,31 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 	</span>
 }
 
-export function Transaction(param: TransactionVisualizationParameters) {
+type CollapsibleStackCardParams = {
+	collapsed?: boolean
+	toggleCollapsed?: () => void
+}
+
+export function Transaction(param: TransactionVisualizationParameters & CollapsibleStackCardParams) {
 	const removeTransactionOrSignedMessage = param.removeTransactionOrSignedMessage
 	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
 		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
 	}
+	const headerActionLabel = param.collapsed === undefined ? undefined : param.collapsed ? 'Expand transaction details' : 'Collapse transaction details'
 	const rpcNetwork = useSignal(param.simulationAndVisualisationResults.rpcNetwork)
 	useEffect(() => {
 		rpcNetwork.value = param.simulationAndVisualisationResults.rpcNetwork
 	}, [param.simulationAndVisualisationResults.rpcNetwork])
 	return (
 		<div class = 'card'>
-			<TransactionHeader simTx = { param.simTx } removeTransactionOrSignedMessage = { remove } />
-			<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<TransactionHeader
+				simTx = { param.simTx }
+				removeTransactionOrSignedMessage = { remove }
+				onHeaderClick = { param.toggleCollapsed }
+				headerActionLabel = { headerActionLabel }
+				ariaExpanded = { param.collapsed === undefined ? undefined : !param.collapsed }
+			/>
+			{ param.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
@@ -276,14 +288,14 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						</> }
 					</div>
 				</span>
-			</div>
+			</div> }
 		</div>
 	)
 }
 
-function PendingStackHeader({ title, website, statusIcon, onHeaderClick, openLabel } : { title: string, website: SignalOrValue<Website | undefined>, statusIcon: string, onHeaderClick?: () => void, openLabel?: string }) {
+function PendingStackHeader({ title, website, statusIcon, onHeaderClick, openLabel, ariaExpanded } : { title: string, website: SignalOrValue<Website | undefined>, statusIcon: string, onHeaderClick?: () => void, openLabel?: string, ariaExpanded?: boolean }) {
 	return <header
-		class = { `card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		class = { `card-header stack-card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
 		onClick = { onHeaderClick }
 		onKeyDown = { (event) => {
 			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
@@ -295,6 +307,7 @@ function PendingStackHeader({ title, website, statusIcon, onHeaderClick, openLab
 		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
 		title = { onHeaderClick === undefined ? undefined : openLabel }
 		aria-label = { onHeaderClick === undefined ? undefined : openLabel }
+		aria-expanded = { onHeaderClick === undefined ? undefined : ariaExpanded }
 	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
@@ -323,6 +336,8 @@ function TransactionPreviewDetails({
 	renameAddressCallBack,
 	errorMessage,
 	title,
+	collapsed,
+	toggleCollapsed,
 }: {
 	website: SignalOrValue<Website | undefined>,
 	created: Date,
@@ -333,16 +348,20 @@ function TransactionPreviewDetails({
 	renameAddressCallBack: RenameAddressCallBack,
 	errorMessage: string | undefined,
 	title: string,
-}) {
+} & CollapsibleStackCardParams) {
 	const from = getAddressBookEntryOrAFiller(addressMetaData.value, signedTransaction.from)
 	const to = signedTransaction.to === null || signedTransaction.to === undefined ? undefined : getAddressBookEntryOrAFiller(addressMetaData.value, signedTransaction.to)
+	const headerActionLabel = collapsed === undefined ? undefined : collapsed ? 'Expand transaction details' : 'Collapse transaction details'
 	return <div class = 'card'>
 		<PendingStackHeader
 			title = { title }
 			website = { website }
 			statusIcon = { errorMessage === undefined ? '../img/question-mark-sign.svg' : '../img/error-icon.svg' }
+			onHeaderClick = { toggleCollapsed }
+			openLabel = { headerActionLabel }
+			ariaExpanded = { collapsed === undefined ? undefined : !collapsed }
 		/>
-		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+		{ collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
 			{ errorMessage === undefined ? <></> : <ErrorComponent text = { errorMessage } containerStyle = { { margin: '0px', marginBottom: '10px' } } /> }
 			<div class = 'container'>
 				<dl class = 'grid key-value-pair'>
@@ -377,7 +396,7 @@ function TransactionPreviewDetails({
 				</div>
 				<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } } />
 			</span>
-		</div>
+		</div> }
 	</div>
 }
 
@@ -387,20 +406,26 @@ function MessagePreviewDetails({
 	signedMessageTransaction,
 	visualizedPersonalSignRequest,
 	errorMessage,
+	collapsed,
+	toggleCollapsed,
 }: {
 	website: SignalOrValue<Website | undefined>,
 	created: Date,
 	signedMessageTransaction: SignedMessageTransaction,
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest | undefined,
 	errorMessage: string | undefined,
-}) {
+} & CollapsibleStackCardParams) {
+	const headerActionLabel = collapsed === undefined ? undefined : collapsed ? 'Expand signature details' : 'Collapse signature details'
 	return <div class = 'card'>
 		<PendingStackHeader
 			title = { errorMessage === undefined ? 'Pending signature' : 'Signature failed' }
 			website = { website }
 			statusIcon = { errorMessage === undefined ? '../img/question-mark-sign.svg' : '../img/error-icon.svg' }
+			onHeaderClick = { toggleCollapsed }
+			openLabel = { headerActionLabel }
+			ariaExpanded = { collapsed === undefined ? undefined : !collapsed }
 		/>
-		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+		{ collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
 			{ errorMessage === undefined ? <></> : <ErrorComponent text = { errorMessage } containerStyle = { { margin: '0px', marginBottom: '10px' } } /> }
 			<div class = 'textbox'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Signature request</p>
@@ -425,7 +450,7 @@ function MessagePreviewDetails({
 				</div>
 				<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } } />
 			</span>
-		</div>
+		</div> }
 	</div>
 }
 
@@ -509,7 +534,11 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+	const collapsed = useSignal(false)
 	const currentSimulationAndVisualisationResults = simulationAndVisualisationResults.value
+	const toggleCollapsed = () => {
+		collapsed.value = !collapsed.value
+	}
 
 	useEffect(() => {
 		switch(blockTimeManipulation.type) {
@@ -570,6 +599,8 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 					editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 					numberOfUnderTransactions = { 0 }
+					collapsed = { collapsed.value }
+					toggleCollapsed = { toggleCollapsed }
 				/>
 			: <MessagePreviewDetails
 				website = { stackRow.signedMessageTransaction.website }
@@ -577,6 +608,8 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				signedMessageTransaction = { stackRow.signedMessageTransaction }
 				visualizedPersonalSignRequest = { stackRow.visualizedPersonalSignRequest }
 				errorMessage = { undefined }
+				collapsed = { collapsed.value }
+				toggleCollapsed = { toggleCollapsed }
 			/> }
 			</> : <>
 				{ stackRow.status === 'simulated' && stackRow.simulatedTransaction !== undefined && currentSimulationAndVisualisationResults !== undefined ?
@@ -587,8 +620,10 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 						activeAddress = { activeAddress }
 						renameAddressCallBack = { renameAddressCallBack }
 						addressMetaData = { addressMetaData }
-					editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-				/>
+						editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+						collapsed = { collapsed.value }
+						toggleCollapsed = { toggleCollapsed }
+					/>
 			: <TransactionPreviewDetails
 				website = { stackRow.preSimulationTransaction.website }
 				created = { stackRow.preSimulationTransaction.created }
@@ -599,6 +634,8 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				renameAddressCallBack = { renameAddressCallBack }
 				errorMessage = { stackRow.status === 'failed' ? (stackRow.simulatedTransaction as NonSimulatedAndVisualizedTransaction | undefined)?.error.decodedErrorMessage ?? 'Failed to simulate this transaction.' : undefined }
 				title = { stackRow.status === 'failed' ? 'Not simulated' : 'Pending transaction' }
+				collapsed = { collapsed.value }
+				toggleCollapsed = { toggleCollapsed }
 			/> }
 		</> }
 		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>

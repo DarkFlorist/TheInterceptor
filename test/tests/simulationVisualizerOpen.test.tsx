@@ -18,10 +18,11 @@ type TestDomNode = {
 	readonly childNodes?: readonly TestDomNode[]
 	readonly textContent?: string | null
 	readonly getAttribute?: (name: string) => string | null
+	readonly l?: Record<string, (event: unknown) => unknown>
 	scrollIntoView?: (options?: ScrollIntoViewOptions) => void
 }
 
-function installBrowserMock() {
+function installBrowserMock(sendMessageReply?: (message: unknown) => unknown | Promise<unknown>) {
 	const listeners: RuntimeMessageListener[] = []
 	const sentMessages: unknown[] = []
 	Object.defineProperty(globalThis, 'browser', {
@@ -32,7 +33,7 @@ function installBrowserMock() {
 				lastError: null,
 				async sendMessage(message: unknown) {
 					sentMessages.push(message)
-					return undefined
+					return await sendMessageReply?.(message)
 				},
 				onMessage: {
 					addListener(listener: RuntimeMessageListener) {
@@ -52,6 +53,32 @@ function installBrowserMock() {
 		value: { runtime: { id: 'test-extension' } },
 	})
 	return { listeners, sentMessages }
+}
+
+function installClipboardMock() {
+	const previousNavigator = globalThis.navigator
+	const copiedText: string[] = []
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		writable: true,
+		value: {
+			clipboard: {
+				async writeText(text: string) {
+					copiedText.push(text)
+				},
+			},
+		},
+	})
+	return {
+		copiedText,
+		restore() {
+			Object.defineProperty(globalThis, 'navigator', {
+				configurable: true,
+				writable: true,
+				value: previousNavigator,
+			})
+		},
+	}
 }
 
 function StackVisualizerHookProbe() {
@@ -87,6 +114,20 @@ function collectElements(node: TestDomNode | null | undefined, tagName: string, 
 	return results
 }
 
+async function clickElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
+}
+
+function getHeadersContainingText(root: TestDomNode, text: string) {
+	return collectElements(root, 'header').filter((header) => header.textContent?.includes(text) === true)
+}
+
+function countTextOccurrences(input: string, text: string) {
+	return input.split(text).length - 1
+}
+
 function findElementById(root: TestDomNode, id: string) {
 	return collectElements(root, 'li').find((element) => element.getAttribute?.('id') === id)
 }
@@ -101,6 +142,16 @@ function hasClass(node: TestDomNode, className: string) {
 
 function findElementByClass(root: TestDomNode, tagName: string, className: string) {
 	return collectElements(root, tagName).find((element) => hasClass(element, className))
+}
+
+function hasButtonWithText(root: TestDomNode, text: string) {
+	return collectElements(root, 'button').some((button) => button.textContent?.replace(/\s+/g, ' ').trim() === text)
+}
+
+function getButtonByText(root: TestDomNode, text: string) {
+	const button = collectElements(root, 'button').find((button) => button.textContent?.replace(/\s+/g, ' ').trim() === text)
+	if (button === undefined) throw new Error(`Expected button with text "${ text }"`)
+	return button
 }
 
 function installQueuedAnimationFrames() {
@@ -206,11 +257,11 @@ function createSerializableSettings(): Settings {
 	}
 }
 
-function createSimulatedCompleteVisualizedSimulation(serializableSettings: Settings): CompleteVisualizedSimulation {
+function createSimulatedCompleteVisualizedSimulation(serializableSettings: Settings, transactionIdentifiers: readonly bigint[] = [1n]): CompleteVisualizedSimulation {
 	const blockTimeManipulation: BlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }
 	const simulationStateInput = [{
 		stateOverrides: {},
-		transactions: [createPreSimulationTransaction(1n)],
+		transactions: transactionIdentifiers.map(createPreSimulationTransaction),
 		signedMessages: [],
 		blockTimeManipulation,
 		simulateWithZeroBaseFee: false,
@@ -248,14 +299,14 @@ function createSimulatedCompleteVisualizedSimulation(serializableSettings: Setti
 	}
 }
 
-function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
+function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, transactionIdentifiers: readonly bigint[] = [1n]): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason)
 	const serializableSettings = createSerializableSettings()
 	return {
 		...update,
 		data: {
 			...update.data,
-			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings),
+			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers),
 			settings: serializableSettings,
 			rpcEntries: [serializableSettings.activeRpcNetwork],
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
@@ -264,6 +315,20 @@ function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number
 }
 
 describe('simulation visualizer open replies', () => {
+	test('stack visualizer entrypoint wraps the page in Hint for toolbar feedback', async () => {
+		const source = await Bun.file('app/ts/simulationStack.ts').text()
+
+		assert.match(source, /import Hint from '\.\/components\/subcomponents\/Hint\.js'/)
+		assert.match(source, /preact\.createElement\(Hint,\s*\{\s*children:\s*preact\.createElement\(SimulationStackPage,\s*\{\}\)\s*\}\)/)
+	})
+
+	test('Hint resolves copied feedback from nested toolbar click targets', async () => {
+		const source = await Bun.file('app/ts/components/subcomponents/Hint.tsx').text()
+
+		assert.match(source, /target\.closest\(`\[\$\{ attribute \}\]`\)/)
+		assert.match(source, /getHintElement\(event\.target,\s*copyAttribute\)/)
+	})
+
 	test('stack visualizer hook answers the visualizer-open probe but not the main-popup probe', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()
@@ -354,9 +419,104 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+			assert.equal(dom.document.body.textContent?.includes('Import, export, and adjust the simulation stack.'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Clear'), true)
+			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 			assert.equal(hasCompactStackCard(dom.document.body), false)
 			assert.ok(findElementById(dom.document.body, 'simulation-stack-transaction-0x1'))
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer export button copies the simulation stack export payload', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		const exportPayload = '{ "name": "Interceptor Simulation Export" }'
+		const { listeners, sentMessages } = installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
+				return { method: 'popup_requestInterceptorSimulationInput', ethSimulateV1InputString: exportPayload }
+			}
+			return undefined
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
+			})
+
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput'), true)
+			assert.deepStrictEqual(clipboardMock.copiedText, [exportPayload])
+		} finally {
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer transaction cards collapse and reopen independently', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(18, 1, 'Stack tab', [1n, 2n])) }, {}, () => undefined)
+			})
+
+			const transactionHeaders = getHeadersContainingText(dom.document.body, 'Pending transaction')
+			assert.equal(transactionHeaders.length, 2)
+			const firstHeader = transactionHeaders[0]
+			const secondHeader = transactionHeaders[1]
+			if (firstHeader === undefined || secondHeader === undefined) throw new Error('Expected two transaction headers')
+			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'true')
+			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'true')
+			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 2)
+
+			await act(async () => {
+				await clickElement(firstHeader)
+			})
+			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'false')
+			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'true')
+			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 1)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+
+			await act(async () => {
+				await clickElement(secondHeader)
+			})
+			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'false')
+			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'false')
+			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 0)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+
+			await act(async () => {
+				await clickElement(firstHeader)
+			})
+			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'true')
+			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'false')
+			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 1)
+
+			await act(async () => {
+				await clickElement(secondHeader)
+			})
+			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'true')
+			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'true')
+			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 2)
 		} finally {
 			dom.restore()
 		}

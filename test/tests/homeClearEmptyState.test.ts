@@ -194,7 +194,6 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
 		fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 		numberOfAddressesMadeRich: new Signal(0),
-		openImportSimulation: () => undefined,
 		...overrides,
 	}
 }
@@ -352,6 +351,37 @@ describe('Home popup clear empty state', () => {
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 		} finally {
 			dom.restore()
+		}
+	})
+
+	test('opens the simulation stack from the rich-only state card', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		const closeMock = installCloseMock()
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					simVisResults,
+					numberOfAddressesMadeRich: new Signal(2),
+				})), dom.document.body)
+			})
+
+			const richHeader = getHeaderContainingText(dom.document.body, 'Simply making 2 addresses rich')
+			assert.equal(richHeader.getAttribute?.('role'), 'button')
+			assert.equal(richHeader.getAttribute?.('aria-label'), 'Open rich address state in the full simulation stack')
+
+			await act(async () => {
+				await clickElement(richHeader)
+			})
+
+			assert.deepStrictEqual(getMessageWithMethod(browserMock.sentMessages, 'popup_openSimulationStack'), { method: 'popup_openSimulationStack' })
+			assert.equal(closeMock.closeCount, 1)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+			closeMock.restore()
 		}
 	})
 
@@ -564,8 +594,10 @@ describe('Home popup clear empty state', () => {
 				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
 			})
 
-			const viewStackButton = getButtonByText(dom.document.body, 'View Stack')
-			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'Open simulation stack in a new tab')
+			const viewStackButton = getButtonByText(dom.document.body, 'View stack details')
+			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'Open simulation stack details in a new tab')
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.replace(/\s+/g, ' ').trim() === 'Import'), false)
+			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 
 			await act(async () => {
 				await clickElement(viewStackButton)

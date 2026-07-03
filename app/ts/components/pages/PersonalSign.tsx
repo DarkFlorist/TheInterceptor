@@ -32,18 +32,22 @@ type SignatureCardParams = {
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	numberOfUnderTransactions: number
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	collapsed?: boolean
+	toggleCollapsed?: () => void
 }
 
 type SignatureHeaderParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	onHeaderClick?: () => void
+	headerActionLabel?: string
+	ariaExpanded?: boolean
 }
 
 export function SignatureHeader(params: SignatureHeaderParams) {
 	const removeSignedMessage = params.removeTransactionOrSignedMessage
 	return <header
-		class = { `card-header${ params.onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		class = { `card-header stack-card-header${ params.onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
 		onClick = { params.onHeaderClick }
 		onKeyDown = { (event) => {
 			if (params.onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
@@ -53,8 +57,9 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 		} }
 		role = { params.onHeaderClick === undefined ? undefined : 'button' }
 		tabIndex = { params.onHeaderClick === undefined ? undefined : 0 }
-		title = { params.onHeaderClick === undefined ? undefined : 'Open this signature in the full simulation stack' }
-		aria-label = { params.onHeaderClick === undefined ? undefined : 'Open this signature in the full simulation stack' }
+		title = { params.onHeaderClick === undefined ? undefined : params.headerActionLabel ?? 'Open this signature in the full simulation stack' }
+		aria-label = { params.onHeaderClick === undefined ? undefined : params.headerActionLabel ?? 'Open this signature in the full simulation stack' }
+		aria-expanded = { params.onHeaderClick === undefined ? undefined : params.ariaExpanded }
 	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
@@ -420,9 +425,10 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 const HALF_HEADER_HEIGHT = 48 / 2
 
 export function SignatureCard(params: SignatureCardParams) {
+	const headerActionLabel = params.collapsed === undefined ? undefined : params.collapsed ? 'Expand signature details' : 'Collapse signature details'
 	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
-		<SignatureHeader { ...params }/>
-		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+		<SignatureHeader { ...params } onHeaderClick = { params.toggleCollapsed } headerActionLabel = { headerActionLabel } ariaExpanded = { params.collapsed === undefined ? undefined : !params.collapsed }/>
+		{ params.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<div class = 'container'>
 				<SignRequest { ...params }/>
 			</div>
@@ -439,7 +445,7 @@ export function SignatureCard(params: SignatureCardParams) {
 				<div class = 'log-cell'> <TransactionCreated created = { params.visualizedPersonalSignRequest.created } /> </div>
 				<div class = 'log-cell' style = 'justify-content: right;'></div>
 			</span>
-		</div>
+		</div> }
 	</div>
 }
 

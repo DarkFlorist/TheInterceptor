@@ -12,7 +12,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { BroomIcon, ChevronIcon, ImportIcon, OpenInNewIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
@@ -285,7 +285,6 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 }
 
 type SimulationResultsHeaderParams = {
-	openImportSimulation: () => void
 	openSimulationStack?: () => void
 	disableReset?: ReadonlySignal<boolean>
 	resetSimulation?: () => void
@@ -295,22 +294,16 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
 		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
 			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
+		</div>
+		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
-				<button class = 'btn btn--outline is-small' onClick = { () => param.openSimulationStack?.() } title = 'Open simulation stack in a new tab' aria-label = 'Open simulation stack in a new tab'>
+				<button class = 'btn btn--outline is-small' onClick = { () => param.openSimulationStack?.() } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<OpenInNewIcon/>
 					</span>
-					<span>View Stack</span>
+					<span>View stack details</span>
 				</button>
 			}
-		</div>
-		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
-			<button class = 'btn btn--outline is-small' onClick = { param.openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
-				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-					<ImportIcon/>
-				</span>
-				<span>Import</span>
-			</button>
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
 				<button class = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
@@ -323,10 +316,29 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	</div>
 }
 
-function RichAddressesTitleCard({ numberOfAddressesMadeRich }: { numberOfAddressesMadeRich: number }) {
+function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack }: { numberOfAddressesMadeRich: number, openSimulationStack?: () => void }) {
 	if (numberOfAddressesMadeRich === 0) return <></>
+	const actionLabel = 'Open rich address state in the full simulation stack'
 	return <section class = 'card' style = 'margin: 10px;'>
-		<header class = 'card-header'>
+		<header
+			class = { `card-header stack-card-header${ openSimulationStack === undefined ? '' : ' stack-row-link-header' }` }
+			onClick = { openSimulationStack }
+			onKeyDown = { (event) => {
+				if (openSimulationStack === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+				if (event.target !== event.currentTarget) return
+				event.preventDefault()
+				openSimulationStack()
+			} }
+			role = { openSimulationStack === undefined ? undefined : 'button' }
+			tabIndex = { openSimulationStack === undefined ? undefined : 0 }
+			title = { openSimulationStack === undefined ? undefined : actionLabel }
+			aria-label = { openSimulationStack === undefined ? undefined : actionLabel }
+		>
+			<div class = 'card-header-icon unset-cursor'>
+				<span class = 'icon'>
+					<img src = '../img/success-icon.svg' width = '24' height = '24' />
+				</span>
+			</div>
 			<p class = 'card-header-title' style = 'white-space: nowrap;'>
 				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
 			</p>
@@ -352,21 +364,21 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	if (currentResults.kind === 'passthrough') {
 		return <div>
-			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } openSimulationStack = { param.openSimulationStack } />
+			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
-			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } /> }
+			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { () => param.openSimulationStack() } /> }
 		</div>
 	}
 
 	const resolvedResults = currentResults.value
 
 	return <div>
-		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
+		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 		{ resolvedResults.visualizedSimulationState.success === false ? <>
 			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
-			<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } />
+			<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { () => param.openSimulationStack() } />
 			<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
@@ -382,7 +394,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
-					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } />
+					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { () => param.openSimulationStack() } />
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
@@ -499,7 +511,6 @@ export function Home(param: HomeParams) {
 					rpcConnectionStatus = { param.rpcConnectionStatus }
 					simulationUpdatingState = { param.simulationUpdatingState }
 					simulationResultState = { param.simulationResultState }
-					openImportSimulation = { param.openImportSimulation }
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
