@@ -170,25 +170,31 @@ export function SimulationStackPage() {
 		</div>
 		<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
 			{ modalState.value.page === 'modifyAddress' ?
-				<AddNewAddress
-					setActiveAddressAndInformAboutIt = { undefined }
-					modifyAddressWindowState = { modalState.value.state }
-					close = { () => { modalState.value = { page: 'noModal' } } }
-					activeAddress = { activeSimulationAddress.value }
-					rpcEntries = { rpcEntries }
-				/>
+				<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
+					<AddNewAddress
+						setActiveAddressAndInformAboutIt = { undefined }
+						modifyAddressWindowState = { modalState.value.state }
+						close = { () => { modalState.value = { page: 'noModal' } } }
+						activeAddress = { activeSimulationAddress.value }
+						rpcEntries = { rpcEntries }
+					/>
+				</ErrorBoundary>
 			: <></> }
 			{ modalState.value.page === 'editEnsNamedHash' ?
-				<EditEnsLabelHash
-					close = { () => { modalState.value = { page: 'noModal' } } }
-					editEnsNamedHashWindowState = { modalState.value.state }
-				/>
+				<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
+					<EditEnsLabelHash
+						close = { () => { modalState.value = { page: 'noModal' } } }
+						editEnsNamedHashWindowState = { modalState.value.state }
+					/>
+				</ErrorBoundary>
 			: <></> }
 			{ modalState.value.page === 'importSimulation' ?
-				<ImportSimulationStack
-					close = { () => { modalState.value = { page: 'noModal' } } }
-					simulationInput = { modalState.value.state }
-				/>
+				<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
+					<ImportSimulationStack
+						close = { () => { modalState.value = { page: 'noModal' } } }
+						simulationInput = { modalState.value.state }
+					/>
+				</ErrorBoundary>
 			: <></> }
 		</div>
 	</main>

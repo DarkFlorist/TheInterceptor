@@ -6,7 +6,7 @@ import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js
 import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
@@ -14,7 +14,7 @@ import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleToken
 import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { SignatureCard } from '../pages/PersonalSign.js'
+import { SignatureCard, SignatureHeader } from '../pages/PersonalSign.js'
 import { bigintSecondsToDate, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
@@ -422,9 +422,62 @@ type TransactionOrMessageWithBlockTimeManipulatorParams = {
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	blockTimeManipulation: BlockTimeManipulationWithNoDelay
 	showTimePicker?: boolean
+	displayMode?: 'full' | 'titleOnly'
 }
 
-const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation, showTimePicker = true }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
+function getPendingTransactionTitle(stackRow: SimulationStackTransactionRow) {
+	if (stackRow.preSimulationTransaction.originalRequestParameters.method === 'eth_sendRawTransaction') return 'Pending raw transaction'
+	return 'Pending transaction'
+}
+
+function TransactionOrMessageTitleOnlyCard({
+	stackRow,
+	removeTransactionOrSignedMessage,
+}: {
+	stackRow: SimulationStackTransactionRow | SimulationStackMessageRow
+	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+}) {
+	if (stackRow.type === 'Message') {
+		if (stackRow.status === 'simulated' && stackRow.visualizedPersonalSignRequest !== undefined) {
+			return <div class = 'card'>
+				<SignatureHeader
+					visualizedPersonalSignRequest = { stackRow.visualizedPersonalSignRequest }
+					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+				/>
+			</div>
+		}
+		return <div class = 'card'>
+			<PendingStackHeader
+				title = 'Pending signature'
+				website = { stackRow.signedMessageTransaction.website }
+				statusIcon = '../img/question-mark-sign.svg'
+			/>
+		</div>
+	}
+	if (stackRow.status === 'simulated' && stackRow.simulatedTransaction !== undefined) {
+		const simulatedTransaction = stackRow.simulatedTransaction
+		const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
+			return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: simulatedTransaction.transactionIdentifier })
+		}
+		return <div class = 'card'>
+			<TransactionHeader simTx = { simulatedTransaction } removeTransactionOrSignedMessage = { remove } />
+		</div>
+	}
+	if (stackRow.status === 'failed') {
+		return <div class = 'card'>
+			<TransactionHeaderForFailedToSimulate website = { stackRow.preSimulationTransaction.website } />
+		</div>
+	}
+	return <div class = 'card'>
+		<PendingStackHeader
+			title = { getPendingTransactionTitle(stackRow) }
+			website = { stackRow.preSimulationTransaction.website }
+			statusIcon = '../img/question-mark-sign.svg'
+		/>
+	</div>
+}
+
+const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation, showTimePicker = true, displayMode = 'full' }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
 	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
@@ -466,6 +519,23 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 			{ type: 'Transaction', transactionIdentifier: transactionOrMessage.preSimulationTransaction.transactionIdentifier } as const
 		return sendPopupMessageToBackgroundPage({ method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier, blockTimeManipulation } })
 	}
+	if (displayMode === 'titleOnly') return <>
+		<TransactionOrMessageTitleOnlyCard
+			stackRow = { stackRow }
+			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+		/>
+		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>
+			<TimePicker
+				startText = { 'Simulate delay' }
+				mode = { timeSelectorMode }
+				absoluteTime = { timeSelectorAbsoluteTime }
+				deltaValue = { timeSelectorDeltaValue }
+				deltaUnit = { timeSelectorDeltaUnit }
+				onChangedCallBack = { () => { timeSelectorOnChange(stackRow) } }
+				removeNoDelayOption = { false }
+			/>
+		</div> : <></> }
+	</>
 	return <>
 		{ stackRow.type === 'Message' ? <>
 			{ stackRow.status === 'simulated' && stackRow.visualizedPersonalSignRequest !== undefined ?
@@ -528,6 +598,7 @@ type TransactionsAndSignedMessagesParams = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	showTimePicker?: boolean
+	displayMode?: 'full' | 'titleOnly'
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
@@ -535,7 +606,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 		const currentResults = param.simulationAndVisualisationResults.value
 		return currentResults.kind === 'passthrough' ? undefined : currentResults.value
 	})
-	return <SimulationStackRows { ...param } simulationAndVisualisationResults = { simulationAndVisualisationResults } showTimePicker = { true } />
+	return <SimulationStackRows { ...param } simulationAndVisualisationResults = { simulationAndVisualisationResults } showTimePicker = { param.showTimePicker !== false } />
 }
 
 type SimulationStackRowsParams = Omit<TransactionsAndSignedMessagesParams, 'simulationAndVisualisationResults'> & {
@@ -565,6 +636,7 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 					addressMetaData = { param.addressMetaData }
 					blockTimeManipulation = { transactionIndex === block.rows.length - 1 ? nextBlockManipulator : { type: 'No Delay' } as const }
 					showTimePicker = { param.showTimePicker !== false }
+					displayMode = { param.displayMode }
 				/>
 			</li> )
 			})

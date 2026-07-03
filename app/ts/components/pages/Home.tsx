@@ -2,7 +2,7 @@ import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCa
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
-import { SimulationStackCompactSummary } from '../simulationExplaining/SimulationStackCompactSummary.js'
+import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -323,6 +323,17 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	</div>
 }
 
+function RichAddressesTitleCard({ numberOfAddressesMadeRich }: { numberOfAddressesMadeRich: number }) {
+	if (numberOfAddressesMadeRich === 0) return <></>
+	return <section class = 'card' style = 'margin: 10px;'>
+		<header class = 'card-header'>
+			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
+			</p>
+		</header>
+	</section>
+}
+
 function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
 		if (param.numberOfAddressesMadeRich.value > 0) return false
@@ -330,6 +341,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return isEmptySimulation(param.simulationAndVisualisationResults.value.value)
 	})
 
+	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
 
 	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
@@ -343,10 +355,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
-			: <SimulationStackCompactSummary
-				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-				numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
-			/> }
+			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } /> }
 		</div>
 	}
 
@@ -357,18 +366,30 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 		{ resolvedResults.visualizedSimulationState.success === false ? <>
 			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
-			<SimulationStackCompactSummary
+			<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } />
+			<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-				numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
+				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+				activeAddress = { param.activeSimulationAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+				addressMetaData = { computedAddressBookEntries }
+				displayMode = 'titleOnly'
 			/>
 		</> : <>
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
-					<SimulationStackCompactSummary
+					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } />
+					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
+						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+						activeAddress = { param.activeSimulationAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
+						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+						addressMetaData = { computedAddressBookEntries }
+						displayMode = 'titleOnly'
 					/>
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>

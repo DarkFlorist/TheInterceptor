@@ -128,6 +128,18 @@ const createEmptySimulationResults = (): SimulationAndVisualisationResults => ({
 	},
 })
 
+const createPendingSimulationResults = (): SimulationAndVisualisationResults => ({
+	...createSimulationResults(),
+	visualizedSimulationState: {
+		success: true,
+		visualizedBlocks: [{
+			simulatedAndVisualizedTransactions: [],
+			visualizedPersonalSignRequests: [],
+			blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+		}],
+	},
+})
+
 function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 	return {
 		changeActiveAddress: () => undefined,
@@ -262,6 +274,23 @@ describe('Home popup clear empty state', () => {
 
 			assert.equal(dom.document.body.textContent?.includes('Simply making 2 addresses rich'), true)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('shows title-only stack cards while keeping per-transaction delay controls', async () => {
+		const dom = installDomMock()
+		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createPendingSimulationResults()))
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+			assert.equal(dom.document.body.textContent?.includes('Original request'), false)
+			assert.equal(dom.document.body.textContent?.includes('Transaction Input'), false)
 		} finally {
 			dom.restore()
 		}
