@@ -1,4 +1,4 @@
-import 'webextension-polyfill'
+import '../utils/installBrowserPolyfill.js'
 import { defaultRpcs, getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
