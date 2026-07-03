@@ -383,18 +383,18 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer target hash no-ops when browser globals are unavailable', async () => {
+	test('stack visualizer target hash no-ops when target lookup is unavailable', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
 		const { listeners } = installBrowserMock()
 		Object.defineProperty(globalThis.window, 'location', {
 			configurable: true,
 			writable: true,
-			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'no-dom') },
+			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'no-lookup') },
 		})
 		Object.defineProperty(dom.document, 'getElementById', {
 			configurable: true,
-			value: (id: string) => findElementById(dom.document.body, id) ?? null,
+			value: undefined,
 		})
 		try {
 			await act(() => {
@@ -406,8 +406,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(16, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: undefined })
-			Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: undefined })
 			await act(() => {
 				flushAnimationFrames()
 			})
