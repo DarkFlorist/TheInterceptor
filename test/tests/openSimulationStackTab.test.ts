@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 
 type TabRecord = {
 	readonly id: number
@@ -16,6 +17,7 @@ type TabUpdateDetails = {
 	readonly update: {
 		readonly active?: boolean
 		readonly highlighted?: boolean
+		readonly url?: string
 	}
 }
 
@@ -130,6 +132,20 @@ describe('open simulation stack tab', () => {
 		assert.deepEqual(updatedWindows, [{ windowId: 7, update: { focused: true } }])
 	})
 
+	test('focuses and targets an existing simulation stack tab', async () => {
+		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42 }], { ...emptyOpenedTabs(), simulationStack: 42 })
+		const openNewTab = await loadOpenNewTab()
+		const targetHash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'test-focus')
+
+		await openNewTab('simulationStack', targetHash)
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(updatedTabs, [{
+			tabId: 42,
+			update: { active: true, highlighted: true, url: `/html3/simulationStackV3.html${ targetHash }` },
+		}])
+	})
+
 	test('opens and stores a new simulation stack tab when none is tracked', async () => {
 		const { createdTabs, updatedTabs, storageState } = installBrowserMock([], emptyOpenedTabs())
 		const openNewTab = await loadOpenNewTab()
@@ -138,6 +154,18 @@ describe('open simulation stack tab', () => {
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/simulationStackV3.html' }])
+		assert.equal(storageState.idsOfOpenedTabs?.simulationStack, 99)
+	})
+
+	test('opens a new simulation stack tab with a target hash when none is tracked', async () => {
+		const { createdTabs, updatedTabs, storageState } = installBrowserMock([], emptyOpenedTabs())
+		const openNewTab = await loadOpenNewTab()
+		const targetHash = getSimulationStackTargetHash({ type: 'Message', messageIdentifier: 2n }, 'test-focus')
+
+		await openNewTab('simulationStack', targetHash)
+
+		assert.deepEqual(updatedTabs, [])
+		assert.deepEqual(createdTabs, [{ url: `/html3/simulationStackV3.html${ targetHash }` }])
 		assert.equal(storageState.idsOfOpenedTabs?.simulationStack, 99)
 	})
 

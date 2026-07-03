@@ -66,3 +66,9 @@ export const ExportIcon = () =>
 		<path d = 'M4 20h16v-4h2v5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-5h2z' fill = 'currentColor' />
 		<path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M12 3l-5 5h3v6h4V8h3z' fill = 'currentColor' />
 	</svg>
+
+export const OpenInNewIcon = () =>
+	<svg width = '1em' height = '1em' viewBox = '0 0 24 24' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M14 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v6h-2V5.414l-8.293 8.293-1.414-1.414L18.586 4H14z' fill = 'currentColor' />
+		<path fill-rule = 'evenodd' clip-rule = 'evenodd' d = 'M5 7a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-5h2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6v2z' fill = 'currentColor' />
+	</svg>

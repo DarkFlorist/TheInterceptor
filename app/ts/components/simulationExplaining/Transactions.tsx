@@ -40,6 +40,7 @@ import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { Blockie } from '../subcomponents/SVGBlockie.js'
+import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -280,8 +281,21 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	)
 }
 
-function PendingStackHeader({ title, website, statusIcon } : { title: string, website: SignalOrValue<Website | undefined>, statusIcon: string }) {
-	return <header class = 'card-header'>
+function PendingStackHeader({ title, website, statusIcon, onHeaderClick, openLabel } : { title: string, website: SignalOrValue<Website | undefined>, statusIcon: string, onHeaderClick?: () => void, openLabel?: string }) {
+	return <header
+		class = { `card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { onHeaderClick }
+		onKeyDown = { (event) => {
+			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			onHeaderClick()
+		} }
+		role = { onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
+		title = { onHeaderClick === undefined ? undefined : openLabel }
+		aria-label = { onHeaderClick === undefined ? undefined : openLabel }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { statusIcon } width = '24' height = '24' />
@@ -290,10 +304,13 @@ function PendingStackHeader({ title, website, statusIcon } : { title: string, we
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ title }
 		</p>
-		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
-			<WebsiteOriginText website = { website } />
-		</p>
+		<WebsiteOriginText website = { website } class = 'card-header-website' />
 	</header>
+}
+
+function getStackRowIdentifier(stackRow: SimulationStackTransactionRow | SimulationStackMessageRow): TransactionOrMessageIdentifier {
+	if (stackRow.type === 'Message') return { type: 'Message', messageIdentifier: stackRow.signedMessageTransaction.messageIdentifier }
+	return { type: 'Transaction', transactionIdentifier: stackRow.preSimulationTransaction.transactionIdentifier }
 }
 
 function TransactionPreviewDetails({
@@ -423,6 +440,7 @@ type TransactionOrMessageWithBlockTimeManipulatorParams = {
 	blockTimeManipulation: BlockTimeManipulationWithNoDelay
 	showTimePicker?: boolean
 	displayMode?: 'full' | 'titleOnly'
+	openSimulationStackAt?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 }
 
 function getPendingTransactionTitle(stackRow: SimulationStackTransactionRow) {
@@ -433,16 +451,21 @@ function getPendingTransactionTitle(stackRow: SimulationStackTransactionRow) {
 function TransactionOrMessageTitleOnlyCard({
 	stackRow,
 	removeTransactionOrSignedMessage,
+	openSimulationStackAt,
 }: {
 	stackRow: SimulationStackTransactionRow | SimulationStackMessageRow
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+	openSimulationStackAt?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 }) {
+	const stackRowIdentifier = getStackRowIdentifier(stackRow)
+	const openHeader = openSimulationStackAt === undefined ? undefined : () => openSimulationStackAt(stackRowIdentifier)
 	if (stackRow.type === 'Message') {
 		if (stackRow.status === 'simulated' && stackRow.visualizedPersonalSignRequest !== undefined) {
 			return <div class = 'card'>
 				<SignatureHeader
 					visualizedPersonalSignRequest = { stackRow.visualizedPersonalSignRequest }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+					onHeaderClick = { openHeader }
 				/>
 			</div>
 		}
@@ -451,6 +474,8 @@ function TransactionOrMessageTitleOnlyCard({
 				title = 'Pending signature'
 				website = { stackRow.signedMessageTransaction.website }
 				statusIcon = '../img/question-mark-sign.svg'
+				onHeaderClick = { openHeader }
+				openLabel = 'Open this signature in the full simulation stack'
 			/>
 		</div>
 	}
@@ -460,12 +485,12 @@ function TransactionOrMessageTitleOnlyCard({
 			return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: simulatedTransaction.transactionIdentifier })
 		}
 		return <div class = 'card'>
-			<TransactionHeader simTx = { simulatedTransaction } removeTransactionOrSignedMessage = { remove } />
+			<TransactionHeader simTx = { simulatedTransaction } removeTransactionOrSignedMessage = { remove } onHeaderClick = { openHeader } />
 		</div>
 	}
 	if (stackRow.status === 'failed') {
 		return <div class = 'card'>
-			<TransactionHeaderForFailedToSimulate website = { stackRow.preSimulationTransaction.website } />
+			<TransactionHeaderForFailedToSimulate website = { stackRow.preSimulationTransaction.website } onHeaderClick = { openHeader } />
 		</div>
 	}
 	return <div class = 'card'>
@@ -473,11 +498,13 @@ function TransactionOrMessageTitleOnlyCard({
 			title = { getPendingTransactionTitle(stackRow) }
 			website = { stackRow.preSimulationTransaction.website }
 			statusIcon = '../img/question-mark-sign.svg'
+			onHeaderClick = { openHeader }
+			openLabel = 'Open this transaction in the full simulation stack'
 		/>
 	</div>
 }
 
-const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation, showTimePicker = true, displayMode = 'full' }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
+const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressCallBack, editEnsNamedHashCallBack, removeTransactionOrSignedMessage, simulationAndVisualisationResults, activeAddress, addressMetaData, blockTimeManipulation, showTimePicker = true, displayMode = 'full', openSimulationStackAt }: TransactionOrMessageWithBlockTimeManipulatorParams) => {
 	const timeSelectorMode = useSignal<TimePickerMode>('No Delay')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
@@ -514,15 +541,13 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 	const timeSelectorOnChange = (transactionOrMessage: SimulationStackTransactionRow | SimulationStackMessageRow) => {
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
 		if (blockTimeManipulation === undefined) return
-		const transactionOrMessageIdentifier = transactionOrMessage.type === 'Message' ?
-			{ type: 'Message', messageIdentifier: transactionOrMessage.signedMessageTransaction.messageIdentifier } as const :
-			{ type: 'Transaction', transactionIdentifier: transactionOrMessage.preSimulationTransaction.transactionIdentifier } as const
-		return sendPopupMessageToBackgroundPage({ method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier, blockTimeManipulation } })
+		return sendPopupMessageToBackgroundPage({ method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier: getStackRowIdentifier(transactionOrMessage), blockTimeManipulation } })
 	}
 	if (displayMode === 'titleOnly') return <>
 		<TransactionOrMessageTitleOnlyCard
 			stackRow = { stackRow }
 			removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
+			openSimulationStackAt = { openSimulationStackAt }
 		/>
 		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>
 			<TimePicker
@@ -599,6 +624,8 @@ type TransactionsAndSignedMessagesParams = {
 	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
 	showTimePicker?: boolean
 	displayMode?: 'full' | 'titleOnly'
+	openSimulationStackAt?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+	highlightedStackTargetId?: ReadonlySignal<string | undefined>
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
@@ -625,7 +652,13 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 	return <ul> {
 		transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
 			const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
-			return block.rows.map((stackRow, transactionIndex) => <li key = { stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }` }>
+			return block.rows.map((stackRow, transactionIndex) => {
+				const stackRowElementId = getSimulationStackElementId(getStackRowIdentifier(stackRow))
+				return <li
+					key = { stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }` }
+					id = { stackRowElementId }
+					class = { `simulation-stack-row${ param.highlightedStackTargetId?.value === stackRowElementId ? ' simulation-stack-row--highlighted' : '' }` }
+				>
 				<TransactionOrMessageWithBlockTimeManipulator
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					stackRow = { stackRow }
@@ -637,8 +670,10 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 					blockTimeManipulation = { transactionIndex === block.rows.length - 1 ? nextBlockManipulator : { type: 'No Delay' } as const }
 					showTimePicker = { param.showTimePicker !== false }
 					displayMode = { param.displayMode }
+					openSimulationStackAt = { param.openSimulationStackAt }
 				/>
-			</li> )
+			</li>
+			})
 			})
 		} </ul>
 	}

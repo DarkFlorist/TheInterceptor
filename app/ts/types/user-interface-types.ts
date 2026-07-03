@@ -99,7 +99,7 @@ export type SimulationStateParam = {
 	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>
 	simulationResultState: Signal<SimulationResultState | undefined>
 	openImportSimulation: () => void
-	openSimulationStack: () => void
+	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
 	numberOfAddressesMadeRich: Signal<number>
 }
 

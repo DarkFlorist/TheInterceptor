@@ -583,15 +583,29 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 type TransactionHeaderParams = {
 	simTx: MaybeSimulatedTransaction
 	removeTransactionOrSignedMessage?: () => void
+	onHeaderClick?: () => void
 }
 
-export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : TransactionHeaderParams) {
+export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onHeaderClick } : TransactionHeaderParams) {
 	const icon = useComputed(() => {
 		if (simTx.transactionStatus === 'Failed To Simulate' || simTx.transactionStatus === 'Transaction Failed') return '../img/error-icon.svg'
 		if (simTx.quarantine) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
-	return <header class = 'card-header'>
+	return <header
+		class = { `card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { onHeaderClick }
+		onKeyDown = { (event) => {
+			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			onHeaderClick()
+		} }
+		role = { onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
+		title = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
+		aria-label = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { icon.value } width = '24' height = '24' />
@@ -602,28 +616,43 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : 
 		</p>
 		{ simTx.transaction.to === undefined
 			? <></>
-			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
-				<WebsiteOriginText website = { simTx.website } />
-			</p>
+			: <WebsiteOriginText
+				website = { simTx.website }
+				class = { `card-header-website${ removeTransactionOrSignedMessage !== undefined ? ' card-header-website--flush' : ''}` }
+			/>
 		}
 		{ removeTransactionOrSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }><XMarkIcon /></button>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { (event) => {
+				event.stopPropagation()
+				removeTransactionOrSignedMessage()
+			} }><XMarkIcon /></button>
 			: <></>
 		}
 	</header>
 }
 
-export function TransactionHeaderForFailedToSimulate({ website } : { website: Website }) {
-	return <header class = 'card-header'>
+export function TransactionHeaderForFailedToSimulate({ website, onHeaderClick } : { website: Website, onHeaderClick?: () => void }) {
+	return <header
+		class = { `card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { onHeaderClick }
+		onKeyDown = { (event) => {
+			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			onHeaderClick()
+		} }
+		role = { onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
+		title = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
+		aria-label = { onHeaderClick === undefined ? undefined : 'Open this transaction in the full simulation stack' }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
-		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
-			<WebsiteOriginText website = { website } />
-		</p>
+		<WebsiteOriginText website = { website } class = 'card-header-website' />
 	</header>
 }
 

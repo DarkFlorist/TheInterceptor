@@ -481,9 +481,10 @@ export async function getAddressBookData(parsed: GetAddressBookData) {
 	})
 }
 
-export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack') => {
+export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack', targetHash = '') => {
+	const targetUrl = `${ getHtmlFile(tabName) }${ targetHash }`
 	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: getHtmlFile(tabName) })
+		const tab = await browser.tabs.create({ url: targetUrl })
 		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })
 	}
 
@@ -493,7 +494,7 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	const tab = await updateTabIfExists(addressBookTab.id, { active: true, highlighted: true })
+	const tab = await updateTabIfExists(addressBookTab.id, { active: true, highlighted: true, ...(targetHash.length === 0 ? {} : { url: targetUrl }) })
 	if (tab === undefined) return await openInNewTab()
 	if (tab?.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })
 }

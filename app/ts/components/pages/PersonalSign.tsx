@@ -37,11 +37,25 @@ type SignatureCardParams = {
 type SignatureHeaderParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+	onHeaderClick?: () => void
 }
 
 export function SignatureHeader(params: SignatureHeaderParams) {
 	const removeSignedMessage = params.removeTransactionOrSignedMessage
-	return <header class = 'card-header'>
+	return <header
+		class = { `card-header${ params.onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { params.onHeaderClick }
+		onKeyDown = { (event) => {
+			if (params.onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			params.onHeaderClick()
+		} }
+		role = { params.onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { params.onHeaderClick === undefined ? undefined : 0 }
+		title = { params.onHeaderClick === undefined ? undefined : 'Open this signature in the full simulation stack' }
+		aria-label = { params.onHeaderClick === undefined ? undefined : 'Open this signature in the full simulation stack' }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } width = '24' height = '24' />
@@ -50,11 +64,15 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifySignature(params.visualizedPersonalSignRequest).title }
 		</p>
-		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
-			<WebsiteOriginText website = { params.visualizedPersonalSignRequest.website } />
-		</p>
+		<WebsiteOriginText
+			website = { params.visualizedPersonalSignRequest.website }
+			class = { `card-header-website${ params.removeTransactionOrSignedMessage !== undefined ? ' card-header-website--flush' : ''}` }
+		/>
 		{ removeSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { (event) => {
+				event.stopPropagation()
+				removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier })
+			} }>
 				<XMarkIcon />
 			</button>
 			: <></>

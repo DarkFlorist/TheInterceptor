@@ -12,7 +12,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { BroomIcon, ChevronIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, ImportIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
@@ -293,18 +293,18 @@ type SimulationResultsHeaderParams = {
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
-		<div class = 'log-cell' style = 'justify-content: left; min-width: 0;'>
+		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
 			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
-		</div>
-		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
-				<button class = 'btn btn--outline is-small' onClick = { param.openSimulationStack } title = 'Open full simulation stack' aria-label = 'Open full simulation stack'>
+				<button class = 'btn btn--outline is-small' onClick = { () => param.openSimulationStack?.() } title = 'Open simulation stack in a new tab' aria-label = 'Open simulation stack in a new tab'>
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<ExportIcon/>
+						<OpenInNewIcon/>
 					</span>
-					<span>Full Stack</span>
+					<span>View Stack</span>
 				</button>
 			}
+		</div>
+		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			<button class = 'btn btn--outline is-small' onClick = { param.openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
 				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 					<ImportIcon/>
@@ -375,6 +375,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				addressMetaData = { computedAddressBookEntries }
 				displayMode = 'titleOnly'
+				openSimulationStackAt = { param.openSimulationStack }
 			/>
 		</> : <>
 			{ isEmpty.value ?
@@ -390,6 +391,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						addressMetaData = { computedAddressBookEntries }
 						displayMode = 'titleOnly'
+						openSimulationStackAt = { param.openSimulationStack }
 					/>
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
@@ -450,8 +452,11 @@ export function Home(param: HomeParams) {
 		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
 	}
 
-	async function openSimulationStack() {
-		await sendPopupMessageToBackgroundPage({ method: 'popup_openSimulationStack' })
+	async function openSimulationStack(target?: TransactionOrMessageIdentifier) {
+		await sendPopupMessageToBackgroundPage(target === undefined
+			? { method: 'popup_openSimulationStack' }
+			: { method: 'popup_openSimulationStack', data: target }
+		)
 		globalThis.close()
 	}
 

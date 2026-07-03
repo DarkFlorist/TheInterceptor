@@ -10,8 +10,16 @@ import type { BlockTimeManipulation, CompleteVisualizedSimulation, PreSimulation
 import { UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
+import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => boolean | undefined
+type TestDomNode = {
+	readonly tagName?: string
+	readonly childNodes?: readonly TestDomNode[]
+	readonly textContent?: string | null
+	readonly getAttribute?: (name: string) => string | null
+	scrollIntoView?: (options?: ScrollIntoViewOptions) => void
+}
 
 function installBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
@@ -71,6 +79,32 @@ function sendRuntimeMessage(listener: RuntimeMessageListener, message: unknown) 
 		response = nextResponse
 	})
 	return { returned, response }
+}
+
+function collectElements(node: TestDomNode | null | undefined, tagName: string, results: TestDomNode[] = []) {
+	if (node?.tagName === tagName.toUpperCase()) results.push(node)
+	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
+	return results
+}
+
+function findElementById(root: TestDomNode, id: string) {
+	return collectElements(root, 'li').find((element) => element.getAttribute?.('id') === id)
+}
+
+function hasCompactStackCard(root: TestDomNode) {
+	return collectElements(root, 'header').some((header) => header.textContent?.replace(/\s+/g, ' ').trim() === 'Stack')
+}
+
+function installQueuedAnimationFrames() {
+	const animationFrames: FrameRequestCallback[] = []
+	globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
+		animationFrames.push(callback)
+		return animationFrames.length
+	}
+	return () => {
+		const pendingFrames = animationFrames.splice(0)
+		for (const callback of pendingFrames) callback(0)
+	}
 }
 
 const settings: Settings = {
@@ -284,6 +318,7 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Simply making 2 addresses rich'), true)
+			assert.equal(hasCompactStackCard(dom.document.body), false)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 		} finally {
 			dom.restore()
@@ -305,9 +340,189 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+			assert.equal(hasCompactStackCard(dom.document.body), false)
+			assert.ok(findElementById(dom.document.body, 'simulation-stack-transaction-0x1'))
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 		} finally {
 			dom.restore()
 		}
 	})
-})
+
+	test('stack visualizer target hash no-ops when the target element cannot scroll', async () => {
+		const dom = installDomMock()
+		const flushAnimationFrames = installQueuedAnimationFrames()
+		const { listeners } = installBrowserMock()
+		Object.defineProperty(globalThis.window, 'location', {
+			configurable: true,
+			writable: true,
+			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'no-scroll') },
+		})
+		Object.defineProperty(dom.document, 'getElementById', {
+			configurable: true,
+			value: (id: string) => findElementById(dom.document.body, id) ?? null,
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(14, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+			await act(() => {
+				flushAnimationFrames()
+			})
+
+			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
+			assert.ok(targetRow)
+			assert.equal(targetRow.getAttribute?.('class')?.includes('simulation-stack-row--highlighted'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer target hash no-ops when browser globals are unavailable', async () => {
+		const dom = installDomMock()
+		const flushAnimationFrames = installQueuedAnimationFrames()
+		const { listeners } = installBrowserMock()
+		Object.defineProperty(globalThis.window, 'location', {
+			configurable: true,
+			writable: true,
+			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'no-dom') },
+		})
+		Object.defineProperty(dom.document, 'getElementById', {
+			configurable: true,
+			value: (id: string) => findElementById(dom.document.body, id) ?? null,
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(16, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+			Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: undefined })
+			Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: undefined })
+			await act(() => {
+				flushAnimationFrames()
+			})
+
+			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
+			assert.ok(targetRow)
+			assert.equal(targetRow.getAttribute?.('class')?.includes('simulation-stack-row--highlighted'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer target hash scrolls to and highlights the matching row', async () => {
+		const dom = installDomMock()
+		const flushAnimationFrames = installQueuedAnimationFrames()
+		const { listeners } = installBrowserMock()
+		const scrollCalls: ScrollIntoViewOptions[] = []
+		Object.defineProperty(globalThis.window, 'location', {
+			configurable: true,
+			writable: true,
+			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'scroll') },
+		})
+		Object.defineProperty(dom.document, 'getElementById', {
+			configurable: true,
+			value: (id: string) => {
+				const element = findElementById(dom.document.body, id)
+				if (element === undefined) return null
+				element.scrollIntoView = (options?: ScrollIntoViewOptions) => {
+					if (options !== undefined) scrollCalls.push(options)
+				}
+				return element
+			},
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(15, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+			await act(() => {
+				flushAnimationFrames()
+			})
+
+			assert.deepStrictEqual(scrollCalls.at(-1), { behavior: 'smooth', block: 'center' })
+			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
+			assert.ok(targetRow)
+			assert.equal(targetRow.getAttribute?.('class')?.includes('simulation-stack-row--highlighted'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer target hash does not replay after same-hash updates', async () => {
+		const dom = installDomMock()
+		const flushAnimationFrames = installQueuedAnimationFrames()
+		const { listeners } = installBrowserMock()
+		const scrollCalls: ScrollIntoViewOptions[] = []
+		Object.defineProperty(globalThis.window, 'location', {
+			configurable: true,
+			writable: true,
+			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'retry') },
+		})
+		Object.defineProperty(dom.document, 'getElementById', {
+			configurable: true,
+			value: (id: string) => {
+				const element = findElementById(dom.document.body, id)
+				if (element === undefined) return null
+				element.scrollIntoView = (options?: ScrollIntoViewOptions) => {
+					if (options !== undefined) scrollCalls.push(options)
+				}
+				return element
+			},
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				flushAnimationFrames()
+			})
+			assert.equal(scrollCalls.length, 0)
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(17, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+			await act(() => {
+				flushAnimationFrames()
+			})
+			assert.equal(scrollCalls.length, 1)
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(17, 2, 'Stack tab refresh')) }, {}, () => undefined)
+			})
+			await act(() => {
+				flushAnimationFrames()
+			})
+			assert.equal(scrollCalls.length, 1)
+
+			globalThis.window.location.hash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'retry-again')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(17, 3, 'Stack tab retarget')) }, {}, () => undefined)
+			})
+			await act(() => {
+				flushAnimationFrames()
+			})
+			assert.equal(scrollCalls.length, 2)
+		} finally {
+			dom.restore()
+		}
+	})
+	})

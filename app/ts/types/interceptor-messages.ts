@@ -314,6 +314,12 @@ export const RemoveTransaction = funtypes.ReadonlyObject({
 	data: TransactionOrMessageIdentifier
 }).asReadonly()
 
+export type OpenSimulationStack = funtypes.Static<typeof OpenSimulationStack>
+export const OpenSimulationStack = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack'), data: TransactionOrMessageIdentifier }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack') }),
+)
+
 type ResetSimulation = funtypes.Static<typeof ResetSimulation>
 const ResetSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_resetSimulation')
@@ -989,7 +995,7 @@ const PopupMessageRuntype = funtypes.Union(
 	DisableInterceptor,
 	SetEnsNameForHash,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack') }),
+	OpenSimulationStack,
 	RetrieveWebsiteAccess,
 	BlockOrAllowExternalRequests,
 	AllowOrPreventAddressAccessForWebsite,

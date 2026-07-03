@@ -32,6 +32,31 @@ describe('narrow text layout CSS', () => {
 		const grid = expectRule(css, ':where(.grid)')
 		assert.match(grid, /min-width\s*:\s*0\s*;/)
 		assert.match(grid, /max-width\s*:\s*100%\s*;/)
+
+		assert.match(css, /\.card-header-title\s*\{[\s\S]*?min-width\s*:\s*0\s*;[\s\S]*?\}/)
+		assert.match(css, /\.card-header-title\s*\{[\s\S]*?overflow\s*:\s*hidden\s*;[\s\S]*?\}/)
+		assert.match(css, /\.card-header-title\s*\{[\s\S]*?text-overflow\s*:\s*ellipsis\s*;[\s\S]*?\}/)
+
+		const cardHeaderWebsite = expectRule(css, '.card-header-website')
+		assert.match(cardHeaderWebsite, /flex\s*:\s*0 1 16rem\s*;/)
+		assert.match(cardHeaderWebsite, /min-width\s*:\s*0\s*;/)
+		assert.match(cardHeaderWebsite, /max-width\s*:\s*100%\s*;/)
+
+		const websiteOriginText = expectRule(css, '.website-origin-text')
+		assert.match(websiteOriginText, /display\s*:\s*flex\s*;/)
+		assert.match(websiteOriginText, /min-width\s*:\s*0\s*;/)
+		assert.match(websiteOriginText, /max-width\s*:\s*100%\s*;/)
+
+		const stackRowLinkHeader = expectRule(css, '.stack-row-link-header')
+		assert.match(stackRowLinkHeader, /cursor\s*:\s*pointer\s*;/)
+		assert.match(stackRowLinkHeader, /transition\s*:/)
+
+		const simulationStackRow = expectRule(css, '.simulation-stack-row')
+		assert.match(simulationStackRow, /scroll-margin-block\s*:\s*2rem\s*;/)
+
+		const highlightedSimulationStackRow = expectRule(css, '.simulation-stack-row--highlighted')
+		assert.match(highlightedSimulationStackRow, /animation\s*:\s*simulation-stack-row-target-pulse 1800ms ease-out\s*;/)
+		assert.match(css, /@keyframes simulation-stack-row-target-pulse/)
 	})
 
 	test('uses flexible button height and stacks address book card actions at ultra-narrow widths', async () => {

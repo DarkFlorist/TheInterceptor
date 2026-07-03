@@ -148,9 +148,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
 						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
 					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-						<WebsiteOriginText website = { pendingTransaction.website } />
-					</p>
+					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
 				</header>
 				<div style = { absoluteStyle }></div>
 			</div>
@@ -271,9 +269,7 @@ function FailedTransactionPreviewDetails({
 			<p class = 'card-header-title' style = 'white-space: nowrap;'>
 				{ isGasEstimationError ? 'Gas estimation error' : 'Execution error' }
 			</p>
-			<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-				<WebsiteOriginText website = { website } />
-			</p>
+			<WebsiteOriginText website = { website } class = 'card-header-website' />
 		</header>
 		<div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<div class = 'container'>

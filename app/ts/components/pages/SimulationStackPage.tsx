@@ -11,13 +11,14 @@ import { BroomIcon, ImportIcon } from '../subcomponents/icons.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
-import { SimulationStackCompactSummary } from '../simulationExplaining/SimulationStackCompactSummary.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { ImportSimulationStack } from './ImportSimulationStack.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { useEffect } from 'preact/hooks'
+import { getSimulationStackTargetElementIdFromHash } from '../../utils/simulationStackTargets.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -53,6 +54,37 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 	</div>
 }
 
+function RichAddressesTitleCard({ numberOfAddressesMadeRich }: { numberOfAddressesMadeRich: number }) {
+	if (numberOfAddressesMadeRich === 0) return <></>
+	return <section class = 'card' style = 'margin: 10px 0;'>
+		<header class = 'card-header'>
+			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
+			</p>
+		</header>
+	</section>
+}
+
+function scheduleStackTargetFrame(callback: () => void) {
+	if (typeof globalThis.requestAnimationFrame === 'function') {
+		globalThis.requestAnimationFrame(callback)
+		return
+	}
+	if (typeof globalThis.setTimeout === 'function') {
+		globalThis.setTimeout(callback, 0)
+		return
+	}
+	callback()
+}
+
+function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
+	if (typeof globalThis.setTimeout === 'function') {
+		globalThis.setTimeout(callback, delayMs)
+		return
+	}
+	callback()
+}
+
 export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
@@ -76,6 +108,8 @@ export function SimulationStackPage() {
 	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 	const boundaryResetKey = useSignal(0)
+	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
+	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
 	const isEmpty = useComputed(() => {
 		if (numberOfAddressesMadeRich.value > 0) return false
@@ -86,6 +120,47 @@ export function SimulationStackPage() {
 	useSignalEffect(() => {
 		simVisResults.value
 		markSimulationDataReceived()
+	})
+
+	const scrollToRequestedStackRow = () => {
+		const browserWindow = globalThis.window
+		const browserDocument = globalThis.document
+		if (browserWindow === undefined || browserDocument === undefined) return
+		const targetHash = browserWindow.location?.hash
+		if (targetHash === undefined) return
+		if (handledStackTargetHash.value === targetHash) return
+		const targetElementId = getSimulationStackTargetElementIdFromHash(targetHash)
+		if (targetElementId === undefined) return
+		if (typeof browserDocument.getElementById !== 'function') return
+		const targetElement = browserDocument.getElementById(targetElementId)
+		if (targetElement === null) return
+		if (typeof targetElement.scrollIntoView !== 'function') return
+		targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+		handledStackTargetHash.value = targetHash
+		highlightedStackTargetId.value = targetElementId
+		scheduleStackTargetTimeout(() => {
+			if (highlightedStackTargetId.value === targetElementId) highlightedStackTargetId.value = undefined
+		}, 1800)
+	}
+
+	useEffect(() => {
+		const scrollOnHashChange = () => {
+			handledStackTargetHash.value = undefined
+			scrollToRequestedStackRow()
+		}
+		const browserWindow = globalThis.window
+		if (browserWindow === undefined || typeof browserWindow.addEventListener !== 'function' || typeof browserWindow.removeEventListener !== 'function') {
+			scheduleStackTargetFrame(scrollOnHashChange)
+			return undefined
+		}
+		browserWindow.addEventListener('hashchange', scrollOnHashChange)
+		scheduleStackTargetFrame(scrollOnHashChange)
+		return () => browserWindow.removeEventListener('hashchange', scrollOnHashChange)
+	}, [])
+
+	useSignalEffect(() => {
+		simVisResults.value
+		scheduleStackTargetFrame(scrollToRequestedStackRow)
 	})
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -138,18 +213,12 @@ export function SimulationStackPage() {
 				{ isEmpty.value ?
 					<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 				: currentResults.kind === 'passthrough' ?
-					<SimulationStackCompactSummary
-						simulationAndVisualisationResults = { simVisResults }
-						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
-					/>
+					<RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } />
 				: <div class = { simulationResultState.value === 'invalid' || simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
 					{ currentResults.value.visualizedSimulationState.success === false ?
 						<ErrorComponent text = { `Failed to simulate the stack due to error: "${ currentResults.value.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
 					: <></> }
-					<SimulationStackCompactSummary
-						simulationAndVisualisationResults = { simVisResults }
-						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
-					/>
+					<RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } />
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { simVisResults }
 						removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
@@ -157,6 +226,7 @@ export function SimulationStackPage() {
 						renameAddressCallBack = { renameAddressCallBack }
 						editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 						addressMetaData = { addressMetaData }
+						highlightedStackTargetId = { highlightedStackTargetId }
 					/>
 					<SimulationSummary
 						simulationAndVisualisationResults = { simVisResults }
