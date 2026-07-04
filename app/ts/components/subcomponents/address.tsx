@@ -141,19 +141,23 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(currentAddressBookEntry) } style = { style } />
 }
 
-export function WebsiteOriginText({ website }: { website: SignalOrValue<Website | undefined> }) {
+export function WebsiteOriginText({ website, class: cssClass, style }: {
+	website: SignalOrValue<Website | undefined>
+	class?: string
+	style?: JSX.CSSProperties | string
+}) {
 	const currentWebsite = resolveSignal(website)
 	if (currentWebsite === undefined) return <></>
 	const icon = sanitizeStoredWebsiteIcon(currentWebsite.icon)
 	const { websiteOrigin, title } = currentWebsite
-	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
-		<span style = 'width: 24px; height: 24px; min-width: 24px'>
+	return <div class = { `website-origin-text${ cssClass === undefined ? '' : ` ${ cssClass }` }` } style = { style }>
+		<span class = 'website-origin-text-icon'>
 			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' style = 'width: 24px; height: 24px;' /> }
 		</span>
 
-		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
-			<p class = 'title is-5 is-spaced address-text' style = 'overflow: hidden;'>{ websiteOrigin }</p>
-			<p class = 'subtitle is-7' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: hidden;'> { title } </p>
+		<div class = 'media-content website-origin-text-body'>
+			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ websiteOrigin }</p>
+			<p class = 'subtitle is-7 website-origin-text-title'> { title } </p>
 		</div>
 	</div>
 }

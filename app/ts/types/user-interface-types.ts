@@ -54,7 +54,7 @@ export type HomeParams = {
 	interceptorDisabled: Signal<boolean>
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
-	openImportSimulation: () => void
+	numberOfAddressesMadeRich: Signal<number>
 }
 
 export type ChangeActiveAddressParam = {
@@ -97,7 +97,8 @@ export type SimulationStateParam = {
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>
 	simulationResultState: Signal<SimulationResultState | undefined>
-	openImportSimulation: () => void
+	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
+	numberOfAddressesMadeRich: Signal<number>
 }
 
 export type LogAnalysisParams = {

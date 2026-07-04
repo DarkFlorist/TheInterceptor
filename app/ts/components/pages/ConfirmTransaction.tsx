@@ -24,8 +24,9 @@ import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
-import { NetworkErrors } from '../App.js'
-import { InvalidMessage, SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
+import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
+import { identifySignature } from '../simulationExplaining/identifySignature.js'
+import { InvalidMessage, SignatureCard, SignatureHeader, isPossibleToSignMessage } from './PersonalSign.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -147,9 +148,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
 						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
 					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-						<WebsiteOriginText website = { pendingTransaction.website } />
-					</p>
+					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
 				</header>
 				<div style = { absoluteStyle }></div>
 			</div>
@@ -270,9 +269,7 @@ function FailedTransactionPreviewDetails({
 			<p class = 'card-header-title' style = 'white-space: nowrap;'>
 				{ isGasEstimationError ? 'Gas estimation error' : 'Execution error' }
 			</p>
-			<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-				<WebsiteOriginText website = { website } />
-			</p>
+			<WebsiteOriginText website = { website } class = 'card-header-website' />
 		</header>
 		<div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<div class = 'container'>

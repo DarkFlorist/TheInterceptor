@@ -9,7 +9,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getUpdatedSimulationState } from './background.js'
-import { requestIsMainPopupWindowOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
@@ -62,8 +62,8 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const ageSeconds = (Date.now()- popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
 		}
-		const isMainPopupWindowOpenReply = await requestIsMainPopupWindowOpen()
-		if (!(isMainPopupWindowOpenReply?.data.isOpen === true)) return popupVisualisation
+		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
+		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated') {
 			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)

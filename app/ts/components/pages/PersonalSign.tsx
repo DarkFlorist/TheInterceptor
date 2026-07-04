@@ -24,6 +24,7 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import type { ReadonlySignal } from '@preact/signals'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { identifySignature } from '../simulationExplaining/identifySignature.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -31,83 +32,52 @@ type SignatureCardParams = {
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	numberOfUnderTransactions: number
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	collapsed?: boolean
+	toggleCollapsed?: () => void
 }
 
 type SignatureHeaderParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
-}
-
-export function identifySignature(data: VisualizedPersonalSignRequest) {
-	switch (data.type) {
-		case 'OrderComponents': return {
-			title: 'Opensea order',
-			rejectAction: 'Reject Opensea order',
-			simulationAction: 'Simulate Opensea order',
-			signingAction: 'Sign Opensea order',
-		}
-		case 'SafeTx': return {
-			title: 'Gnosis Safe message',
-			rejectAction: 'Reject Gnosis Safe message',
-			simulationAction: 'Simulate Gnosis Safe message',
-			signingAction: 'Sign Gnosis Safe message',
-		}
-		case 'EIP712': {
-			const { name: domainName } = data.message.domain
-			const name = domainName?.type === 'string' ? `${ domainName.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'
-			return {
-				title: `${ name } signing request`,
-				rejectAction: `Reject ${ name }`,
-				simulationAction: `Simulate ${ name }`,
-				signingAction: `Sign ${ name }`,
-			}
-		}
-		case 'NotParsed': return {
-			title: 'Arbitrary Ethereum message',
-			rejectAction: 'Reject arbitrary message',
-			simulationAction: 'Simulate arbitrary message',
-			signingAction: 'Sign arbitrary message',
-		}
-		case 'Permit': {
-			const symbol = data.verifyingContract
-			return {
-				title: `${ symbol } Permit`,
-				signingAction: `Sign ${ symbol } Permit`,
-				simulationAction: `Simulate ${ symbol } Permit`,
-				rejectAction: `Reject ${ symbol } Permit`,
-				to: data.spender
-			}
-		}
-		case 'Permit2': {
-			const symbol = 'symbol' in data.token ? data.token.symbol : '???'
-			return {
-				title: `${ symbol } Permit`,
-				signingAction: `Sign ${ symbol } Permit`,
-				simulationAction: `Simulate ${ symbol } Permit`,
-				rejectAction: `Reject ${ symbol } Permit`,
-				to: data.spender
-			}
-		}
-		default: assertNever(data)
-	}
+	onHeaderClick?: () => void
+	headerActionLabel?: string
+	ariaExpanded?: boolean
 }
 
 export function SignatureHeader(params: SignatureHeaderParams) {
 	const removeSignedMessage = params.removeTransactionOrSignedMessage
-	return <header class = 'card-header'>
+	return <header
+		class = { `card-header stack-card-header${ params.onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { params.onHeaderClick }
+		onKeyDown = { (event) => {
+			if (params.onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			params.onHeaderClick()
+		} }
+		role = { params.onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { params.onHeaderClick === undefined ? undefined : 0 }
+		title = { params.onHeaderClick === undefined ? undefined : params.headerActionLabel ?? 'Open this signature in the full simulation stack' }
+		aria-label = { params.onHeaderClick === undefined ? undefined : params.headerActionLabel ?? 'Open this signature in the full simulation stack' }
+		aria-expanded = { params.onHeaderClick === undefined ? undefined : params.ariaExpanded }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
-			{ identifySignature(params.visualizedPersonalSignRequest).title }
+			<span class = 'card-header-title-text'>{ identifySignature(params.visualizedPersonalSignRequest).title }</span>
 		</p>
-		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
-			<WebsiteOriginText website = { params.visualizedPersonalSignRequest.website } />
-		</p>
+		<WebsiteOriginText
+			website = { params.visualizedPersonalSignRequest.website }
+			class = { `card-header-website${ params.removeTransactionOrSignedMessage !== undefined ? ' card-header-website--flush' : ''}` }
+		/>
 		{ removeSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { (event) => {
+				event.stopPropagation()
+				removeSignedMessage({ type: 'Message', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier })
+			} }>
 				<XMarkIcon />
 			</button>
 			: <></>
@@ -455,9 +425,10 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 const HALF_HEADER_HEIGHT = 48 / 2
 
 export function SignatureCard(params: SignatureCardParams) {
+	const headerActionLabel = params.collapsed === undefined ? undefined : params.collapsed ? 'Expand signature details' : 'Collapse signature details'
 	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
-		<SignatureHeader { ...params }/>
-		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+		<SignatureHeader { ...params } onHeaderClick = { params.toggleCollapsed } headerActionLabel = { headerActionLabel } ariaExpanded = { params.collapsed === undefined ? undefined : !params.collapsed }/>
+		{ params.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<div class = 'container'>
 				<SignRequest { ...params }/>
 			</div>
@@ -474,7 +445,7 @@ export function SignatureCard(params: SignatureCardParams) {
 				<div class = 'log-cell'> <TransactionCreated created = { params.visualizedPersonalSignRequest.created } /> </div>
 				<div class = 'log-cell' style = 'justify-content: right;'></div>
 			</span>
-		</div>
+		</div> }
 	</div>
 }
 
