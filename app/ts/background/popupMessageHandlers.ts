@@ -23,7 +23,7 @@ import { isAddress } from '../utils/viem.js'
 import { getIssueWithAddressString } from '../utils/addressValidation.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import type { Website } from '../types/websiteAccessTypes.js'
-import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
+import { makeSureInterceptorIsNotSleeping, type PublishRpcConnectionStatus } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
@@ -77,8 +77,8 @@ export async function confirmDialog(ethereum: EthereumClientService, tokenPriceS
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation)
 }
 
-export async function confirmRequestAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
-	await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, confirmation.data)
+export async function confirmRequestAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, confirmation.data, publishRpcConnectionStatus)
 }
 
 export async function getLastKnownCurrentTabId() {
@@ -509,6 +509,7 @@ export async function refreshHomeData(
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
 	popupRefreshGeneration: number,
+	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 	refreshSimulation = true,
 	requestAbortController: AbortController | undefined = undefined,
 ) {
@@ -519,7 +520,7 @@ export async function refreshHomeData(
 		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
 		const settings = await getSettings()
-		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum)
+		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
 			requestAbortController,
 			richDataSource: 'fresh',

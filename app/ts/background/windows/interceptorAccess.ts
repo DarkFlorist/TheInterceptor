@@ -17,6 +17,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { PublishRpcConnectionStatus } from '../sleeping.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 
 type OpenedDialogWithListeners = {
@@ -50,11 +51,12 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			reply,
 			pendingRequest.request,
 			pendingRequest.website,
+			undefined,
 		)
 	}
 }
 
-export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
+export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	const promises = await getPendingAccessRequests()
 	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 	if (pendingRequest === undefined) throw new Error('Access request missing!')
@@ -66,6 +68,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 		reply,
 		pendingRequest.request,
 		pendingRequest.website,
+		publishRpcConnectionStatus,
 	)
 }
 
@@ -127,10 +130,37 @@ export async function requestAccessFromUser(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
+	request: InterceptedRequest,
+	requestAccessToAddress: AddressBookEntry | undefined,
+	settings: Settings,
+	activeAddress: bigint | undefined,
+	publishRpcConnectionStatus: PublishRpcConnectionStatus,
+): Promise<void>
+export async function requestAccessFromUser(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	website: Website,
+	request: undefined,
+	requestAccessToAddress: AddressBookEntry | undefined,
+	settings: Settings,
+	activeAddress: bigint | undefined,
+	publishRpcConnectionStatus: undefined,
+): Promise<void>
+export async function requestAccessFromUser(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	website: Website,
 	request: InterceptedRequest | undefined,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
 	activeAddress: bigint | undefined,
+	publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
@@ -156,7 +186,10 @@ export async function requestAccessFromUser(
 		const justAddToPending = await verifyPendingRequests()
 		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
-			if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+			if (request !== undefined) {
+				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
+				await handleInterceptedRequest(undefined, website.websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+			}
 			return
 		}
 		if (hasAccess !== 'askAccess') return
@@ -239,7 +272,7 @@ export async function requestAccessFromUser(
 	})
 }
 
-async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website) {
+async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined) {
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
@@ -273,7 +306,9 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	await Promise.all(affectedEntryWithPendingRequest.map((r) => handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, ethereum, tokenPriceService, resetSimulationServices, r.socket, r.request, websiteTabConnections)))
+	if (affectedEntryWithPendingRequest.length === 0) return
+	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
+	await Promise.all(affectedEntryWithPendingRequest.map((r) => handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, ethereum, tokenPriceService, resetSimulationServices, r.socket, r.request, websiteTabConnections, publishRpcConnectionStatus)))
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {

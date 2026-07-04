@@ -15,7 +15,7 @@ import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, 
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
-import { checkIfInterceptorShouldSleep, setRpcConnectionStatusRetryPublisher } from './sleeping.js'
+import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
@@ -51,7 +51,6 @@ const rpcConnectionStatusPublisher = createRpcConnectionStatusPublisher({
 	publishRpcConnectionStatus,
 	slowRpcRequests,
 })
-setRpcConnectionStatusRetryPublisher(rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 
 async function publishSlowRpcRequestStatus() {
 	try {
@@ -157,7 +156,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
+					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 				})
 			})
 		},
@@ -246,7 +245,7 @@ async function startup() {
 		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 	}
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
+		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
 	}
 
@@ -298,6 +297,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServices, resetActiveRpcNetwork } = await waitForBackgroundStartup()
-	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, await getSettings())
+	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, await getSettings(), rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)
