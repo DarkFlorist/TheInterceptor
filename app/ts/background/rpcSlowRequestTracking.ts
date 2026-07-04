@@ -6,6 +6,7 @@ import { Semaphore } from '../utils/semaphore.js'
 
 export type DefinedRpcConnectionStatus = Exclude<RpcConnectionStatus, undefined>
 export type RpcConnectionStatusChangeMethod = 'popup_new_block_arrived' | 'popup_failed_to_get_block' | 'popup_rpc_connection_status_changed'
+export type PublishRpcConnectionStatus = (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) => Promise<void>
 
 export type RpcStatusEthereumClient = {
 	getRpcEntry: () => RpcEntry
@@ -16,7 +17,7 @@ export type RpcStatusEthereumClient = {
 export type RpcConnectionStatusPublisherConfig = {
 	getEthereumClientService: () => RpcStatusEthereumClient
 	getRpcConnectionStatus: () => Promise<RpcConnectionStatus>
-	publishRpcConnectionStatus: (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) => Promise<void>
+	publishRpcConnectionStatus: PublishRpcConnectionStatus
 	slowRpcRequests: Map<string, SlowRpcRequest>
 }
 

@@ -17,7 +17,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
-import type { PublishRpcConnectionStatus } from '../sleeping.js'
+import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 
 type OpenedDialogWithListeners = {
@@ -30,7 +30,7 @@ let openedDialog: OpenedDialogWithListeners
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
-const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
@@ -54,22 +54,24 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			undefined,
 		)
 	}
-}
+})
 
 export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
-	const promises = await getPendingAccessRequests()
-	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
-	if (pendingRequest === undefined) throw new Error('Access request missing!')
-	return await resolve(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
-		websiteTabConnections,
-		reply,
-		pendingRequest.request,
-		pendingRequest.website,
-		publishRpcConnectionStatus,
-	)
+	return await pendingInterceptorAccessSemaphore.execute(async () => {
+		const promises = await getPendingAccessRequests()
+		const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
+		if (pendingRequest === undefined) throw new Error('Access request missing!')
+		return await resolve(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			reply,
+			pendingRequest.request,
+			pendingRequest.website,
+			publishRpcConnectionStatus,
+		)
+	})
 }
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {

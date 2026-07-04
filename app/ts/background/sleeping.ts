@@ -3,9 +3,7 @@ import { TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp } from './storageVariables.js'
 import { isConfirmTransactionFocused } from './windows/confirmTransaction.js'
-import type { DefinedRpcConnectionStatus, RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
-
-export type PublishRpcConnectionStatus = (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) => Promise<void>
+import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 
 const updateConnectionStatusRetry = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
 	const status = await getRpcConnectionStatus()

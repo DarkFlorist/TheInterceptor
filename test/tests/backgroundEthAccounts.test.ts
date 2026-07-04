@@ -5,7 +5,7 @@ import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import type { PublishRpcConnectionStatus } from '../../app/ts/background/sleeping.js'
+import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 
 type Listener = () => void
 type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
