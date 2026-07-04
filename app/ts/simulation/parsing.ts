@@ -1,13 +1,12 @@
 import type { EthereumClientService } from './services/EthereumClientService.js'
-import { type EthereumAddress, EthereumData, type EthereumQuantity } from '../types/wire-types.js'
+import type { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_CONTENT_HASH_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_EXPIRY_EXTENDED, ENS_FUSES_SET, ENS_NAME_CHANGED, ENS_CONTROLLER_NAME_REGISTERED, ENS_BASE_REGISTRAR_NAME_RENEWED, ENS_NAME_UNWRAPPED, ENS_NEW_OWNER, ENS_NEW_RESOLVER, ENS_NEW_TTL, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_CONTROLLER_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_REVERSE_CLAIMED, ENS_REVERSE_REGISTRAR, ENS_TEXT_CHANGED, ENS_TEXT_CHANGED_KEY_VALUE, ENS_TOKEN_WRAPPER, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG, ENS_BASE_REGISTRAR_NAME_REGISTERED, ENS_NAME_WRAPPED } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsContentHashChanged, handleEnsExpiryExtended, handleEnsFusesSet, handleEnsNameChanged, handleEnsNameUnWrapped, handleEnsNewOwner, handleEnsNewResolver, handleEnsNewTtl, handleEnsControllerNameRenewed, handleEnsReverseClaimed, handleEnsTextChanged, handleEnsTextChangedKeyValue, handleEnsTransfer, handleErc721ApprovalForAllLog, handleControllerNameRegistered, handleBaseRegistrarNameRenewed, handleWithdrawalLog, handleBaseRegistrarNameRegistered, handleNameWrapped } from './logHandlers.js'
 import type { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
-import { getAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
-import { SolidityType } from '../types/solidityType.js'
-import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
+import { getAbi } from '../utils/abi.js'
+import { parseAbiParametersToSolidityVariables } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EthereumEvent } from '../types/ethSimulate-types.js'
@@ -95,23 +94,9 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 	if (parsed === undefined) return nonParsed
 	if (parsed.fragment.type !== 'function') return nonParsed
 	const functionFragment = parsed.fragment
-	const argTypes = extractFunctionArgumentTypes(parsed.signature)
-	if (argTypes === undefined) return nonParsed
-	if (parsed.args.length !== argTypes.length) return nonParsed
+	if (parsed.args.length !== functionFragment.inputs.length) return nonParsed
 	try {
-		const valuesWithTypes = parsed.args.map((value, index) => {
-			const solidityType = argTypes[index]
-			const paramName = functionFragment.inputs[index]?.name
-			if (paramName === undefined) throw new Error('missing parameter name')
-			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
-			const isArray = solidityType.includes('[')
-			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
-			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
-			if (typeof value === 'object' && value !== null && 'hash' in value) {
-				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
-			}
-			return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
-		})
+		const valuesWithTypes = parseAbiParametersToSolidityVariables(functionFragment.inputs, parsed.args)
 		return {
 			input: transaction.input,
 			type: 'Parsed' as const,
@@ -138,22 +123,8 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 		if (parsed === undefined) return nonParsed
 		if (parsed.fragment.type !== 'event') return nonParsed
 		const eventFragment = parsed.fragment
-		const argTypes = extractFunctionArgumentTypes(parsed.signature)
-		if (argTypes === undefined) return nonParsed
-		if (parsed.args.length !== argTypes.length) return nonParsed
-		const valuesWithTypes = parsed.args.map((value, index) => {
-			const solidityType = argTypes[index]
-			const paramName = eventFragment.inputs[index]?.name
-			if (paramName === undefined) throw new Error('missing parameter name')
-			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
-			const isArray = solidityType.includes('[')
-			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
-			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
-			if (typeof value === 'object' && value !== null && 'hash' in value) {
-				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
-			}
-			return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
-		})
+		if (parsed.args.length !== eventFragment.inputs.length) return nonParsed
+		const valuesWithTypes = parseAbiParametersToSolidityVariables(eventFragment.inputs, parsed.args)
 		return {
 			...event,
 			isParsed: 'Parsed' as const,

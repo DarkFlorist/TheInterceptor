@@ -18,6 +18,9 @@ const staleStack: InterceptorTransactionStack = {
 	}],
 }
 
+const transactionStackDeleteMarkerKey = 'interceptorLargeStateDeleted:interceptorTransactionStack'
+const transactionStackMigratedMarkerKey = 'interceptorLargeStateMigrated:interceptorTransactionStack'
+
 type StorageGetKeys = string | string[] | Record<string, unknown> | null | undefined
 
 type FakeIndexedDbOptions = {
@@ -210,6 +213,7 @@ describe('large state store helpers', () => {
 
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
 		assert.equal('interceptorTransactionStack' in storageState, false)
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
 
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
@@ -233,7 +237,8 @@ describe('large state store helpers', () => {
 
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
-		assert.equal('interceptorTransactionStack' in storageState, false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
 	})
 
 	test('reads storage.local fallback over stale IndexedDB after write failure', async () => {
@@ -245,6 +250,84 @@ describe('large state store helpers', () => {
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack(staleStack))
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+	})
+
+	test('preserves legacy storage.local backup after a successful migration', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment()
+		storageState.interceptorTransactionStack = serializedStack()
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
+	})
+
+	test('reads IndexedDB over a migrated storage.local backup after newer writes', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment()
+		storageState.interceptorTransactionStack = serializedStack(staleStack)
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), staleStack)
+
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack(staleStack))
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+	})
+
+	test('clears the migration marker when writes fall back to storage.local', async () => {
+		const { fakeIndexedDb, indexedDbState, storageState } = installLargeStateEnvironment()
+		storageState.interceptorTransactionStack = serializedStack(staleStack)
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), staleStack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack(staleStack))
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
+
+		Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
+
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+		assert.equal(storageState[transactionStackDeleteMarkerKey], false)
+		assert.equal(storageState[transactionStackMigratedMarkerKey], false)
+
+		Object.defineProperty(globalThis, 'indexedDB', { value: fakeIndexedDb, configurable: true, writable: true })
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+	})
+
+	test('fallback writes overwrite stale marker values in one storage.local write', async () => {
+		const { fakeIndexedDb, indexedDbState, storageState } = installLargeStateEnvironment()
+		indexedDbState.set('interceptorTransactionStack', serializedStack(staleStack))
+		storageState[transactionStackDeleteMarkerKey] = true
+		storageState[transactionStackMigratedMarkerKey] = true
+		Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
+
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+		assert.equal(storageState[transactionStackDeleteMarkerKey], false)
+		assert.equal(storageState[transactionStackMigratedMarkerKey], false)
+
+		Object.defineProperty(globalThis, 'indexedDB', { value: fakeIndexedDb, configurable: true, writable: true })
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+	})
+
+	test('reads an authoritative local value over a stale delete marker from earlier fallback writes', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment()
+		indexedDbState.set('interceptorTransactionStack', serializedStack(staleStack))
+		storageState.interceptorTransactionStack = serializedStack()
+		storageState[transactionStackDeleteMarkerKey] = true
+		storageState[transactionStackMigratedMarkerKey] = false
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.equal(storageState[transactionStackDeleteMarkerKey], false)
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
 	})
 
 	test('falls back to storage.local when IndexedDB write transaction aborts after request success', async () => {
@@ -295,7 +378,23 @@ describe('large state store helpers', () => {
 		await removeLargeStateValue('interceptorTransactionStack')
 
 		assert.equal('interceptorTransactionStack' in storageState, false)
-		assert.equal(storageState['interceptorLargeStateDeleted:interceptorTransactionStack'], true)
+		assert.equal(storageState[transactionStackDeleteMarkerKey], true)
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), undefined)
+		assert.equal(storageState[transactionStackDeleteMarkerKey], true)
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
+	})
+
+	test('preserves the migrated storage.local backup after IndexedDB deletes succeed', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment()
+		storageState.interceptorTransactionStack = serializedStack()
+
+		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+
+		await removeLargeStateValue('interceptorTransactionStack')
+
+		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), undefined)
 	})
 
@@ -308,13 +407,14 @@ describe('large state store helpers', () => {
 		await removeLargeStateValue('interceptorTransactionStack')
 
 		assert.equal('interceptorTransactionStack' in storageState, false)
-		assert.equal(storageState['interceptorLargeStateDeleted:interceptorTransactionStack'], true)
+		assert.equal(storageState[transactionStackDeleteMarkerKey], true)
 
 		Object.defineProperty(globalThis, 'indexedDB', { value: fakeIndexedDb, configurable: true, writable: true })
 
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), undefined)
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
-		assert.equal('interceptorLargeStateDeleted:interceptorTransactionStack' in storageState, false)
+		assert.equal(storageState[transactionStackDeleteMarkerKey], false)
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
 	})
 
 	test('falls back to storage.local when IndexedDB transactions fail', async () => {

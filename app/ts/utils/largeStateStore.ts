@@ -7,6 +7,7 @@ export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisuali
 const LARGE_STATE_DB_NAME = 'interceptorLargeState'
 const LARGE_STATE_STORE_NAME = 'largeState'
 const LARGE_STATE_DELETE_MARKER_PREFIX = 'interceptorLargeStateDeleted:'
+const LARGE_STATE_MIGRATED_MARKER_PREFIX = 'interceptorLargeStateMigrated:'
 
 type IndexedDbLookup =
 	| { kind: 'available', found: false }
@@ -14,6 +15,7 @@ type IndexedDbLookup =
 	| { kind: 'unavailable' }
 
 type LegacyLocalLookup =
+	| { kind: 'backup', value: unknown }
 	| { kind: 'deleted' }
 	| { kind: 'found', value: unknown }
 	| { kind: 'missing' }
@@ -22,8 +24,12 @@ type LargeStateDeleteMarkerKey =
 	| 'interceptorLargeStateDeleted:interceptorTransactionStack'
 	| 'interceptorLargeStateDeleted:popupVisualisation'
 
-let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined 
-let indexedDbSource: IDBFactory | undefined 
+type LargeStateMigratedMarkerKey =
+	| 'interceptorLargeStateMigrated:interceptorTransactionStack'
+	| 'interceptorLargeStateMigrated:popupVisualisation'
+
+let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
+let indexedDbSource: IDBFactory | undefined
 
 function canUseIndexedDb() {
 	return typeof indexedDB !== 'undefined'
@@ -125,9 +131,19 @@ function getLegacyDeleteMarkerKey(key: LargeStateStorageKey): LargeStateDeleteMa
 	}
 }
 
+function getLegacyMigratedMarkerKey(key: LargeStateStorageKey): LargeStateMigratedMarkerKey {
+	switch (key) {
+		case 'interceptorTransactionStack': return `${ LARGE_STATE_MIGRATED_MARKER_PREFIX }interceptorTransactionStack`
+		case 'popupVisualisation': return `${ LARGE_STATE_MIGRATED_MARKER_PREFIX }popupVisualisation`
+		default: return assertNever(key)
+	}
+}
+
 async function getLegacyLocalLookup(key: LargeStateStorageKey): Promise<LegacyLocalLookup> {
 	const deleteMarkerKey = getLegacyDeleteMarkerKey(key)
-	const localValue = await browser.storage.local.get([key, deleteMarkerKey])
+	const migratedMarkerKey = getLegacyMigratedMarkerKey(key)
+	const localValue = await browser.storage.local.get([key, deleteMarkerKey, migratedMarkerKey])
+	if (Object.prototype.hasOwnProperty.call(localValue, key) && localValue[migratedMarkerKey] === true && localValue[deleteMarkerKey] !== true) return { kind: 'backup', value: localValue[key] }
 	if (Object.prototype.hasOwnProperty.call(localValue, key)) return { kind: 'found', value: localValue[key] }
 	if (localValue[deleteMarkerKey] === true) return { kind: 'deleted' }
 	return { kind: 'missing' }
@@ -137,17 +153,26 @@ async function removeLegacyLocalValue(key: LargeStateStorageKey) {
 	await browser.storage.local.remove(key)
 }
 
-async function clearLegacyLocalState(key: LargeStateStorageKey) {
-	await browser.storage.local.remove([key, getLegacyDeleteMarkerKey(key)])
+async function setLegacyLocalDeleted(key: LargeStateStorageKey) {
+	await browser.storage.local.set({
+		[getLegacyDeleteMarkerKey(key)]: true,
+		[getLegacyMigratedMarkerKey(key)]: true,
+	})
 }
 
-async function setLegacyLocalDeleted(key: LargeStateStorageKey) {
-	await browser.storage.local.set({ [getLegacyDeleteMarkerKey(key)]: true })
+async function setLegacyLocalMigrated(key: LargeStateStorageKey) {
+	await browser.storage.local.set({
+		[getLegacyDeleteMarkerKey(key)]: false,
+		[getLegacyMigratedMarkerKey(key)]: true,
+	})
 }
 
 async function setLegacyLocalValue(key: LargeStateStorageKey, value: unknown) {
-	await browser.storage.local.set({ [key]: value })
-	await browser.storage.local.remove(getLegacyDeleteMarkerKey(key))
+	await browser.storage.local.set({
+		[key]: value,
+		[getLegacyDeleteMarkerKey(key)]: false,
+		[getLegacyMigratedMarkerKey(key)]: false,
+	})
 }
 
 function parseSerializedValue<T>(codec: funtypes.Codec<T>, value: unknown) {
@@ -161,14 +186,14 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 		const parsedLegacyValue = parseSerializedValue(codec, legacyLocalValue.value)
 		if (parsedLegacyValue !== undefined) {
 			const wasMigrated = await setIndexedDbValue(key, legacyLocalValue.value)
-			if (wasMigrated) await clearLegacyLocalState(key)
+			if (wasMigrated) await setLegacyLocalMigrated(key)
 			return parsedLegacyValue
 		}
 		await removeLegacyLocalValue(key)
 	}
 	if (legacyLocalValue.kind === 'deleted') {
 		const wasRemoved = await removeIndexedDbValue(key)
-		if (wasRemoved) await clearLegacyLocalState(key)
+		if (wasRemoved) await setLegacyLocalMigrated(key)
 		return undefined
 	}
 	const indexedDbValue = await getIndexedDbValue(key)
@@ -187,7 +212,7 @@ export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 	if (canUseIndexedDb()) {
 		const wasStoredInIndexedDb = await setIndexedDbValue(key, serializedValue)
 		if (wasStoredInIndexedDb) {
-			await clearLegacyLocalState(key)
+			await setLegacyLocalMigrated(key)
 			return
 		}
 	}
@@ -202,7 +227,7 @@ export async function removeLargeStateValue(key: LargeStateStorageKey) {
 	}
 	const wasRemovedFromIndexedDb = await removeIndexedDbValue(key)
 	if (wasRemovedFromIndexedDb) {
-		await clearLegacyLocalState(key)
+		await setLegacyLocalMigrated(key)
 		return
 	}
 	await removeLegacyLocalValue(key)
