@@ -185,15 +185,6 @@ export async function reportUnexpectedError(error: unknown, metadata: ErrorRepor
 	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
 	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, metadata.displayMessage ?? normalizeUnexpectedError(error).message)
-	console.error('Unexpected Interceptor error', {
-		debugId: report.debugId,
-		source: report.source,
-		code: report.code,
-		category: report.category,
-		severity: report.severity,
-	})
-	printError(error)
-	console.trace()
 	await appendErrorDiagnostic(report)
 	const errorMessage = createUnexpectedErrorPopupMessage(report)
 	let messageToBroadcast = errorMessage
