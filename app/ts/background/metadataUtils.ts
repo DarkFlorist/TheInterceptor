@@ -16,6 +16,7 @@ import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
+import type { PureGroupedSolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 
@@ -186,12 +187,30 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
+const getAddressesForSolidityType = (typeValue: PureGroupedSolidityType): readonly bigint[] => {
+	switch(typeValue.type) {
+		case 'address': return [typeValue.value]
+		case 'address[]': return typeValue.value
+		case 'tuple': return getAddressesForSolidityTypes(typeValue.value)
+		case 'tuple[]': return typeValue.value.flatMap((tupleValue) => getAddressesForSolidityTypes(tupleValue))
+		case 'bool':
+		case 'bool[]':
+		case 'bytes':
+		case 'bytes[]':
+		case 'fixedBytes':
+		case 'fixedBytes[]':
+		case 'signedInteger':
+		case 'signedInteger[]':
+		case 'string':
+		case 'string[]':
+		case 'unsignedInteger':
+		case 'unsignedInteger[]': return []
+		default: assertNever(typeValue)
+	}
+}
+
 export const getAddressesForSolidityTypes = (variables: readonly SolidityVariable[]) => {
-	return variables.flatMap((argumentVariable) => {
-		if (argumentVariable.typeValue.type === 'address') return argumentVariable.typeValue.value
-		if (argumentVariable.typeValue.type === 'address[]') return argumentVariable.typeValue.value
-		return undefined
-	}).filter((address): address is bigint => address !== undefined)
+	return variables.flatMap((argumentVariable) => getAddressesForSolidityType(argumentVariable.typeValue))
 }
 
 export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {

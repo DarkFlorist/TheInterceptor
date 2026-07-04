@@ -1,5 +1,5 @@
 import { type InterceptedRequestForward, InterceptorMessageToInpage, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
+import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
@@ -11,7 +11,8 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
-		if (error instanceof Error && (isIgnorablePortLifecycleError(error) || error.message?.includes('No tab with id'))) return
+		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
+		if (isMissingBrowserTargetError(error)) return
 		throw error
 	}
 }

@@ -2,6 +2,7 @@ import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../ba
 import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from '../background/storageVariables.js'
 import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'
+import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, getInterceptorInternalErrorCode, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
@@ -180,19 +181,10 @@ async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 	}
 }
 
-export async function reportUnexpectedError(error: unknown, metadata: ErrorReportMetadata = {}) {
+export async function reportUnexpectedError(error: unknown, metadata: ErrorReportMetadata = {}): Promise<UnexpectedErrorOccured | undefined> {
 	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
 	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, metadata.displayMessage ?? normalizeUnexpectedError(error).message)
-	console.error('Unexpected Interceptor error', {
-		debugId: report.debugId,
-		source: report.source,
-		code: report.code,
-		category: report.category,
-		severity: report.severity,
-	})
-	printError(error)
-	console.trace()
 	await appendErrorDiagnostic(report)
 	const errorMessage = createUnexpectedErrorPopupMessage(report)
 	let messageToBroadcast = errorMessage
@@ -209,6 +201,7 @@ export async function reportUnexpectedError(error: unknown, metadata: ErrorRepor
 		console.error('Failed to broadcast unexpected error to open popup windows.')
 		printError(broadcastError)
 	}
+	return errorMessage
 }
 
 export async function reportLocalRecovery(error: unknown, metadata: LocalRecoveryMetadata) {
