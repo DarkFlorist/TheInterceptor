@@ -397,7 +397,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, false)
+		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, async () => undefined, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -528,6 +528,7 @@ describe('popup clear reset', () => {
 			(() => undefined) as never,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
 			await modules.getSettings(),
+			async () => undefined,
 		)
 
 		assert.ok(reply !== undefined && reply !== null && typeof reply === 'object' && 'method' in reply && reply.method === 'popup_requestCompleteVisualizedSimulation')

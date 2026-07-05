@@ -15,6 +15,7 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import { EthSimulateV1Result } from './ethSimulate-types.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -106,6 +107,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData_v1'), funtypes.Literal('eth_signTypedData_v2'), funtypes.Literal('eth_signTypedData_v3'), funtypes.Literal('eth_signTypedData_v4'), funtypes.Literal('eth_signTypedData')), result: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('web3_clientVersion'), result: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_feeHistory'), result: EthGetFeeHistoryResponse }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
 )
@@ -450,9 +452,13 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 const PopupRefreshGeneration = funtypes.Number
 type PopupRefreshGeneration = funtypes.Static<typeof PopupRefreshGeneration>
 
-type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
-const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_new_block_arrived'), funtypes.Literal('popup_failed_to_get_block')),
+type RpcConnectionStatusUpdate = funtypes.Static<typeof RpcConnectionStatusUpdate>
+const RpcConnectionStatusUpdate = funtypes.ReadonlyObject({
+	method: funtypes.Union(
+		funtypes.Literal('popup_new_block_arrived'),
+		funtypes.Literal('popup_failed_to_get_block'),
+		funtypes.Literal('popup_rpc_connection_status_changed'),
+	),
 	data: funtypes.ReadonlyObject({ rpcConnectionStatus: RpcConnectionStatus }),
 }).asReadonly()
 
@@ -905,7 +911,7 @@ const messageToPopupPayloadCodecs: [
 	typeof GetAddressBookDataReply,
 	typeof ChangeChainRequest,
 	typeof InterceptorAccessDialog,
-	typeof NewBlockArrivedOrFailedToArrive,
+	typeof RpcConnectionStatusUpdate,
 	typeof SettingsUpdated,
 	typeof UpdateConfirmTransactionDialogPartial,
 	typeof UpdateConfirmTransactionDialogPendingTransactionsPartial,
@@ -929,7 +935,7 @@ const messageToPopupPayloadCodecs: [
 	GetAddressBookDataReply,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
-	NewBlockArrivedOrFailedToArrive,
+	RpcConnectionStatusUpdate,
 	SettingsUpdated,
 	UpdateConfirmTransactionDialogPartial,
 	UpdateConfirmTransactionDialogPendingTransactionsPartial,

@@ -1,40 +1,37 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { modifyObject } from '../utils/typescript.js'
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { updateExtensionBadge } from './iconHandler.js'
-import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp, setRpcConnectionStatus } from './storageVariables.js'
+import { getInterceptorStartSleepingTimestamp, getRpcConnectionStatus, setInterceptorStartSleepingTimestamp } from './storageVariables.js'
 import { isConfirmTransactionFocused } from './windows/confirmTransaction.js'
+import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 
-const updateConnectionStatusRetry = async (ethereumClientService: EthereumClientService) => {
+const updateConnectionStatusRetry = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
 	const status = await getRpcConnectionStatus()
 	if (status === undefined) return
 	// This is used for sleep/wake retry-state transitions in addition to real RPC fetch failures.
 	const rpcConnectionStatus = modifyObject(status, { retrying: ethereumClientService.isBlockPolling() })
-	await setRpcConnectionStatus(rpcConnectionStatus)
-	await updateExtensionBadge()
-	await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+	await publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus)
 }
 
-export const makeSureInterceptorIsNotSleeping = async (ethereumClientService: EthereumClientService) => {
+export const makeSureInterceptorIsNotSleeping = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
 	setInterceptorStartSleepingTimestamp(Date.now() + TIME_BETWEEN_BLOCKS * 2 * 1000)
 	if (!ethereumClientService.isBlockPolling()) {
 		console.info('The Interceptor woke up! ⏰')
 		ethereumClientService.setBlockPolling(true)
-		await updateConnectionStatusRetry(ethereumClientService)
+		await updateConnectionStatusRetry(ethereumClientService, publishRpcConnectionStatus)
 	}
 }
 
-const checkConfirmTransaction = async (ethereumClientService: EthereumClientService) => {
-	if (await isConfirmTransactionFocused()) makeSureInterceptorIsNotSleeping(ethereumClientService)
+const checkConfirmTransaction = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
+	if (await isConfirmTransactionFocused()) await makeSureInterceptorIsNotSleeping(ethereumClientService, publishRpcConnectionStatus)
 }
 
-export const checkIfInterceptorShouldSleep = async (ethereumClientService: EthereumClientService) => {
-	await checkConfirmTransaction(ethereumClientService)
+export const checkIfInterceptorShouldSleep = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
+	await checkConfirmTransaction(ethereumClientService, publishRpcConnectionStatus)
 	const startSleping = await getInterceptorStartSleepingTimestamp()
 	if (startSleping < Date.now() && ethereumClientService.isBlockPolling()) {
 		console.info('The Interceptor started to sleep 😴')
 		ethereumClientService.setBlockPolling(false)
-		await updateConnectionStatusRetry(ethereumClientService)
+		await updateConnectionStatusRetry(ethereumClientService, publishRpcConnectionStatus)
 	}
 }
