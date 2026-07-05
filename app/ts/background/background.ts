@@ -17,6 +17,7 @@ import { appendTransactionsToInput, mockSignTransaction } from '../simulation/se
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
+import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain } from '../types/JsonRpc-types.js'
@@ -577,6 +578,7 @@ export async function popupMessageHandler(
 				case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
 				case 'popup_setEnsNameForHash': return await setEnsNameForHash(parsedRequest)
 				case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
+				case 'popup_openSimulationStack': return await openNewTab('simulationStack', 'data' in parsedRequest ? getSimulationStackTargetHash(parsedRequest.data) : undefined)
 				case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess(parsedRequest)
 				case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(websiteTabConnections, parsedRequest)
@@ -598,6 +600,7 @@ export async function popupMessageHandler(
 				case 'popup_requestSimulationMetadata': return await requestSimulationMetadata(ethereum)
 				case 'popup_requestIdentifyAddress': return await requestIdentifyAddress(ethereum, parsedRequest)
 				case 'popup_isMainPopupWindowOpen': return
+				case 'popup_isSimulationVisualizerOpen': return
 				default: assertUnreachable(parsedRequest)
 			}
 		}

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html style = 'background-color: var(--bg-color); overflow-x: hidden; overflow-y: auto;'>
+<html style = 'background-color: var(--bg-color); overflow-y: inherit;'>
 	<head>
-		<title>Address Book - The Interceptor</title>
+		<title>Simulation Stack - The Interceptor</title>
 		<meta charset = 'utf-8'>
 		<link rel = 'icon' type = 'image/x-icon' href = 'favicon.ico'>
 	</head>
@@ -9,11 +9,12 @@
 		<meta name = 'viewport' content = 'width = device-width, initial-scale = 1' />
 		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma.css' />
 		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-divider.css' />
+		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-badge.css' />
 		<link rel = 'stylesheet' type = 'text/css' href = '../css/interceptor.css' />
 
-		<main>Loading...</main>
+		<div id = 'simulation-stack-root'>Loading...</div>
 
 		<script src = '../vendor/webextension-polyfill/dist/browser-polyfill.js'></script>
-		<script type = 'module' src = '../js/addressBookRender.js'></script>
+		<script type = 'module' src = '../js/simulationStack.js'></script>
 	</body>
 </html>

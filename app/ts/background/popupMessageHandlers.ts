@@ -26,7 +26,7 @@ import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, silenceChromeUnCaughtPromise, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -89,8 +89,20 @@ export async function getLastKnownCurrentTabId() {
 	const tabId = await tabIdPromise
 	// skip restricted or insufficient permission tabs
 	if (tabs[0]?.id === undefined || tabs[0]?.url === undefined) return tabId
-	if (tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
+	if (isExtensionOwnedPageUrl(tabs[0].url)) return tabId
+	if (tabId !== tabs[0].id) await saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
+}
+
+function isExtensionOwnedPageUrl(urlString: string) {
+	if (urlString.startsWith('/html/') || urlString.startsWith('/html3/')) return true
+	try {
+		const url = new URL(urlString)
+		const ownUrl = new URL(browser.runtime.getURL('/'))
+		return url.protocol === ownUrl.protocol && url.host === ownUrl.host
+	} catch {
+		return false
+	}
 }
 
 export async function popupReadyAndListening(ethereum: EthereumClientService, page: PopupReadyAndListeningPage) {
@@ -471,9 +483,41 @@ export async function getAddressBookData(parsed: GetAddressBookData) {
 	})
 }
 
-export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'websiteAccess') => {
+type ExtensionTabName = 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack'
+
+type ExistingTabUpdate = {
+	active: true
+	highlighted: true
+	url?: string
+}
+
+function getExistingTabUpdate(tabName: ExtensionTabName, targetUrl: string, resolvedTargetUrl: URL, currentTabUrl: string | undefined, targetHash: string): ExistingTabUpdate {
+	const url = getExistingTabUrlUpdate(tabName, targetUrl, resolvedTargetUrl, currentTabUrl, targetHash)
+	if (url === undefined) return { active: true, highlighted: true }
+	return { active: true, highlighted: true, url }
+}
+
+function getExistingTabUrlUpdate(tabName: ExtensionTabName, targetUrl: string, resolvedTargetUrl: URL, currentTabUrl: string | undefined, targetHash: string) {
+	if (targetHash.length !== 0) return targetUrl
+	if (tabName !== 'simulationStack') return undefined
+	if (currentTabUrl === undefined) return undefined
+	return shouldClearSimulationStackHash(currentTabUrl, targetUrl, resolvedTargetUrl) ? targetUrl : undefined
+}
+
+function shouldClearSimulationStackHash(currentTabUrl: string, targetUrl: string, resolvedTargetUrl: URL) {
+	try {
+		const currentUrl = new URL(currentTabUrl, browser.runtime.getURL('/'))
+		return currentUrl.pathname !== resolvedTargetUrl.pathname || currentUrl.hash !== ''
+	} catch {
+		return currentTabUrl !== targetUrl
+	}
+}
+
+export const openNewTab = async (tabName: ExtensionTabName, targetHash = '') => {
+	const targetUrl = `${ getHtmlFile(tabName) }${ targetHash }`
+	const resolvedTargetUrl = new URL(targetUrl, browser.runtime.getURL('/'))
 	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: getHtmlFile(tabName) })
+		const tab = await browser.tabs.create({ url: targetUrl })
 		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })
 	}
 
@@ -483,8 +527,9 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook' | 'webs
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	const tab = await updateTabIfExists(addressBookTab.id, { active: true, highlighted: true })
-	if (tab === undefined) await openInNewTab()
+	const tab = await updateTabIfExists(addressBookTab.id, getExistingTabUpdate(tabName, targetUrl, resolvedTargetUrl, addressBookTab.url, targetHash))
+	if (tab === undefined) return await openInNewTab()
+	if (tab?.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })
 }
 
 export async function requestNewHomeData(

@@ -25,8 +25,15 @@ export default function Container(props: Props) {
 		const containerElement = containerElementRef.current
 		if (!containerElement) return
 
+		const getHintElement = (target: EventTarget | null, attribute: string) => {
+			if (!(target instanceof Element)) return undefined
+			const element = target.hasAttribute(attribute) ? target : target.closest(`[${ attribute }]`)
+			if (element === null || !containerElement.contains(element)) return undefined
+			return element
+		}
+
 		const hide = (event: Event) => {
-			if (!(event.target instanceof Element) || !event.target.hasAttribute(toolTipAttribute)) return
+			if (getHintElement(event.target, toolTipAttribute) === undefined) return
 
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 
@@ -37,17 +44,18 @@ export default function Container(props: Props) {
 		}
 
 		const click = (event: MouseEvent) => {
-			if (!(event.target instanceof Element) || !event.target.hasAttribute(copyAttribute) || !event.target.hasAttribute(timerAttribute)) return
+			const targetElement = getHintElement(event.target, copyAttribute)
+			if (targetElement === undefined || !targetElement.hasAttribute(timerAttribute)) return
 
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 
-			const delayValue = event.target.getAttribute(timerAttribute)
+			const delayValue = targetElement.getAttribute(timerAttribute)
 			if (delayValue === null) return
 
 			clearTimeout(copyMessageTimeoutIdRef.current ?? undefined)
 			copyMessageTimeoutIdRef.current = null
 
-			content.value = event.target.getAttribute(copyAttribute) || ''
+			content.value = targetElement.getAttribute(copyAttribute) || ''
 			clickPosition.value = { x: event.clientX, y: event.clientY }
 
 			copyMessageTimeoutIdRef.current = setTimeout(() => {
@@ -58,9 +66,10 @@ export default function Container(props: Props) {
 		}
 
 		const mouseover = (event: MouseEvent) => {
-			if (!(event.target instanceof Element) || (!event.target.hasAttribute(toolTipAttribute) && !event.target.hasAttribute(timerAttribute))) return
+			const targetElement = getHintElement(event.target, toolTipAttribute) ?? getHintElement(event.target, timerAttribute)
+			if (targetElement === undefined) return
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
-			const tooltipContent = event.target.getAttribute(toolTipAttribute) || ''
+			const tooltipContent = targetElement.getAttribute(toolTipAttribute) || ''
 			toolTipTimeoutIdRef.current = setTimeout(() => {
 				content.value = tooltipContent
 				clickPosition.value = { x: event.clientX, y: event.clientY }

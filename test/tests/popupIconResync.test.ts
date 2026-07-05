@@ -15,7 +15,7 @@ function installBrowserMock() {
 	const sentMessages: unknown[] = []
 	let messageListener: RuntimeMessageListener | undefined
 
-	Object.defineProperty(globalThis, 'browser', { value: {
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: unknown) {
@@ -74,7 +74,7 @@ function installBrowserMock() {
 		},
 	}, writable: true })
 
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, writable: true })
+	Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: { id: 'test-extension' } }, writable: true })
 
 	return { messageListener: () => messageListener, sentMessages }
 }
@@ -139,6 +139,41 @@ const defaultRpcEntries = [{ name: 'Ethereum', chainId: '0x1', httpsRpc: 'https:
 })
 
 describe('popup icon sync', () => {
+	test('does not request full home data after popup live simulation updates', async () => {
+		const dom = installDomMock()
+		const { messageListener, sentMessages } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			sentMessages.splice(0)
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					method: 'popup_simulation_state_changed',
+					data: { visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() },
+				}, undefined, () => undefined)
+			})
+
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('ignores icon updates for a different tab id', async () => {
 		const dom = installDomMock()
 		const { messageListener, sentMessages } = installBrowserMock()
