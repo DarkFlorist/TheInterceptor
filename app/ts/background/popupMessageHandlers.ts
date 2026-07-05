@@ -2,7 +2,7 @@ import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationState
 import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, setMakeCurrentAddressRich, setFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
-import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type ImportSettingsReply, type SetRpcList, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
+import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type ImportSettingsReply, type SetRpcList, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -44,6 +44,7 @@ import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/f
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -641,18 +642,22 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
 	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
 	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
-	await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
+	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }
-	}))
+	}
+	await sendPopupMessageToOpenWindows(serializeSimulateExecutionReply(reply))
+	return reply
 }
 
 export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
 	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, await getCurrentSimulationInput(), ethereum, tokenPriceService)
-	await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
+	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
-	}))
+	}
+	await sendPopupMessageToOpenWindows(serializeSimulateExecutionReply(reply))
+	return reply
 }
 
 const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumClientService, incompleteAddressBookEntry: IncompleteAddressBookEntry) => {
