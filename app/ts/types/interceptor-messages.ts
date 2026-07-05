@@ -446,9 +446,13 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 const PopupRefreshGeneration = funtypes.Number
 type PopupRefreshGeneration = funtypes.Static<typeof PopupRefreshGeneration>
 
-type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
-const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_new_block_arrived'), funtypes.Literal('popup_failed_to_get_block')),
+type RpcConnectionStatusUpdate = funtypes.Static<typeof RpcConnectionStatusUpdate>
+const RpcConnectionStatusUpdate = funtypes.ReadonlyObject({
+	method: funtypes.Union(
+		funtypes.Literal('popup_new_block_arrived'),
+		funtypes.Literal('popup_failed_to_get_block'),
+		funtypes.Literal('popup_rpc_connection_status_changed'),
+	),
 	data: funtypes.ReadonlyObject({ rpcConnectionStatus: RpcConnectionStatus }),
 }).asReadonly()
 
@@ -901,7 +905,7 @@ const messageToPopupPayloadCodecs: [
 	typeof GetAddressBookDataReply,
 	typeof ChangeChainRequest,
 	typeof InterceptorAccessDialog,
-	typeof NewBlockArrivedOrFailedToArrive,
+	typeof RpcConnectionStatusUpdate,
 	typeof SettingsUpdated,
 	typeof UpdateConfirmTransactionDialogPartial,
 	typeof UpdateConfirmTransactionDialogPendingTransactionsPartial,
@@ -925,7 +929,7 @@ const messageToPopupPayloadCodecs: [
 	GetAddressBookDataReply,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
-	NewBlockArrivedOrFailedToArrive,
+	RpcConnectionStatusUpdate,
 	SettingsUpdated,
 	UpdateConfirmTransactionDialogPartial,
 	UpdateConfirmTransactionDialogPendingTransactionsPartial,
