@@ -26,6 +26,10 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 		return <ErrorComponent warning = { true } text = { <>Unable to connect to { status.rpcNetwork.name }. Retrying now.</> }/>
 	}
 
+	if (warningState.kind === 'slowRequest') {
+		return <ErrorComponent warning = { true } text = { <>The connected RPC ({ status.rpcNetwork.name }) is taking longer than expected to answer { warningState.slowRequest.method }. It has been waiting for <SomeTimeAgo priorTimestamp = { warningState.slowRequest.startedAt }/>.</> }/>
+	}
+
 	const latestBlock = status.latestBlock
 	if (latestBlock === undefined || latestBlock === null) return <></>
 	if (showCountdown && warningState.nextRetryAt !== undefined) {

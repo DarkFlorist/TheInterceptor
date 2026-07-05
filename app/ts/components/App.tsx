@@ -25,6 +25,7 @@ import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListPa
 import { createUnexpectedErrorPopupMessage } from '../utils/unexpectedErrorPopupMessage.js'
 import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
+export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 type ProviderErrorsParam = {
 	tabState: Signal<TabState | undefined>
