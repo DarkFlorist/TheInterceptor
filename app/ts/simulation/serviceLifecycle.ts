@@ -1,7 +1,7 @@
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
-import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
+import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
@@ -18,9 +18,10 @@ export function createSimulationServices(
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
 	tokenPriceCacheAge = 60000,
+	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
 	const ethereum = new EthereumClientService(
-		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
+		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true, rpcRequestLifecycleCallbacks),
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
 		rpcNetwork,
@@ -36,6 +37,7 @@ export function resetSimulationServices(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
+	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
 	currentServices.ethereum.cleanup()
 	return createSimulationServices(
@@ -43,5 +45,6 @@ export function resetSimulationServices(
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
 		currentServices.tokenPriceService.cacheAge,
+		rpcRequestLifecycleCallbacks,
 	)
 }

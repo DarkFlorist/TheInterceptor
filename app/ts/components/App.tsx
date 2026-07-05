@@ -62,6 +62,10 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 		return <ErrorComponent warning = { true } text = { <>Unable to connect to { status.rpcNetwork.name }. Retrying now.</> }/>
 	}
 
+	if (warningState.kind === 'slowRequest') {
+		return <ErrorComponent warning = { true } text = { <>The connected RPC ({ status.rpcNetwork.name }) is taking longer than expected to answer { warningState.slowRequest.method }. It has been waiting for <SomeTimeAgo priorTimestamp = { warningState.slowRequest.startedAt }/>.</> }/>
+	}
+
 	const latestBlock = status.latestBlock
 	if (latestBlock === undefined || latestBlock === null) return <></>
 	if (showCountdown && warningState.nextRetryAt !== undefined) {
@@ -346,6 +350,11 @@ export function App() {
 						return undefined
 					}
 					case 'popup_failed_to_get_block': {
+						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
+						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
+						return undefined
+					}
+					case 'popup_rpc_connection_status_changed': {
 						rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 						currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
 						return undefined

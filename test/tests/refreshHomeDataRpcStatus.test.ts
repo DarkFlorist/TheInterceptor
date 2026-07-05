@@ -111,10 +111,11 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 }
 
 async function loadModules() {
+	const storageVariables = await import('../../app/ts/background/storageVariables.js')
 	return {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/storageVariables.js'),
+		...storageVariables,
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -163,7 +164,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, false)
+			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -247,7 +248,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, 1, false)
+			await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -304,7 +305,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, false)
+			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
 		} finally {
 			ethereum.cleanup()
 		}

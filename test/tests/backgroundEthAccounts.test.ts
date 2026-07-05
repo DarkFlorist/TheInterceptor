@@ -5,9 +5,11 @@ import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 
 type Listener = () => void
 type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
@@ -88,7 +90,7 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 	return { port, messages }
 }
 
-function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }) {
+function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }, initialBlockPolling = true) {
 	const rpcEntry: RpcEntry = {
 		name: 'Test RPC',
 		chainId: 1n,
@@ -98,17 +100,20 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }) {
 		primary: true,
 		minimized: false,
 	}
+	let blockPolling = initialBlockPolling
 	const ethereum = new Proxy(
 		new EthereumClientService(
 			new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc),
 			async () => undefined,
 			async () => undefined,
 			rpcEntry,
-		),
+	),
 		{
 			get(target, property, receiver) {
-				if (property === 'isBlockPolling') return () => true
-				if (property === 'setBlockPolling') return (_enabled: boolean) => undefined
+				if (property === 'isBlockPolling') return () => blockPolling
+				if (property === 'setBlockPolling') return (enabled: boolean) => {
+					blockPolling = enabled
+				}
 				if (property === 'getBlock') {
 					return async () => {
 						getBlockCalls.count += 1
@@ -158,7 +163,7 @@ describe('background eth_accounts', () => {
 				uniqueRequestIdentifier: { requestId: index + 1, requestSocket: socket },
 				method,
 				params: [],
-			}, websiteTabConnections)
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			const reply = messages.at(-1)
 			assert.equal(reply?.method, method)
 			assert.equal(reply?.requestId, index + 1)
@@ -193,7 +198,7 @@ describe('background eth_accounts', () => {
 			uniqueRequestIdentifier: { requestId: 9, requestSocket: socket },
 			method: 'eth_accounts_reply',
 			params: [{ type: 'success', accounts: ['0x3333333333333333333333333333333333333333'], requestAccounts: false }],
-		}, websiteTabConnections)
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const reply = messages.at(-1)
 		assert.equal(reply?.method, 'eth_accounts_reply')
@@ -229,11 +234,57 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(getBlockCalls.count, 0)
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
 		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 1)
+		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x1111111111111111111111111111111111111111'])
+	})
+
+	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, false)
+		const rpcNetwork = ethereum.getRpcEntry()
+		await setRpcConnectionStatus({
+			isConnected: false,
+			lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
+			latestBlock: undefined,
+			rpcNetwork,
+			retrying: false,
+		})
+		const publishedRetryStates: boolean[] = []
+		const publishRpcConnectionStatus: PublishRpcConnectionStatus = async (_method, rpcConnectionStatus) => {
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			publishedRetryStates.push(rpcConnectionStatus.retrying)
+			await setRpcConnectionStatus(rpcConnectionStatus)
+		}
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
+			method: 'eth_accounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+
+		assert.deepEqual(publishedRetryStates, [true])
+		assert.equal((await getRpcConnectionStatus())?.retrying, true)
+		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 2)
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x1111111111111111111111111111111111111111'])
 	})
 
@@ -275,7 +326,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
@@ -311,7 +362,7 @@ describe('background eth_accounts', () => {
 					uniqueRequestIdentifier: { requestId: 99, requestSocket: socket },
 					method: 'eth_accounts_reply',
 					params: [{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } }],
-				}, websiteTabConnections)
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			})()
 		})
 		port = createdPort
@@ -327,7 +378,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 8)

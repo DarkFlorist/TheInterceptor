@@ -225,6 +225,7 @@ describe('backgroundUtils messaging', () => {
 				},
 				simulationMode: true,
 			},
+			async () => undefined,
 		)
 
 		const parsedReply = PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.parse(reply)
