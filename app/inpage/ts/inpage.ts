@@ -668,9 +668,7 @@ class InterceptorMessageListener {
 
 	private static readonly isUserRejectedRequestError = (error: unknown): error is { code: number, message: string } => {
 		if (!InterceptorMessageListener.getErrorCodeAndMessage(error)) return false
-		if (error.code !== METAMASK_ERROR_USER_REJECTED_REQUEST) return false
-		const message = error.message.toLowerCase()
-		return message.includes('user rejected') || message.includes('user denied')
+		return error.code === METAMASK_ERROR_USER_REJECTED_REQUEST
 	}
 
 	private static readonly getProviderConnectInfo = (result: unknown): ProviderConnectInfo => {

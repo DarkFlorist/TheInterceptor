@@ -994,6 +994,7 @@ async function buildHomePageUpdate(
 	const settings = await settingsPromise
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
+	const activeSigningAddress = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const richData = await richDataPromise
@@ -1008,7 +1009,7 @@ async function buildHomePageUpdate(
 			latestUnexpectedError: await latestUnexpectedErrorPromise,
 			websiteAccessAddressMetadata: await getAddressMetadataForAccess(settings.websiteAccess),
 			tabState,
-			activeSigningAddressInThisTab: tabState.activeSigningAddress,
+			activeSigningAddressInThisTab: activeSigningAddress,
 			currentBlockNumber: ethereum.getCachedBlock()?.number,
 			settings,
 			rpcConnectionStatus: await rpcConnectionStatusPromise,

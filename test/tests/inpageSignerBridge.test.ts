@@ -740,7 +740,7 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('falls back to the root provider when mapped CoinbaseWallet eth_requestAccounts returns 4001 with a non-standard message', async () => {
+	test('does not fall back to the root provider when mapped CoinbaseWallet eth_requestAccounts returns 4001 with a non-standard message', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 		let signerName: string | undefined
@@ -818,12 +818,10 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundEthAccountsReplies.length === 1)
 			assert.deepEqual(signerName, 'CoinbaseWallet')
 			assert.deepEqual(mappedSignerRequests, ['eth_chainId', 'eth_requestAccounts'])
-			assert.deepEqual(rootSignerRequests, ['eth_requestAccounts'])
+			assert.deepEqual(rootSignerRequests, [])
 			assert.equal((backgroundEthAccountsReplies[0] as { requestAccounts: boolean }).requestAccounts, true)
-			assert.equal(
-				(Array.isArray((backgroundEthAccountsReplies[0] as { accounts: readonly string[] }).accounts) ? (backgroundEthAccountsReplies[0] as { accounts: readonly string[] }).accounts[0] : undefined),
-				'0x1111111111111111111111111111111111111111',
-			)
+			assert.equal((backgroundEthAccountsReplies[0] as { error: { code: number, message: string } }).error.code, 4001)
+			assert.equal((backgroundEthAccountsReplies[0] as { error: { code: number, message: string } }).error.message, 'Wallet provider rejected internally.')
 			assert.equal(interceptorErrorPayloads.length, 0)
 		} finally {
 			;(globalThis as { window?: unknown }).window = previousWindow
