@@ -386,7 +386,6 @@ class InterceptorMessageListener {
 
 	private currentAddress = ''
 	private activeChainId = ''
-	private currentSigner: Signer = 'NoSigner'
 
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
@@ -885,7 +884,6 @@ class InterceptorMessageListener {
 	}
 
 	private readonly connectToSigner = async (signerName: Signer) => {
-		this.currentSigner = signerName
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean, activeAddress: string  }> => {
 			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
@@ -967,42 +965,54 @@ class InterceptorMessageListener {
 		}
 		if (inpageWindow.ethereum.isInterceptor) return
 
-		// subscribe for signers events
-		inpageWindow.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
-		})
-		inpageWindow.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
-			this.connectToSigner(this.currentSigner)
-		})
-		inpageWindow.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, this.currentSigner] })
-		})
-		inpageWindow.ethereum.on('chainChanged', (chainId: string) => {
-			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
-			this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
-		})
-
-		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
-		this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
+		const subscribeToSignerEvents = (provider: WindowEthereum, signerName: Signer) => {
+			provider.on('accountsChanged', (accounts: readonly string[]) => {
+				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
+			})
+			provider.on('connect', (_connectInfo: ProviderConnectInfo) => {
+				this.connectToSigner(signerName)
+			})
+			provider.on('disconnect', (_error: ProviderRpcError) => {
+				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName] })
+			})
+			provider.on('chainChanged', (chainId: string) => {
+				// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
+				const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
+				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
+			})
+		}
+		const getSignerName = (signerWindowEthereum: WindowEthereum) => {
+			if (signerWindowEthereum.isCoinbaseWallet) return 'CoinbaseWallet' as const
+			if (signerWindowEthereum.isBraveWallet) return 'Brave' as const
+			if (signerWindowEthereum.isMetaMask) return 'MetaMask' as const
+			return 'NotRecognizedSigner' as const
+		}
 
 		if (inpageWindow.ethereum.isBraveWallet || inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet) {
-			const signerName = inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
-			const oldWinEthereum = (inpageWindow.ethereum.providerMap ? inpageWindow.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? inpageWindow.ethereum
+			const mapSignerWindowEthereum = inpageWindow.ethereum.providerMap?.get('CoinbaseWallet')
+			const signerWindowEthereum = mapSignerWindowEthereum ?? inpageWindow.ethereum
+			const signerName = getSignerName(signerWindowEthereum)
+			this.connected = !signerWindowEthereum.isConnected || signerWindowEthereum.isConnected()
+			this.signerWindowEthereumRequest = signerWindowEthereum.request.bind(signerWindowEthereum) // store the request object to signer
+			subscribeToSignerEvents(signerWindowEthereum, signerName)
 			inpageWindow.ethereum = {
 				isInterceptor: true,
-				isConnected: this.WindowEthereumIsConnected.bind(oldWinEthereum),
-				request: this.WindowEthereumRequest.bind(oldWinEthereum),
-				send: this.WindowEthereumSend.bind(oldWinEthereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(oldWinEthereum),
-				on: this.WindowEthereumOn.bind(oldWinEthereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(oldWinEthereum),
-				enable: this.WindowEthereumEnable.bind(oldWinEthereum),
-				...this.unsupportedMethods(oldWinEthereum),
+				isConnected: this.WindowEthereumIsConnected.bind(signerWindowEthereum),
+				request: this.WindowEthereumRequest.bind(signerWindowEthereum),
+				send: this.WindowEthereumSend.bind(signerWindowEthereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(signerWindowEthereum),
+				on: this.WindowEthereumOn.bind(signerWindowEthereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(signerWindowEthereum),
+				enable: this.WindowEthereumEnable.bind(signerWindowEthereum),
+				...this.unsupportedMethods(signerWindowEthereum),
 			}
 			this.connectToSigner(signerName)
 			return
 		}
+		const fallbackSignerName = getSignerName(inpageWindow.ethereum)
+		this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
+		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
+		subscribeToSignerEvents(inpageWindow.ethereum, fallbackSignerName)
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
 		Object.assign(inpageWindow.ethereum, {
 			isInterceptor: true,
@@ -1015,7 +1025,7 @@ class InterceptorMessageListener {
 			enable: this.WindowEthereumEnable.bind(inpageWindow.ethereum),
 			...this.unsupportedMethods(inpageWindow.ethereum),
 		})
-		this.connectToSigner(inpageWindow.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
+		this.connectToSigner(fallbackSignerName)
 	}
 }
 

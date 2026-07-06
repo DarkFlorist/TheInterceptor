@@ -397,6 +397,278 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('uses mapped Coinbase provider for signer requests and signer name', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		let signerName: string | undefined
+		const signerRequests = {
+			brave: [] as string[],
+			coinbase: [] as string[],
+		}
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					signerName = request.params?.[1] as string
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+
+		const coinbaseSigner = {
+			isCoinbaseWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				signerRequests.coinbase.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				if (method === 'eth_accounts') return ['0x1111111111111111111111111111111111111111']
+				throw new Error(`Unexpected mapped signer request: ${ method }`)
+			},
+			on: () => coinbaseSigner,
+			removeListener: () => coinbaseSigner,
+		}
+		const braveSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				signerRequests.brave.push(method)
+				if (method === 'eth_chainId') return '0x99'
+				throw new Error(`Unexpected brave signer request: ${ method }`)
+			},
+			on: () => braveSigner,
+			removeListener: () => braveSigner,
+		}
+		;(fakeWindow as { ethereum: typeof braveSigner & { providerMap: Map<string, typeof coinbaseSigner> } }).ethereum = {
+			...braveSigner,
+			providerMap: new Map([['CoinbaseWallet', coinbaseSigner]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?provider-map-coinbase-binding')
+			await waitFor(() => signerName !== undefined)
+			await waitFor(() => signerRequests.brave.length === 1 || signerRequests.coinbase.length === 1)
+			assert.equal(signerName, 'CoinbaseWallet')
+			assert.deepEqual(signerRequests.coinbase, ['eth_chainId'])
+			assert.deepEqual(signerRequests.brave, [])
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('uses actual signer flags when providerMap has no CoinbaseWallet entry', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		let signerName: string | undefined
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					signerName = request.params?.[1] as string
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+		const fakePrimarySigner = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				if (method === 'eth_chainId') return '0x1'
+				throw new Error(`Unexpected signer request: ${ method }`)
+			},
+			on: () => fakePrimarySigner,
+			removeListener: () => fakePrimarySigner,
+		}
+		;(fakeWindow as { ethereum: typeof fakePrimarySigner & { providerMap: Map<string, Record<string, unknown>> } }).ethereum = {
+			...fakePrimarySigner,
+			providerMap: new Map([['OtherWallet', { request: async () => ['0x'] }]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?provider-map-no-coinbase')
+			await waitFor(() => signerName !== undefined)
+			assert.equal(signerName, 'MetaMask')
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('uses mapped provider events in providerMap branch', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		const signerEvents: {
+			connect?: (connectInfo: { chainId: string }) => void,
+			disconnect?: (error: { code: number, message: string }) => void,
+			chainChanged?: (chainId: string) => void,
+			accountsChanged?: (accounts: readonly string[]) => void,
+		} = {}
+		const mappedOnKinds: string[] = []
+		const rootOnKinds: string[] = []
+		const backgroundMessages: { method: string, params?: readonly unknown[] }[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				backgroundMessages.push({ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) })
+				if (request.method === 'connected_to_signer') {
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				if (request.method === 'eth_accounts_reply') {
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: undefined,
+					})
+					return true
+				}
+				if (request.method === 'signer_chainChanged') {
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: '0x',
+					})
+					return true
+				}
+				return false
+			},
+		})
+		const mappedSigner = {
+			isCoinbaseWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				if (method === 'eth_chainId') return '0x1'
+				throw new Error(`Unexpected mapped signer request: ${ method }`)
+			},
+			on: (kind: string, callback: (...args: never[]) => void) => {
+				mappedOnKinds.push(kind)
+				if (kind === 'connect') signerEvents.connect = callback as (connectInfo: { chainId: string }) => void
+				else if (kind === 'disconnect') signerEvents.disconnect = callback as (error: { code: number, message: string }) => void
+				if (kind === 'accountsChanged') signerEvents.accountsChanged = callback as (accounts: readonly string[]) => void
+				else if (kind === 'chainChanged') signerEvents.chainChanged = callback as (chainId: string) => void
+				return mappedSigner
+			},
+			removeListener: () => mappedSigner,
+		}
+		const rootSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				if (method === 'eth_chainId') return '0x2'
+				throw new Error(`Unexpected root signer request: ${ method }`)
+			},
+			on: (kind: string) => {
+				rootOnKinds.push(kind)
+				return rootSigner
+			},
+			removeListener: () => rootSigner,
+		}
+		;(fakeWindow as { ethereum: typeof rootSigner & { providerMap: Map<string, typeof mappedSigner> } }).ethereum = {
+			...rootSigner,
+			providerMap: new Map([['CoinbaseWallet', mappedSigner]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import(`../../app/inpage/ts/inpage.js?provider-map-events-${Date.now()}-${Math.random()}`)
+			await waitFor(() => mappedOnKinds.length + rootOnKinds.length >= 4)
+			assert.equal(mappedOnKinds.length >= 4, true)
+			assert.equal(rootOnKinds.length, 0)
+			assert.equal(signerEvents.accountsChanged !== undefined, true)
+			await waitFor(() => signerEvents.chainChanged !== undefined)
+			await waitFor(() => signerEvents.connect !== undefined)
+			await waitFor(() => signerEvents.disconnect !== undefined)
+			assert.equal(mappedOnKinds.includes('accountsChanged'), true)
+				assert.equal(mappedOnKinds.includes('connect'), true)
+				assert.equal(mappedOnKinds.includes('disconnect'), true)
+				assert.equal(mappedOnKinds.includes('chainChanged'), true)
+				signerEvents.connect!({ chainId: '0x99' })
+				await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === true && message.params?.[1] === 'CoinbaseWallet').length >= 1)
+				signerEvents.disconnect!({ code: 4900, message: 'error' })
+				await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === false && message.params?.[1] === 'CoinbaseWallet').length >= 1)
+				assert.equal(backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === true && message.params?.[1] === 'CoinbaseWallet').length >= 1, true)
+				assert.equal(backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === false && message.params?.[1] === 'CoinbaseWallet').length >= 1, true)
+				signerEvents.accountsChanged(['0x1111111111111111111111111111111111111111'])
+				assert.equal(typeof signerEvents.accountsChanged, 'function')
+				assert.equal(typeof signerEvents.chainChanged, 'function')
+				assert.equal(signerEvents.chainChanged !== undefined, true)
+				assert.equal(signerEvents.accountsChanged !== undefined, true)
+				await waitFor(() => backgroundMessages.some((message) => message.method === 'eth_accounts_reply' && (message.params?.[0] as { requestAccounts: boolean } | undefined)?.requestAccounts === false))
+				signerEvents.chainChanged('0x2a')
+				await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x2a'))
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
 	test('preserves string JSON-RPC error data from background replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
