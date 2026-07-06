@@ -76,6 +76,7 @@ afterEach(() => {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/components/pages/AddNewAddress.js'),
+		...await import('../../app/ts/components/pages/ChangeChain.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GovernanceVoteVisualizer.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GnosisSafeVisualizer.js'),
 	}
@@ -298,7 +299,84 @@ function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPe
 	}
 }
 
+function createChangeChainMessage() {
+	return {
+		role: 'all' as const,
+		method: 'popup_ChangeChainRequest' as const,
+		data: {
+			website: { websiteOrigin: 'https://chain.example', icon: undefined, title: undefined },
+			popupOrTabId: { type: 'tab' as const, id: 1 },
+			request: {
+				method: 'wallet_switchEthereumChain',
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: {
+					requestId: 99,
+					requestSocket: {
+						tabId: 1,
+						connectionName: '0x1',
+					},
+				},
+			},
+			rpcNetwork: {
+				name: 'Ethereum Mainnet',
+				chainId: '0x1',
+				httpsRpc: 'https://rpc.example',
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: false,
+			},
+			simulationMode: false,
+		},
+	}
+}
+
 describe('popup async action UI', () => {
+	test('sends the change-chain request and resolves once a background reply arrives', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferredReply = createDeferred<unknown>()
+		let chainDialogRequest: unknown = undefined
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) === 'popup_changeChainDialog') {
+				chainDialogRequest = message
+				return deferredReply.promise
+			}
+			return undefined
+		}
+
+		await act(() => {
+			render(h(modules.ChangeChain, {}), dom.document.body)
+		})
+
+		await act(async () => {
+			await emitRuntimeMessage(createChangeChainMessage())
+		})
+
+		const changeChainButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Change chain'))
+		if (changeChainButton === undefined) throw new Error('Expected chain change confirm button to render')
+
+			await act(async () => {
+				await clickElement(changeChainButton)
+				await settleAsyncUpdates()
+			})
+
+			assert.equal(chainDialogRequest === undefined, false)
+			assert.equal(isDisabled(changeChainButton), true)
+
+			await act(async () => {
+				deferredReply.resolve(undefined)
+				await deferredReply.promise
+				await settleAsyncUpdates()
+			})
+
+			assert.equal(isDisabled(changeChainButton), false)
+			assert.equal(changeChainButton.textContent?.includes('Change chain'), true)
+			assert.equal(chainDialogRequest === undefined, false)
+			dom.restore()
+		})
+
 	test('shows ABI lookup progress and a missing-reply error in AddNewAddress', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()

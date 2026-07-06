@@ -3,10 +3,12 @@ import { useSignal } from '@preact/signals'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
 
 export function getChangeChainActionState(params: { hasSupportedRpc: boolean, simulationMode: boolean }) {
 	if (params.hasSupportedRpc) return {
@@ -28,6 +30,8 @@ export function getChangeChainActionState(params: { hasSupportedRpc: boolean, si
 
 export function ChangeChain() {
 	const chainChangeData = useSignal<PendingChainChangeConfirmationPromise | undefined>(undefined)
+	const { value: approveChainChangeState, waitFor: waitForApproveChainChangeState, reset: resetApproveChainChangeState } = useAsyncState<void>()
+	const { value: rejectChainChangeState, waitFor: waitForRejectChainChangeState, reset: resetRejectChainChangeState } = useAsyncState<void>()
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -44,17 +48,21 @@ export function ChangeChain() {
 
 	useEffect(() => { void sendPopupReadyAndListening('changeChain') }, [])
 
-	async function approve() {
+	async function changeChain(accept: boolean) {
 		if (chainChangeData.value === undefined) return
 		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: true, uniqueRequestIdentifier: chainChangeData.value.request.uniqueRequestIdentifier, rpcNetwork: chainChangeData.value.rpcNetwork } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept, uniqueRequestIdentifier: chainChangeData.value.request.uniqueRequestIdentifier, rpcNetwork: chainChangeData.value.rpcNetwork } })
 	}
 
-	async function reject() {
-		if (chainChangeData.value === undefined) return
-		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: false, uniqueRequestIdentifier: chainChangeData.value.request.uniqueRequestIdentifier, rpcNetwork: chainChangeData.value.rpcNetwork } })
-	}
+	const reject = createAsyncActionRunner(
+		{ value: rejectChainChangeState, waitFor: waitForRejectChainChangeState, reset: resetRejectChainChangeState },
+		async () => { await changeChain(false) }
+	)
+
+	const approve = createAsyncActionRunner(
+		{ value: approveChainChangeState, waitFor: waitForApproveChainChangeState, reset: resetApproveChainChangeState },
+		async () => { await changeChain(true) }
+	)
 
 	if (chainChangeData.value === undefined) return <main></main>
 	const actionState = getChangeChainActionState({
@@ -100,19 +108,23 @@ export function ChangeChain() {
 						</div>
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
-						<button
+						<AsyncActionButton
 							class = { 'button is-danger' }
 							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
+							state = { rejectChainChangeState.value.state }
+							text = { `Don't change` }
+							pendingText = 'Not changing...'
 							onClick = { reject } >
-							Don't change
-						</button>
-						<button
+						</AsyncActionButton>
+						<AsyncActionButton
 							class = { 'button is-primary' }
 							disabled = { actionState.approveDisabled }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
+							state = { approveChainChangeState.value.state }
+							text = { actionState.approveButtonText }
+							pendingText = 'Changing chain...'
 							onClick = { approve }>
-							{ actionState.approveButtonText }
-						</button>
+						</AsyncActionButton>
 					</div>
 				</div>
 			</div>

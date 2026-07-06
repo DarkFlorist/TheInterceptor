@@ -9,6 +9,8 @@ import { modifyObject } from '../../utils/typescript.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -36,6 +38,7 @@ interface AccessChanges {
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	const editableAccessList = useSignal<readonly EditableAccess[] | undefined>(undefined)
 	const metadata = useSignal<Map<string, AddressBookEntry>>(new Map())
+	const { value: saveChangesState, waitFor: waitForSaveChangesState, reset: resetSaveChangesState } = useAsyncState<void>()
 
 	function updateEditableAccessList(newList: WebsiteAccessArray | undefined) {
 		if (newList === undefined) { editableAccessList.value = undefined; return }
@@ -167,7 +170,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		return false
 	}
 
-	function saveChanges() {
+	async function saveChanges() {
 		if (!areThereChanges()) return param.goHome()
 		if (editableAccessList.value === undefined) return param.goHome()
 		const changedEntry = (editable: EditableAccess) => {
@@ -308,7 +311,13 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.goHome }>Cancel</button>
-				<button class = 'button is-success is-primary' onClick = { saveChanges }> { areThereChanges() ? 'Save Changes' : 'Close' } </button>
+					<AsyncActionButton
+						class = 'button is-success is-primary'
+						state = { saveChangesState.value.state }
+						onClick = { createAsyncActionRunner({ value: saveChangesState, waitFor: waitForSaveChangesState, reset: resetSaveChangesState }, saveChanges) }
+						text = { areThereChanges() ? 'Save Changes' : 'Close' }
+						pendingText = 'Saving...'
+					/>
 			</footer>
 		</div>
 	</> )
