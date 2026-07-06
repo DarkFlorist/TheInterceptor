@@ -558,6 +558,188 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('falls back to the root provider when mapped CoinbaseWallet signer request fails', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		let signerName: string | undefined
+		const {
+			fakeWindow,
+			backgroundSignerChainChanges,
+			interceptorErrorPayloads,
+		} = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					signerName = request.params?.[1] as string
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				return false
+			},
+			signerChainIdReply: '0x2',
+		})
+		const rootSignerRequests: string[] = []
+		const mappedSignerRequests: string[] = []
+		let mappedSignerChainIdRequestCount = 0
+		const mappedSigner = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				mappedSignerRequests.push(method)
+				if (method === 'eth_chainId') {
+					mappedSignerChainIdRequestCount += 1
+					throw new Error('temporary failure in mapped signer')
+				}
+				throw new Error(`Unexpected mapped signer request: ${ method }`)
+			},
+			on: () => mappedSigner,
+			removeListener: () => mappedSigner,
+		}
+		const rootSigner = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				rootSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x2'
+				throw new Error(`Unexpected root signer request: ${ method }`)
+			},
+			on: () => rootSigner,
+			removeListener: () => rootSigner,
+		}
+		;(fakeWindow as { ethereum: typeof rootSigner & { providerMap: Map<string, typeof mappedSigner> } }).ethereum = {
+			...rootSigner,
+			providerMap: new Map([['CoinbaseWallet', mappedSigner]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?provider-map-chain-id-fallback')
+			await waitFor(() => signerName !== undefined)
+			assert.equal(mappedSignerChainIdRequestCount, 1)
+			assert.deepEqual(mappedSignerRequests, ['eth_chainId'])
+			assert.deepEqual(rootSignerRequests, ['eth_chainId'])
+			assert.deepEqual(backgroundSignerChainChanges, ['0x2'])
+			assert.equal(interceptorErrorPayloads.length, 0)
+			assert.equal(signerName, 'CoinbaseWallet')
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
+	test('does not fall back to the root provider when mapped CoinbaseWallet eth_requestAccounts is rejected', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		let signerName: string | undefined
+		const {
+			fakeWindow,
+			backgroundEthAccountsReplies,
+			interceptorErrorPayloads,
+			sendBackgroundMessage,
+		} = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageInternal) => {
+				if (request.method === 'connected_to_signer') {
+					signerName = request.params?.[1] as string
+					sendBackgroundMessageInternal({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+		const rootSignerRequests: string[] = []
+		const mappedSignerRequests: string[] = []
+		const mappedSigner = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				mappedSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x2'
+				if (method === 'eth_requestAccounts') throw { code: 4001, message: 'User rejected the request.' }
+				throw new Error(`Unexpected mapped signer request: ${ method }`)
+			},
+			on: () => mappedSigner,
+			removeListener: () => mappedSigner,
+		}
+		const rootSigner = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				rootSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x2'
+				if (method === 'eth_requestAccounts') return ['0x1111111111111111111111111111111111111111']
+				throw new Error(`Unexpected root signer request: ${ method }`)
+			},
+			on: () => rootSigner,
+			removeListener: () => rootSigner,
+		}
+		;(fakeWindow as { ethereum: typeof rootSigner & { providerMap: Map<string, typeof mappedSigner> } }).ethereum = {
+			...rootSigner,
+			providerMap: new Map([['CoinbaseWallet', mappedSigner]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?provider-map-no-fallback-on-reject')
+			await waitFor(() => signerName !== undefined)
+			await waitFor(() => mappedSignerRequests.includes('eth_chainId'))
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_requestAccounts',
+				result: [],
+			})
+			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			assert.deepEqual(signerName, 'CoinbaseWallet')
+			assert.deepEqual(mappedSignerRequests, ['eth_chainId', 'eth_requestAccounts'])
+			assert.deepEqual(rootSignerRequests, [])
+			assert.equal(backgroundEthAccountsReplies.length, 1)
+			assert.equal((backgroundEthAccountsReplies[0] as { requestAccounts: boolean }).requestAccounts, true)
+			assert.equal((backgroundEthAccountsReplies[0] as { error: { code: number, message: string } }).error.code, 4001)
+			assert.equal((backgroundEthAccountsReplies[0] as { error: { code: number, message: string } }).error.message, 'User rejected the request.')
+			assert.equal(interceptorErrorPayloads.length, 0)
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
 	test('uses actual signer flags when providerMap has no CoinbaseWallet entry', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent

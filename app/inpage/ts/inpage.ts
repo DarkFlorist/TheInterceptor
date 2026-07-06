@@ -374,6 +374,7 @@ class InterceptorMessageListener {
 	private requestId = 0
 	private metamaskCompatibilityMode = false
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
+	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private extensionMessagePort: MessagePort | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
@@ -461,6 +462,16 @@ class InterceptorMessageListener {
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
 			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error: error, request: methodAndParams })
+		}
+	}
+
+	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowFallbackToRoot = false) => {
+		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
+		try {
+			return await this.signerWindowEthereumRequest(methodAndParams)
+		} catch (error: unknown) {
+			if (!allowFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
+			return await this.fallbackSignerWindowEthereumRequest(methodAndParams)
 		}
 	}
 
@@ -580,7 +591,7 @@ class InterceptorMessageListener {
 	private readonly getAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -607,7 +618,7 @@ class InterceptorMessageListener {
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_requestAccounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -631,7 +642,7 @@ class InterceptorMessageListener {
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_chainId', params: [] }, true)
 			if (typeof reply !== 'string') {
 				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
 				return
@@ -664,7 +675,7 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
+			const reply = await this.requestFromSigner({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
 			if (reply !== null) return
 			await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error: unknown) {
@@ -822,20 +833,19 @@ class InterceptorMessageListener {
 				await this.handleReplyRequest(forwardRequest)
 				return
 			}
-			if (forwardRequest.type !== 'forwardToSigner') throw new Error('type: forwardToSigner missing')
-			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
-			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
-			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
-			const signerRequest = this.signerWindowEthereumRequest
-			if (signerRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
+				if (forwardRequest.type !== 'forwardToSigner') throw new Error('type: forwardToSigner missing')
+				if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
+				const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+				if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+				if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 
-			const sendToSignerWithCatchError = async () => {
-				try {
-					const reply = await signerRequest({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
-					return { success: true as const, forwardRequest, reply }
-				} catch(error: unknown) {
-					return { success: false as const, forwardRequest, error }
-				}
+				const sendToSignerWithCatchError = async () => {
+					try {
+						const reply = await this.requestFromSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
+						return { success: true as const, forwardRequest, reply }
+					} catch(error: unknown) {
+						return { success: false as const, forwardRequest, error }
+					}
 			}
 			const signerReply = await sendToSignerWithCatchError()
 			try {
@@ -981,23 +991,30 @@ class InterceptorMessageListener {
 				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 			})
 		}
-		const getSignerName = (signerWindowEthereum: WindowEthereum) => {
-			if (signerWindowEthereum.isCoinbaseWallet) return 'CoinbaseWallet' as const
-			if (signerWindowEthereum.isBraveWallet) return 'Brave' as const
-			if (signerWindowEthereum.isMetaMask) return 'MetaMask' as const
-			return 'NotRecognizedSigner' as const
-		}
+			const getSignerName = (signerWindowEthereum: WindowEthereum) => {
+				if (signerWindowEthereum.isCoinbaseWallet) return 'CoinbaseWallet' as const
+				if (signerWindowEthereum.isBraveWallet) return 'Brave' as const
+				if (signerWindowEthereum.isMetaMask) return 'MetaMask' as const
+				return 'NotRecognizedSigner' as const
+			}
+			const hasRequestAndOn = (provider: WindowEthereum | undefined): provider is WindowEthereum => {
+				return provider !== undefined
+					&& typeof provider.request === 'function'
+					&& typeof provider.on === 'function'
+			}
 
-		if (inpageWindow.ethereum.isBraveWallet || inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet) {
-			const mapSignerWindowEthereum = inpageWindow.ethereum.providerMap?.get('CoinbaseWallet')
-			const signerWindowEthereum = mapSignerWindowEthereum ?? inpageWindow.ethereum
-			const signerName = mapSignerWindowEthereum === undefined
-				? getSignerName(signerWindowEthereum)
-				: 'CoinbaseWallet' as const
-			this.connected = !signerWindowEthereum.isConnected || signerWindowEthereum.isConnected()
-			this.signerWindowEthereumRequest = signerWindowEthereum.request.bind(signerWindowEthereum) // store the request object to signer
-			subscribeToSignerEvents(signerWindowEthereum, signerName)
-			inpageWindow.ethereum = {
+			if (inpageWindow.ethereum.isBraveWallet || inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet) {
+				const mapSignerWindowEthereum = inpageWindow.ethereum.providerMap?.get('CoinbaseWallet')
+				const mapSignerIsUsable = hasRequestAndOn(mapSignerWindowEthereum)
+				const signerWindowEthereum = mapSignerIsUsable ? mapSignerWindowEthereum : inpageWindow.ethereum
+				const signerName = mapSignerWindowEthereum === undefined
+					? getSignerName(signerWindowEthereum)
+					: 'CoinbaseWallet' as const
+				this.connected = !signerWindowEthereum.isConnected || signerWindowEthereum.isConnected()
+				this.signerWindowEthereumRequest = signerWindowEthereum.request.bind(signerWindowEthereum) // store the request object to signer
+				this.fallbackSignerWindowEthereumRequest = mapSignerIsUsable ? inpageWindow.ethereum.request.bind(inpageWindow.ethereum) : undefined
+				subscribeToSignerEvents(signerWindowEthereum, signerName)
+				inpageWindow.ethereum = {
 				isInterceptor: true,
 				isConnected: this.WindowEthereumIsConnected.bind(signerWindowEthereum),
 				request: this.WindowEthereumRequest.bind(signerWindowEthereum),
@@ -1011,9 +1028,10 @@ class InterceptorMessageListener {
 			this.connectToSigner(signerName)
 			return
 		}
-		const fallbackSignerName = getSignerName(inpageWindow.ethereum)
-		this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
-		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
+			const fallbackSignerName = getSignerName(inpageWindow.ethereum)
+			this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
+			this.fallbackSignerWindowEthereumRequest = undefined
+			this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
 		subscribeToSignerEvents(inpageWindow.ethereum, fallbackSignerName)
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
 		Object.assign(inpageWindow.ethereum, {
