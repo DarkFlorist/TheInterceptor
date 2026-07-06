@@ -478,6 +478,86 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('uses providerMap CoinbaseWallet key as signer identity when mapped provider lacks isCoinbaseWallet flag', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		let signerName: string | undefined
+		const signerRequests = {
+			brave: [] as string[],
+			coinbase: [] as string[],
+		}
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					signerName = request.params?.[1] as string
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+
+		const mappedCoinbaseSigner = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				signerRequests.coinbase.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				if (method === 'eth_accounts') return ['0x1111111111111111111111111111111111111111']
+				throw new Error(`Unexpected mapped signer request: ${ method }`)
+			},
+			on: () => mappedCoinbaseSigner,
+			removeListener: () => mappedCoinbaseSigner,
+		}
+		const braveSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				signerRequests.brave.push(method)
+				if (method === 'eth_chainId') return '0x99'
+				throw new Error(`Unexpected brave signer request: ${ method }`)
+			},
+			on: () => braveSigner,
+			removeListener: () => braveSigner,
+		}
+		;(fakeWindow as { ethereum: typeof braveSigner & { providerMap: Map<string, typeof mappedCoinbaseSigner> } }).ethereum = {
+			...braveSigner,
+			providerMap: new Map([['CoinbaseWallet', mappedCoinbaseSigner]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?provider-map-coinbase-missing-flag')
+			await waitFor(() => signerName !== undefined)
+			await waitFor(() => signerRequests.brave.length === 1 || signerRequests.coinbase.length === 1)
+			assert.equal(signerName, 'CoinbaseWallet')
+			assert.deepEqual(signerRequests.coinbase, ['eth_chainId'])
+			assert.deepEqual(signerRequests.brave, [])
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
 	test('uses actual signer flags when providerMap has no CoinbaseWallet entry', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent

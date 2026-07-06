@@ -991,7 +991,9 @@ class InterceptorMessageListener {
 		if (inpageWindow.ethereum.isBraveWallet || inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet) {
 			const mapSignerWindowEthereum = inpageWindow.ethereum.providerMap?.get('CoinbaseWallet')
 			const signerWindowEthereum = mapSignerWindowEthereum ?? inpageWindow.ethereum
-			const signerName = getSignerName(signerWindowEthereum)
+			const signerName = mapSignerWindowEthereum === undefined
+				? getSignerName(signerWindowEthereum)
+				: 'CoinbaseWallet' as const
 			this.connected = !signerWindowEthereum.isConnected || signerWindowEthereum.isConnected()
 			this.signerWindowEthereumRequest = signerWindowEthereum.request.bind(signerWindowEthereum) // store the request object to signer
 			subscribeToSignerEvents(signerWindowEthereum, signerName)
