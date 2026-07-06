@@ -20,6 +20,8 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
 
 const URL_HASH_KEY = 'origin'
 const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
@@ -442,6 +444,11 @@ const AdvancedSettings = ({ websiteAccess }: { websiteAccess: OptionalSignal<Web
 }
 
 const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+	const { value: unblockWebsiteRequestState, waitFor: waitForUnblockWebsiteRequest } = useAsyncState<void>()
+	const unblockWebsiteRequest = () => {
+		void waitForUnblockWebsiteRequest(() => setWebsiteExternalRequestBlocking(false))
+	}
+
 	const setWebsiteExternalRequestBlocking = async (shouldBlock: boolean) => {
 		if (!websiteAccess.deepValue) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_blockOrAllowExternalRequests', data: { website: websiteAccess.deepValue.website, shouldBlock } })
@@ -461,11 +468,18 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
 					<h1 style = { { color: 'var(--text-color)', whiteSpace: 'nowrap' } }>Block External Request</h1>
-					<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from this domain, effectively preventing the website from connecting to external domains and services.</p>
+				<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.875rem' } }>The Interceptor can block network requests from this domain, effectively preventing the website from connecting to external domains and services.</p>
 				</div>
 				<aside>
 					{ requestBlockMode.value === 'block-all' ? (
-						<button type='button' class = 'btn btn--primary' onClick = { () => setWebsiteExternalRequestBlocking(false) }><span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span></button>
+						<AsyncActionButton
+							class = 'btn btn--primary'
+							type = 'button'
+							state = { unblockWebsiteRequestState.value.state }
+							text = { <span style = { { whiteSpace: 'nowrap' } }>Unblock Requests</span> }
+							pendingText = { <span style = { { whiteSpace: 'nowrap' } }>Unblocking Requests</span> }
+							onClick = { unblockWebsiteRequest }
+						/>
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
@@ -489,6 +503,8 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 }
 
 const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<WebsiteAccess> }) => {
+	const { value: enableProtectionState, waitFor: waitForEnableProtection } = useAsyncState<void>()
+	const enableProtection = () => { void waitForEnableProtection(() => disableWebsiteProtection(false)) }
 
 	const disableWebsiteProtection = async (shouldDisable = true) => {
 		if (!websiteAccess.deepValue) return
@@ -513,7 +529,14 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 				</div>
 				<aside>
 					{ isInterceptorDisabled.value ? (
-						<button type='button' class = 'btn btn--primary' onClick = { () => disableWebsiteProtection(false) }><span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span></button>
+						<AsyncActionButton
+							class = 'btn btn--primary'
+							type = 'button'
+							state = { enableProtectionState.value.state }
+							text = { <span style = { { whiteSpace: 'nowrap' } }>Enable Protection</span> }
+							pendingText = { <span style = { { whiteSpace: 'nowrap' } }>Enabling Protection</span> }
+							onClick = { enableProtection }
+						/>
 					) : (
 						<Modal>
 							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>

@@ -38,6 +38,8 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
+import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -523,25 +525,32 @@ type ModalState =
 	{ page: 'noModal' }
 
 type RejectButtonParams = {
-	onClick: () => void
+	onClick: () => void | Promise<void>
+	state: AsyncStates
 }
-const RejectButton = ({ onClick }: RejectButtonParams) => {
+const RejectButton = ({ onClick, state }: RejectButtonParams) => {
 	return <div style = 'display: flex;'>
-		<button class = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { onClick } >
-			{ 'Reject' }
-		</button>
+		<AsyncActionButton
+			class = 'button is-primary is-danger button-overflow dialog-button-left'
+			state = { state }
+			text = { 'Reject' }
+			pendingText = { 'Rejecting...' }
+			onClick = { onClick }
+		/>
 	</div>
 }
 
 type ButtonsParams = {
 	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
 	reject: () => void
+	rejectButtonState: AsyncStates
 	approve: () => void
-	confirmDisabled: ReadonlySignal<boolean>
+	approveButtonState: AsyncStates
+	confirmDisabled: boolean
 }
-function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, confirmDisabled }: ButtonsParams) {
-	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject }/>
-	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject }/>
+function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled }: ButtonsParams) {
+	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
+	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
@@ -551,23 +560,34 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, approve, 
 		return identifyTransaction(lastTx)
 	}
 	const identified = identify()
-	if (identified === undefined) return <RejectButton onClick = { reject }/>
+	if (identified === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
 	return <div style = 'display: flex; flex-direction: row;'>
-		<button class = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
-			{ identified.rejectAction }
-		</button>
-		<button class = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { confirmDisabled }>
-			{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
-				<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
-				</> : <>
-					{ currentPendingTransactionOrSignableMessage.simulationMode
-						? `${ identified.simulationAction }!`
-						: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
-					}
-				</>
+		<AsyncActionButton
+			class = 'button is-primary is-danger button-overflow dialog-button-left'
+			state = { rejectButtonState }
+			text = { identified.rejectAction }
+			pendingText = 'Rejecting...'
+			onClick = { reject }
+		/>
+		<AsyncActionButton
+			class = 'button is-primary button-overflow dialog-button-right'
+			state = { approveButtonState }
+			text = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' 
+				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>
+				: currentPendingTransactionOrSignableMessage.simulationMode
+					? `${ identified.simulationAction }!`
+					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
 			}
-		</button>
+			pendingText = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner'
+				? 'Waiting for signer...'
+				: currentPendingTransactionOrSignableMessage.simulationMode
+					? `${ identified.simulationAction }...`
+					: `Sign with ${ signerName }...`
+			}
+			onClick = { approve }
+			disabled = { confirmDisabled }
+		/>
 	</div>
 }
 
@@ -703,7 +723,7 @@ export function ConfirmTransaction() {
 		}
 	}, [])
 
-	async function approve() {
+	async function approveTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
@@ -712,7 +732,7 @@ export function ConfirmTransaction() {
 		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
-	async function reject() {
+	async function rejectTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
@@ -739,6 +759,16 @@ export function ConfirmTransaction() {
 			errorString: getPossibleErrorString(),
 		} })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
+	}
+	const { value: rejectButtonState, waitFor: waitForRejectTransaction, reset: resetRejectButton } = useAsyncState<void>()
+	const { value: approveButtonState, waitFor: waitForApproveTransaction, reset: resetApproveButton } = useAsyncState<void>()
+	const reject = () => {
+		resetRejectButton()
+		waitForRejectTransaction(rejectTransaction)
+	}
+	const approve = () => {
+		resetApproveButton()
+		waitForApproveTransaction(approveTransaction)
 	}
 	const refreshMetadata = async () => {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return
@@ -910,12 +940,14 @@ export function ConfirmTransaction() {
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
 							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } />
-							<Buttons
-								currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
-								reject = { reject }
-								approve = { approve }
-								confirmDisabled = { isConfirmDisabled }
-							/>
+					<Buttons
+						currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
+						reject = { reject }
+						rejectButtonState = { rejectButtonState.value.state }
+						approve = { approve }
+						approveButtonState = { approveButtonState.value.state }
+						confirmDisabled = { isConfirmDisabled.value }
+					/>
 						</nav>
 					</div>
 				</div>

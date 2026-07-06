@@ -23,6 +23,8 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/Simulation
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -60,9 +62,17 @@ function SignerExplanation(param: SignerExplanationParams) {
 function FirstCardHeader(param: FirstCardParams) {
 	const tabIconReason = useComputed(() => param.tabIconDetails.value.iconReason)
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
+	const { value: setSimulatingState, waitFor: waitForSetSimulating } = useAsyncState<void>()
+	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
 
-	function enableSimulationMode(enabled: boolean ) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+	async function enableSimulationMode(enabled: boolean ) {
+		await sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+	}
+	const enableSimulating = () => {
+		void waitForSetSimulating(() => enableSimulationMode(true))
+	}
+	const enableSigning = () => {
+		void waitForSetSigning(() => enableSimulationMode(false))
 	}
 
 	return <>
@@ -74,20 +84,24 @@ function FirstCardHeader(param: FirstCardParams) {
 			</div>
 			<div>
 				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
-					<button
+					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
+						state = { setSimulatingState.value.state }
 						disabled = { param.simulationMode.value }
-						onClick = { () => enableSimulationMode(true) }>
-						Simulating
-					</button>
-					<button
+						pendingText = 'Switching to simulating mode...'
+						text = 'Simulating'
+						onClick = { enableSimulating }
+					/>
+					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
+						state = { setSigningState.value.state }
 						disabled = { !param.simulationMode.value }
-						onClick = { () => enableSimulationMode(false) }>
-						<SignerLogoText signerName = { signerName } text = { 'Signing' } />
-					</button>
+						text = { <SignerLogoText signerName = { signerName } text = 'Signing' /> }
+						pendingText = 'Switching to signing mode...'
+						onClick = { enableSigning }
+					/>
 				</div>
 			</div>
 			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
@@ -102,15 +116,27 @@ type InterceptorDisabledButtonParams = {
 }
 
 function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
-	return <button disabled = { website.value === undefined } class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
-		{ interceptorDisabled.value ? <>
+	const { value: disableButtonState, waitFor: waitForDisableInterceptor } = useAsyncState<void>()
+	const toggleInterceptor = () => {
+		void waitForDisableInterceptor(async () => {
+			disableInterceptorToggle(!interceptorDisabled.value)
+		})
+	}
+
+	return <AsyncActionButton
+		disabled = { website.value === undefined }
+		state = { disableButtonState.value.state }
+		class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` }
+		text = { interceptorDisabled.value ? <>
 			<span class = 'icon'> <img src = { ICON_ACTIVE } width = '24' height = '24'/> </span>
 			<span> Enable</span>
 		</> : <>
 			<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED } width = '24' height = '24'/> </span>
 			<span> Disable</span>
 		</> }
-	</button>
+		pendingText = { interceptorDisabled.value ? 'Enabling interceptor...' : 'Disabling interceptor...' }
+		onClick = { toggleInterceptor }
+	/>
 }
 
 type RichListParams = {
@@ -189,7 +215,12 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
 	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
+
+	const connectToSigner = () => {
+		void waitForConnectToSigner(() => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }))
+	}
 
 	const timeSelectorOnChange = () => {
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
@@ -249,12 +280,16 @@ function FirstCard(param: FirstCardParams) {
 				{ !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
-							<button class = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
-								<SignerLogoText
+							<AsyncActionButton
+								class = 'button is-primary'
+								state = { connectToSignerButtonState.value.state }
+								text = { <SignerLogoText
 									signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }
 									text = { `Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
-								/>
-							</button>
+								/> }
+								pendingText = { `Connecting to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
+								onClick = { connectToSigner }
+							/>
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
@@ -291,13 +326,23 @@ type SimulationResultsHeaderParams = {
 }
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
+	const { value: clearSimulationState, waitFor: waitForClearSimulation } = useAsyncState<void>()
+	const openStack = () => { param.openSimulationStack?.() }
+	const resetSimulation = param.resetSimulation
+	const clearSimulation = () => {
+		if (resetSimulation === undefined) return
+		void waitForClearSimulation(async () => {
+			resetSimulation()
+		})
+	}
+
 	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
 		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
 			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
 		</div>
 		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
-				<button class = 'btn btn--outline is-small' onClick = { () => param.openSimulationStack?.() } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
+				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 						<OpenInNewIcon/>
 					</span>
@@ -305,12 +350,19 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 				</button>
 			}
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
-				<button class = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<BroomIcon />
-					</span>
-					<span>Clear</span>
-				</button>
+				<AsyncActionButton
+					class = 'btn is-small is-danger'
+					state = { clearSimulationState.value.state }
+					disabled = { param.disableReset.value }
+					onClick = { clearSimulation }
+					text = { <>
+						<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+							<BroomIcon />
+						</span>
+						<span>Clear</span>
+					</> }
+					pendingText = 'Clearing...'
+				/>
 			}
 		</div>
 	</div>
@@ -319,15 +371,16 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack }: { numberOfAddressesMadeRich: number, openSimulationStack?: () => void }) {
 	if (numberOfAddressesMadeRich === 0) return <></>
 	const actionLabel = 'Open rich address state in the full simulation stack'
+	const openStack = () => { openSimulationStack?.() }
 	return <section class = 'card' style = 'margin: 10px;'>
 		<header
 			class = { `card-header stack-card-header${ openSimulationStack === undefined ? '' : ' stack-row-link-header' }` }
-			onClick = { openSimulationStack }
+			onClick = { openStack }
 			onKeyDown = { (event) => {
 				if (openSimulationStack === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
 				if (event.target !== event.currentTarget) return
 				event.preventDefault()
-				openSimulationStack()
+				openStack()
 			} }
 			role = { openSimulationStack === undefined ? undefined : 'button' }
 			tabIndex = { openSimulationStack === undefined ? undefined : 0 }
@@ -367,7 +420,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
-			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { () => param.openSimulationStack() } /> }
+			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } /> }
 		</div>
 	}
 
@@ -376,10 +429,10 @@ function PopupVisualisation(param: SimulationStateParam) {
 	return <div>
 		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
-		{ resolvedResults.visualizedSimulationState.success === false ? <>
-			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
-			<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { () => param.openSimulationStack() } />
-			<TransactionsAndSignedMessages
+			{ resolvedResults.visualizedSimulationState.success === false ? <>
+				<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+				<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } />
+				<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 				activeAddress = { param.activeSimulationAddress }
@@ -394,7 +447,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
-					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { () => param.openSimulationStack() } />
+					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } />
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }

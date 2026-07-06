@@ -16,6 +16,8 @@ import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -28,6 +30,8 @@ export function FetchSimulationStack() {
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
+	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
+	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'modifyAddress', state: new Signal(addressEditEntry(entry)) }
@@ -83,6 +87,13 @@ export function FetchSimulationStack() {
 		if (changeRequest.value === undefined) return
 		await tryFocusingTabOrWindow({ type: 'tab', id: changeRequest.value.uniqueRequestIdentifier.requestSocket.tabId })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: false, uniqueRequestIdentifier: changeRequest.value.uniqueRequestIdentifier, simulationStackVersion: changeRequest.value?.simulationStackVersion } })
+	}
+
+	const allowRequest = () => {
+		void waitForAllowRequest(() => approve())
+	}
+	const rejectRequest = () => {
+		void waitForRejectRequest(() => reject())
 	}
 
 	const simulationStackResults = useComputed<SimulationAndVisualisationResults | undefined>(() => {
@@ -191,19 +202,23 @@ export function FetchSimulationStack() {
 							</div>
 						</div>
 						<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
-							<button
+							<AsyncActionButton
 								class = { 'button is-danger' }
 								style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
-								onClick = { reject } >
-								Don't allow
-							</button>
-							<button
+								state = { rejectRequestState.value.state }
+								text = { 'Don' + '\u0027' + 't allow' }
+								pendingText = 'Rejecting request...'
+								onClick = { rejectRequest }
+							/>
+							<AsyncActionButton
 								class = { 'button is-primary' }
-								disabled = { false }
 								style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
-								onClick = { approve }>
-								Allow
-							</button>
+								state = { allowRequestState.value.state }
+								disabled = { false }
+								text = 'Allow'
+								pendingText = 'Allowing request...'
+								onClick = { allowRequest }
+							/>
 						</div>
 					</div>
 				</div>

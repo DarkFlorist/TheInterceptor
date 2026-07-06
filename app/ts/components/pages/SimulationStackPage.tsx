@@ -22,6 +22,8 @@ import { getSimulationStackTargetElementIdFromHash } from '../../utils/simulatio
 import { SmallAddress, getActiveAddressEntry } from '../subcomponents/address.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { createUnexpectedErrorPopupMessage } from '../../utils/unexpectedErrorPopupMessage.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -49,11 +51,25 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 	resetSimulation: () => void
 	disableReset: Signal<boolean>
 }) {
+	const { value: exportSimulationStackState, waitFor: waitForExportSimulationStack } = useAsyncState<void>()
+	const { value: clearSimulationStackState, waitFor: waitForClearSimulationStack } = useAsyncState<void>()
+
 	const exportSimulationStack = async () => {
 		const reply = await requestPopupInterceptorSimulationInput()
 		if (reply === undefined) return
 		await clipboardCopy(reply.ethSimulateV1InputString)
 	}
+
+	const exportStack = () => {
+		void waitForExportSimulationStack(exportSimulationStack)
+	}
+
+	const clearStack = () => {
+		void waitForClearSimulationStack(async () => {
+			resetSimulation()
+		})
+	}
+
 	return <header class = 'simulation-stack-page-header'>
 		<div class = 'simulation-stack-page-title'>
 			<h1>Simulation Stack</h1>
@@ -66,26 +82,33 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 				</span>
 				<span>Import</span>
 			</button>
-			<button
+			<AsyncActionButton
 				class = 'btn btn--outline'
 				type = 'button'
-				onClick = { exportSimulationStack }
-				title = 'Export simulation stack'
-				aria-label = 'Export simulation stack'
-				data-hint-clickable-hide-timer-ms = { 1500 }
-				data-hint = 'Interceptor Simulation input copied!'
-			>
-				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-					<ExportIcon/>
-				</span>
-				<span>Export</span>
-			</button>
-			<button class = 'btn btn--destructive' type = 'button' disabled = { disableReset.value } onClick = { resetSimulation } title = 'Clear simulation stack' aria-label = 'Clear simulation stack'>
-				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-					<BroomIcon />
-				</span>
-				<span>Clear</span>
-			</button>
+				state = { exportSimulationStackState.value.state }
+				onClick = { exportStack }
+				text = { <>
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+						<ExportIcon/>
+					</span>
+					<span>Export</span>
+				</> }
+				pendingText = 'Exporting simulation stack...'
+			/>
+			<AsyncActionButton
+				class = 'btn btn--destructive'
+				type = 'button'
+				state = { clearSimulationStackState.value.state }
+				disabled = { disableReset.value }
+				onClick = { clearStack }
+				text = { <>
+					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+						<BroomIcon />
+					</span>
+					<span>Clear</span>
+				</> }
+				pendingText = 'Clearing simulation stack...'
+			/>
 		</div>
 	</header>
 }

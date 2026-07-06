@@ -19,6 +19,8 @@ import { ChevronIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	const websiteIcon = sanitizeStoredWebsiteIcon(icon)
@@ -140,30 +142,63 @@ type AccessRequestParam = {
 }
 
 function AccessRequests(param: AccessRequestParam) {
+
+	const AccessRequestActions = ({ accessRequest, reject, approve, informationChangedRecently }: {
+		accessRequest: PendingAccessRequest
+		reject: (accessRequestId: string) => void
+		approve: (accessRequestId: string) => void
+		informationChangedRecently: ReadonlySignal<boolean>
+	}) => {
+		const { value: rejectState, waitFor: waitForReject } = useAsyncState<void>()
+		const { value: approveState, waitFor: waitForApprove } = useAsyncState<void>()
+		const disabled = informationChangedRecently.value
+		const onReject = () => {
+			void waitForReject(async () => {
+				reject(accessRequest.accessRequestId)
+			})
+		}
+		const onApprove = () => {
+			void waitForApprove(async () => {
+				approve(accessRequest.accessRequestId)
+			})
+		}
+
+		return <nav class = 'popup-button-row'>
+			<div style = 'display: flex; flex-direction: row;'>
+		<AsyncActionButton
+				class = 'button is-primary is-danger'
+				state = { rejectState.value.state }
+					text = 'Deny Access'
+					pendingText = 'Denying access...'
+					onClick = { onReject }
+					disabled = { disabled }
+				/>
+			<AsyncActionButton
+				class = 'button is-primary'
+				state = { approveState.value.state }
+					text = 'Grant Access'
+					pendingText = 'Granting access...'
+					onClick = { onApprove }
+					disabled = { disabled }
+				/>
+			</div>
+			</nav>
+	}
+
 	return <> { param.pendingAccessRequests.map((pendingRequest) => <>
 		<div class = 'card' style = 'margin-bottom: 10px;'>
 			<AccessRequestHeader { ...pendingRequest.website } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<AccessRequest
-					renameAddressCallBack =  { (entry: AddressBookEntry) => param.renameAddressCallBack(pendingRequest.accessRequestId, entry) }
-					accessRequest = { pendingRequest }
+						renameAddressCallBack =  { (entry: AddressBookEntry) => param.renameAddressCallBack(pendingRequest.accessRequestId, entry) }
+						accessRequest = { pendingRequest }
 					changeActiveAddress = { () => param.changeActiveAddress(pendingRequest.accessRequestId) }
-					refreshActiveAddress = { () => param.refreshActiveAddress(pendingRequest.accessRequestId) }
-				/>
-			</div>
-
-			<nav class = 'popup-button-row'>
-				<div style = 'display: flex; flex-direction: row;'>
-					<button class = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.reject(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
-						Deny Access
-					</button>
-					<button class = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { () => param.approve(pendingRequest.accessRequestId) } disabled = { param.informationChangedRecently.value }>
-						Grant Access
-					</button>
+						refreshActiveAddress = { () => param.refreshActiveAddress(pendingRequest.accessRequestId) }
+					/>
 				</div>
-			</nav>
-		</div>
-	</>) } </>
+				<AccessRequestActions accessRequest = { pendingRequest } reject = { param.reject } approve = { param.approve } informationChangedRecently = { param.informationChangedRecently } />
+			</div>
+		</>) } </>
 }
 
 const DISABLED_DELAY_MS = 500
