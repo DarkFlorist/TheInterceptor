@@ -471,6 +471,7 @@ class InterceptorMessageListener {
 			return await this.signerWindowEthereumRequest(methodAndParams)
 		} catch (error: unknown) {
 			if (!allowFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
+			if (methodAndParams.method === 'eth_accounts') throw error
 			if (methodAndParams.method === 'eth_requestAccounts' && InterceptorMessageListener.isUserRejectedRequestError(error)) throw error
 			return await this.fallbackSignerWindowEthereumRequest(methodAndParams)
 		}

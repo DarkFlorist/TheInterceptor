@@ -645,6 +645,98 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('does not fall back to the root provider when mapped CoinbaseWallet eth_accounts fails', async () => {
+		const previousWindow = (globalThis as { window?: unknown }).window
+		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+		let signerName: string | undefined
+		const {
+			fakeWindow,
+			backgroundEthAccountsReplies,
+			interceptorErrorPayloads,
+			sendBackgroundMessage,
+		} = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageInternal) => {
+				if (request.method === 'connected_to_signer') {
+					signerName = request.params?.[1] as string
+					sendBackgroundMessageInternal({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+		const rootSignerRequests: string[] = []
+		const mappedSignerRequests: string[] = []
+		const mappedSigner = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				mappedSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x2'
+				if (method === 'eth_accounts') throw { code: -32603, message: 'internal account error' }
+				throw new Error(`Unexpected mapped signer request: ${ method }`)
+			},
+			on: () => mappedSigner,
+			removeListener: () => mappedSigner,
+		}
+		const rootSigner = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				rootSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x2'
+				if (method === 'eth_accounts') return ['0x1111111111111111111111111111111111111111']
+				throw new Error(`Unexpected root signer request: ${ method }`)
+			},
+			on: () => rootSigner,
+			removeListener: () => rootSigner,
+		}
+		;(fakeWindow as { ethereum: typeof rootSigner & { providerMap: Map<string, typeof mappedSigner> } }).ethereum = {
+			...rootSigner,
+			providerMap: new Map([['CoinbaseWallet', mappedSigner]]),
+		}
+		;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+		if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
+			;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<T = unknown> extends Event {
+				public detail: T
+				constructor(type: string, init?: CustomEventInit<T>) {
+					super(type)
+					this.detail = init?.detail as T
+				}
+				public initCustomEvent(): void { return undefined }
+			}
+		}
+
+		try {
+			await import('../../app/inpage/ts/inpage.js?provider-map-eth-accounts-no-fallback')
+			await waitFor(() => signerName !== undefined)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_accounts',
+				result: [],
+			})
+			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			assert.deepEqual(mappedSignerRequests, ['eth_chainId', 'eth_accounts'])
+			assert.deepEqual(rootSignerRequests, [])
+			assert.equal((backgroundEthAccountsReplies[0] as { requestAccounts: boolean }).requestAccounts, false)
+			assert.equal((backgroundEthAccountsReplies[0] as { error: { code: number, message: string } }).error.code, -32603)
+			assert.equal((backgroundEthAccountsReplies[0] as { error: { code: number, message: string } }).error.message, 'internal account error')
+			assert.equal(interceptorErrorPayloads.length, 0)
+		} finally {
+			;(globalThis as { window?: unknown }).window = previousWindow
+			if (previousCustomEvent === undefined) {
+				delete (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
+			} else {
+				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
+			}
+		}
+	})
+
 	test('does not fall back to the root provider when mapped CoinbaseWallet eth_requestAccounts is rejected', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
