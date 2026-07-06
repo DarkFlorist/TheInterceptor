@@ -471,6 +471,7 @@ class InterceptorMessageListener {
 			return await this.signerWindowEthereumRequest(methodAndParams)
 		} catch (error: unknown) {
 			if (!allowFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
+			if (methodAndParams.method === 'eth_requestAccounts' && InterceptorMessageListener.isUserRejectedRequestError(error)) throw error
 			return await this.fallbackSignerWindowEthereumRequest(methodAndParams)
 		}
 	}
@@ -591,7 +592,7 @@ class InterceptorMessageListener {
 	private readonly getAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] }, true)
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -618,7 +619,7 @@ class InterceptorMessageListener {
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
 		try {
-			const reply = await this.requestFromSigner({ method: 'eth_requestAccounts', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_requestAccounts', params: [] }, true)
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -663,6 +664,13 @@ class InterceptorMessageListener {
 		if (typeof (error as { code: unknown }).code !== 'number') return false
 		if (typeof (error as { message: unknown }).message !== 'string') return false
 		return true
+	}
+
+	private static readonly isUserRejectedRequestError = (error: unknown): error is { code: number, message: string } => {
+		if (!InterceptorMessageListener.getErrorCodeAndMessage(error)) return false
+		if (error.code !== METAMASK_ERROR_USER_REJECTED_REQUEST) return false
+		const message = error.message.toLowerCase()
+		return message.includes('user rejected') || message.includes('user denied')
 	}
 
 	private static readonly getProviderConnectInfo = (result: unknown): ProviderConnectInfo => {
