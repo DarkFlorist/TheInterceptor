@@ -88,7 +88,7 @@ async function withCapturedConsoleWarn<T>(runWithCapturedWarn: (warnings: unknow
 }
 
 describe('EthereumJSONRpcRequestHandler caching', () => {
-	test('serializes BigInts in RPC request extension fields before fetching and caching', async () => {
+	test('serializes typed BigInts before fetching and caching', async () => {
 		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
@@ -102,7 +102,6 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 							to: testAddress,
 							value: 1n,
 							input: new Uint8Array(),
-							metadataNonce: 2n,
 						}],
 					}],
 				}],
@@ -110,7 +109,33 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 			assert.deepEqual(result, [])
 			assert.equal(fetchMock.bodies.length, 1)
-			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"from":"0x0000000000000000000000000000000000000001","to":"0x0000000000000000000000000000000000000001","value":"0x1","input":"0x","metadataNonce":"0x2"}]}]}]}')
+			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"from":"0x0000000000000000000000000000000000000001","to":"0x0000000000000000000000000000000000000001","value":"0x1","input":"0x"}]}]}]}')
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects unserialized BigInts in RPC request extension fields', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [{
+								from: testAddress,
+								to: testAddress,
+								metadataNonce: 2n,
+							}],
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message === 'Serialized JSON-RPC payload contains an unsupported value at $.params[0].blockStateCalls[0].calls[0].metadataNonce.',
+			)
+			assert.equal(fetchMock.bodies.length, 0)
 		} finally {
 			fetchMock.restore()
 		}

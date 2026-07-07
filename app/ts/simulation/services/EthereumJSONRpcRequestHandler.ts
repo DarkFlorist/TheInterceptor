@@ -1,7 +1,6 @@
 import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
-import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { stringToBytes, keccak256 } from '../../utils/viem.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
@@ -64,6 +63,32 @@ function shouldCacheResponse(response: ResolvedResponse) {
 }
 
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
+
+function getUnsupportedJsonRpcPayloadPath(value: unknown, path = '$', seen = new WeakSet<object>()): string | undefined {
+	if (typeof value === 'bigint') return path
+	if (value instanceof Uint8Array) return path
+	if (typeof value !== 'object' || value === null) return undefined
+	if (seen.has(value)) return path
+	seen.add(value)
+	if (Array.isArray(value)) {
+		for (const [index, nestedValue] of value.entries()) {
+			const nestedPath = getUnsupportedJsonRpcPayloadPath(nestedValue, `${ path }[${ index }]`, seen)
+			if (nestedPath !== undefined) return nestedPath
+		}
+		return undefined
+	}
+	for (const [key, nestedValue] of Object.entries(value)) {
+		const nestedPath = getUnsupportedJsonRpcPayloadPath(nestedValue, `${ path }.${ key }`, seen)
+		if (nestedPath !== undefined) return nestedPath
+	}
+	return undefined
+}
+
+function stringifyJsonRpcPayload(value: unknown) {
+	const unsupportedPath = getUnsupportedJsonRpcPayloadPath(value)
+	if (unsupportedPath !== undefined) throw new Error(`Serialized JSON-RPC payload contains an unsupported value at ${ unsupportedPath }.`)
+	return JSON.stringify(value)
+}
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
@@ -146,7 +171,7 @@ export class EthereumJSONRpcRequestHandler {
 		const payload = {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: stringifyJSONWithBigInts({ jsonrpc: '2.0', id: requestId, ...serialized })
+			body: stringifyJsonRpcPayload({ jsonrpc: '2.0', id: requestId, ...serialized })
 		}
 		if (!this.caching) {
 			const startedAt = performance.now()
@@ -157,7 +182,7 @@ export class EthereumJSONRpcRequestHandler {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			}
 		}
-		const hash = keccak256(stringToBytes(stringifyJSONWithBigInts(serialized)))
+		const hash = keccak256(stringToBytes(stringifyJsonRpcPayload(serialized)))
 		if (bypassCache === false) {
 			const cacheValue = this.cache.get(hash)
 			if (cacheValue !== undefined) return cacheValue
