@@ -1,7 +1,7 @@
 import { type InpageScriptRequest, PopupMessage, type RPCReply, type Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack } from './storageVariables.js'
-import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getFixedAddressRichList, getSettings, setFixedMakeMeRichList, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError, requestInterceptorSimulatorStack, ethSimulateV1 } from './simulationModeHanders.js'
 import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, reportUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, popupReadyAndListening } from './popupMessageHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
@@ -20,7 +20,7 @@ import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } 
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain } from '../types/JsonRpc-types.js'
+import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -387,8 +387,45 @@ function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabCon
 	})
 }
 
+async function revokeWebsitePermissions(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	websiteOrigin: string,
+) {
+	await updateWebsiteAccess((previousAccess) => previousAccess.map((access) => {
+		if (access.website.websiteOrigin !== websiteOrigin) return access
+		return { ...access, access: false, addressAccess: undefined }
+	}))
+	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
+}
+
+function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	const maybeParsedRequest = WalletRevokePermissions.safeParse(request)
+	if (maybeParsedRequest.success) return maybeParsedRequest.value
+	replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result',
+		method: request.method,
+		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+		error: {
+			message: `Failed to parse RPC request: ${ JSON.stringify(serialize(InterceptedRequest, request)) }`,
+			code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
+		},
+	})
+	return undefined
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	const settings = await getSettings()
+	if (request.method === 'wallet_revokePermissions') {
+		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
+		if (parsedRequest === undefined) return
+		const result = await revokeWebsitePermissions(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, websiteOrigin)
+		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
+	}
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call' || request.method === 'eth_simulateV1', websiteOrigin, activeAddress, settings)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
@@ -550,7 +587,7 @@ export async function popupMessageHandler(
 				case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
 				case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_openAddressBook': return await openNewTab('addressBook')
-				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, true, simulationAbortController, bumpPopupRefreshGeneration())
+				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, parsedRequest.data.refreshSignerAccounts, parsedRequest.data.includeWebsiteAccessAddressMetadata, simulationAbortController, bumpPopupRefreshGeneration())
 				case 'popup_refreshHomeData': return await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, bumpPopupRefreshGeneration(), publishRpcConnectionStatus)
 				case 'popup_requestSettings': return await settingsOpened()
 				case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()

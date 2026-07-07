@@ -35,6 +35,12 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
 }
 
+const omitLocalTransactionHash = (transaction: EthereumSendableSignedTransaction) => {
+	const { hash, ...transactionForRpc } = transaction
+	void hash
+	return transactionForRpc
+}
+
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export type PreparedEthSimulateV1InputBlock = {
 	readonly inputBlock: SimulationStateInputMinimalDataBlock
@@ -307,8 +313,9 @@ export class EthereumClientService {
 
 		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
 			const transactionsWithRemoveZeroPricedOnes = block.transactions.map((transaction) => {
-				if (transaction.signedTransaction.type !== '1559') return transaction.signedTransaction
-				const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction.signedTransaction
+				const transactionForRpc = omitLocalTransactionHash(transaction.signedTransaction)
+				if (transactionForRpc.type !== '1559') return transactionForRpc
+				const { maxFeePerGas, ...transactionWithoutMaxFee } = transactionForRpc
 				return { ...transactionWithoutMaxFee, ...maxFeePerGas === 0n ? {} : { maxFeePerGas } }
 			})
 			const ecRecoverMovedToAddress = 0x123456n

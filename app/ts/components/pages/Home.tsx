@@ -62,6 +62,7 @@ function FirstCardHeader(param: FirstCardParams) {
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
 
 	function enableSimulationMode(enabled: boolean ) {
+		if (!param.isInitialHomeDataLoaded.value) return
 		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
 	}
 
@@ -77,20 +78,20 @@ function FirstCardHeader(param: FirstCardParams) {
 					<button
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
-						disabled = { param.simulationMode.value }
+						disabled = { param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
 						onClick = { () => enableSimulationMode(true) }>
 						Simulating
 					</button>
 					<button
 						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
-						disabled = { !param.simulationMode.value }
+						disabled = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
 						onClick = { () => enableSimulationMode(false) }>
 						<SignerLogoText signerName = { signerName } text = { 'Signing' } />
 					</button>
 				</div>
 			</div>
-			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
+			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
 		</header>
 	</>
 }
@@ -99,10 +100,11 @@ type InterceptorDisabledButtonParams = {
 	disableInterceptorToggle: (disabled: boolean) => void,
 	interceptorDisabled: Signal<boolean>,
 	website: ReadonlySignal<Website | undefined>
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
-	return <button disabled = { website.value === undefined } class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
+function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website, isInitialHomeDataLoaded }: InterceptorDisabledButtonParams) {
+	return <button disabled = { website.value === undefined || !isInitialHomeDataLoaded.value } class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
 		{ interceptorDisabled.value ? <>
 			<span class = 'icon'> <img src = { ICON_ACTIVE } width = '24' height = '24'/> </span>
 			<span> Enable</span>
@@ -118,14 +120,17 @@ type RichListParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
 	richList: Signal<readonly EnrichedRichListElement[]>
 	renameAddressCallBack: RenameAddressCallBack
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack }: RichListParams) {
+function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
 	async function enableMakeCurrentAddressRich(enabled: boolean) {
+		if (!isInitialHomeDataLoaded.value) return
 		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
 		makeCurrentAddressRich.value = enabled
 	}
 	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
+		if (!isInitialHomeDataLoaded.value) return
 		richList.value = [
 			...richList.value.filter((x) => x.addressBookEntry.address !== addressBookEntry.address),
 			...makeRich ? [{ addressBookEntry: addressBookEntry, makingRich: true, type: 'UserAdded' as const, }] : []
@@ -151,7 +156,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
+					<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
@@ -164,8 +169,8 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
 				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
-						<input type = 'checkbox' checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
-						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } />
+						<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
+						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noEditAddress = { !isInitialHomeDataLoaded.value } />
 					</label>
 				</div>
 			</> } </>
@@ -174,8 +179,8 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
 						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
-							<input type = 'checkbox' checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
-							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>
+							<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
+							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
 					) }
 				</div>
@@ -192,6 +197,7 @@ function FirstCard(param: FirstCardParams) {
 	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
 
 	const timeSelectorOnChange = () => {
+		if (!param.isInitialHomeDataLoaded.value) return
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
 		if (blockTimeManipulation.type === 'No Delay') return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION } })
 		return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
@@ -242,14 +248,15 @@ function FirstCard(param: FirstCardParams) {
 				<ActiveAddressComponent
 					activeAddress = { param.activeAddress }
 					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode.value }
+					disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
+					noEditAddress = { !param.isInitialHomeDataLoaded.value }
 					changeActiveAddress = { param.changeActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 				{ !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
-							<button class = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
+							<button class = 'button is-primary' disabled = { !param.isInitialHomeDataLoaded.value } onClick = { () => { if (param.isInitialHomeDataLoaded.value) sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } } >
 								<SignerLogoText
 									signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }
 									text = { `Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
@@ -259,7 +266,7 @@ function FirstCard(param: FirstCardParams) {
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
-					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
+					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -269,6 +276,7 @@ function FirstCard(param: FirstCardParams) {
 						deltaUnit = { timeSelectorDeltaUnit }
 						onChangedCallBack = { timeSelectorOnChange }
 						removeNoDelayOption = { true }
+						disabled = { !param.isInitialHomeDataLoaded.value }
 					/>
 				</div> }
 			</div>
@@ -356,7 +364,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
 
-	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
+	if (isEmpty.value && param.simulationUpdatingState.value === 'updating') {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
@@ -427,6 +435,7 @@ export function Home(param: HomeParams) {
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
+	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const activeSimulationAddress = useComputed(() =>
 		param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
@@ -454,14 +463,21 @@ export function Home(param: HomeParams) {
 	})
 
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
+		if (!param.isInitialHomeDataLoaded.value) return
 		removedTransactionOrSignedMessages.value = [...removedTransactionOrSignedMessages.value, transactionOrMessageIdentifier]
 		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 	}
 
 	async function disableInterceptorToggle() {
+		if (!param.isInitialHomeDataLoaded.value) return
 		if (param.tabState.value?.website === undefined) return
 		const newValue = !param.interceptorDisabled.value
 		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
+	}
+
+	function resetSimulationAfterHomeDataLoaded() {
+		if (!param.isInitialHomeDataLoaded.value) return
+		resetSimulation()
 	}
 
 	async function openSimulationStack(target?: TransactionOrMessageIdentifier) {
@@ -494,6 +510,7 @@ export function Home(param: HomeParams) {
 			tabIconDetails = { param.tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
+			isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }
 		/>
 
 		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
@@ -501,8 +518,8 @@ export function Home(param: HomeParams) {
 				? <PopupVisualisation
 					simulationAndVisualisationResults = { param.simVisResults }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-					disableReset = { disableReset }
-					resetSimulation = { resetSimulation }
+					disableReset = { disableResetUntilHomeDataLoaded }
+					resetSimulation = { resetSimulationAfterHomeDataLoaded }
 					currentBlockNumber = { param.currentBlockNumber }
 					activeSimulationAddress = { param.activeSimulationAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -526,7 +543,7 @@ export function Home(param: HomeParams) {
 						<WebsiteOriginText website = { tabWebsite } />
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right; padding-left: 20px'>
-						<InterceptorDisabledButton website = { tabWebsite } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }/>
+						<InterceptorDisabledButton website = { tabWebsite } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					</div>
 				</div>
 			</div>

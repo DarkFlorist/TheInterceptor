@@ -87,6 +87,8 @@ export const defaultRpcs = [
 	},
 ] as const
 
+export const defaultSimulationMode = true
+
 const wethForChainId = new Map<string, EthereumAddress>([
 	['1', 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n], // Mainnet
 	['11155111', 0x105083929bf9bb22c26cb1777ec92661170d4285n], // Sepolia
@@ -128,7 +130,7 @@ export async function getSettings() : Promise<Settings> {
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', true))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
 	return {
 		activeSimulationAddress: await activeSimulationAddressPromise,

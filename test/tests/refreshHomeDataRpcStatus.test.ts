@@ -262,6 +262,97 @@ describe('refreshHomeData', () => {
 		assert.equal(updatedState.signerAccounts?.[0], signerAccount)
 	})
 
+	test('cached home snapshot refreshes signer accounts only when requested', async () => {
+		const browserMock = installBrowserMock()
+		const modules: TestModules = await loadModules()
+		const {
+			browserStorageLocalSet,
+			saveCurrentTabId,
+			updateTabState,
+			requestNewHomeData,
+			defaultActiveAddresses,
+			defaultRpcs,
+			websiteSocketToString,
+			sendInternalWindowMessage,
+			EthereumClientService,
+			getTabState,
+		} = modules
+		const [defaultAddress] = defaultActiveAddresses
+		if (defaultAddress === undefined) throw new Error('missing default address')
+		const rpcNetwork = defaultRpcs[0]
+		if (rpcNetwork === undefined) throw new Error('missing default rpc')
+		await browserStorageLocalSet({
+			activeSimulationAddress: defaultAddress.address,
+			openedPageV2: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: false,
+			makeCurrentAddressRich: false,
+			fixedAddressRichList: [],
+		})
+		await saveCurrentTabId(1)
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+			signerName: 'MetaMask',
+			signerAccounts: [],
+		}))
+
+		const signerAccount = 0x5555555555555555555555555555555555555555n
+		await browserStorageLocalSet({
+			websiteAccess: [{
+				website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+				addressAccess: [{ address: signerAccount, access: true }],
+				access: true,
+			}],
+		})
+		const socket = { tabId: 1, connectionName: 0n }
+		let requestCount = 0
+		const { port } = createPort(socket.tabId, async (message) => {
+			if (message.method !== 'request_signer_to_eth_accounts') return
+			requestCount += 1
+			void updateTabState(socket.tabId, (previousState) => ({
+				...previousState,
+				signerAccounts: [signerAccount],
+				activeSigningAddress: signerAccount,
+			})).then(() => {
+				sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+			})
+		})
+		const websiteTabConnections = new Map([[socket.tabId, {
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+			},
+		}]])
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcNetwork.httpsRpc,
+			clearCache() { /* noop test stub */ },
+			async jsonRpcRequest() {
+				return await new Promise<never>(() => undefined)
+			},
+		}, async () => undefined, async () => undefined, rpcNetwork)
+
+		try {
+			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 1)
+			const fastHomeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
+			assert.equal(fastHomeUpdate?.data?.websiteAccessAddressMetadata?.length, 0)
+			assert.equal(requestCount, 0)
+
+			await requestNewHomeData(ethereum, websiteTabConnections, true, true, undefined, 2)
+		} finally {
+			ethereum.cleanup()
+		}
+
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { tabState?: { signerAccounts?: readonly string[] }, websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
+		const updatedState = await getTabState(1)
+		const result = homeUpdate?.data?.tabState?.signerAccounts
+		assert.equal(requestCount, 1)
+		assert.equal(result?.[0], '0x5555555555555555555555555555555555555555')
+		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
+		assert.equal(updatedState.signerAccounts?.[0], signerAccount)
+	})
+
 	test('refresh path does not request signer accounts with no approved socket', async () => {
 		const browserMock = installBrowserMock()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, refreshHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
@@ -326,7 +417,11 @@ describe('refreshHomeData', () => {
 			activeSimulationAddress: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
-			websiteAccess: [],
+			websiteAccess: [{
+				website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+				addressAccess: [{ address: defaultAddress.address, access: true }],
+				access: true,
+			}],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
 			makeCurrentAddressRich: false,
@@ -363,6 +458,8 @@ describe('refreshHomeData', () => {
 		}
 
 		const requestMessages = browserMock.sentMessages.filter((message) => message.method === 'request_signer_to_eth_accounts')
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
+		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
 	})
 })

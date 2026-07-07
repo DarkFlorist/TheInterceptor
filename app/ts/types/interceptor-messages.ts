@@ -97,6 +97,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({}) })) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: GetSimulationStackReply }),
@@ -985,7 +986,13 @@ const PopupMessageRuntype = funtypes.Union(
 	RemoveAddressBookEntry,
 	OpenAddressBook,
 	PopupReadyAndListening,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestNewHomeData'),
+		data: funtypes.ReadonlyObject({
+			refreshSignerAccounts: funtypes.Boolean,
+			includeWebsiteAccessAddressMetadata: funtypes.Boolean,
+		}),
+	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),

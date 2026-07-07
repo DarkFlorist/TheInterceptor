@@ -4,10 +4,10 @@ import { act } from 'preact/test-utils'
 import { h, render } from 'preact'
 import { App } from '../../app/ts/components/App.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import type { UpdateHomePage as UpdateHomePageData } from '../../app/ts/types/interceptor-messages.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 import { installDomMock } from './domMock.js'
 import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/utils/popupPerformance.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
@@ -88,6 +88,50 @@ function collectImageSrcs(node: { nodeType: number; childNodes?: readonly { node
 	return node.childNodes.flatMap((child) => collectImageSrcs(child as { nodeType: number; childNodes: readonly { nodeType: number; childNodes: readonly unknown[] }[]; getAttribute?: (_name: string) => string | null }))
 }
 
+type TestDomNode = {
+	readonly nodeType: number
+	readonly tagName?: string
+	readonly childNodes?: readonly TestDomNode[]
+	readonly textContent?: string | null
+	readonly disabled?: boolean
+	readonly getAttribute?: (name: string) => string | null
+}
+
+function collectElements(node: TestDomNode, tagName: string, results: TestDomNode[] = []) {
+	if (node.tagName === tagName.toUpperCase()) results.push(node)
+	for (const child of node.childNodes ?? []) collectElements(child, tagName, results)
+	return results
+}
+
+function isHomeDataRequest(message: unknown, refreshSignerAccounts: boolean, includeWebsiteAccessAddressMetadata: boolean) {
+	return typeof message === 'object'
+		&& message !== null
+		&& 'method' in message
+		&& message.method === 'popup_requestNewHomeData'
+		&& 'data' in message
+		&& typeof message.data === 'object'
+		&& message.data !== null
+		&& 'refreshSignerAccounts' in message.data
+		&& message.data.refreshSignerAccounts === refreshSignerAccounts
+		&& 'includeWebsiteAccessAddressMetadata' in message.data
+		&& message.data.includeWebsiteAccessAddressMetadata === includeWebsiteAccessAddressMetadata
+}
+
+function isButtonDisabled(button: TestDomNode | undefined) {
+	return button?.disabled === true || button?.getAttribute?.('disabled') !== null
+}
+
+class TestClipboardEvent extends Event {
+	readonly clipboardData: { getData: (type: string) => string }
+
+	constructor(text: string) {
+		super('paste')
+		this.clipboardData = {
+			getData: (type: string) => type === 'text' ? text : '',
+		}
+	}
+}
+
 const defaultSettings: Settings = {
 	activeSimulationAddress: undefined,
 	activeRpcNetwork: {
@@ -106,7 +150,9 @@ const defaultSettings: Settings = {
 }
 
 const defaultRpcEntries = [{ name: 'Ethereum', chainId: '0x1', httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }]
-	const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string }, popupRefreshGeneration: number): UpdateHomePageData => ({
+const loadedAddress = '0x1000000000000000000000000000000000000001'
+const loadedAddressBookEntry = { type: 'contact', name: 'Loaded Account', address: loadedAddress, entrySource: 'User', useAsActiveAddress: true }
+const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string }, popupRefreshGeneration: number, dataOverrides: Record<string, unknown> = {}) => ({
 	method: 'popup_UpdateHomePage',
 	popupRefreshGeneration,
 	data: {
@@ -135,10 +181,192 @@ const defaultRpcEntries = [{ name: 'Ethereum', chainId: '0x1', httpsRpc: 'https:
 		rpcEntries: defaultRpcEntries,
 		interceptorDisabled: false,
 		preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0xc', deltaUnit: 'Seconds' },
+		...dataOverrides,
 	},
 })
 
 describe('popup icon sync', () => {
+	test('marks Home first commit on the immediate default render', async () => {
+		clearPerformanceMarks()
+		const dom = installDomMock()
+		const { sentMessages } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+
+			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
+			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
+			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
+			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
+			assert.equal(performance.getEntriesByName(POPUP_PERFORMANCE_MARKS.homeFirstCommit).length, 1)
+			assert.equal(performance.getEntriesByName(POPUP_PERFORMANCE_MARKS.refreshRendered).length, 0)
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), true)
+		} finally {
+			dom.restore()
+			clearPerformanceMarks()
+		}
+	})
+
+	test('keeps mutation controls disabled until initial home data arrives', async () => {
+		const dom = installDomMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+
+			const buttonsBeforeHomeData = collectElements(dom.document.body, 'button')
+			const signingButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Signing'))
+			const rpcButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Ethereum Mainnet'))
+			const timePickerModeButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('For'))
+			const timePickerDeltaButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Seconds'))
+			const editButtonsBeforeHomeData = buttonsBeforeHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
+			const richCheckboxBeforeHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'checkbox')
+			const timePickerDeltaInputBeforeHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')
+			assert.equal(isButtonDisabled(signingButtonBeforeHomeData), true)
+			assert.equal(isButtonDisabled(rpcButtonBeforeHomeData), true)
+			assert.equal(isButtonDisabled(timePickerModeButtonBeforeHomeData), true)
+			assert.equal(isButtonDisabled(timePickerDeltaButtonBeforeHomeData), true)
+			assert.equal(editButtonsBeforeHomeData.length, 0)
+			assert.equal(isButtonDisabled(richCheckboxBeforeHomeData), true)
+			assert.equal(isButtonDisabled(timePickerDeltaInputBeforeHomeData), true)
+
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+					}),
+				}, undefined, () => undefined)
+			})
+
+			const buttonsAfterHomeData = collectElements(dom.document.body, 'button')
+			const rpcButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('Ethereum'))
+			const timePickerModeButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('For'))
+			const timePickerDeltaButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('Seconds'))
+			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
+			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')
+			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
+			assert.equal(isButtonDisabled(timePickerModeButtonAfterHomeData), false)
+			assert.equal(isButtonDisabled(timePickerDeltaButtonAfterHomeData), false)
+			assert.equal(editButtonsAfterHomeData.length > 0, true)
+			assert.equal(isButtonDisabled(timePickerDeltaInputAfterHomeData), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('ignores pasted addresses until initial home data arrives', async () => {
+		const dom = installDomMock()
+		const { messageListener, sentMessages } = installBrowserMock()
+		let pasteListener: ((event: Event) => void) | undefined
+		const pastedAddress = '0x2000000000000000000000000000000000000002'
+		try {
+			Object.defineProperty(globalThis, 'ClipboardEvent', { value: TestClipboardEvent, configurable: true, writable: true })
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: (type: string, listener: (event: Event) => void) => {
+						if (type === 'paste') pasteListener = listener
+					},
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+
+			assert.equal(typeof pasteListener, 'function')
+			sentMessages.splice(0)
+			await act(() => {
+				pasteListener?.(new TestClipboardEvent(pastedAddress))
+			})
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_changePage'), false)
+
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+					}),
+				}, undefined, () => undefined)
+			})
+
+			sentMessages.splice(0)
+			await act(() => {
+				pasteListener?.(new TestClipboardEvent(pastedAddress))
+			})
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_changePage'), true)
+		} finally {
+			dom.restore()
+			Reflect.deleteProperty(globalThis, 'ClipboardEvent')
+		}
+	})
+
+	test('requests signer refresh for signer-related live updates', async () => {
+		const dom = installDomMock()
+		const { messageListener, sentMessages } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			sentMessages.splice(0)
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					method: 'popup_signer_name_changed',
+				}, undefined, () => undefined)
+			})
+
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, true, true)), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('does not request full home data after popup live simulation updates', async () => {
 		const dom = installDomMock()
 		const { messageListener, sentMessages } = installBrowserMock()
@@ -252,7 +480,7 @@ describe('popup icon sync', () => {
 			})
 
 			const iconSrcAfterUnknownTabUpdate = collectImageSrcs(dom.document.body).find((src) => src.includes('head-'))
-			assert.equal(iconSrcAfterUnknownTabUpdate, undefined)
+			assert.equal(iconSrcAfterUnknownTabUpdate?.endsWith('head-not-active.png'), true)
 		} finally {
 			dom.restore()
 		}
