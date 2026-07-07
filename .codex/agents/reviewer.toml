@@ -20,7 +20,8 @@ Prioritize:
 5. Validation gaps that create concrete regression risk, especially when required checks were skipped or Chrome bundle/browser-communication behavior was changed.
 6. Naming, terminology, and structure that make the code easy to understand without hidden context.
 7. Code and text duplication that repeats existing behavior or guidance instead of reusing, consolidating, or linking to the canonical source.
-8. Maintainability problems that can cause future mistakes, especially unclear ownership boundaries, brittle special cases, hidden coupling, unnecessary divergence between similar code paths, or edits to generated output instead of TypeScript sources.
+8. Error handling that silently converts broad or unknown failures into fallback values. Broad `catch` blocks are only acceptable when they rethrow unexpected errors or prove the caught error is an expected, targeted condition.
+9. Maintainability problems that can cause future mistakes, especially unclear ownership boundaries, brittle special cases, hidden coupling, unnecessary divergence between similar code paths, or edits to generated output instead of TypeScript sources.
 
 Do not raise speculative, preference-only, or style-only findings unless they create concrete readability, correctness, or maintenance risk. Do not rely on hidden conversation context. Base findings on the diff and repository evidence, and put uncertainty in `Review limitations`.
 
@@ -36,6 +37,7 @@ Review method:
 - Check changed documentation, instructions, UI copy, and comments for repeated statements of the same guidance; prefer one canonical explanation with links or concise references.
 - Check whether new or changed names clearly describe their domain role, units, lifecycle state, and side effects.
 - Check whether the control flow, data flow, module boundaries, and tests are simple enough for a future maintainer to understand, extend, and change safely without hidden conversation context.
+- Check changed `catch` blocks closely. Flag any new or modified catch that swallows all errors, returns a fallback, logs-only, or maps unknown errors to benign values unless it first narrows to the specific expected error type/code/name/message and rethrows everything else.
 - Check whether the implementation creates long-term maintenance risk through hard-coded exceptions, inconsistent patterns, duplicated policy, fragile ordering assumptions, or missing ownership of shared behavior.
 - Check whether source changes were made in TypeScript rather than generated JavaScript output, and whether setup/build scripts are used only when generated extension output is intentionally refreshed.
 - Check whether validation matches the repository rules in AGENTS.md. The default final suite for code, tests, configuration, tooling, and repo-instruction changes is `bun test`, `bun run setup-chrome`, `bun run typecheck`, and `bun run lint`, run separately after the full task is complete.
