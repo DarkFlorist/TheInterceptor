@@ -12,77 +12,56 @@ export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Laz
 	funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable),
 ))
 
-export function getInvalidJSONEncodeableValuePath(value: unknown, path = '$', ancestors = new WeakSet<object>()): string | undefined {
-	if (value === null) return undefined
+export function isJSONEncodeable(value: unknown, ancestors = new WeakSet<object>()): value is typeJSONEncodeable {
+	if (value === null) return true
 	switch (typeof value) {
 		case 'string':
 		case 'boolean':
-			return undefined
+			return true
 		case 'number':
-			return Number.isFinite(value) ? undefined : path
+			return Number.isFinite(value)
 		case 'object':
 			break
 		default:
-			return path
+			return false
 	}
 
-	if (ancestors.has(value)) return path
+	if (ancestors.has(value)) return false
 	ancestors.add(value)
-
-	if (Array.isArray(value)) {
-		for (const key of Reflect.ownKeys(value)) {
-			if (key === 'length') continue
-			if (typeof key === 'symbol') {
-				ancestors.delete(value)
-				return `${ path }[${ String(key) }]`
-			}
-			const index = Number(key)
-			if (!Number.isInteger(index) || index < 0 || index >= value.length || `${ index }` !== key || !Object.prototype.propertyIsEnumerable.call(value, key)) {
-				ancestors.delete(value)
-				return `${ path }.${ key }`
-			}
-		}
-		for (let index = 0; index < value.length; index++) {
-			if (!Object.prototype.hasOwnProperty.call(value, index)) {
-				ancestors.delete(value)
-				return `${ path }[${ index }]`
-			}
-			const nestedValue = Object.getOwnPropertyDescriptor(value, `${ index }`)?.value
-			const nestedPath = getInvalidJSONEncodeableValuePath(nestedValue, `${ path }[${ index }]`, ancestors)
-			if (nestedPath !== undefined) {
-				ancestors.delete(value)
-				return nestedPath
-			}
-		}
+	try {
+		return Array.isArray(value)
+			? isJSONEncodeableArray(value, ancestors)
+			: isJSONEncodeablePlainObject(value, ancestors)
+	} finally {
 		ancestors.delete(value)
-		return undefined
 	}
+}
 
+function isJSONEncodeableArray(value: readonly unknown[], ancestors: WeakSet<object>) {
+	for (const key of Reflect.ownKeys(value)) {
+		if (key === 'length') continue
+		if (typeof key === 'symbol') return false
+		const index = Number(key)
+		if (!Number.isInteger(index) || index < 0 || index >= value.length || `${ index }` !== key || !Object.prototype.propertyIsEnumerable.call(value, key)) return false
+	}
+	for (let index = 0; index < value.length; index++) {
+		if (!Object.prototype.hasOwnProperty.call(value, index)) return false
+		if (!isJSONEncodeable(Object.getOwnPropertyDescriptor(value, `${ index }`)?.value, ancestors)) return false
+	}
+	return true
+}
+
+function isJSONEncodeablePlainObject(value: object, ancestors: WeakSet<object>) {
 	const prototype = Object.getPrototypeOf(value)
-	if (prototype !== Object.prototype && prototype !== null) {
-		ancestors.delete(value)
-		return path
-	}
+	if (prototype !== Object.prototype && prototype !== null) return false
 
 	for (const key of Reflect.ownKeys(value)) {
-		if (typeof key === 'symbol') {
-			ancestors.delete(value)
-			return `${ path }[${ String(key) }]`
-		}
-		if (!Object.prototype.propertyIsEnumerable.call(value, key)) {
-			ancestors.delete(value)
-			return `${ path }.${ key }`
-		}
-		const nestedValue = Object.getOwnPropertyDescriptor(value, key)?.value
-		const nestedPath = getInvalidJSONEncodeableValuePath(nestedValue, `${ path }.${ key }`, ancestors)
-		if (nestedPath !== undefined) {
-			ancestors.delete(value)
-			return nestedPath
-		}
+		if (typeof key === 'symbol') return false
+		if (!Object.prototype.propertyIsEnumerable.call(value, key)) return false
+		if (!isJSONEncodeable(Object.getOwnPropertyDescriptor(value, key)?.value, ancestors)) return false
 	}
 
-	ancestors.delete(value)
-	return undefined
+	return true
 }
 
 export type JSONEncodeableObject = funtypes.Static<typeof JSONEncodeableObject>

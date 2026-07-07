@@ -21,7 +21,7 @@ import {
 	EthereumTimestamp,
 	LiteralConverterParserFactory,
 } from './wire-types.js'
-import { getInvalidJSONEncodeableValuePath } from '../utils/json.js'
+import { isJSONEncodeable } from '../utils/json.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
 import * as funtypes from 'funtypes'
 
@@ -92,7 +92,7 @@ function validateAdditionalProperties(value: unknown, knownKeys: ReadonlySet<str
 		if (knownKeys.has(key)) continue
 		if (!Object.prototype.propertyIsEnumerable.call(value, key)) return { success: false as const, message: `Additional property ${ key } must be JSON encodeable.` }
 		const nestedValue = Object.getOwnPropertyDescriptor(value, key)?.value
-		if (getInvalidJSONEncodeableValuePath(nestedValue) !== undefined) return { success: false as const, message: `Additional property ${ key } must be JSON encodeable.` }
+		if (!isJSONEncodeable(nestedValue)) return { success: false as const, message: `Additional property ${ key } must be JSON encodeable.` }
 	}
 	return { success: true as const, value }
 }

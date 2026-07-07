@@ -1,7 +1,7 @@
 import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
-import { getInvalidJSONEncodeableValuePath } from '../../utils/json.js'
+import { isJSONEncodeable } from '../../utils/json.js'
 import { stringToBytes, keccak256 } from '../../utils/viem.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
@@ -66,8 +66,7 @@ function shouldCacheResponse(response: ResolvedResponse) {
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
 
 function stringifyJsonRpcPayload(value: unknown) {
-	const unsupportedPath = getInvalidJSONEncodeableValuePath(value)
-	if (unsupportedPath !== undefined) throw new Error(`Serialized JSON-RPC payload contains an unsupported value at ${ unsupportedPath }.`)
+	if (!isJSONEncodeable(value)) throw new Error('Serialized JSON-RPC payload contains an unsupported value.')
 	return JSON.stringify(value)
 }
 
