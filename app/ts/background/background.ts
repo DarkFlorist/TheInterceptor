@@ -438,15 +438,35 @@ function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabCo
 	return undefined
 }
 
+async function discoverAccountRequestAddressContext(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	websiteOrigin: string,
+) {
+	const settings = await getSettings()
+	const activeAddress = await getActiveAddress(settings, socket.tabId)
+	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
+	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
+	if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) !== 'hasAccess') return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
+
+	const accounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
+	const refreshedSettings = await getSettings()
+	const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId)
+	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true }
+	const firstSignerAddress = accounts[0] === undefined ? undefined : await getActiveAddressEntry(accounts[0])
+	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForSiteAccess: true }
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
-	let settings = await getSettings()
+	const initialSettings = await getSettings()
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
 		const result = await revokeWebsitePermissions(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, websiteOrigin)
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
-	let activeAddress = await getActiveAddress(settings, socket.tabId)
+	const initialActiveAddress = await getActiveAddress(initialSettings, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
@@ -454,23 +474,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (port === undefined) return
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
-			: getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin)
-		const providerCallbackActiveAddress = activeAddress !== undefined && getWebsiteAddressAccessApprovalState(settings.websiteAccess, websiteOrigin, activeAddress) === 'hasAccess'
-			? activeAddress.address
+			: getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin)
+		const providerCallbackActiveAddress = initialActiveAddress !== undefined && getWebsiteAddressAccessApprovalState(initialSettings.websiteAccess, websiteOrigin, initialActiveAddress) === 'hasAccess'
+			? initialActiveAddress.address
 			: undefined
 		const providerHandlerReturn = await providerHandler.func(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	let requestedSignerAccountsForSiteAccess = false
-	if (activeAddress === undefined && isAccountConnectionMethod(request.method) && getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'hasAccess') {
-		requestedSignerAccountsForSiteAccess = true
-		const accounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
-		settings = await getSettings()
-		activeAddress = await getActiveAddress(settings, socket.tabId)
-		if (activeAddress === undefined && accounts[0] !== undefined) activeAddress = await getActiveAddressEntry(accounts[0])
-	}
+	const { settings, activeAddress, requestedSignerAccountsForSiteAccess } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
 	if (requestedSignerAccountsForSiteAccess && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
@@ -518,36 +531,35 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
-			let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined 
-			let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined 
-			let simulationStatePromise: Promise<ResolvedSimulationState> | undefined 
-			const getSimulationInput = async () => {
-				if (!settings.simulationMode) return PASSTHROUGH_STATE
-				if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
-				return await simulationInputPromise
-			}
-			const getExecutionSimulationState = async () => {
-				if (!settings.simulationMode) return PASSTHROUGH_STATE
-				if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
-					const simulationInput = await getSimulationInput()
-					if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
-					return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput(simulationInput.value, ethereum))
-				})()
-				return await executionSimulationStatePromise
-			}
-			const getSimulationState = async () => {
-				if (!settings.simulationMode) return PASSTHROUGH_STATE
-				if (simulationStatePromise === undefined) simulationStatePromise = (async () => {
-					const simulationInput = await getSimulationInput()
-					if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
-					return toResolvedSimulationState(await buildSimulationStateFromPreparedInput(simulationInput.value, ethereum))
-				})()
-				return await simulationStatePromise
-	}
-	const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
-	replayProviderStateForAccountRequest(websiteTabConnections, request, settings, resolved, activeAddress)
-		const replySent = replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
-		return replySent
+		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
+		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
+		let simulationStatePromise: Promise<ResolvedSimulationState> | undefined
+		const getSimulationInput = async () => {
+			if (!settings.simulationMode) return PASSTHROUGH_STATE
+			if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
+			return await simulationInputPromise
+		}
+		const getExecutionSimulationState = async () => {
+			if (!settings.simulationMode) return PASSTHROUGH_STATE
+			if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
+				const simulationInput = await getSimulationInput()
+				if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
+				return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput(simulationInput.value, ethereum))
+			})()
+			return await executionSimulationStatePromise
+		}
+		const getSimulationState = async () => {
+			if (!settings.simulationMode) return PASSTHROUGH_STATE
+			if (simulationStatePromise === undefined) simulationStatePromise = (async () => {
+				const simulationInput = await getSimulationInput()
+				if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
+				return toResolvedSimulationState(await buildSimulationStateFromPreparedInput(simulationInput.value, ethereum))
+			})()
+			return await simulationStatePromise
+		}
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
+		replayProviderStateForAccountRequest(websiteTabConnections, request, settings, resolved, activeAddress)
+		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
