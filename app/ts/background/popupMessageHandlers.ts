@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, setMakeCurrentAddressRich, setFixedMakeMeRichList } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type ImportSettingsReply, type SetRpcList, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -44,6 +44,7 @@ import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/f
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { updateRichListAddress } from '../utils/richList.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -196,22 +197,23 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 		}
 }
 
-export async function modifyMakeMeRich(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, makeMeRichChange: ModifyMakeMeRich) {
+export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	if (makeMeRichChange.data.address === 'CurrentAddress') {
-		await setMakeCurrentAddressRich(makeMeRichChange.data.add)
-	} else {
-		const currentList = await getFixedAddressRichList()
-		if (makeMeRichChange.data.add) {
-			await setFixedMakeMeRichList([...currentList, {
-				address: makeMeRichChange.data.address,
-				makingRich: true,
-				type: 'UserAdded'
-			}])
-		} else {
-			await setFixedMakeMeRichList(currentList.filter((element) => element.address !== makeMeRichChange.data.address))
-		}
+		await updateMakeCurrentAddressRich(() => makeMeRichChange.data.add)
+		return
 	}
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, true)
+	const address = makeMeRichChange.data.address
+	await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
+		currentList,
+		address,
+		makeMeRichChange.data.add,
+		(element) => element.address,
+		() => ({
+			address,
+			makingRich: true,
+			type: 'UserAdded' as const
+		}),
+	))
 }
 
 export async function removeAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {

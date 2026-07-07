@@ -1,16 +1,17 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { checksummedAddress } from '../../app/ts/utils/bigint.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
+import { addressString, checksummedAddress } from '../../app/ts/utils/bigint.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
-function installBrowserMock() {
+function installBrowserMock(options: { onRuntimeSendMessage?: () => void } = {}) {
 	const storageState: Record<string, unknown> = {}
 	defineGlobal('browser', {
 		runtime: {
 			lastError: null,
 			async sendMessage() {
+				options.onRuntimeSendMessage?.()
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
@@ -65,6 +66,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
+		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
 }
@@ -88,6 +90,98 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 }
 
 describe('requestMakeMeRichList resilience', () => {
+	test('serializes rapid rich-list changes without duplicating addresses', async () => {
+		const storageState = installBrowserMock()
+		const { modifyMakeMeRich, setFixedMakeMeRichList, getFixedAddressRichList } = await loadModules()
+		const address = 0x2000000000000000000000000000000000000002n
+
+		await setFixedMakeMeRichList([])
+		await Promise.all([
+			modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address } }),
+			modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address } }),
+			modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address } }),
+		])
+
+		assert.deepEqual(await getFixedAddressRichList(), [{ address, makingRich: true, type: 'UserAdded' }])
+		assert.deepEqual(storageState.fixedAddressRichList, [{ address: checksummedAddress(address), makingRich: true, type: 'UserAdded' }])
+	})
+
+	test('preserves user rich-list changes during previous active address tracking', async () => {
+		installBrowserMock()
+		const { modifyMakeMeRich, setFixedMakeMeRichList, getFixedAddressRichList, trackPreviousActiveAddressForMakeMeRichList } = await loadModules()
+		const userAddedAddress = 0x3000000000000000000000000000000000000003n
+		const previousActiveAddress = 0x4000000000000000000000000000000000000004n
+
+		await setFixedMakeMeRichList([])
+		await Promise.all([
+			modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: userAddedAddress } }),
+			trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress),
+		])
+
+		assert.deepEqual(await getFixedAddressRichList(), [
+			{ address: userAddedAddress, makingRich: true, type: 'UserAdded' },
+			{ address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' },
+		])
+	})
+
+	test('skips popup visualisation refresh when current-address rich setting changes', async () => {
+		let runtimeSendMessageCount = 0
+		installBrowserMock({ onRuntimeSendMessage: () => { runtimeSendMessageCount += 1 } })
+		const { modifyMakeMeRich, getMakeCurrentAddressRich } = await loadModules()
+
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
+
+		assert.equal(await getMakeCurrentAddressRich(), true)
+		assert.equal(runtimeSendMessageCount, 0)
+	})
+
+	test('keeps existing rich address position and skips refresh when adding it again', async () => {
+		let runtimeSendMessageCount = 0
+		installBrowserMock({ onRuntimeSendMessage: () => { runtimeSendMessageCount += 1 } })
+		const { modifyMakeMeRich, setFixedMakeMeRichList, getFixedAddressRichList } = await loadModules()
+		const existingAddress = 0x5000000000000000000000000000000000000005n
+		const laterAddress = 0x6000000000000000000000000000000000000006n
+
+		await setFixedMakeMeRichList([
+			{ address: existingAddress, makingRich: true, type: 'UserAdded' },
+			{ address: laterAddress, makingRich: false, type: 'PreviousActiveAddress' },
+		])
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: existingAddress } })
+
+		assert.deepEqual(await getFixedAddressRichList(), [
+			{ address: existingAddress, makingRich: true, type: 'UserAdded' },
+			{ address: laterAddress, makingRich: false, type: 'PreviousActiveAddress' },
+		])
+		assert.equal(runtimeSendMessageCount, 0)
+	})
+
+	test('includes changed rich addresses in the next simulation input without a popup refresh', async () => {
+		let runtimeSendMessageCount = 0
+		installBrowserMock({ onRuntimeSendMessage: () => { runtimeSendMessageCount += 1 } })
+		const { modifyMakeMeRich, getCurrentSimulationInput } = await loadModules()
+		const richAddress = 0x7000000000000000000000000000000000000007n
+
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: richAddress } })
+
+		const simulationInput = await getCurrentSimulationInput()
+		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(richAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
+		assert.equal(runtimeSendMessageCount, 0)
+	})
+
+	test('includes current-address rich mode in the next simulation input without a popup refresh', async () => {
+		let runtimeSendMessageCount = 0
+		installBrowserMock({ onRuntimeSendMessage: () => { runtimeSendMessageCount += 1 } })
+		const { modifyMakeMeRich, changeSimulationMode, getCurrentSimulationInput } = await loadModules()
+		const activeAddress = 0x8000000000000000000000000000000000000008n
+
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
+
+		const simulationInput = await getCurrentSimulationInput()
+		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
+		assert.equal(runtimeSendMessageCount, 0)
+	})
+
 	test('falls back per address and preserves the underlying error message', async () => {
 		const storageState = installBrowserMock()
 		const { requestMakeMeRichList, setFixedMakeMeRichList, setMakeCurrentAddressRich, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
