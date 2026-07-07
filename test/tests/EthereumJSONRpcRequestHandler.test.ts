@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJSONRpcRequestHandler, type SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
@@ -133,12 +134,357 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 						}],
 					}],
 				}),
-				(error) => error instanceof Error && error.message === 'Serialized JSON-RPC payload contains an unsupported value at $.params[0].blockStateCalls[0].calls[0].metadataNonce.',
+				(error) => error instanceof Error && error.message.includes('Additional property metadataNonce must be JSON encodeable.'),
 			)
 			assert.equal(fetchMock.bodies.length, 0)
 		} finally {
 			fetchMock.restore()
 		}
+	})
+
+	test('rejects non-finite numbers in RPC request extension fields', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			for (const metadata of [Number.NaN, Number.POSITIVE_INFINITY, { nested: Number.NEGATIVE_INFINITY }]) {
+				await assert.rejects(
+					async () => await requestHandler.jsonRpcRequest({
+						method: 'eth_simulateV1',
+						params: [{
+							blockStateCalls: [{
+								calls: [{
+									from: testAddress,
+									to: testAddress,
+									metadata,
+								}],
+							}],
+						}],
+					}),
+					(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+				)
+			}
+			assert.equal(fetchMock.bodies.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('allows shared acyclic objects in RPC request extension fields', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const sharedMetadata = { keep: true }
+
+		try {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: testAddress,
+							to: testAddress,
+							metadataA: sharedMetadata,
+							metadataB: sharedMetadata,
+						}],
+					}],
+				}],
+			})
+
+			assert.deepEqual(result, [])
+			assert.equal(fetchMock.bodies.length, 1)
+			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"from":"0x0000000000000000000000000000000000000001","to":"0x0000000000000000000000000000000000000001","metadataA":{"keep":true},"metadataB":{"keep":true}}]}]}]}')
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects cyclic RPC payload objects before fetching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const metadata: { self?: unknown } = {}
+		metadata.self = metadata
+
+		try {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [{
+								from: testAddress,
+								to: testAddress,
+								metadata,
+							}],
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+			)
+			assert.equal(fetchMock.bodies.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects symbol-keyed RPC extension data before fetching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const metadata = { [Symbol('unsafe')]: 1n }
+
+		try {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [{
+								from: testAddress,
+								to: testAddress,
+								metadata,
+							}],
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+			)
+			assert.equal(fetchMock.bodies.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects array extension data with silently dropped own properties before fetching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			for (const key of ['extra', Symbol('unsafe')]) {
+				const metadata = [true]
+				Object.defineProperty(metadata, key, { value: 1n, enumerable: true })
+				await assert.rejects(
+					async () => await requestHandler.jsonRpcRequest({
+						method: 'eth_simulateV1',
+						params: [{
+							blockStateCalls: [{
+								calls: [{
+									from: testAddress,
+									to: testAddress,
+									metadata,
+								}],
+							}],
+						}],
+					}),
+					(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+				)
+			}
+			assert.equal(fetchMock.bodies.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects non-enumerable RPC extension fields before fetching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const call: Record<string, unknown> = { from: testAddress, to: testAddress }
+		Object.defineProperty(call, 'metadata', { value: 1n, enumerable: false })
+
+		try {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [call],
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+			)
+			assert.equal(fetchMock.bodies.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('serializes eth_simulateV1 block author as an address', () => {
+		const serialized = EthSimulateV1Result.serialize([{
+			number: 1n,
+			hash: 2n,
+			timestamp: 3n,
+			gasLimit: 4n,
+			gasUsed: 5n,
+			baseFeePerGas: 6n,
+			author: testAddress,
+			calls: [],
+		}])
+
+		assert.equal(serialized[0]?.author, '0x0000000000000000000000000000000000000001')
+	})
+
+	test('serializes eth_simulateV1 transaction block fields before JSON stringification', () => {
+		const serialized = EthSimulateV1Result.serialize([{
+			number: 1n,
+			hash: 2n,
+			timestamp: 3n,
+			gasLimit: 4n,
+			gasUsed: 5n,
+			baseFeePerGas: 6n,
+			calls: [],
+			transactions: [{
+				type: '1559',
+				hash: 7n,
+				from: testAddress,
+				nonce: 8n,
+				maxFeePerGas: 9n,
+				maxPriorityFeePerGas: 10n,
+				gas: 11n,
+				to: testAddress,
+				value: 12n,
+				input: new Uint8Array([1]),
+				chainId: 13n,
+				r: 14n,
+				s: 15n,
+				yParity: 'even',
+				data: new Uint8Array([2]),
+				gasPrice: 16n,
+				blockHash: 17n,
+				blockNumber: 18n,
+				transactionIndex: 19n,
+			}],
+		}])
+
+		const transaction = serialized[0]?.transactions?.[0]
+		assert.equal(typeof transaction, 'object')
+		if (typeof transaction !== 'object') throw new Error('Serialized transaction must be an object.')
+		assert.equal(transaction.blockHash, '0x0000000000000000000000000000000000000000000000000000000000000011')
+		assert.equal(transaction.blockNumber, '0x12')
+		assert.equal(transaction.transactionIndex, '0x13')
+		assert.equal(transaction.gasPrice, '0x10')
+		assert.equal(transaction.data, '0x02')
+		assert.doesNotThrow(() => JSON.stringify(serialized))
+	})
+
+	test('rejects branch-only call result fields with non-JSON extension values', () => {
+		assert.throws(
+			() => EthSimulateV1Result.serialize([{
+				number: 1n,
+				hash: 2n,
+				timestamp: 3n,
+				gasLimit: 4n,
+				gasUsed: 5n,
+				baseFeePerGas: 6n,
+				calls: [{
+					status: 'success',
+					returnData: new Uint8Array(),
+					gasUsed: 7n,
+					logs: [],
+					error: 1n,
+				}],
+			}]),
+			/error must be JSON encodeable/,
+		)
+		assert.throws(
+			() => EthSimulateV1Result.serialize([{
+				number: 1n,
+				hash: 2n,
+				timestamp: 3n,
+				gasLimit: 4n,
+				gasUsed: 5n,
+				baseFeePerGas: 6n,
+				calls: [{
+					status: 'failure',
+					returnData: new Uint8Array(),
+					gasUsed: 7n,
+					error: { code: 1, message: 'failed' },
+					logs: [1n],
+				}],
+			}]),
+			/logs must be JSON encodeable/,
+		)
+	})
+
+	test('rejects unknown eth_simulateV1 transactions with non-JSON extension values', () => {
+		for (const extensionField of ['maxFeePerGas', 'from', 'blobs']) {
+			const transaction: Record<string, unknown> = {
+				type: '0x99',
+				hash: 7n,
+			}
+			transaction[extensionField] = extensionField === 'blobs' ? [1n] : 1n
+
+			assert.throws(
+				() => EthSimulateV1Result.serialize([{
+					number: 1n,
+					hash: 2n,
+					timestamp: 3n,
+					gasLimit: 4n,
+					gasUsed: 5n,
+					baseFeePerGas: 6n,
+					calls: [],
+					transactions: [transaction],
+				}]),
+				new RegExp(`${ extensionField } must be JSON encodeable`),
+			)
+		}
+	})
+
+	test('rejects signed eth_simulateV1 transactions with wrong-branch non-JSON extension values', () => {
+		assert.throws(
+			() => EthSimulateV1Result.serialize([{
+				number: 1n,
+				hash: 2n,
+				timestamp: 3n,
+				gasLimit: 4n,
+				gasUsed: 5n,
+				baseFeePerGas: 6n,
+				calls: [],
+				transactions: [{
+					type: 'legacy',
+					hash: 7n,
+					from: testAddress,
+					nonce: 8n,
+					gasPrice: 9n,
+					gas: 10n,
+					to: testAddress,
+					value: 11n,
+					input: new Uint8Array(),
+					r: 12n,
+					s: 13n,
+					v: 14n,
+					maxFeePerGas: 15n,
+				}],
+			}]),
+			/maxFeePerGas must be JSON encodeable/,
+		)
+		assert.throws(
+			() => EthSimulateV1Result.serialize([{
+				number: 1n,
+				hash: 2n,
+				timestamp: 3n,
+				gasLimit: 4n,
+				gasUsed: 5n,
+				baseFeePerGas: 6n,
+				calls: [],
+				transactions: [{
+					type: '1559',
+					hash: 7n,
+					from: testAddress,
+					nonce: 8n,
+					maxFeePerGas: 9n,
+					maxPriorityFeePerGas: 10n,
+					gas: 11n,
+					to: testAddress,
+					value: 12n,
+					input: new Uint8Array(),
+					chainId: 13n,
+					r: 14n,
+					s: 15n,
+					yParity: 'even',
+					sourceHash: 16n,
+				}],
+			}]),
+			/sourceHash must be JSON encodeable/,
+		)
 	})
 
 	test('does not cache transient HTTP failures', async () => {

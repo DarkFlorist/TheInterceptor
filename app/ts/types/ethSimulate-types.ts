@@ -1,5 +1,7 @@
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { EthereumAccessList, EthereumAddress, EthereumBlockHeaderTransaction, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAccessList, EthereumAddress, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumSignedTransaction, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
+import { getInvalidJSONEncodeableValuePath } from '../utils/json.js'
+import { isHexEncodedNumber } from '../utils/bigint.js'
 import * as funtypes from 'funtypes'
 
 type AccountOverride = funtypes.Static<typeof AccountOverride>
@@ -12,7 +14,110 @@ const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-const EthSimulateV1AdditionalProperties = funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown)
+const blockCallKeys = [
+	'type', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas', 'maxFeePerBlobGas',
+	'gasPrice', 'gas', 'to', 'value', 'input', 'data', 'chainId', 'accessList',
+	'blobVersionedHashes', 'blobs', 'r', 's', 'v', 'yParity', 'authorizationList',
+] as const
+
+const failedCallResultKeys = ['status', 'returnData', 'gasUsed', 'error', 'maxUsedGas'] as const
+
+const successfulCallResultKeys = ['status', 'returnData', 'gasUsed', 'logs', 'maxUsedGas'] as const
+
+const blockResultKeys = [
+	'author', 'number', 'hash', 'timestamp', 'gasLimit', 'gasUsed', 'baseFeePerGas',
+	'difficulty', 'extraData', 'logsBloom', 'miner', 'mixHash', 'nonce', 'parentHash',
+	'receiptsRoot', 'sha3Uncles', 'size', 'stateRoot', 'transactions', 'transactionsRoot',
+	'uncles', 'excessBlobGas', 'blobGasUsed', 'blockAccessListHash', 'parentBeaconBlockRoot',
+	'requestsHash', 'withdrawalsRoot', 'withdrawals', 'totalDifficulty', 'calls',
+] as const
+
+const blockTransactionResultKeys = ['data', 'blockHash', 'blockNumber', 'transactionIndex'] as const
+
+const legacyBlockHeaderTransactionKeys = [
+	'type', 'hash', 'from', 'nonce', 'gasPrice', 'gas', 'to', 'value', 'input',
+	'chainId', 'r', 's', 'v', 'yParity', ...blockTransactionResultKeys,
+] as const
+
+const accessListBlockHeaderTransactionKeys = [
+	'type', 'hash', 'from', 'nonce', 'gasPrice', 'gas', 'to', 'value', 'input',
+	'chainId', 'accessList', 'r', 's', 'v', 'yParity', ...blockTransactionResultKeys,
+] as const
+
+const feeMarketBlockHeaderTransactionKeys = [
+	'type', 'hash', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gas',
+	'to', 'value', 'input', 'chainId', 'accessList', 'r', 's', 'v', 'yParity',
+	'gasPrice', ...blockTransactionResultKeys,
+] as const
+
+const blobBlockHeaderTransactionKeys = [
+	'type', 'hash', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas',
+	'maxFeePerBlobGas', 'gas', 'to', 'value', 'input', 'chainId', 'accessList',
+	'blobVersionedHashes', 'r', 's', 'v', 'yParity', 'gasPrice',
+	...blockTransactionResultKeys,
+] as const
+
+const authorizationListBlockHeaderTransactionKeys = [
+	'type', 'hash', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gas',
+	'to', 'value', 'input', 'chainId', 'authorizationList', 'accessList', 'r', 's',
+	'v', 'yParity', 'gasPrice', ...blockTransactionResultKeys,
+] as const
+
+const optimismDepositBlockHeaderTransactionKeys = [
+	'type', 'sourceHash', 'from', 'to', 'mint', 'value', 'gas', 'data', 'hash',
+	'gasPrice', 'nonce', 'blockHash', 'blockNumber', 'transactionIndex',
+] as const
+
+const unknownBlockHeaderTransactionKeys = ['type', 'hash'] as const
+
+function getSignedBlockHeaderTransactionKeys(value: unknown) {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return legacyBlockHeaderTransactionKeys
+	const type = Object.getOwnPropertyDescriptor(value, 'type')?.value
+	switch (type) {
+		case '2930':
+		case '0x1':
+			return accessListBlockHeaderTransactionKeys
+		case '1559':
+		case '0x2':
+			return feeMarketBlockHeaderTransactionKeys
+		case '4844':
+		case '0x3':
+			return blobBlockHeaderTransactionKeys
+		case '7702':
+		case '0x4':
+			return authorizationListBlockHeaderTransactionKeys
+		case 'optimismDeposit':
+		case '0x7e':
+			return optimismDepositBlockHeaderTransactionKeys
+		default:
+			return legacyBlockHeaderTransactionKeys
+	}
+}
+
+const EthSimulateV1SignedTransactionAdditionalProperties = funtypes.Unknown.withParser({
+	parse: (value) => validateAdditionalProperties(value, new Set(getSignedBlockHeaderTransactionKeys(value))),
+	serialize: (value) => validateAdditionalProperties(value, new Set(getSignedBlockHeaderTransactionKeys(value))),
+})
+
+function validateAdditionalProperties(value: unknown, knownKeys: ReadonlySet<string>) {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return { success: false as const, message: 'Additional properties must be on an object.' }
+	for (const key of Reflect.ownKeys(value)) {
+		if (typeof key === 'symbol') return { success: false as const, message: `Additional property ${ String(key) } must be JSON encodeable.` }
+		if (knownKeys.has(key)) continue
+		if (!Object.prototype.propertyIsEnumerable.call(value, key)) return { success: false as const, message: `Additional property ${ key } must be JSON encodeable.` }
+		const nestedValue = Object.getOwnPropertyDescriptor(value, key)?.value
+		if (getInvalidJSONEncodeableValuePath(nestedValue) !== undefined) return { success: false as const, message: `Additional property ${ key } must be JSON encodeable.` }
+	}
+	return { success: true as const, value }
+}
+
+const EthSimulateV1AdditionalProperties = (knownKeys: readonly string[]) => {
+	const knownKeySet = new Set(knownKeys)
+	return funtypes.Unknown.withParser({
+		parse: (value) => validateAdditionalProperties(value, knownKeySet),
+		serialize: (value) => validateAdditionalProperties(value, knownKeySet),
+	})
+}
 
 export type BlockOverrides = funtypes.Static<typeof BlockOverrides>
 export const BlockOverrides = funtypes.Partial({
@@ -27,7 +132,7 @@ export const BlockOverrides = funtypes.Partial({
 
 type BlockCall = funtypes.Static<typeof BlockCall>
 const BlockCall = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties,
+	EthSimulateV1AdditionalProperties(blockCallKeys),
 	funtypes.Partial({
 		type: funtypes.Union(
 			funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
@@ -148,7 +253,7 @@ const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
 
 type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
 const EthSimulateCallResultFailure = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties,
+	EthSimulateV1AdditionalProperties(failedCallResultKeys),
 	funtypes.ReadonlyObject({
 		status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
 		returnData: EthereumData,
@@ -162,7 +267,7 @@ const EthSimulateCallResultFailure = funtypes.Intersect(
 
 type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
 const EthSimulateCallResultSuccess = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties,
+	EthSimulateV1AdditionalProperties(successfulCallResultKeys),
 	funtypes.ReadonlyObject({
 		returnData: EthereumData,
 		gasUsed: EthereumQuantitySmall,
@@ -188,8 +293,38 @@ const EthSimulateV1Withdrawal = funtypes.ReadonlyObject({
 	amount: EthereumQuantity,
 })
 
+const EthSimulateV1UnknownTransactionType = funtypes.ReadonlyObject({
+	hash: EthereumBytes32,
+	type: funtypes.String.withConstraint((type) => {
+		if (!isHexEncodedNumber(type)) return false
+		const alreadyHandled = ['0x0', '0x1', '0x2', '0x3', '0x4', '0x7e']
+		return !alreadyHandled.includes(type)
+	}),
+})
+
+const EthSimulateV1BlockHeaderTransaction = funtypes.Union(
+	funtypes.Intersect(
+		EthSimulateV1SignedTransactionAdditionalProperties,
+		EthereumSignedTransaction,
+		funtypes.ReadonlyPartial({
+			data: EthereumInput,
+			gasPrice: EthereumQuantity,
+			blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
+			blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
+			transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
+		}),
+	),
+	funtypes.Intersect(
+		EthSimulateV1AdditionalProperties(unknownBlockHeaderTransactionKeys),
+		EthSimulateV1UnknownTransactionType,
+	),
+)
+
 export type EthSimulateV1BlockHeader = funtypes.Static<typeof EthSimulateV1BlockHeader>
 export const EthSimulateV1BlockHeader = funtypes.Intersect(
+	funtypes.MutablePartial({
+		author: EthereumAddress,
+	}),
 	funtypes.ReadonlyObject({
 		number: EthereumQuantity,
 		hash: EthereumBytes32,
@@ -210,7 +345,7 @@ export const EthSimulateV1BlockHeader = funtypes.Intersect(
 		sha3Uncles: EthereumBytes32,
 		size: EthereumQuantity,
 		stateRoot: EthereumBytes32,
-		transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthereumBlockHeaderTransaction)),
+		transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthSimulateV1BlockHeaderTransaction)),
 		transactionsRoot: EthereumBytes32,
 		uncles: funtypes.ReadonlyArray(EthereumBytes32),
 		excessBlobGas: EthereumQuantity,
@@ -224,11 +359,9 @@ export const EthSimulateV1BlockHeader = funtypes.Intersect(
 	}),
 )
 
-const EthSimulateV1BlockHeaderTransaction = funtypes.Intersect(EthSimulateV1AdditionalProperties, EthereumBlockHeaderTransaction)
-
 type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
 const EthSimulateV1BlockResult = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties,
+	EthSimulateV1AdditionalProperties(blockResultKeys),
 	EthSimulateV1BlockHeader,
 	funtypes.ReadonlyObject({
 		number: EthereumQuantity,

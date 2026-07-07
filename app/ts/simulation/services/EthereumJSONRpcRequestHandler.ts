@@ -1,6 +1,7 @@
 import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { getInvalidJSONEncodeableValuePath } from '../../utils/json.js'
 import { stringToBytes, keccak256 } from '../../utils/viem.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
@@ -64,28 +65,8 @@ function shouldCacheResponse(response: ResolvedResponse) {
 
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
 
-function getUnsupportedJsonRpcPayloadPath(value: unknown, path = '$', seen = new WeakSet<object>()): string | undefined {
-	if (typeof value === 'bigint') return path
-	if (value instanceof Uint8Array) return path
-	if (typeof value !== 'object' || value === null) return undefined
-	if (seen.has(value)) return path
-	seen.add(value)
-	if (Array.isArray(value)) {
-		for (const [index, nestedValue] of value.entries()) {
-			const nestedPath = getUnsupportedJsonRpcPayloadPath(nestedValue, `${ path }[${ index }]`, seen)
-			if (nestedPath !== undefined) return nestedPath
-		}
-		return undefined
-	}
-	for (const [key, nestedValue] of Object.entries(value)) {
-		const nestedPath = getUnsupportedJsonRpcPayloadPath(nestedValue, `${ path }.${ key }`, seen)
-		if (nestedPath !== undefined) return nestedPath
-	}
-	return undefined
-}
-
 function stringifyJsonRpcPayload(value: unknown) {
-	const unsupportedPath = getUnsupportedJsonRpcPayloadPath(value)
+	const unsupportedPath = getInvalidJSONEncodeableValuePath(value)
 	if (unsupportedPath !== undefined) throw new Error(`Serialized JSON-RPC payload contains an unsupported value at ${ unsupportedPath }.`)
 	return JSON.stringify(value)
 }
