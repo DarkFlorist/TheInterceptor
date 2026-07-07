@@ -5,7 +5,7 @@ import type { IEthereumClientService } from '../simulation/services/EthereumClie
 import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
-import { isBigint, isBoolean, isNumber, isString } from './typescript.js'
+import { isBigint, isBoolean, isNumberOrBigint, isString } from './typescript.js'
 
 type EOA = {
 	type: 'EOA'
@@ -82,7 +82,7 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 	const supportsErc1155 = decodeFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc1155, isBoolean)
 	const tokenName = decodeFunctionOutputSafely(Erc20ABI, 'name', name, isString)
 	const tokenSymbol = decodeFunctionOutputSafely(Erc20ABI, 'symbol', symbol, isString)
-	const tokenDecimals = decodeFunctionOutputSafely(Erc20ABI, 'decimals', decimals, isNumber)
+	const tokenDecimals = decodeFunctionOutputSafely(Erc20ABI, 'decimals', decimals, isNumberOrBigint)
 	const tokenSupply = decodeFunctionOutputSafely(Erc20ABI, 'totalSupply', totalSupply, isBigint)
 
 	if (supportsErc721 === true) {
