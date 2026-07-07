@@ -424,7 +424,8 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	InterceptorError,
 )
 
-// should be same as the above list, except with `params: funtypes.Unknown`
+// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus
+// methods handled before normal RPC dispatch such as wallet_revokePermissions.
 export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
 	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
