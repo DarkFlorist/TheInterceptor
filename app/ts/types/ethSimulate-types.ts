@@ -153,69 +153,59 @@ const blockCallAuthorizationListFields = {
 	))
 }
 
-const legacyBlockCallFields = {
-	...blockCallLegacyTypeFields,
-	...blockCallCommonFields,
-	...blockCallGasPriceFields,
-	...blockCallSignatureFields,
-}
-const accessListBlockCallFields = {
-	...blockCall2930TypeFields,
-	...blockCallCommonFields,
-	...blockCallGasPriceFields,
-	...blockCallAccessListFields,
-	...blockCallSignatureFields,
-}
-const feeMarketBlockCallFields = {
-	...blockCall1559TypeFields,
-	...blockCallCommonFields,
-	...blockCallFeeMarketFields,
-	...blockCallAccessListFields,
-	...blockCallSignatureFields,
-}
-const blobBlockCallFields = {
-	...blockCall4844TypeFields,
-	...blockCallCommonFields,
-	...blockCallFeeMarketFields,
-	...blockCallAccessListFields,
-	...blockCallBlobFields,
-	...blockCallSignatureFields,
-}
-const authorizationListBlockCallFields = {
-	...blockCall7702TypeFields,
-	...blockCallCommonFields,
-	...blockCallFeeMarketFields,
-	...blockCallAccessListFields,
-	...blockCallAuthorizationListFields,
-	...blockCallSignatureFields,
-}
-
-const BlockCallAdditionalProperties = (fields: object) => EthSimulateV1AdditionalProperties(Object.keys(fields))
+const BlockCallAdditionalProperties = (...fieldSets: readonly object[]) => EthSimulateV1AdditionalProperties(knownKeysOf(...fieldSets))
 
 const BlockCall = funtypes.Union(
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(legacyBlockCallFields),
-		funtypes.Partial(legacyBlockCallFields)
+		BlockCallAdditionalProperties(blockCallLegacyTypeFields, blockCallCommonFields, blockCallGasPriceFields, blockCallSignatureFields),
+		funtypes.Partial({
+			...blockCallLegacyTypeFields,
+			...blockCallCommonFields,
+			...blockCallGasPriceFields,
+			...blockCallSignatureFields,
+		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(accessListBlockCallFields),
+		BlockCallAdditionalProperties(blockCall2930TypeFields, blockCallCommonFields, blockCallGasPriceFields, blockCallAccessListFields, blockCallSignatureFields),
 		funtypes.ReadonlyObject(blockCall2930TypeFields),
-		funtypes.Partial(accessListBlockCallFields)
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallGasPriceFields,
+			...blockCallAccessListFields,
+			...blockCallSignatureFields,
+		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(feeMarketBlockCallFields),
+		BlockCallAdditionalProperties(blockCall1559TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallSignatureFields),
 		funtypes.ReadonlyObject(blockCall1559TypeFields),
-		funtypes.Partial(feeMarketBlockCallFields)
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallFeeMarketFields,
+			...blockCallAccessListFields,
+			...blockCallSignatureFields,
+		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(blobBlockCallFields),
+		BlockCallAdditionalProperties(blockCall4844TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallBlobFields, blockCallSignatureFields),
 		funtypes.ReadonlyObject(blockCall4844TypeFields),
-		funtypes.Partial(blobBlockCallFields)
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallFeeMarketFields,
+			...blockCallAccessListFields,
+			...blockCallBlobFields,
+			...blockCallSignatureFields,
+		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(authorizationListBlockCallFields),
+		BlockCallAdditionalProperties(blockCall7702TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallAuthorizationListFields, blockCallSignatureFields),
 		funtypes.ReadonlyObject(blockCall7702TypeFields),
-		funtypes.Partial(authorizationListBlockCallFields)
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallFeeMarketFields,
+			...blockCallAccessListFields,
+			...blockCallAuthorizationListFields,
+			...blockCallSignatureFields,
+		})
 	)
 )
 
