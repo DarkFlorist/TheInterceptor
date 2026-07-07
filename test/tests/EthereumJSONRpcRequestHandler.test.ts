@@ -69,6 +69,21 @@ function installBodyCapturingFetchMock(response: Response) {
 	}
 }
 
+async function withBodyCapturingRequestHandler<T>(result: unknown, run: (requestHandler: EthereumJSONRpcRequestHandler, bodies: unknown[]) => Promise<T>) {
+	const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+	const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+	try {
+		return await run(requestHandler, fetchMock.bodies)
+	} finally {
+		fetchMock.restore()
+	}
+}
+
+function parseCapturedJsonRpcBody(bodies: unknown[]) {
+	assert.equal(bodies.length, 1)
+	return JSON.parse(String(bodies[0]))
+}
+
 async function waitFor(condition: () => boolean, timeoutMs = 1000) {
 	const startedAt = Date.now()
 	while (!condition()) {
@@ -90,10 +105,7 @@ async function withCapturedConsoleWarn<T>(runWithCapturedWarn: (warnings: unknow
 
 describe('EthereumJSONRpcRequestHandler caching', () => {
 	test('serializes typed BigInts before fetching and caching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
-
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			const result = await requestHandler.jsonRpcRequest({
 				method: 'eth_simulateV1',
 				params: [{
@@ -109,36 +121,43 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 			})
 
 			assert.deepEqual(result, [])
-			assert.equal(fetchMock.bodies.length, 1)
-			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"from":"0x0000000000000000000000000000000000000001","to":"0x0000000000000000000000000000000000000001","value":"0x1","input":"0x"}]}]}]}')
-		} finally {
-			fetchMock.restore()
-		}
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: '0x0000000000000000000000000000000000000001',
+							to: '0x0000000000000000000000000000000000000001',
+							value: '0x1',
+							input: '0x',
+						}],
+					}],
+				}],
+			})
+		})
 	})
 
 	test('serializes personal_sign undefined password as explicit JSON null', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: '0x' }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
-
-		try {
+		await withBodyCapturingRequestHandler('0x', async (requestHandler, bodies) => {
 			const result = await requestHandler.jsonRpcRequest({
 				method: 'personal_sign',
 				params: ['0x', testAddress, undefined],
 			})
 
 			assert.equal(result, '0x')
-			assert.equal(fetchMock.bodies.length, 1)
-			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"personal_sign","params":["0x","0x0000000000000000000000000000000000000001",null]}')
-		} finally {
-			fetchMock.restore()
-		}
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'personal_sign',
+				params: ['0x', '0x0000000000000000000000000000000000000001', null],
+			})
+		})
 	})
 
 	test('serializes configure RPC eth_simulateV1 support probe before fetching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
-
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			const result = await requestHandler.jsonRpcRequest({
 				method: 'eth_simulateV1',
 				params: [{
@@ -165,18 +184,114 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 			})
 
 			assert.deepEqual(result, [])
-			assert.equal(fetchMock.bodies.length, 1)
-			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"type":"0x2","from":"0xc000000000000000000000000000000000000000","to":"0xc000000000000000000000000000000000000000","value":"0x1","maxFeePerGas":"0xf"}],"stateOverrides":{"0xc000000000000000000000000000000000000000":{"balance":"0x1312d0000"}},"blockOverrides":{"baseFeePerGas":"0x9"}}],"traceTransfers":true,"validation":true},"latest"]}')
-		} finally {
-			fetchMock.restore()
-		}
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							type: '0x2',
+							from: '0xc000000000000000000000000000000000000000',
+							to: '0xc000000000000000000000000000000000000000',
+							value: '0x1',
+							maxFeePerGas: '0xf',
+						}],
+						stateOverrides: {
+							'0xc000000000000000000000000000000000000000': {
+								balance: '0x1312d0000',
+							},
+						},
+						blockOverrides: {
+							baseFeePerGas: '0x9',
+						},
+					}],
+					traceTransfers: true,
+					validation: true,
+				}, 'latest'],
+			})
+		})
+	})
+
+	test('serializes branch-specific eth_simulateV1 request calls before fetching', async () => {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [
+							{
+								type: '2930',
+								from: testAddress,
+								to: testAddress,
+								gasPrice: 2n,
+								accessList: [{
+									address: testAddress,
+									storageKeys: [3n],
+								}],
+							},
+							{
+								type: '7702',
+								from: testAddress,
+								to: testAddress,
+								maxFeePerGas: 4n,
+								maxPriorityFeePerGas: 5n,
+								authorizationList: [{
+									chainId: 1n,
+									address: testAddress,
+									nonce: 6n,
+									r: 7n,
+									s: 8n,
+									yParity: 'odd',
+								}],
+							},
+						],
+					}],
+				}],
+			})
+
+			assert.deepEqual(result, [])
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [
+							{
+								type: '0x1',
+								from: '0x0000000000000000000000000000000000000001',
+								to: '0x0000000000000000000000000000000000000001',
+								gasPrice: '0x2',
+								accessList: [{
+									address: '0x0000000000000000000000000000000000000001',
+									storageKeys: ['0x0000000000000000000000000000000000000000000000000000000000000003'],
+								}],
+							},
+							{
+								type: '0x4',
+								from: '0x0000000000000000000000000000000000000001',
+								to: '0x0000000000000000000000000000000000000001',
+								maxFeePerGas: '0x4',
+								maxPriorityFeePerGas: '0x5',
+								authorizationList: [{
+									chainId: '0x1',
+									address: '0x0000000000000000000000000000000000000001',
+									nonce: '0x6',
+									r: '0x7',
+									s: '0x8',
+									yParity: '0x1',
+								}],
+							},
+						],
+					}],
+				}],
+			})
+		})
 	})
 
 	test('rejects unserialized BigInts in RPC request extension fields', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
-
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			await assert.rejects(
 				async () => await requestHandler.jsonRpcRequest({
 					method: 'eth_simulateV1',
@@ -192,17 +307,12 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				}),
 				(error) => error instanceof Error && error.message.includes('Additional property metadataNonce must be JSON encodeable.'),
 			)
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('rejects non-finite numbers in RPC request extension fields', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
-
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			for (const metadata of [Number.NaN, Number.POSITIVE_INFINITY, { nested: Number.NEGATIVE_INFINITY }]) {
 				await assert.rejects(
 					async () => await requestHandler.jsonRpcRequest({
@@ -220,18 +330,14 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 					(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
 				)
 			}
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('allows shared acyclic objects in RPC request extension fields', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 		const sharedMetadata = { keep: true }
 
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			const result = await requestHandler.jsonRpcRequest({
 				method: 'eth_simulateV1',
 				params: [{
@@ -247,20 +353,29 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 			})
 
 			assert.deepEqual(result, [])
-			assert.equal(fetchMock.bodies.length, 1)
-			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"from":"0x0000000000000000000000000000000000000001","to":"0x0000000000000000000000000000000000000001","metadataA":{"keep":true},"metadataB":{"keep":true}}]}]}]}')
-		} finally {
-			fetchMock.restore()
-		}
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: '0x0000000000000000000000000000000000000001',
+							to: '0x0000000000000000000000000000000000000001',
+							metadataA: { keep: true },
+							metadataB: { keep: true },
+						}],
+					}],
+				}],
+			})
+		})
 	})
 
 	test('rejects cyclic RPC payload objects before fetching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 		const metadata: { self?: unknown } = {}
 		metadata.self = metadata
 
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			await assert.rejects(
 				async () => await requestHandler.jsonRpcRequest({
 					method: 'eth_simulateV1',
@@ -276,18 +391,14 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				}),
 				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
 			)
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('rejects symbol-keyed RPC extension data before fetching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 		const metadata = { [Symbol('unsafe')]: 1n }
 
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			await assert.rejects(
 				async () => await requestHandler.jsonRpcRequest({
 					method: 'eth_simulateV1',
@@ -303,17 +414,12 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				}),
 				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
 			)
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('rejects array extension data with silently dropped own properties before fetching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
-
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			for (const key of ['extra', Symbol('unsafe')]) {
 				const metadata = [true]
 				Object.defineProperty(metadata, key, { value: 1n, enumerable: true })
@@ -333,19 +439,15 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 					(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
 				)
 			}
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('rejects non-enumerable RPC extension fields before fetching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 		const call: Record<string, unknown> = { from: testAddress, to: testAddress }
 		Object.defineProperty(call, 'metadata', { value: 1n, enumerable: false })
 
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			await assert.rejects(
 				async () => await requestHandler.jsonRpcRequest({
 					method: 'eth_simulateV1',
@@ -357,22 +459,18 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				}),
 				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
 			)
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('rejects wrong-branch typed eth_simulateV1 call fields before fetching', async () => {
-		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
-		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 		const calls: Record<string, unknown>[] = [
 			{ type: 'legacy', from: testAddress, to: testAddress, maxFeePerGas: 1n },
 			{ from: testAddress, to: testAddress, maxFeePerGas: 1n },
 			{ type: '1559', from: testAddress, to: testAddress, gasPrice: 1n },
 		]
 
-		try {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			for (const call of calls) {
 				await assert.rejects(
 					async () => await requestHandler.jsonRpcRequest({
@@ -386,10 +484,8 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 					(error) => error instanceof Error && error.message.includes('must be JSON encodeable.'),
 				)
 			}
-			assert.equal(fetchMock.bodies.length, 0)
-		} finally {
-			fetchMock.restore()
-		}
+			assert.equal(bodies.length, 0)
+		})
 	})
 
 	test('serializes eth_simulateV1 block author as an address', () => {

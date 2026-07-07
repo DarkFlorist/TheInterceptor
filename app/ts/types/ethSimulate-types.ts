@@ -153,45 +153,46 @@ const blockCallAuthorizationListFields = {
 	))
 }
 
-function getBlockCallKeys(value: unknown) {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return knownKeysOf(
-		blockCallLegacyTypeFields,
-		blockCallCommonFields,
-		blockCallGasPriceFields,
-		blockCallSignatureFields,
-	)
-	const type = Object.getOwnPropertyDescriptor(value, 'type')?.value
-	switch (type) {
-		case '2930':
-		case '0x1':
-			return knownKeysOf(blockCall2930TypeFields, blockCallCommonFields, blockCallGasPriceFields, blockCallAccessListFields, blockCallSignatureFields)
-		case '1559':
-		case '0x2':
-			return knownKeysOf(blockCall1559TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallSignatureFields)
-		case '4844':
-		case '0x3':
-			return knownKeysOf(blockCall4844TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallBlobFields, blockCallSignatureFields)
-		case '7702':
-		case '0x4':
-			return knownKeysOf(blockCall7702TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallAuthorizationListFields, blockCallSignatureFields)
-		default:
-			return knownKeysOf(
-				blockCallLegacyTypeFields,
-				blockCallCommonFields,
-				blockCallGasPriceFields,
-				blockCallSignatureFields,
-			)
-	}
-}
-
-const BlockCallAdditionalProperties = funtypes.Unknown.withParser({
-	parse: (value) => validateAdditionalProperties(value, new Set(getBlockCallKeys(value))),
-	serialize: (value) => validateAdditionalProperties(value, new Set(getBlockCallKeys(value))),
-})
+const LegacyBlockCallAdditionalProperties = EthSimulateV1AdditionalProperties(knownKeysOf(
+	blockCallLegacyTypeFields,
+	blockCallCommonFields,
+	blockCallGasPriceFields,
+	blockCallSignatureFields,
+))
+const AccessListBlockCallAdditionalProperties = EthSimulateV1AdditionalProperties(knownKeysOf(
+	blockCall2930TypeFields,
+	blockCallCommonFields,
+	blockCallGasPriceFields,
+	blockCallAccessListFields,
+	blockCallSignatureFields,
+))
+const FeeMarketBlockCallAdditionalProperties = EthSimulateV1AdditionalProperties(knownKeysOf(
+	blockCall1559TypeFields,
+	blockCallCommonFields,
+	blockCallFeeMarketFields,
+	blockCallAccessListFields,
+	blockCallSignatureFields,
+))
+const BlobBlockCallAdditionalProperties = EthSimulateV1AdditionalProperties(knownKeysOf(
+	blockCall4844TypeFields,
+	blockCallCommonFields,
+	blockCallFeeMarketFields,
+	blockCallAccessListFields,
+	blockCallBlobFields,
+	blockCallSignatureFields,
+))
+const AuthorizationListBlockCallAdditionalProperties = EthSimulateV1AdditionalProperties(knownKeysOf(
+	blockCall7702TypeFields,
+	blockCallCommonFields,
+	blockCallFeeMarketFields,
+	blockCallAccessListFields,
+	blockCallAuthorizationListFields,
+	blockCallSignatureFields,
+))
 
 const BlockCall = funtypes.Union(
 	funtypes.Intersect(
-		BlockCallAdditionalProperties,
+		LegacyBlockCallAdditionalProperties,
 		funtypes.Partial({
 			...blockCallLegacyTypeFields,
 			...blockCallCommonFields,
@@ -200,7 +201,7 @@ const BlockCall = funtypes.Union(
 		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties,
+		AccessListBlockCallAdditionalProperties,
 		funtypes.ReadonlyObject(blockCall2930TypeFields),
 		funtypes.Partial({
 			...blockCallCommonFields,
@@ -210,7 +211,7 @@ const BlockCall = funtypes.Union(
 		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties,
+		FeeMarketBlockCallAdditionalProperties,
 		funtypes.ReadonlyObject(blockCall1559TypeFields),
 		funtypes.Partial({
 			...blockCallCommonFields,
@@ -220,7 +221,7 @@ const BlockCall = funtypes.Union(
 		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties,
+		BlobBlockCallAdditionalProperties,
 		funtypes.ReadonlyObject(blockCall4844TypeFields),
 		funtypes.Partial({
 			...blockCallCommonFields,
@@ -231,7 +232,7 @@ const BlockCall = funtypes.Union(
 		})
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties,
+		AuthorizationListBlockCallAdditionalProperties,
 		funtypes.ReadonlyObject(blockCall7702TypeFields),
 		funtypes.Partial({
 			...blockCallCommonFields,

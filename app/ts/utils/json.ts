@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 
 export type typeJSONEncodeable = string | number | boolean | null | { [x: string]: typeJSONEncodeable | undefined } | readonly typeJSONEncodeable[]
+export type typeStrictJSONEncodeable = string | number | boolean | null | { readonly [x: string]: typeStrictJSONEncodeable } | readonly typeStrictJSONEncodeable[]
 export type JSONEncodeable = funtypes.Static<typeof JSONEncodeable>
 const JSONEncodeableNumber = funtypes.Number.withConstraint(Number.isFinite)
 export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Lazy(() => funtypes.Union(
@@ -12,7 +13,8 @@ export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Laz
 	funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable),
 ))
 
-export function isJSONEncodeable(value: unknown, ancestors = new WeakSet<object>()): value is typeJSONEncodeable {
+// Stricter than JSON.stringify: rejects values that would be silently dropped, coerced, or throw.
+export function isJSONEncodeable(value: unknown, ancestors = new WeakSet<object>()): value is typeStrictJSONEncodeable {
 	if (value === null) return true
 	switch (typeof value) {
 		case 'string':
