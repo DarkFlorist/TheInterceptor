@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJSONRpcRequestHandler, type SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { EthSimulateV1BlockHeader, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
@@ -501,6 +501,35 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		}])
 
 		assert.equal(serialized[0]?.author, '0x0000000000000000000000000000000000000001')
+	})
+
+	test('preserves JSON-safe standalone eth_simulateV1 block header extension fields', () => {
+		const serialized = EthSimulateV1BlockHeader.serialize({
+			number: 1n,
+			hash: 2n,
+			timestamp: 3n,
+			gasLimit: 4n,
+			gasUsed: 5n,
+			baseFeePerGas: 6n,
+			clientMetadata: { keep: true },
+		})
+
+		assert.deepEqual(serialized.clientMetadata, { keep: true })
+	})
+
+	test('rejects non-JSON standalone eth_simulateV1 block header extension fields', () => {
+		assert.throws(
+			() => EthSimulateV1BlockHeader.serialize({
+				number: 1n,
+				hash: 2n,
+				timestamp: 3n,
+				gasLimit: 4n,
+				gasUsed: 5n,
+				baseFeePerGas: 6n,
+				clientMetadata: 7n,
+			}),
+			/clientMetadata must be JSON encodeable/,
+		)
 	})
 
 	test('serializes eth_simulateV1 transaction block fields before JSON stringification', () => {
