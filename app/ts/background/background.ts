@@ -8,7 +8,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
-import { hasAccess as getWebsiteAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -304,6 +304,7 @@ export async function changeActiveAddressAndChain(
 		simulationMode: boolean,
 		activeAddress?: bigint,
 		rpcNetwork?: RpcNetwork,
+		sendAccountChangedToApprovedWebsitePorts?: boolean,
 	},
 ) {
 
@@ -343,7 +344,7 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+		if (change.sendAccountChangedToApprovedWebsitePorts !== false) sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
 
@@ -396,12 +397,11 @@ function getAccountRequestResultAccounts(resolved: RPCReply) {
 	return resolved.result
 }
 
-function replayConnectionStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply) {
+function replayAccountStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, resolved: RPCReply) {
 	if (request.method !== 'eth_requestAccounts') return
 	const accounts = getAccountRequestResultAccounts(resolved)
 	if (accounts === undefined || accounts.length === 0) return
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'accountsChanged', result: accounts, requestId: request.uniqueRequestIdentifier.requestId })
 }
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
@@ -415,7 +415,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
 			: getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin)
-		const providerHandlerReturn = await providerHandler.func(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, port, request, providerCallbackApproval, activeAddress?.address)
+		const providerCallbackActiveAddress = activeAddress !== undefined && getWebsiteAddressAccessApprovalState(settings.websiteAccess, websiteOrigin, activeAddress) === 'hasAccess'
+			? activeAddress.address
+			: undefined
+		const providerHandlerReturn = await providerHandler.func(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
@@ -499,10 +502,11 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 					return toResolvedSimulationState(await buildSimulationStateFromPreparedInput(simulationInput.value, ethereum))
 				})()
 				return await simulationStatePromise
-			}
+		}
 		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
-		replayConnectionStateForAccountRequest(websiteTabConnections, request, settings, resolved)
-		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+		const replySent = replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+		replayAccountStateForAccountRequest(websiteTabConnections, request, resolved)
+		return replySent
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })

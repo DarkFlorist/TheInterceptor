@@ -424,6 +424,63 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('delivers request-scoped accountsChanged after eth_requestAccounts resolves even when address is cached', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const { fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_requestAccounts') return false
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'eth_accounts',
+					result: [signerAccount],
+				})
+				setTimeout(() => {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'accountsChanged',
+						result: [signerAccount],
+					})
+				}, 0)
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?request-scoped-accounts-changed', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				on: (eventName: string, callback: (value: readonly string[]) => void) => void
+			}
+			await waitFor(() => typeof provider.request === 'function')
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [signerAccount],
+			})
+			const events: string[] = []
+			const accountEvents: (readonly string[])[] = []
+			provider.on('accountsChanged', (accounts) => {
+				events.push('accountsChanged')
+				accountEvents.push(accounts)
+			})
+
+			const accountReply = await provider.request({ method: 'eth_requestAccounts' }).then((accounts) => {
+				events.push('resolved')
+				return accounts
+			})
+			await waitFor(() => accountEvents.length === 1)
+
+			assert.deepEqual(accountReply, [signerAccount])
+			assert.deepEqual(accountEvents, [[signerAccount]])
+			assert.deepEqual(events, ['resolved', 'accountsChanged'])
+		})
+	})
+
 	test('uses mapped Coinbase provider for signer requests and signer name', async () => {
 		let signerName: string | undefined
 		const signerRequests = {

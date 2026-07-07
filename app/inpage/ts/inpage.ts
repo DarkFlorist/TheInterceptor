@@ -720,7 +720,8 @@ class InterceptorMessageListener {
 				case 'accountsChanged': {
 					const reply = replyRequest.result as readonly string[]
 					const replyAddress = reply[0] ?? ''
-					if (this.currentAddress === replyAddress) return
+					const replayedForSettledRequest = replyRequest.requestId !== undefined
+					if (this.currentAddress === replyAddress && !replayedForSettledRequest) return
 					this.currentAddress = replyAddress
 					if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
 						setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', replyAddress, 'window.ethereum.selectedAddress')

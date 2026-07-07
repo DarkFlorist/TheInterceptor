@@ -53,6 +53,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			activeAddress: tabStateChange.newState.activeSigningAddress,
+			sendAccountChangedToApprovedWebsitePorts: !signerAccountsReply.requestAccounts,
 		})
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}

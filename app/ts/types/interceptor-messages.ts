@@ -156,6 +156,7 @@ export const RPCReply = funtypes.Union(
 export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
 export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
+	funtypes.ReadonlyPartial({ requestId: funtypes.Number }),
 	funtypes.Union(
 		InpageScriptCallBack,
 		funtypes.Intersect(
