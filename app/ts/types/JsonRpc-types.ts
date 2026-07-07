@@ -277,6 +277,12 @@ const RequestPermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
 }).asReadonly()
 
+type RevokePermissions = funtypes.Static<typeof RevokePermissions>
+const RevokePermissions = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_revokePermissions'),
+	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
+}).asReadonly()
+
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
@@ -395,6 +401,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	OldSignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,
+	RevokePermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
