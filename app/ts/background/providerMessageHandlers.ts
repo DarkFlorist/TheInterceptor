@@ -6,7 +6,7 @@ import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWin
 import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
-import type { ApprovalState } from './accessManagement.js'
+import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -49,11 +49,15 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	const settings = await getSettings()
 	if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
 	|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
-		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		const changeActiveAddress = () => changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			activeAddress: tabStateChange.newState.activeSigningAddress,
-			...(signerAccountsReply.requestAccounts && socket !== undefined ? { accountChangeExcludedSocket: socket } : {}),
 		})
+		if (signerAccountsReply.requestAccounts && socket !== undefined) {
+			await withSuppressedUnscopedConnectionEventsForSocketAsync(socket, changeActiveAddress)
+		} else {
+			await changeActiveAddress()
+		}
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
 	return returnValue

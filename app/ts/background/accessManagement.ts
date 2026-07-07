@@ -33,9 +33,48 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
+const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
+
+function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
+	const socketIdentifier = websiteSocketToString(socket)
+	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, (unscopedConnectionEventSuppressionCounts.get(socketIdentifier) ?? 0) + 1)
+	return socketIdentifier
+}
+
+function decrementUnscopedConnectionEventSuppression(socketIdentifier: string) {
+	const previousCount = unscopedConnectionEventSuppressionCounts.get(socketIdentifier)
+	if (previousCount === undefined || previousCount <= 1) {
+		unscopedConnectionEventSuppressionCounts.delete(socketIdentifier)
+		return
+	}
+	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, previousCount - 1)
+}
+
+function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
+	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
+}
+
+export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
+	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
+	try {
+		return action()
+	} finally {
+		decrementUnscopedConnectionEventSuppression(socketIdentifier)
+	}
+}
+
+export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
+	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
+	try {
+		return await action()
+	} finally {
+		decrementUnscopedConnectionEventSuppression(socketIdentifier)
+	}
+}
+
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, sendConnectionEvents = true) {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection?.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
@@ -46,7 +85,6 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 			socket,
 			settings,
 			requestAccessForAddress?.address,
-			sendConnectionEvents,
 		)
 		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration).catch((error: unknown) => {
 			void reportUnexpectedError(error)
@@ -68,15 +106,14 @@ export function sendMessageToApprovedWebsitePorts(websiteTabConnections: Website
 		}
 	}
 }
-export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings, excludedSocket?: WebsiteSocket) {
+export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
 	// inform all the tabs about the address change
-	const excludedSocketIdentifier = excludedSocket === undefined ? undefined : websiteSocketToString(excludedSocket)
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
-			if (excludedSocketIdentifier !== undefined && websiteSocketToString(connection.socket) === excludedSocketIdentifier) continue
+			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
@@ -173,10 +210,9 @@ function connectToPort(
 	socket: WebsiteSocket,
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
-	sendConnectionEvents = true,
 ): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-	if (!sendConnectionEvents) return true
+	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
 }
@@ -233,11 +269,8 @@ async function updateTabConnections(
 	tabConnection: TabConnection,
 	promptForAccessesIfNeeded: boolean,
 	settings: Settings,
-	sendConnectionEvents: boolean,
-	connectionEventExcludedSocket: WebsiteSocket | undefined,
 ): Promise<Map<string, { tabId: number, websiteOrigin: string }>> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
-	const excludedSocketIdentifier = connectionEventExcludedSocket === undefined ? undefined : websiteSocketToString(connectionEventExcludedSocket)
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
@@ -248,8 +281,7 @@ async function updateTabConnections(
 		if (access !== 'hasAccess' && connection.approved) {
 			disconnectFromPort(websiteTabConnections, connection.socket)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			const sendEventsForConnection = sendConnectionEvents && (excludedSocketIdentifier === undefined || websiteSocketToString(connection.socket) !== excludedSocketIdentifier)
-			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address, sendEventsForConnection)
+			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
@@ -358,8 +390,6 @@ export async function updateWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
-	sendConnectionEvents = true,
-	connectionEventExcludedSocket?: WebsiteSocket,
 ): Promise<number> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const allTabStates = await getAllTabStates()
@@ -372,7 +402,7 @@ export async function updateWebsiteApprovalAccesses(
 	}
 	// update port connections and disconnect from ports that should not have access anymore
 	const updatePromises = [...websiteTabConnections.entries()].map(async ([_tab, tabConnection]) => {
-		const tabIconRefreshTargets = await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings, sendConnectionEvents, connectionEventExcludedSocket)
+		const tabIconRefreshTargets = await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
 		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	for (const tabState of allTabStates) {

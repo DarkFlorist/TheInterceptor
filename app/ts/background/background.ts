@@ -8,7 +8,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
-import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -305,7 +305,6 @@ export async function changeActiveAddressAndChain(
 		simulationMode: boolean,
 		activeAddress?: bigint,
 		rpcNetwork?: RpcNetwork,
-		accountChangeExcludedSocket?: WebsiteSocket,
 	},
 ) {
 
@@ -327,7 +326,7 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
-	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, true, true, change.accountChangeExcludedSocket)
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, true)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
@@ -345,7 +344,7 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings(), change.accountChangeExcludedSocket)
+		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
 
@@ -489,7 +488,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return refuseAccess(websiteTabConnections, request)
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
-	const access = verifyAccess(websiteTabConnections, socket, accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1', websiteOrigin, activeAddress, settings, !accountConnectionRequest)
+	const verifyRequestAccess = () => verifyAccess(websiteTabConnections, socket, accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1', websiteOrigin, activeAddress, settings)
+	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts

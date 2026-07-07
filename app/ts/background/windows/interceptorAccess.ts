@@ -3,7 +3,7 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
+import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
@@ -81,7 +81,7 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
 }
 
-async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true, connectionEventExcludedSocket?: WebsiteSocket) {
+async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
 	await updateWebsiteApprovalAccesses(
@@ -91,8 +91,6 @@ async function changeAccess(ethereum: EthereumClientService, tokenPriceService: 
 		websiteTabConnections,
 		await getSettings(),
 		promptForAccessesIfNeeded,
-		true,
-		connectionEventExcludedSocket,
 	)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
@@ -171,7 +169,11 @@ export async function requestAccessFromUser(
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const sendConnectionEvents = request === undefined || !isAccountConnectionMethod(request.method)
+	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
+		const verify = () => verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, currentSettings)
+		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
+		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
+	}
 	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(ethereum, tokenPriceService, resetSimulationServices, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
@@ -190,7 +192,7 @@ export async function requestAccessFromUser(
 		}
 
 		const justAddToPending = await verifyPendingRequests()
-		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings(), sendConnectionEvents)
+		const hasAccess = verifyAccessForCurrentRequest(await getSettings())
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
@@ -240,7 +242,7 @@ export async function requestAccessFromUser(
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
-			if (verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings(), sendConnectionEvents) !== 'askAccess') return previousPendingAccessRequests
+			if (verifyAccessForCurrentRequest(await getSettings()) !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
@@ -284,18 +286,24 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
-		const connectionEventExcludedSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
-		if (!userRequestedAddressChange) {
-			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, true, connectionEventExcludedSocket)
-		} else {
+		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
+		const applyAccessReply = async () => {
+			if (!userRequestedAddressChange) {
+				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, true)
+				return
+			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
-			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false, connectionEventExcludedSocket)
+			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
 			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: accessReply.requestAccessToAddress,
-				...(replyCompletesAccountRequest ? { accountChangeExcludedSocket: request.uniqueRequestIdentifier.requestSocket } : {}),
 			})
+		}
+		if (accountRequestSocket === undefined) {
+			await applyAccessReply()
+		} else {
+			await withSuppressedUnscopedConnectionEventsForSocketAsync(accountRequestSocket, applyAccessReply)
 		}
 	}
 
