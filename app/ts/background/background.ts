@@ -18,7 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
-import { replyToInterceptedRequest } from './messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -388,6 +388,22 @@ function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabCon
 	})
 }
 
+function getAccountRequestResultAccounts(resolved: RPCReply) {
+	if (resolved.type !== 'result') return undefined
+	if (!('result' in resolved)) return undefined
+	if (!Array.isArray(resolved.result)) return undefined
+	if (!resolved.result.every((account) => typeof account === 'bigint')) return undefined
+	return resolved.result
+}
+
+function replayConnectionStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply) {
+	if (request.method !== 'eth_requestAccounts') return
+	const accounts = getAccountRequestResultAccounts(resolved)
+	if (accounts === undefined || accounts.length === 0) return
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
+}
+
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	let settings = await getSettings()
 	let activeAddress = await getActiveAddress(settings, socket.tabId)
@@ -485,6 +501,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 				return await simulationStatePromise
 			}
 		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
+		replayConnectionStateForAccountRequest(websiteTabConnections, request, settings, resolved)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
