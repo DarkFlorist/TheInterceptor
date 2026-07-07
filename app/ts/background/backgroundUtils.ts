@@ -17,6 +17,15 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
 		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
 	}
+	const signingAddr = (await getTabState(tabId)).activeSigningAddress
+	if (signingAddr === undefined) return undefined
+	return await getActiveAddressEntry(signingAddr)
+}
+
+export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
+		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
+	}
 	const tabState = await getTabState(tabId)
 	const signingAddr = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
 	if (signingAddr === undefined) return undefined
@@ -30,7 +39,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: addressEntry }))
 	}
 	return Promise.all(tabStates.map(async (state) => {
-		const signingAddr = state.activeSigningAddress ?? state.signerAccounts[0]
+		const signingAddr = state.activeSigningAddress
 		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntry(signingAddr) }
 	}))
 }

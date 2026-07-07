@@ -99,7 +99,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
 	if (approval !== 'hasAccess') {
-		return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode(), activeAddress: '' } }
+		return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 	}
 	await setDefaultSignerName(signerName)
 	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => modifyObject(previousState, { signerName, signerConnected }))
@@ -108,7 +108,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 	}
-	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode(), activeAddress: '' } }
+	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 }
 
 export async function signerReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {

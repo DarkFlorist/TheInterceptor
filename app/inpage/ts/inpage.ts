@@ -389,6 +389,8 @@ class InterceptorMessageListener {
 
 	private currentAddress = ''
 	private activeChainId = ''
+	private ethereumSelectedAddressControlled = false
+	private web3AccountsControlled = false
 
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
@@ -404,6 +406,16 @@ class InterceptorMessageListener {
 	private readonly getControlledSelectedAddress = () => this.currentAddress === '' ? undefined : this.currentAddress
 
 	private readonly getControlledAccounts = () => this.currentAddress === '' ? [] : [this.currentAddress]
+
+	private readonly refreshAccountCompatibilityProperties = (accounts: readonly string[]) => {
+		const address = accounts[0] ?? ''
+		if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined && !this.ethereumSelectedAddressControlled) {
+			setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', address, 'window.ethereum.selectedAddress')
+		}
+		if (this.metamaskCompatibilityMode && 'web3' in inpageWindow && inpageWindow.web3 !== undefined && !this.web3AccountsControlled) {
+			setCompatibilityProperty(inpageWindow.web3, 'accounts', accounts, 'window.web3.accounts')
+		}
+	}
 
 	private readonly hasNonConfigurableAccountCompatibilityProperty = () => {
 		if (inpageWindow.ethereum !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.ethereum, 'selectedAddress')?.configurable === false) return true
@@ -437,17 +449,17 @@ class InterceptorMessageListener {
 						value: safeValue,
 						writable: false,
 					})
-					return
+					return true
 				} catch (error: unknown) {
 					console.warn(`Interceptor compatibility assignment failed for ${ label }.`, error)
-					return
+					return false
 				}
 			}
-			if ('value' in descriptor && (descriptor.value === undefined || descriptor.value === null || descriptor.value === '' || (Array.isArray(descriptor.value) && descriptor.value.length === 0))) return
+			if ('value' in descriptor && (descriptor.value === undefined || descriptor.value === null || descriptor.value === '' || (Array.isArray(descriptor.value) && descriptor.value.length === 0))) return false
 			const currentValue = Reflect.get(target, property)
-			if ('set' in descriptor && descriptor.set === undefined && (currentValue === undefined || currentValue === null || currentValue === '' || (Array.isArray(currentValue) && currentValue.length === 0))) return
+			if ('set' in descriptor && descriptor.set === undefined && (currentValue === undefined || currentValue === null || currentValue === '' || (Array.isArray(currentValue) && currentValue.length === 0))) return false
 			console.warn(`Interceptor compatibility assignment was rejected for ${ label }.`)
-			return
+			return false
 		}
 		try {
 			Object.defineProperty(target, property, {
@@ -456,21 +468,23 @@ class InterceptorMessageListener {
 				get: getter,
 				set: () => undefined,
 			})
+			return true
 		} catch (error: unknown) {
-			if (!Object.isExtensible(target)) return
+			if (!Object.isExtensible(target)) return false
 			console.warn(`Interceptor compatibility assignment failed for ${ label }.`, error)
+			return false
 		}
 	}
 
 	private readonly installControlledAccountCompatibilityProperties = () => {
 		if (inpageWindow.ethereum !== undefined) {
-			this.installControlledCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.getControlledSelectedAddress, 'window.ethereum.selectedAddress')
+			this.ethereumSelectedAddressControlled = this.installControlledCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.getControlledSelectedAddress, 'window.ethereum.selectedAddress')
 		}
 		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
 			if (Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: this.getControlledAccounts(), currentProvider: inpageWindow.ethereum as WindowEthereum }, 'window.web3')
 			}
-			this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
+			this.web3AccountsControlled = this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
 		}
 	}
 
@@ -564,12 +578,12 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowFallbackToRoot = false) => {
+	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false) => {
 		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 		try {
 			return await this.signerWindowEthereumRequest(methodAndParams)
 		} catch (error: unknown) {
-			if (!allowFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
+			if (!allowRequestAccountsFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
 			if (methodAndParams.method === 'eth_accounts') throw error
 			if (methodAndParams.method !== 'eth_requestAccounts') throw error
 			if (methodAndParams.method === 'eth_requestAccounts' && InterceptorMessageListener.isUserRejectedRequestError(error)) throw error
@@ -693,7 +707,7 @@ class InterceptorMessageListener {
 	private readonly getAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] }, true)
+			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -749,7 +763,7 @@ class InterceptorMessageListener {
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.requestFromSigner({ method: 'eth_chainId', params: [] }, true)
+			const reply = await this.requestFromSigner({ method: 'eth_chainId', params: [] })
 			if (typeof reply !== 'string') {
 				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
 				return
@@ -823,10 +837,7 @@ class InterceptorMessageListener {
 					const notifyAccountsChanged = () => {
 						if (this.currentAddress === replyAddress && !replayedForSettledRequest) return
 						this.currentAddress = replyAddress
-						if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-							setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', replyAddress, 'window.ethereum.selectedAddress')
-							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) setCompatibilityProperty(inpageWindow.web3, 'accounts', reply, 'window.web3.accounts')
-						}
+						this.refreshAccountCompatibilityProperties(reply)
 						for (const callback of this.onAccountsChangedCallBacks) {
 							callback(reply)
 						}
@@ -974,9 +985,8 @@ class InterceptorMessageListener {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 							const addrArray = forwardRequest.result as string[]
 							const addr = addrArray[0] ?? ''
-							setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', addr, 'window.ethereum.selectedAddress')
-							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) setCompatibilityProperty(inpageWindow.web3, 'accounts', addrArray, 'window.web3.accounts')
 							this.currentAddress = addr
+							this.refreshAccountCompatibilityProperties(addrArray)
 							break
 						}
 						case 'eth_chainId': {
@@ -1054,18 +1064,12 @@ class InterceptorMessageListener {
 	}
 
 	private readonly connectToSigner = async (signerName: Signer) => {
-		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean, activeAddress: string  }> => {
+		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
 			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
-				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean'
-				&& 'activeAddress' in connectSignerReply && connectSignerReply.activeAddress !== null
-				&& connectSignerReply.activeAddress !== undefined && typeof connectSignerReply.activeAddress === 'string') {
-					if (connectSignerReply.activeAddress !== '') this.currentAddress = connectSignerReply.activeAddress
-					if (connectSignerReply.activeAddress !== '' && connectSignerReply.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-						setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.currentAddress, 'window.ethereum.selectedAddress')
-					}
-				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string }
+				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
+				return connectSignerReply as { metamaskCompatibilityMode: boolean }
 			}
 			throw new Error('Failed to parse connected_to_signer reply')
 		}

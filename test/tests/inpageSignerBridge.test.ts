@@ -128,7 +128,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return
 				case 'InterceptorError':
@@ -948,7 +948,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1008,7 +1008,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1066,7 +1066,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1112,7 +1112,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1180,7 +1180,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1251,7 +1251,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1325,7 +1325,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1397,7 +1397,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1469,7 +1469,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1538,7 +1538,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1585,7 +1585,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: '0x1111111111111111111111111111111111111111' },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}

@@ -685,7 +685,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
 	})
 
-	test('does not expose connected_to_signer active address during provider initialization', async () => {
+	test('does not expose an active address in connected_to_signer replies', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -722,7 +722,7 @@ describe('background eth_accounts', () => {
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
-		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false, activeAddress: '' })
+		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false })
 	})
 
 	test('opens address access dialog after signer account discovery for site-approved eth_requestAccounts', async () => {
