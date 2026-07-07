@@ -67,6 +67,12 @@ function installBrowserMock() {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
+		},
 	} as unknown as typeof globalThis.browser
 	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 	;(globalThis as typeof globalThis & { location: Location }).location = { origin: '' } as unknown as Location
@@ -1245,6 +1251,8 @@ describe('background eth_accounts', () => {
 		const unsupportedParams: unknown[] = [
 			[],
 			[{ wallet_switchEthereumChain: {} }],
+			[{ wallet_snap: {} }],
+			[{ eth_accounts: {}, wallet_snap: {} }],
 			[{ eth_accounts: { foo: 1 } }],
 		]
 		for (const [index, params] of unsupportedParams.entries()) {
