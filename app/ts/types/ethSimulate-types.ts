@@ -10,10 +10,15 @@ import {
 	EthereumQuantity,
 	EthereumQuantitySmall,
 	EthereumSignatureParity,
-	EthereumSignedTransaction,
+	EthereumSignedTransaction1559,
+	EthereumSignedTransaction2930,
 	EthereumSignedTransactionBlockGasPriceFields,
-	EthereumSignatureParityFields,
+	EthereumSignedTransaction4844,
+	EthereumSignedTransaction7702,
 	EthereumSignedTransaction7702Fields,
+	EthereumSignedTransactionLegacy,
+	EthereumSignedTransactionOptimismDeposit,
+	EthereumSignatureParityFields,
 	EthereumSignedTransactionOptimismDepositFields,
 	EthereumSignedTransactionWithBlockReferenceFields,
 	EthereumTimestamp,
@@ -51,47 +56,6 @@ const signedTransactionSignatureFields = [
 	EthereumSignatureParityFields,
 	EthereumTypedTransactionVFields,
 ]
-
-function getSignedBlockHeaderTransactionKeys(value: unknown) {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return knownKeysOf(
-		EthereumUnsignedTransactionLegacyFields,
-		EthereumUnsignedTransactionLegacyOptionalFields,
-		MessageSignatureFields,
-		EthereumSignatureParityFields,
-		EthereumSignedTransactionWithBlockReferenceFields,
-	)
-	const type = Object.getOwnPropertyDescriptor(value, 'type')?.value
-	switch (type) {
-		case '2930':
-		case '0x1':
-			return knownKeysOf(EthereumUnsignedTransaction2930Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionWithBlockReferenceFields)
-		case '1559':
-		case '0x2':
-			return knownKeysOf(EthereumUnsignedTransaction1559Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionBlockGasPriceFields, EthereumSignedTransactionWithBlockReferenceFields)
-		case '4844':
-		case '0x3':
-			return knownKeysOf(EthereumUnsignedTransaction4844Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionBlockGasPriceFields, EthereumSignedTransactionWithBlockReferenceFields)
-		case '7702':
-		case '0x4':
-			return knownKeysOf(EthereumSignedTransaction7702Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionBlockGasPriceFields, EthereumSignedTransactionWithBlockReferenceFields)
-		case 'optimismDeposit':
-		case '0x7e':
-			return knownKeysOf(EthereumSignedTransactionOptimismDepositFields, EthereumSignedTransactionWithBlockReferenceFields)
-		default:
-			return knownKeysOf(
-				EthereumUnsignedTransactionLegacyFields,
-				EthereumUnsignedTransactionLegacyOptionalFields,
-				MessageSignatureFields,
-				EthereumSignatureParityFields,
-				EthereumSignedTransactionWithBlockReferenceFields,
-			)
-	}
-}
-
-const EthSimulateV1SignedTransactionAdditionalProperties = funtypes.Unknown.withParser({
-	parse: (value) => validateAdditionalProperties(value, new Set(getSignedBlockHeaderTransactionKeys(value))),
-	serialize: (value) => validateAdditionalProperties(value, new Set(getSignedBlockHeaderTransactionKeys(value))),
-})
 
 function validateAdditionalProperties(value: unknown, knownKeys: ReadonlySet<string>) {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) return { success: false as const, message: 'Additional properties must be on an object.' }
@@ -408,15 +372,90 @@ const ethSimulateV1UnknownTransactionTypeFields = {
 
 const EthSimulateV1UnknownTransactionType = funtypes.ReadonlyObject(ethSimulateV1UnknownTransactionTypeFields)
 
+const EthSimulateV1LegacyBlockHeaderTransaction = funtypes.Intersect(
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		EthereumUnsignedTransactionLegacyFields,
+		EthereumUnsignedTransactionLegacyOptionalFields,
+		MessageSignatureFields,
+		EthereumSignatureParityFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)),
+	EthereumSignedTransactionLegacy,
+	funtypes.ReadonlyPartial(EthereumSignedTransactionWithBlockReferenceFields),
+)
+
+const EthSimulateV1AccessListBlockHeaderTransaction = funtypes.Intersect(
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		EthereumUnsignedTransaction2930Fields,
+		EthereumTransactionAccessListFields,
+		...signedTransactionSignatureFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)),
+	EthereumSignedTransaction2930,
+	funtypes.ReadonlyPartial(EthereumSignedTransactionWithBlockReferenceFields),
+)
+
+const EthSimulateV1FeeMarketBlockHeaderTransaction = funtypes.Intersect(
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		EthereumUnsignedTransaction1559Fields,
+		EthereumTransactionAccessListFields,
+		...signedTransactionSignatureFields,
+		EthereumSignedTransactionBlockGasPriceFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)),
+	EthereumSignedTransaction1559,
+	funtypes.ReadonlyPartial({
+		...EthereumSignedTransactionBlockGasPriceFields,
+		...EthereumSignedTransactionWithBlockReferenceFields,
+	}),
+)
+
+const EthSimulateV1BlobBlockHeaderTransaction = funtypes.Intersect(
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		EthereumUnsignedTransaction4844Fields,
+		EthereumTransactionAccessListFields,
+		...signedTransactionSignatureFields,
+		EthereumSignedTransactionBlockGasPriceFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)),
+	EthereumSignedTransaction4844,
+	funtypes.ReadonlyPartial({
+		...EthereumSignedTransactionBlockGasPriceFields,
+		...EthereumSignedTransactionWithBlockReferenceFields,
+	}),
+)
+
+const EthSimulateV1AuthorizationListBlockHeaderTransaction = funtypes.Intersect(
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		EthereumSignedTransaction7702Fields,
+		EthereumTransactionAccessListFields,
+		...signedTransactionSignatureFields,
+		EthereumSignedTransactionBlockGasPriceFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)),
+	EthereumSignedTransaction7702,
+	funtypes.ReadonlyPartial({
+		...EthereumSignedTransactionBlockGasPriceFields,
+		...EthereumSignedTransactionWithBlockReferenceFields,
+	}),
+)
+
+const EthSimulateV1OptimismDepositBlockHeaderTransaction = funtypes.Intersect(
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		EthereumSignedTransactionOptimismDepositFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)),
+	EthereumSignedTransactionOptimismDeposit,
+	funtypes.ReadonlyPartial(EthereumSignedTransactionWithBlockReferenceFields),
+)
+
 const EthSimulateV1BlockHeaderTransaction = funtypes.Union(
-	funtypes.Intersect(
-		EthSimulateV1SignedTransactionAdditionalProperties,
-		EthereumSignedTransaction,
-		funtypes.ReadonlyPartial({
-			...EthereumSignedTransactionWithBlockReferenceFields,
-			...EthereumSignedTransactionBlockGasPriceFields,
-		}),
-	),
+	EthSimulateV1LegacyBlockHeaderTransaction,
+	EthSimulateV1AccessListBlockHeaderTransaction,
+	EthSimulateV1FeeMarketBlockHeaderTransaction,
+	EthSimulateV1BlobBlockHeaderTransaction,
+	EthSimulateV1AuthorizationListBlockHeaderTransaction,
+	EthSimulateV1OptimismDepositBlockHeaderTransaction,
 	funtypes.Intersect(
 		EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateV1UnknownTransactionTypeFields)),
 		EthSimulateV1UnknownTransactionType,

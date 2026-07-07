@@ -436,7 +436,7 @@ const EthereumTransactionLegacySignature = funtypes.Intersect(
 	)
 )
 
-type EthereumSignedTransactionOptimismDeposit = funtypes.Static<typeof EthereumSignedTransactionOptimismDeposit>
+export type EthereumSignedTransactionOptimismDeposit = funtypes.Static<typeof EthereumSignedTransactionOptimismDeposit>
 export const EthereumSignedTransactionOptimismDepositFields = {
 	type: funtypes.Literal('0x7e').withParser(LiteralConverterParserFactory('0x7e', 'optimismDeposit' as const)),
 	sourceHash: EthereumBytes32,
@@ -450,21 +450,21 @@ export const EthereumSignedTransactionOptimismDepositFields = {
 	gasPrice: EthereumQuantity,
 	nonce: EthereumQuantity,
 }
-const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject(EthereumSignedTransactionOptimismDepositFields)
+export const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject(EthereumSignedTransactionOptimismDepositFields)
 
-type EthereumSignedTransactionLegacy = funtypes.Static<typeof EthereumSignedTransactionLegacy>
-const EthereumSignedTransactionLegacy = funtypes.Intersect(
+export type EthereumSignedTransactionLegacy = funtypes.Static<typeof EthereumSignedTransactionLegacy>
+export const EthereumSignedTransactionLegacy = funtypes.Intersect(
 	EthereumUnsignedTransactionLegacy,
 	EthereumTransactionLegacySignature,
 )
 
-type EthereumSignedTransaction2930 = funtypes.Static<typeof EthereumSignedTransaction2930>
-const EthereumSignedTransaction2930 = funtypes.Intersect(
+export type EthereumSignedTransaction2930 = funtypes.Static<typeof EthereumSignedTransaction2930>
+export const EthereumSignedTransaction2930 = funtypes.Intersect(
 	EthereumUnsignedTransaction2930,
 	EthereumTransaction2930And1559And4844Signature,
 )
 
-type EthereumSignedTransaction7702 = funtypes.Static<typeof EthereumSignedTransaction7702>
+export type EthereumSignedTransaction7702 = funtypes.Static<typeof EthereumSignedTransaction7702>
 export const EthereumSignedTransaction7702Fields = {
 	type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	from: EthereumAddress,
@@ -485,7 +485,7 @@ export const EthereumSignedTransaction7702Fields = {
 		yParity: EthereumSignatureParity
 	}))
 }
-const EthereumSignedTransaction7702 = funtypes.Intersect(
+export const EthereumSignedTransaction7702 = funtypes.Intersect(
 	funtypes.ReadonlyObject(EthereumSignedTransaction7702Fields).asReadonly(),
 	funtypes.Partial(EthereumTransactionAccessListFields).asReadonly(),
 	EthereumTransaction2930And1559And4844Signature
@@ -497,8 +497,8 @@ export const EthereumSignedTransaction1559 = funtypes.Intersect(
 	EthereumTransaction2930And1559And4844Signature,
 )
 
-type EthereumSignedTransaction4844 = funtypes.Static<typeof EthereumSignedTransaction4844>
-const EthereumSignedTransaction4844 = funtypes.Intersect(
+export type EthereumSignedTransaction4844 = funtypes.Static<typeof EthereumSignedTransaction4844>
+export const EthereumSignedTransaction4844 = funtypes.Intersect(
 	EthereumUnsignedTransaction4844,
 	EthereumTransaction2930And1559And4844Signature,
 )
