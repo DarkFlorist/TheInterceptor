@@ -206,7 +206,8 @@ async function handleRPCRequest(
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
 	const withSimulationState = async (handler: (simulationState: ResolvedSimulationState) => Promise<RPCReply>) => await handler(await getSimulationState())
-	await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
+	const accountOnlyMethod = parsedRequest.method === 'eth_accounts' || parsedRequest.method === 'eth_requestAccounts' || parsedRequest.method === 'wallet_requestPermissions' || parsedRequest.method === 'wallet_getPermissions'
+	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByHash': return await withSimulationInput((simulationInput) => getBlockByHash(ethereum, simulationInput, parsedRequest))
 		case 'eth_getBlockByNumber': return await withSimulationInput((simulationInput) => getBlockByNumber(ethereum, simulationInput, parsedRequest))

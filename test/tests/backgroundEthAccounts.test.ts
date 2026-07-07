@@ -283,15 +283,58 @@ describe('background eth_accounts', () => {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
-			method: 'eth_accounts',
+			method: 'eth_chainId',
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 
 		assert.deepEqual(publishedRetryStates, [true])
 		assert.equal((await getRpcConnectionStatus())?.retrying, true)
-		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 2)
-		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x1111111111111111111111111111111111111111'])
+		const chainIdReplies = messages.filter((message) => message.method === 'eth_chainId' && message.requestId === 2)
+		assert.equal(chainIdReplies.at(-1)?.result, 1n)
+	})
+
+	test('does not wait for retry-state publishing before replying to eth_requestAccounts', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, false)
+		await setRpcConnectionStatus({
+			isConnected: false,
+			lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
+			latestBlock: undefined,
+			rpcNetwork: ethereum.getRpcEntry(),
+			retrying: false,
+		})
+		let publishCalls = 0
+		const publishRpcConnectionStatus: PublishRpcConnectionStatus = async () => {
+			publishCalls += 1
+			await new Promise(() => undefined)
+		}
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 15, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+
+		assert.equal(publishCalls, 0)
+		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 15)
+		assert.deepEqual(requestAccountsReplies.at(-1)?.result, ['0x1111111111111111111111111111111111111111'])
 	})
 
 	test('refresh signer accounts for approved eth_accounts requests when the tab cache is empty', async () => {
