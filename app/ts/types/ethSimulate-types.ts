@@ -47,7 +47,9 @@ const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-function knownKeysOf(...fieldSets: readonly object[]) {
+type FieldSet = Readonly<Record<string, unknown>>
+
+function knownKeysOf(...fieldSets: readonly FieldSet[]) {
 	return fieldSets.flatMap(Object.keys)
 }
 
@@ -69,8 +71,8 @@ function validateAdditionalProperties(value: unknown, knownKeys: ReadonlySet<str
 	return { success: true as const, value }
 }
 
-const EthSimulateV1AdditionalProperties = (knownKeys: readonly string[]) => {
-	const knownKeySet = new Set(knownKeys)
+const EthSimulateV1AdditionalProperties = (...knownFieldSets: readonly FieldSet[]) => {
+	const knownKeySet = new Set(knownKeysOf(...knownFieldSets))
 	return funtypes.Unknown.withParser({
 		parse: (value) => validateAdditionalProperties(value, knownKeySet),
 		serialize: (value) => validateAdditionalProperties(value, knownKeySet),
@@ -153,59 +155,78 @@ const blockCallAuthorizationListFields = {
 	))
 }
 
-const BlockCallAdditionalProperties = (...fieldSets: readonly object[]) => EthSimulateV1AdditionalProperties(knownKeysOf(...fieldSets))
-
 const BlockCall = funtypes.Union(
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(blockCallLegacyTypeFields, blockCallCommonFields, blockCallGasPriceFields, blockCallSignatureFields),
-		funtypes.Partial({
-			...blockCallLegacyTypeFields,
-			...blockCallCommonFields,
-			...blockCallGasPriceFields,
-			...blockCallSignatureFields,
-		})
+		EthSimulateV1AdditionalProperties(
+			blockCallLegacyTypeFields,
+			blockCallCommonFields,
+			blockCallGasPriceFields,
+			blockCallSignatureFields,
+		),
+		funtypes.Partial(blockCallLegacyTypeFields),
+		funtypes.Partial(blockCallCommonFields),
+		funtypes.Partial(blockCallGasPriceFields),
+		funtypes.Partial(blockCallSignatureFields),
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(blockCall2930TypeFields, blockCallCommonFields, blockCallGasPriceFields, blockCallAccessListFields, blockCallSignatureFields),
+		EthSimulateV1AdditionalProperties(
+			blockCall2930TypeFields,
+			blockCallCommonFields,
+			blockCallGasPriceFields,
+			blockCallAccessListFields,
+			blockCallSignatureFields,
+		),
 		funtypes.ReadonlyObject(blockCall2930TypeFields),
-		funtypes.Partial({
-			...blockCallCommonFields,
-			...blockCallGasPriceFields,
-			...blockCallAccessListFields,
-			...blockCallSignatureFields,
-		})
+		funtypes.Partial(blockCallCommonFields),
+		funtypes.Partial(blockCallGasPriceFields),
+		funtypes.Partial(blockCallAccessListFields),
+		funtypes.Partial(blockCallSignatureFields),
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(blockCall1559TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallSignatureFields),
+		EthSimulateV1AdditionalProperties(
+			blockCall1559TypeFields,
+			blockCallCommonFields,
+			blockCallFeeMarketFields,
+			blockCallAccessListFields,
+			blockCallSignatureFields,
+		),
 		funtypes.ReadonlyObject(blockCall1559TypeFields),
-		funtypes.Partial({
-			...blockCallCommonFields,
-			...blockCallFeeMarketFields,
-			...blockCallAccessListFields,
-			...blockCallSignatureFields,
-		})
+		funtypes.Partial(blockCallCommonFields),
+		funtypes.Partial(blockCallFeeMarketFields),
+		funtypes.Partial(blockCallAccessListFields),
+		funtypes.Partial(blockCallSignatureFields),
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(blockCall4844TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallBlobFields, blockCallSignatureFields),
+		EthSimulateV1AdditionalProperties(
+			blockCall4844TypeFields,
+			blockCallCommonFields,
+			blockCallFeeMarketFields,
+			blockCallAccessListFields,
+			blockCallBlobFields,
+			blockCallSignatureFields,
+		),
 		funtypes.ReadonlyObject(blockCall4844TypeFields),
-		funtypes.Partial({
-			...blockCallCommonFields,
-			...blockCallFeeMarketFields,
-			...blockCallAccessListFields,
-			...blockCallBlobFields,
-			...blockCallSignatureFields,
-		})
+		funtypes.Partial(blockCallCommonFields),
+		funtypes.Partial(blockCallFeeMarketFields),
+		funtypes.Partial(blockCallAccessListFields),
+		funtypes.Partial(blockCallBlobFields),
+		funtypes.Partial(blockCallSignatureFields),
 	),
 	funtypes.Intersect(
-		BlockCallAdditionalProperties(blockCall7702TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallAuthorizationListFields, blockCallSignatureFields),
+		EthSimulateV1AdditionalProperties(
+			blockCall7702TypeFields,
+			blockCallCommonFields,
+			blockCallFeeMarketFields,
+			blockCallAccessListFields,
+			blockCallAuthorizationListFields,
+			blockCallSignatureFields,
+		),
 		funtypes.ReadonlyObject(blockCall7702TypeFields),
-		funtypes.Partial({
-			...blockCallCommonFields,
-			...blockCallFeeMarketFields,
-			...blockCallAccessListFields,
-			...blockCallAuthorizationListFields,
-			...blockCallSignatureFields,
-		})
+		funtypes.Partial(blockCallCommonFields),
+		funtypes.Partial(blockCallFeeMarketFields),
+		funtypes.Partial(blockCallAccessListFields),
+		funtypes.Partial(blockCallAuthorizationListFields),
+		funtypes.Partial(blockCallSignatureFields),
 	)
 )
 
@@ -296,7 +317,7 @@ const ethSimulateCallResultOptionalFields = {
 }
 
 const EthSimulateCallResultFailure = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateCallResultFailureFields, ethSimulateCallResultOptionalFields)),
+	EthSimulateV1AdditionalProperties(ethSimulateCallResultFailureFields, ethSimulateCallResultOptionalFields),
 	funtypes.ReadonlyObject(ethSimulateCallResultFailureFields),
 	funtypes.ReadonlyPartial(ethSimulateCallResultOptionalFields),
 )
@@ -310,7 +331,7 @@ const ethSimulateCallResultSuccessFields = {
 }
 
 const EthSimulateCallResultSuccess = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateCallResultSuccessFields, ethSimulateCallResultOptionalFields)),
+	EthSimulateV1AdditionalProperties(ethSimulateCallResultSuccessFields, ethSimulateCallResultOptionalFields),
 	funtypes.ReadonlyObject(ethSimulateCallResultSuccessFields),
 	funtypes.ReadonlyPartial(ethSimulateCallResultOptionalFields),
 )
@@ -339,36 +360,36 @@ const ethSimulateV1UnknownTransactionTypeFields = {
 const EthSimulateV1UnknownTransactionType = funtypes.ReadonlyObject(ethSimulateV1UnknownTransactionTypeFields)
 
 const EthSimulateV1LegacyBlockHeaderTransaction = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(
+	EthSimulateV1AdditionalProperties(
 		EthereumUnsignedTransactionLegacyFields,
 		EthereumUnsignedTransactionLegacyOptionalFields,
 		MessageSignatureFields,
 		EthereumSignatureParityFields,
 		EthereumSignedTransactionWithBlockReferenceFields,
-	)),
+	),
 	EthereumSignedTransactionLegacy,
 	funtypes.ReadonlyPartial(EthereumSignedTransactionWithBlockReferenceFields),
 )
 
 const EthSimulateV1AccessListBlockHeaderTransaction = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(
+	EthSimulateV1AdditionalProperties(
 		EthereumUnsignedTransaction2930Fields,
 		EthereumTransactionAccessListFields,
 		...signedTransactionSignatureFields,
 		EthereumSignedTransactionWithBlockReferenceFields,
-	)),
+	),
 	EthereumSignedTransaction2930,
 	funtypes.ReadonlyPartial(EthereumSignedTransactionWithBlockReferenceFields),
 )
 
 const EthSimulateV1FeeMarketBlockHeaderTransaction = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(
+	EthSimulateV1AdditionalProperties(
 		EthereumUnsignedTransaction1559Fields,
 		EthereumTransactionAccessListFields,
 		...signedTransactionSignatureFields,
 		EthereumSignedTransactionBlockGasPriceFields,
 		EthereumSignedTransactionWithBlockReferenceFields,
-	)),
+	),
 	EthereumSignedTransaction1559,
 	funtypes.ReadonlyPartial({
 		...EthereumSignedTransactionBlockGasPriceFields,
@@ -377,13 +398,13 @@ const EthSimulateV1FeeMarketBlockHeaderTransaction = funtypes.Intersect(
 )
 
 const EthSimulateV1BlobBlockHeaderTransaction = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(
+	EthSimulateV1AdditionalProperties(
 		EthereumUnsignedTransaction4844Fields,
 		EthereumTransactionAccessListFields,
 		...signedTransactionSignatureFields,
 		EthereumSignedTransactionBlockGasPriceFields,
 		EthereumSignedTransactionWithBlockReferenceFields,
-	)),
+	),
 	EthereumSignedTransaction4844,
 	funtypes.ReadonlyPartial({
 		...EthereumSignedTransactionBlockGasPriceFields,
@@ -392,13 +413,13 @@ const EthSimulateV1BlobBlockHeaderTransaction = funtypes.Intersect(
 )
 
 const EthSimulateV1AuthorizationListBlockHeaderTransaction = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(
+	EthSimulateV1AdditionalProperties(
 		EthereumSignedTransaction7702Fields,
 		EthereumTransactionAccessListFields,
 		...signedTransactionSignatureFields,
 		EthereumSignedTransactionBlockGasPriceFields,
 		EthereumSignedTransactionWithBlockReferenceFields,
-	)),
+	),
 	EthereumSignedTransaction7702,
 	funtypes.ReadonlyPartial({
 		...EthereumSignedTransactionBlockGasPriceFields,
@@ -407,10 +428,10 @@ const EthSimulateV1AuthorizationListBlockHeaderTransaction = funtypes.Intersect(
 )
 
 const EthSimulateV1OptimismDepositBlockHeaderTransaction = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(
+	EthSimulateV1AdditionalProperties(
 		EthereumSignedTransactionOptimismDepositFields,
 		EthereumSignedTransactionWithBlockReferenceFields,
-	)),
+	),
 	EthereumSignedTransactionOptimismDeposit,
 	funtypes.ReadonlyPartial(EthereumSignedTransactionWithBlockReferenceFields),
 )
@@ -423,7 +444,7 @@ const EthSimulateV1BlockHeaderTransaction = funtypes.Union(
 	EthSimulateV1AuthorizationListBlockHeaderTransaction,
 	EthSimulateV1OptimismDepositBlockHeaderTransaction,
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateV1UnknownTransactionTypeFields)),
+		EthSimulateV1AdditionalProperties(ethSimulateV1UnknownTransactionTypeFields),
 		EthSimulateV1UnknownTransactionType,
 	),
 )
@@ -464,11 +485,6 @@ const ethSimulateV1BlockHeaderOptionalFields = {
 	withdrawals: funtypes.ReadonlyArray(EthSimulateV1Withdrawal),
 	totalDifficulty: EthereumQuantity,
 }
-const ethSimulateV1BlockHeaderKnownKeys = knownKeysOf(
-	ethSimulateV1BlockHeaderMutableFields,
-	ethSimulateV1BlockHeaderFields,
-	ethSimulateV1BlockHeaderOptionalFields,
-)
 
 const EthSimulateV1BlockHeaderBase = funtypes.Intersect(
 	funtypes.MutablePartial(ethSimulateV1BlockHeaderMutableFields),
@@ -477,7 +493,11 @@ const EthSimulateV1BlockHeaderBase = funtypes.Intersect(
 )
 
 export const EthSimulateV1BlockHeader = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(ethSimulateV1BlockHeaderKnownKeys),
+	EthSimulateV1AdditionalProperties(
+		ethSimulateV1BlockHeaderMutableFields,
+		ethSimulateV1BlockHeaderFields,
+		ethSimulateV1BlockHeaderOptionalFields,
+	),
 	EthSimulateV1BlockHeaderBase,
 )
 
@@ -494,13 +514,15 @@ const ethSimulateV1BlockResultFields = {
 const ethSimulateV1BlockResultOptionalFields = {
 	transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthSimulateV1BlockHeaderTransaction)),
 }
-const ethSimulateV1BlockResultKnownKeys = [
-	...ethSimulateV1BlockHeaderKnownKeys,
-	...knownKeysOf(ethSimulateV1BlockResultFields, ethSimulateV1BlockResultOptionalFields),
-]
 
 const EthSimulateV1BlockResult = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(ethSimulateV1BlockResultKnownKeys),
+	EthSimulateV1AdditionalProperties(
+		ethSimulateV1BlockHeaderMutableFields,
+		ethSimulateV1BlockHeaderFields,
+		ethSimulateV1BlockHeaderOptionalFields,
+		ethSimulateV1BlockResultFields,
+		ethSimulateV1BlockResultOptionalFields,
+	),
 	EthSimulateV1BlockHeaderBase,
 	funtypes.ReadonlyObject(ethSimulateV1BlockResultFields),
 	funtypes.ReadonlyPartial(ethSimulateV1BlockResultOptionalFields),
