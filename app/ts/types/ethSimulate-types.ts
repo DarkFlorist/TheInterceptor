@@ -1,5 +1,26 @@
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { EthereumAccessList, EthereumAddress, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumSignedTransaction, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
+import {
+	EthereumAccessList,
+	EthereumAddress,
+	EthereumBytes16,
+	EthereumBytes256,
+	EthereumBytes32,
+	EthereumData,
+	EthereumInput,
+	EthereumQuantity,
+	EthereumQuantitySmall,
+	EthereumSignatureParity,
+	EthereumSignedTransaction,
+	EthereumSignedTransaction2930,
+	EthereumSignedTransaction4844,
+	EthereumSignedTransaction7702,
+	EthereumSignedTransactionLegacy,
+	EthereumSignedTransactionOptimismDeposit,
+	EthereumSignedTransactionWithBlockReferences,
+	EthereumSignedTransaction1559,
+	EthereumTimestamp,
+	LiteralConverterParserFactory,
+} from './wire-types.js'
 import { getInvalidJSONEncodeableValuePath } from '../utils/json.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
 import * as funtypes from 'funtypes'
@@ -18,65 +39,44 @@ function knownKeysOf(...fieldSets: readonly object[]) {
 	return fieldSets.flatMap(Object.keys)
 }
 
-const blockTransactionResultKeys = ['data', 'blockHash', 'blockNumber', 'transactionIndex'] as const
+function knownKeysOfRuntype(runtype: unknown): string[] {
+	if (typeof runtype !== 'object' || runtype === null) return []
+	const fields = Object.getOwnPropertyDescriptor(runtype, 'fields')?.value
+	if (typeof fields === 'object' && fields !== null && !Array.isArray(fields)) return Object.keys(fields)
+	const alternatives = Object.getOwnPropertyDescriptor(runtype, 'alternatives')?.value
+	if (Array.isArray(alternatives)) return alternatives.flatMap(knownKeysOfRuntype)
+	const intersectees = Object.getOwnPropertyDescriptor(runtype, 'intersectees')?.value
+	if (Array.isArray(intersectees)) return intersectees.flatMap(knownKeysOfRuntype)
+	return []
+}
 
-const legacyBlockHeaderTransactionKeys = [
-	'type', 'hash', 'from', 'nonce', 'gasPrice', 'gas', 'to', 'value', 'input',
-	'chainId', 'r', 's', 'v', 'yParity', ...blockTransactionResultKeys,
-] as const
+function knownKeysOfFuntypes(...runtypes: readonly unknown[]) {
+	return [...new Set(runtypes.flatMap(knownKeysOfRuntype))]
+}
 
-const accessListBlockHeaderTransactionKeys = [
-	'type', 'hash', 'from', 'nonce', 'gasPrice', 'gas', 'to', 'value', 'input',
-	'chainId', 'accessList', 'r', 's', 'v', 'yParity', ...blockTransactionResultKeys,
-] as const
-
-const feeMarketBlockHeaderTransactionKeys = [
-	'type', 'hash', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gas',
-	'to', 'value', 'input', 'chainId', 'accessList', 'r', 's', 'v', 'yParity',
-	'gasPrice', ...blockTransactionResultKeys,
-] as const
-
-const blobBlockHeaderTransactionKeys = [
-	'type', 'hash', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas',
-	'maxFeePerBlobGas', 'gas', 'to', 'value', 'input', 'chainId', 'accessList',
-	'blobVersionedHashes', 'r', 's', 'v', 'yParity', 'gasPrice',
-	...blockTransactionResultKeys,
-] as const
-
-const authorizationListBlockHeaderTransactionKeys = [
-	'type', 'hash', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gas',
-	'to', 'value', 'input', 'chainId', 'authorizationList', 'accessList', 'r', 's',
-	'v', 'yParity', 'gasPrice', ...blockTransactionResultKeys,
-] as const
-
-const optimismDepositBlockHeaderTransactionKeys = [
-	'type', 'sourceHash', 'from', 'to', 'mint', 'value', 'gas', 'data', 'hash',
-	'gasPrice', 'nonce', 'blockHash', 'blockNumber', 'transactionIndex',
-] as const
-
-const unknownBlockHeaderTransactionKeys = ['type', 'hash'] as const
+const transactionGasPrice = funtypes.ReadonlyObject({ gasPrice: EthereumQuantity })
 
 function getSignedBlockHeaderTransactionKeys(value: unknown) {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return legacyBlockHeaderTransactionKeys
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return knownKeysOfFuntypes(EthereumSignedTransactionLegacy, EthereumSignedTransactionWithBlockReferences)
 	const type = Object.getOwnPropertyDescriptor(value, 'type')?.value
 	switch (type) {
 		case '2930':
 		case '0x1':
-			return accessListBlockHeaderTransactionKeys
+			return knownKeysOfFuntypes(EthereumSignedTransaction2930, EthereumSignedTransactionWithBlockReferences)
 		case '1559':
 		case '0x2':
-			return feeMarketBlockHeaderTransactionKeys
+			return knownKeysOfFuntypes(EthereumSignedTransaction1559, transactionGasPrice, EthereumSignedTransactionWithBlockReferences)
 		case '4844':
 		case '0x3':
-			return blobBlockHeaderTransactionKeys
+			return knownKeysOfFuntypes(EthereumSignedTransaction4844, transactionGasPrice, EthereumSignedTransactionWithBlockReferences)
 		case '7702':
 		case '0x4':
-			return authorizationListBlockHeaderTransactionKeys
+			return knownKeysOfFuntypes(EthereumSignedTransaction7702, transactionGasPrice, EthereumSignedTransactionWithBlockReferences)
 		case 'optimismDeposit':
 		case '0x7e':
-			return optimismDepositBlockHeaderTransactionKeys
+			return knownKeysOfFuntypes(EthereumSignedTransactionOptimismDeposit, EthereumSignedTransactionWithBlockReferences)
 		default:
-			return legacyBlockHeaderTransactionKeys
+			return knownKeysOfFuntypes(EthereumSignedTransactionLegacy, EthereumSignedTransactionWithBlockReferences)
 	}
 }
 
@@ -306,7 +306,7 @@ const EthSimulateV1BlockHeaderTransaction = funtypes.Union(
 		}),
 	),
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(unknownBlockHeaderTransactionKeys),
+		EthSimulateV1AdditionalProperties(knownKeysOfFuntypes(EthSimulateV1UnknownTransactionType)),
 		EthSimulateV1UnknownTransactionType,
 	),
 )

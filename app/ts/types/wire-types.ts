@@ -432,7 +432,7 @@ const EthereumTransactionLegacySignature = funtypes.Intersect(
 )
 
 type EthereumSignedTransactionOptimismDeposit = funtypes.Static<typeof EthereumSignedTransactionOptimismDeposit>
-const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject({
+export const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject({
 	type: funtypes.Literal('0x7e').withParser(LiteralConverterParserFactory('0x7e', 'optimismDeposit' as const)),
 	sourceHash: EthereumBytes32,
 	from: EthereumAddress,
@@ -447,19 +447,19 @@ const EthereumSignedTransactionOptimismDeposit = funtypes.ReadonlyObject({
 })
 
 type EthereumSignedTransactionLegacy = funtypes.Static<typeof EthereumSignedTransactionLegacy>
-const EthereumSignedTransactionLegacy = funtypes.Intersect(
+export const EthereumSignedTransactionLegacy = funtypes.Intersect(
 	EthereumUnsignedTransactionLegacy,
 	EthereumTransactionLegacySignature,
 )
 
 type EthereumSignedTransaction2930 = funtypes.Static<typeof EthereumSignedTransaction2930>
-const EthereumSignedTransaction2930 = funtypes.Intersect(
+export const EthereumSignedTransaction2930 = funtypes.Intersect(
 	EthereumUnsignedTransaction2930,
 	EthereumTransaction2930And1559And4844Signature,
 )
 
 type EthereumSignedTransaction7702 = funtypes.Static<typeof EthereumSignedTransaction7702>
-const EthereumSignedTransaction7702 = funtypes.Intersect(
+export const EthereumSignedTransaction7702 = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 		from: EthereumAddress,
@@ -493,7 +493,7 @@ export const EthereumSignedTransaction1559 = funtypes.Intersect(
 )
 
 type EthereumSignedTransaction4844 = funtypes.Static<typeof EthereumSignedTransaction4844>
-const EthereumSignedTransaction4844 = funtypes.Intersect(
+export const EthereumSignedTransaction4844 = funtypes.Intersect(
 	EthereumUnsignedTransaction4844,
 	EthereumTransaction2930And1559And4844Signature,
 )
@@ -504,7 +504,7 @@ export const EthereumSendableSignedTransaction = funtypes.Union(EthereumSignedTr
 export type EthereumSignedTransaction = funtypes.Static<typeof EthereumSignedTransaction>
 export const EthereumSignedTransaction = funtypes.Union(EthereumSendableSignedTransaction, EthereumSignedTransactionOptimismDeposit)
 
-const EthereumSignedTransactionWithBlockReferences = funtypes.ReadonlyObject({
+export const EthereumSignedTransactionWithBlockReferences = funtypes.ReadonlyObject({
 	data: EthereumInput,
 	blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
 	blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
