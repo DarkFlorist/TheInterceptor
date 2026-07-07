@@ -1880,6 +1880,34 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('skips non-configurable accessor compatibility arrays without reading descriptor value', async () => {
+		let connectedToSigner = false
+		const { fakeWindow } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
+		const web3 = { currentProvider: fakeWindow.ethereum }
+		Object.defineProperty(web3, 'accounts', {
+			configurable: false,
+			enumerable: true,
+			get: () => [],
+		})
+		Object.defineProperty(fakeWindow, 'web3', {
+			configurable: false,
+			enumerable: true,
+			value: web3,
+			writable: false,
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?non-configurable-accessor-empty-array-compatibility', async () => {
+			await waitFor(() => connectedToSigner)
+			assert.equal('isInterceptor' in (fakeWindow.ethereum as Record<string, unknown>), true)
+			assert.deepEqual(web3.accounts, [])
+			assert.equal('isInterceptor' in (web3.currentProvider as Record<string, unknown>), true)
+		})
+	})
+
 	test('updates configurable getter-only compatibility properties without throwing', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent

@@ -495,6 +495,7 @@ class InterceptorMessageListener {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: this.getControlledAccounts(), currentProvider: inpageWindow.ethereum as WindowEthereum }, 'window.web3')
 			}
 			this.web3AccountsControlled = this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
+			setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum as WindowEthereum, 'window.web3.currentProvider')
 		}
 	}
 
