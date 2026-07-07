@@ -14,23 +14,9 @@ const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-const blockCallKeys = [
-	'type', 'from', 'nonce', 'maxFeePerGas', 'maxPriorityFeePerGas', 'maxFeePerBlobGas',
-	'gasPrice', 'gas', 'to', 'value', 'input', 'data', 'chainId', 'accessList',
-	'blobVersionedHashes', 'blobs', 'r', 's', 'v', 'yParity', 'authorizationList',
-] as const
-
-const failedCallResultKeys = ['status', 'returnData', 'gasUsed', 'error', 'maxUsedGas'] as const
-
-const successfulCallResultKeys = ['status', 'returnData', 'gasUsed', 'logs', 'maxUsedGas'] as const
-
-const blockResultKeys = [
-	'author', 'number', 'hash', 'timestamp', 'gasLimit', 'gasUsed', 'baseFeePerGas',
-	'difficulty', 'extraData', 'logsBloom', 'miner', 'mixHash', 'nonce', 'parentHash',
-	'receiptsRoot', 'sha3Uncles', 'size', 'stateRoot', 'transactions', 'transactionsRoot',
-	'uncles', 'excessBlobGas', 'blobGasUsed', 'blockAccessListHash', 'parentBeaconBlockRoot',
-	'requestsHash', 'withdrawalsRoot', 'withdrawals', 'totalDifficulty', 'calls',
-] as const
+function knownKeysOf(...fieldSets: readonly object[]) {
+	return fieldSets.flatMap(Object.keys)
+}
 
 const blockTransactionResultKeys = ['data', 'blockHash', 'blockNumber', 'transactionIndex'] as const
 
@@ -131,49 +117,51 @@ export const BlockOverrides = funtypes.Partial({
 }).asReadonly()
 
 type BlockCall = funtypes.Static<typeof BlockCall>
+const blockCallFields = {
+	type: funtypes.Union(
+		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
+		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
+		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+	),
+	from: EthereumAddress,
+	nonce: EthereumQuantity,
+	maxFeePerGas: EthereumQuantity,
+	maxPriorityFeePerGas: EthereumQuantity,
+	maxFeePerBlobGas: EthereumQuantity,
+	gasPrice: EthereumQuantity,
+	gas: EthereumQuantity,
+	to: funtypes.Union(EthereumAddress, funtypes.Null),
+	value: EthereumQuantity,
+	input: EthereumInput,
+	data: EthereumInput,
+	chainId: EthereumQuantity,
+	accessList: EthereumAccessList,
+	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
+	blobs: funtypes.ReadonlyArray(EthereumData),
+	r: EthereumQuantity,
+	s: EthereumQuantity,
+	v: EthereumQuantity,
+	yParity: EthereumSignatureParity,
+	authorizationList: funtypes.ReadonlyArray(funtypes.Intersect(
+		funtypes.ReadonlyObject({
+			chainId: EthereumQuantity,
+			address: EthereumAddress,
+			nonce: EthereumQuantity,
+		}),
+		funtypes.ReadonlyPartial({
+			r: EthereumQuantity,
+			s: EthereumQuantity,
+			yParity: EthereumSignatureParity,
+		})
+	))
+}
+
 const BlockCall = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(blockCallKeys),
-	funtypes.Partial({
-		type: funtypes.Union(
-			funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
-			funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
-			funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
-			funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
-			funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
-			funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
-		),
-		from: EthereumAddress,
-		nonce: EthereumQuantity,
-		maxFeePerGas: EthereumQuantity,
-		maxPriorityFeePerGas: EthereumQuantity,
-		maxFeePerBlobGas: EthereumQuantity,
-		gasPrice: EthereumQuantity,
-		gas: EthereumQuantity,
-		to: funtypes.Union(EthereumAddress, funtypes.Null),
-		value: EthereumQuantity,
-		input: EthereumInput,
-		data: EthereumInput,
-		chainId: EthereumQuantity,
-		accessList: EthereumAccessList,
-		blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
-		blobs: funtypes.ReadonlyArray(EthereumData),
-		r: EthereumQuantity,
-		s: EthereumQuantity,
-		v: EthereumQuantity,
-		yParity: EthereumSignatureParity,
-		authorizationList: funtypes.ReadonlyArray(funtypes.Intersect(
-			funtypes.ReadonlyObject({
-				chainId: EthereumQuantity,
-				address: EthereumAddress,
-				nonce: EthereumQuantity,
-			}),
-			funtypes.ReadonlyPartial({
-				r: EthereumQuantity,
-				s: EthereumQuantity,
-				yParity: EthereumSignatureParity,
-			})
-		))
-	})
+	EthSimulateV1AdditionalProperties(knownKeysOf(blockCallFields)),
+	funtypes.Partial(blockCallFields)
 )
 
 export type StateOverrides = funtypes.Static<typeof StateOverrides>
@@ -252,31 +240,34 @@ type CallResultLogs = funtypes.Static<typeof CallResultLogs>
 const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
 
 type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
+const ethSimulateCallResultFailureFields = {
+	status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
+	returnData: EthereumData,
+	gasUsed: EthereumQuantitySmall,
+	error: ErrorWithCodeAndOptionalData
+}
+const ethSimulateCallResultOptionalFields = {
+	maxUsedGas: EthereumQuantitySmall,
+}
+
 const EthSimulateCallResultFailure = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(failedCallResultKeys),
-	funtypes.ReadonlyObject({
-		status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
-		returnData: EthereumData,
-		gasUsed: EthereumQuantitySmall,
-		error: ErrorWithCodeAndOptionalData
-	}),
-	funtypes.ReadonlyPartial({
-		maxUsedGas: EthereumQuantitySmall,
-	}),
+	EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateCallResultFailureFields, ethSimulateCallResultOptionalFields)),
+	funtypes.ReadonlyObject(ethSimulateCallResultFailureFields),
+	funtypes.ReadonlyPartial(ethSimulateCallResultOptionalFields),
 )
 
 type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
+const ethSimulateCallResultSuccessFields = {
+	returnData: EthereumData,
+	gasUsed: EthereumQuantitySmall,
+	status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
+	logs: CallResultLogs
+}
+
 const EthSimulateCallResultSuccess = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(successfulCallResultKeys),
-	funtypes.ReadonlyObject({
-		returnData: EthereumData,
-		gasUsed: EthereumQuantitySmall,
-		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
-		logs: CallResultLogs
-	}),
-	funtypes.ReadonlyPartial({
-		maxUsedGas: EthereumQuantitySmall,
-	}),
+	EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateCallResultSuccessFields, ethSimulateCallResultOptionalFields)),
+	funtypes.ReadonlyObject(ethSimulateCallResultSuccessFields),
+	funtypes.ReadonlyPartial(ethSimulateCallResultOptionalFields),
 )
 
 export type EthSimulateV1CallResult = funtypes.Static<typeof EthSimulateV1CallResult>
@@ -321,60 +312,73 @@ const EthSimulateV1BlockHeaderTransaction = funtypes.Union(
 )
 
 export type EthSimulateV1BlockHeader = funtypes.Static<typeof EthSimulateV1BlockHeader>
+const ethSimulateV1BlockHeaderMutableFields = {
+	author: EthereumAddress,
+}
+const ethSimulateV1BlockHeaderFields = {
+	number: EthereumQuantity,
+	hash: EthereumBytes32,
+	timestamp: EthereumQuantity,
+	gasLimit: EthereumQuantitySmall,
+	gasUsed: EthereumQuantitySmall,
+	baseFeePerGas: EthereumQuantity,
+}
+const ethSimulateV1BlockHeaderOptionalFields = {
+	difficulty: EthereumQuantity,
+	extraData: EthereumData,
+	logsBloom: EthereumBytes256,
+	miner: EthereumAddress,
+	mixHash: EthereumBytes32,
+	nonce: EthereumBytes16,
+	parentHash: EthereumBytes32,
+	receiptsRoot: EthereumBytes32,
+	sha3Uncles: EthereumBytes32,
+	size: EthereumQuantity,
+	stateRoot: EthereumBytes32,
+	transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthSimulateV1BlockHeaderTransaction)),
+	transactionsRoot: EthereumBytes32,
+	uncles: funtypes.ReadonlyArray(EthereumBytes32),
+	excessBlobGas: EthereumQuantity,
+	blobGasUsed: EthereumQuantity,
+	blockAccessListHash: EthereumBytes32,
+	parentBeaconBlockRoot: EthereumBytes32,
+	requestsHash: EthereumBytes32,
+	withdrawalsRoot: EthereumBytes32,
+	withdrawals: funtypes.ReadonlyArray(EthSimulateV1Withdrawal),
+	totalDifficulty: EthereumQuantity,
+}
+
 export const EthSimulateV1BlockHeader = funtypes.Intersect(
-	funtypes.MutablePartial({
-		author: EthereumAddress,
-	}),
-	funtypes.ReadonlyObject({
-		number: EthereumQuantity,
-		hash: EthereumBytes32,
-		timestamp: EthereumQuantity,
-		gasLimit: EthereumQuantitySmall,
-		gasUsed: EthereumQuantitySmall,
-		baseFeePerGas: EthereumQuantity,
-	}),
-	funtypes.ReadonlyPartial({
-		difficulty: EthereumQuantity,
-		extraData: EthereumData,
-		logsBloom: EthereumBytes256,
-		miner: EthereumAddress,
-		mixHash: EthereumBytes32,
-		nonce: EthereumBytes16,
-		parentHash: EthereumBytes32,
-		receiptsRoot: EthereumBytes32,
-		sha3Uncles: EthereumBytes32,
-		size: EthereumQuantity,
-		stateRoot: EthereumBytes32,
-		transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthSimulateV1BlockHeaderTransaction)),
-		transactionsRoot: EthereumBytes32,
-		uncles: funtypes.ReadonlyArray(EthereumBytes32),
-		excessBlobGas: EthereumQuantity,
-		blobGasUsed: EthereumQuantity,
-		blockAccessListHash: EthereumBytes32,
-		parentBeaconBlockRoot: EthereumBytes32,
-		requestsHash: EthereumBytes32,
-		withdrawalsRoot: EthereumBytes32,
-		withdrawals: funtypes.ReadonlyArray(EthSimulateV1Withdrawal),
-		totalDifficulty: EthereumQuantity,
-	}),
+	funtypes.MutablePartial(ethSimulateV1BlockHeaderMutableFields),
+	funtypes.ReadonlyObject(ethSimulateV1BlockHeaderFields),
+	funtypes.ReadonlyPartial(ethSimulateV1BlockHeaderOptionalFields),
 )
 
 type EthSimulateV1BlockResult = funtypes.Static<typeof EthSimulateV1BlockResult>
+const ethSimulateV1BlockResultFields = {
+	number: EthereumQuantity,
+	hash: EthereumBytes32,
+	timestamp: EthereumQuantity,
+	gasLimit: EthereumQuantitySmall,
+	gasUsed: EthereumQuantitySmall,
+	baseFeePerGas: EthereumQuantity,
+	calls: EthSimulateV1CallResults,
+}
+const ethSimulateV1BlockResultOptionalFields = {
+	transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthSimulateV1BlockHeaderTransaction)),
+}
+
 const EthSimulateV1BlockResult = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(blockResultKeys),
+	EthSimulateV1AdditionalProperties(knownKeysOf(
+		ethSimulateV1BlockHeaderMutableFields,
+		ethSimulateV1BlockHeaderFields,
+		ethSimulateV1BlockHeaderOptionalFields,
+		ethSimulateV1BlockResultFields,
+		ethSimulateV1BlockResultOptionalFields,
+	)),
 	EthSimulateV1BlockHeader,
-	funtypes.ReadonlyObject({
-		number: EthereumQuantity,
-		hash: EthereumBytes32,
-		timestamp: EthereumQuantity,
-		gasLimit: EthereumQuantitySmall,
-		gasUsed: EthereumQuantitySmall,
-		baseFeePerGas: EthereumQuantity,
-		calls: EthSimulateV1CallResults,
-	}),
-	funtypes.ReadonlyPartial({
-		transactions: funtypes.Union(funtypes.ReadonlyArray(EthereumBytes32), funtypes.ReadonlyArray(EthSimulateV1BlockHeaderTransaction)),
-	}),
+	funtypes.ReadonlyObject(ethSimulateV1BlockResultFields),
+	funtypes.ReadonlyPartial(ethSimulateV1BlockResultOptionalFields),
 )
 
 export type EthSimulateV1Result = funtypes.Static<typeof EthSimulateV1Result>
