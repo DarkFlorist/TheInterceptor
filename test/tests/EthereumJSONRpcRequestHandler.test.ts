@@ -53,6 +53,21 @@ function installDeferredFetchMock() {
 	}
 }
 
+function installBodyCapturingFetchMock(response: Response) {
+	const previousFetch = globalThis.fetch
+	const bodies: unknown[] = []
+	globalThis.fetch = async (_input, init) => {
+		bodies.push(init?.body)
+		return response
+	}
+	return {
+		bodies,
+		restore() {
+			globalThis.fetch = previousFetch
+		},
+	}
+}
+
 async function waitFor(condition: () => boolean, timeoutMs = 1000) {
 	const startedAt = Date.now()
 	while (!condition()) {
@@ -73,6 +88,34 @@ async function withCapturedConsoleWarn<T>(runWithCapturedWarn: (warnings: unknow
 }
 
 describe('EthereumJSONRpcRequestHandler caching', () => {
+	test('serializes BigInts in RPC request extension fields before fetching and caching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: testAddress,
+							to: testAddress,
+							value: 1n,
+							input: new Uint8Array(),
+							metadataNonce: 2n,
+						}],
+					}],
+				}],
+			})
+
+			assert.deepEqual(result, [])
+			assert.equal(fetchMock.bodies.length, 1)
+			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"from":"0x0000000000000000000000000000000000000001","to":"0x0000000000000000000000000000000000000001","value":"0x1","input":"0x","metadataNonce":"0x2"}]}]}]}')
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
 	test('does not cache transient HTTP failures', async () => {
 		const fetchMock = installFetchMock([
 			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, message: 'rate limited' } }), { status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders }),

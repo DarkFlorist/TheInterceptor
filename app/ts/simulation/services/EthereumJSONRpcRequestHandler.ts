@@ -1,6 +1,7 @@
 import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { stringToBytes, keccak256 } from '../../utils/viem.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
@@ -145,7 +146,7 @@ export class EthereumJSONRpcRequestHandler {
 		const payload = {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ jsonrpc: '2.0', id: requestId, ...serialized })
+			body: stringifyJSONWithBigInts({ jsonrpc: '2.0', id: requestId, ...serialized })
 		}
 		if (!this.caching) {
 			const startedAt = performance.now()
@@ -156,7 +157,7 @@ export class EthereumJSONRpcRequestHandler {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			}
 		}
-		const hash = keccak256(stringToBytes(JSON.stringify(serialized)))
+		const hash = keccak256(stringToBytes(stringifyJSONWithBigInts(serialized)))
 		if (bypassCache === false) {
 			const cacheValue = this.cache.get(hash)
 			if (cacheValue !== undefined) return cacheValue
