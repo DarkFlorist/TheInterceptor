@@ -334,6 +334,63 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
+	test('resolves approved eth_requestAccounts after signer account state is refreshed', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+			getTabState,
+			sendInternalWindowMessage,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x4444444444444444444444444444444444444444n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const stateAtDappReply: Array<bigint | undefined> = []
+		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
+			if (message.method === 'request_signer_to_eth_requestAccounts') {
+				void (async () => {
+					await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+					sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+				})()
+			}
+			if (message.method === 'eth_accounts' && message.requestId === 9) {
+				void getTabState(socket.tabId).then((tabState) => {
+					stateAtDappReply.push(tabState.activeSigningAddress)
+				})
+			}
+		})
+		const port = createdPort
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 9, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [account])
+		assert.deepEqual(stateAtDappReply, [account])
+		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 9)
+		assert.deepEqual(requestAccountsReplies.at(-1)?.result, ['0x4444444444444444444444444444444444444444'])
+	})
+
 	test('resolves approved eth_requestAccounts when signer rejects the account request', async () => {
 		installBrowserMock()
 		const {
