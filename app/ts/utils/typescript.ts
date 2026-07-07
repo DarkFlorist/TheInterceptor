@@ -12,6 +12,11 @@ export function assertUnreachable(value: never): never {
 	throw new Error(`Unreachable! (${ value })`)
 }
 
+export const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+export const isString = (value: unknown): value is string => typeof value === 'string'
+export const isNumber = (value: unknown): value is number => typeof value === 'number'
+export const isBigint = (value: unknown): value is bigint => typeof value === 'bigint'
+
 function isObject(maybe: unknown): maybe is Object {
 	return typeof maybe === 'object' && maybe !== null && !Array.isArray(maybe)
 }

@@ -9,6 +9,8 @@ import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 const tokenAddress = 0x1234567890123456789012345678901234567890n
+const invalidBooleanReturnData = `0x${ '0'.repeat(63) }2` as const
+const missingDynamicStringPayloadReturnData = `0x${ '0'.repeat(62) }20` as const
 
 const rpcEntry = {
 	name: 'Goerli',
@@ -105,5 +107,71 @@ describe('token identification', () => {
 			address: tokenAddress,
 		})
 		assert.equal(addressString(identifiedAddress.address), '0x1234567890123456789012345678901234567890')
+	})
+
+	test('treats malformed successful probe return data as an unknown contract', async () => {
+		const ethereum = createEthereum(createEthSimulateV1Result([
+			'0x01',
+			'0x01',
+			'0x01',
+			'0x01',
+			'0x01',
+			'0x01',
+			'0x01',
+		]))
+
+		const identifiedAddress = await itentifyAddressViaOnChainInformation(ethereum, undefined, tokenAddress)
+
+		assert.deepEqual(identifiedAddress, {
+			type: 'contract',
+			address: tokenAddress,
+		})
+	})
+
+	test('treats malformed boolean probe return data as an unknown contract', async () => {
+		const ethereum = createEthereum(createEthSimulateV1Result([
+			invalidBooleanReturnData,
+			invalidBooleanReturnData,
+			invalidBooleanReturnData,
+			'0x',
+			'0x',
+			'0x',
+			'0x',
+		]))
+
+		const identifiedAddress = await itentifyAddressViaOnChainInformation(ethereum, undefined, tokenAddress)
+
+		assert.deepEqual(identifiedAddress, {
+			type: 'contract',
+			address: tokenAddress,
+		})
+	})
+
+	test('treats malformed dynamic string probe return data as an unknown contract', async () => {
+		const ethereum = createEthereum(createEthSimulateV1Result([
+			'0x',
+			'0x',
+			'0x',
+			missingDynamicStringPayloadReturnData,
+			encodeFunctionReturn(Erc20ABI, 'symbol', ['EXT']),
+			encodeFunctionReturn(Erc20ABI, 'decimals', [6n]),
+			encodeFunctionReturn(Erc20ABI, 'totalSupply', [1000000n]),
+		]))
+
+		const identifiedAddress = await itentifyAddressViaOnChainInformation(ethereum, undefined, tokenAddress)
+
+		assert.deepEqual(identifiedAddress, {
+			type: 'contract',
+			address: tokenAddress,
+		})
+	})
+
+	test('propagates unexpected multicall result shape errors', async () => {
+		const ethereum = createEthereum(createEthSimulateV1Result(['0x']))
+
+		await assert.rejects(
+			async () => await itentifyAddressViaOnChainInformation(ethereum, undefined, tokenAddress),
+			/call length mismatch/,
+		)
 	})
 })
