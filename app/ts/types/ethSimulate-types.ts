@@ -92,10 +92,7 @@ export const BlockOverrides = funtypes.Partial({
 
 type BlockCall = funtypes.Static<typeof BlockCall>
 const blockCallLegacyTypeFields = {
-	type: funtypes.Union(
-		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
-		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
-	),
+	type: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
 }
 const blockCall2930TypeFields = {
 	type: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { EthereumJSONRpcRequestHandler, type SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthereumJSONRpcRequestHandler, stringifyJsonRpcPayload, type SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthSimulateV1BlockHeader, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
@@ -156,6 +156,36 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		})
 	})
 
+	test('rejects malformed arrays in the final JSON-RPC payload guard', () => {
+		const params = ['0x', '0x0000000000000000000000000000000000000001', null]
+		Object.defineProperty(params, 'extra', { value: 'oops', enumerable: true })
+
+		assert.throws(
+			() => stringifyJsonRpcPayload({ jsonrpc: '2.0', id: 2, method: 'personal_sign', params }),
+			/Serialized JSON-RPC payload contains an unsupported value./,
+		)
+	})
+
+	test('rejects cyclic values in the final JSON-RPC payload guard', () => {
+		const payload: { self?: unknown } = {}
+		payload.self = payload
+
+		assert.throws(
+			() => stringifyJsonRpcPayload({ jsonrpc: '2.0', id: 2, method: 'eth_simulateV1', payload }),
+			/Serialized JSON-RPC payload contains an unsupported value./,
+		)
+	})
+
+	test('rejects cyclic arrays in the final JSON-RPC payload guard', () => {
+		const params: unknown[] = []
+		params.push(params)
+
+		assert.throws(
+			() => stringifyJsonRpcPayload({ jsonrpc: '2.0', id: 2, method: 'personal_sign', params }),
+			/Serialized JSON-RPC payload contains an unsupported value./,
+		)
+	})
+
 	test('serializes configure RPC eth_simulateV1 support probe before fetching', async () => {
 		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
 			const result = await requestHandler.jsonRpcRequest({
@@ -284,6 +314,40 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 								}],
 							},
 						],
+					}],
+				}],
+			})
+		})
+	})
+
+	test('omits undefined legacy eth_simulateV1 call type before fetching', async () => {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							type: undefined,
+							from: testAddress,
+							to: testAddress,
+							value: 1n,
+						}],
+					}],
+				}],
+			})
+
+			assert.deepEqual(result, [])
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: '0x0000000000000000000000000000000000000001',
+							to: '0x0000000000000000000000000000000000000001',
+							value: '0x1',
+						}],
 					}],
 				}],
 			})
