@@ -99,6 +99,7 @@ type InterceptedRequestForward = InterceptedRequestForwardWithResult | Intercept
 
 const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
 type InterceptorApprovedMessageCandidate = {
 	readonly interceptorApproved?: unknown
@@ -129,6 +130,11 @@ type BridgeRequest = {
 
 const isMessageCandidate = (value: unknown): value is InterceptorApprovedMessageCandidate => typeof value === 'object' && value !== null
 const isErrorCandidate = (value: unknown): value is InterceptorErrorCandidate => typeof value === 'object' && value !== null
+const isRequestAccountsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'eth_requestAccounts' && (replyMethod === 'eth_accounts' || replyMethod === 'eth_requestAccounts')
+const isRequestPermissionsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'wallet_requestPermissions' && replyMethod === 'wallet_requestPermissions'
+const shouldResolveAfterRequestScopedProviderEvents = (originalRequestMethod: string | undefined, replyMethod: string) => isRequestAccountsResolution(originalRequestMethod, replyMethod) || isRequestPermissionsResolution(originalRequestMethod, replyMethod)
+const isRequestScopedProviderEventMethod = (method: string) => REQUEST_SCOPED_PROVIDER_EVENT_METHODS.has(method)
+const canFallbackRequestToRootSigner = (method: string) => method === 'eth_requestAccounts'
 
 function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForward | undefined {
 	if (!isMessageCandidate(data)) return undefined
@@ -585,8 +591,8 @@ class InterceptorMessageListener {
 		} catch (error: unknown) {
 			if (!allowRequestAccountsFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
 			if (methodAndParams.method === 'eth_accounts') throw error
-			if (methodAndParams.method !== 'eth_requestAccounts') throw error
-			if (methodAndParams.method === 'eth_requestAccounts' && InterceptorMessageListener.isUserRejectedRequestError(error)) throw error
+			if (!canFallbackRequestToRootSigner(methodAndParams.method)) throw error
+			if (InterceptorMessageListener.isUserRejectedRequestError(error)) throw error
 			return await this.fallbackSignerWindowEthereumRequest(methodAndParams)
 		}
 	}
@@ -905,20 +911,11 @@ class InterceptorMessageListener {
 			}
 		} finally {
 			if (replyRequest.requestId === undefined) return
-			if (replyRequest.method === 'accountsChanged' || replyRequest.method === 'connect' || replyRequest.method === 'disconnect' || replyRequest.method === 'chainChanged') return
+			if (isRequestScopedProviderEventMethod(replyRequest.method)) return
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
 			const originalRequestMethod = this.outstandingRequestMethods.get(replyRequest.requestId)
-			if (
-				(
-					originalRequestMethod === 'eth_requestAccounts'
-					&& (replyRequest.method === 'eth_accounts' || replyRequest.method === 'eth_requestAccounts')
-				)
-				|| (
-					originalRequestMethod === 'wallet_requestPermissions'
-					&& replyRequest.method === 'wallet_requestPermissions'
-				)
-			) {
+			if (shouldResolveAfterRequestScopedProviderEvents(originalRequestMethod, replyRequest.method)) {
 				this.resolveWithRequestScopedProviderEvents(replyRequest.requestId, replyRequest.result)
 				return
 			}

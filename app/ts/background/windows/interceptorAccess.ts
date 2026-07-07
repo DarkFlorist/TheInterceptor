@@ -19,6 +19,7 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
+import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -29,10 +30,6 @@ type OpenedDialogWithListeners = {
 let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
-
-function isAccountConnectionRequest(request: InterceptedRequest | undefined) {
-	return request?.method === 'eth_requestAccounts' || request?.method === 'wallet_requestPermissions'
-}
 
 const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
@@ -174,7 +171,7 @@ export async function requestAccessFromUser(
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const sendConnectionEvents = !isAccountConnectionRequest(request)
+	const sendConnectionEvents = request === undefined || !isAccountConnectionMethod(request.method)
 	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(ethereum, tokenPriceService, resetSimulationServices, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
@@ -286,7 +283,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
-		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionRequest(request)
+		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 		const connectionEventExcludedSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		if (!userRequestedAddressChange) {
 			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, true, connectionEventExcludedSocket)

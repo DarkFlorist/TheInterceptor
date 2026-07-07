@@ -35,6 +35,7 @@ import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -199,7 +200,7 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-	const accountOnlyMethod = parsedRequest.method === 'eth_accounts' || parsedRequest.method === 'eth_requestAccounts' || parsedRequest.method === 'wallet_requestPermissions' || parsedRequest.method === 'wallet_getPermissions'
+	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
 	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
 		// we are using network that is not supported by us
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
@@ -389,10 +390,6 @@ function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabCon
 	})
 }
 
-function isAccountConnectionRequest(method: string) {
-	return method === 'eth_requestAccounts' || method === 'wallet_requestPermissions'
-}
-
 function getAccountRequestResultAccounts(resolved: RPCReply) {
 	if (resolved.type !== 'result') return undefined
 	if (!('result' in resolved)) return undefined
@@ -402,7 +399,7 @@ function getAccountRequestResultAccounts(resolved: RPCReply) {
 }
 
 function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply, activeAddress: bigint | undefined) {
-	if (!isAccountConnectionRequest(request.method)) return
+	if (!isAccountConnectionMethod(request.method)) return
 	const accounts = request.method === 'wallet_requestPermissions' && resolved.type === 'result' && 'result' in resolved
 		? activeAddress === undefined ? [] : [activeAddress]
 		: getAccountRequestResultAccounts(resolved)
@@ -431,7 +428,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
 	let requestedSignerAccountsForSiteAccess = false
-	if (activeAddress === undefined && isAccountConnectionRequest(request.method) && getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'hasAccess') {
+	if (activeAddress === undefined && isAccountConnectionMethod(request.method) && getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'hasAccess') {
 		requestedSignerAccountsForSiteAccess = true
 		const accounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 		settings = await getSettings()
@@ -442,7 +439,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
 	}
-	const accountConnectionRequest = isAccountConnectionRequest(request.method)
+	const accountConnectionRequest = isAccountConnectionMethod(request.method)
 	const access = verifyAccess(websiteTabConnections, socket, accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1', websiteOrigin, activeAddress, settings, !accountConnectionRequest)
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
