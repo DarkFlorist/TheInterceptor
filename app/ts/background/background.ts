@@ -8,7 +8,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
-import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -18,7 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from './messageSending.js'
+import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -404,8 +404,7 @@ function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabC
 		? activeAddress === undefined ? [] : [activeAddress]
 		: getAccountRequestResultAccounts(resolved)
 	if (accounts === undefined || accounts.length === 0) return
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId], requestId: request.uniqueRequestIdentifier.requestId })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, { type: 'result' as const, method: 'accountsChanged', result: accounts, requestId: request.uniqueRequestIdentifier.requestId })
+	sendProviderConnectionEventsToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings, accounts, { requestId: request.uniqueRequestIdentifier.requestId, includeChainChanged: false })
 }
 
 async function revokeWebsitePermissions(

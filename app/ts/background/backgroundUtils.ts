@@ -23,13 +23,13 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 }
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
-	}
+	const activeAddress = await getActiveAddress(settings, tabId)
+	if (activeAddress !== undefined) return activeAddress
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return undefined
 	const tabState = await getTabState(tabId)
-	const signingAddr = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
-	if (signingAddr === undefined) return undefined
-	return await getActiveAddressEntry(signingAddr)
+	const firstSigner = tabState.signerAccounts[0]
+	if (firstSigner === undefined) return undefined
+	return await getActiveAddressEntry(firstSigner)
 }
 
 export async function getActiveAddressesForAllTabs(settings: Settings) {

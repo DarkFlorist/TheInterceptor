@@ -177,14 +177,22 @@ function connectToPort(
 ): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	if (!sendConnectionEvents) return true
-
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-
-	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
-
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
+}
+
+export function sendProviderConnectionEventsToPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	settings: Settings,
+	accounts: readonly bigint[],
+	options: { readonly requestId?: number, readonly includeChainChanged?: boolean } = {},
+) {
+	const requestScope = options.requestId === undefined ? {} : { requestId: options.requestId }
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId], ...requestScope })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, ...requestScope })
+	if (options.includeChainChanged === false) return
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId, ...requestScope })
 }
 
 function disconnectFromPort(
