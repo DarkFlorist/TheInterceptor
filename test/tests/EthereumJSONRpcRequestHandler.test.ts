@@ -116,6 +116,24 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		}
 	})
 
+	test('serializes personal_sign undefined password as explicit JSON null', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: '0x' }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'personal_sign',
+				params: ['0x', testAddress, undefined],
+			})
+
+			assert.equal(result, '0x')
+			assert.equal(fetchMock.bodies.length, 1)
+			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"personal_sign","params":["0x","0x0000000000000000000000000000000000000001",null]}')
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
 	test('rejects unserialized BigInts in RPC request extension fields', async () => {
 		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
@@ -307,6 +325,35 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		}
 	})
 
+	test('rejects wrong-branch typed eth_simulateV1 call fields before fetching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const calls: Record<string, unknown>[] = [
+			{ type: 'legacy', from: testAddress, to: testAddress, maxFeePerGas: 1n },
+			{ from: testAddress, to: testAddress, maxFeePerGas: 1n },
+			{ type: '1559', from: testAddress, to: testAddress, gasPrice: 1n },
+		]
+
+		try {
+			for (const call of calls) {
+				await assert.rejects(
+					async () => await requestHandler.jsonRpcRequest({
+						method: 'eth_simulateV1',
+						params: [{
+							blockStateCalls: [{
+								calls: [call],
+							}],
+						}],
+					}),
+					(error) => error instanceof Error && error.message.includes('must be JSON encodeable.'),
+				)
+			}
+			assert.equal(fetchMock.bodies.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
 	test('serializes eth_simulateV1 block author as an address', () => {
 		const serialized = EthSimulateV1Result.serialize([{
 			number: 1n,
@@ -424,6 +471,23 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 					transactions: [transaction],
 				}]),
 				new RegExp(`${ extensionField } must be JSON encodeable`),
+			)
+		}
+	})
+
+	test('rejects handled eth_simulateV1 transaction types before the unknown transaction branch', () => {
+		for (const type of ['0x0', '0x1', '0x2', '0x3', '0x4', '0x7e', 'legacy', '2930', '1559', '4844', '7702', 'optimismDeposit']) {
+			assert.throws(
+				() => EthSimulateV1Result.serialize([{
+					number: 1n,
+					hash: 2n,
+					timestamp: 3n,
+					gasLimit: 4n,
+					gasUsed: 5n,
+					baseFeePerGas: 6n,
+					calls: [],
+					transactions: [{ type, hash: 7n }],
+				}]),
 			)
 		}
 	})

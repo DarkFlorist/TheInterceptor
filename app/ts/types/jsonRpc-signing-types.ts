@@ -2,6 +2,11 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress } from './wire-types.js'
 import { EIP712Message } from './eip721.js'
 
+const PersonalSignPassword = funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null).withParser({
+	parse: value => ({ success: true as const, value }),
+	serialize: value => ({ success: true as const, value: value ?? null }),
+})
+
 export type OldSignTypedDataParams = funtypes.Static<typeof OldSignTypedDataParams>
 export const OldSignTypedDataParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_signTypedData'),
@@ -17,7 +22,7 @@ export type PersonalSignParams = funtypes.Static<typeof PersonalSignParams>
 export const PersonalSignParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('personal_sign'),
 	params: funtypes.Union(
-		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null)), // message, account, password
+		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress, PersonalSignPassword), // message, account, password
 		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress) // message, account
 	)
 })

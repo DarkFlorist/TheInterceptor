@@ -11,18 +11,25 @@ import {
 	EthereumQuantitySmall,
 	EthereumSignatureParity,
 	EthereumSignedTransaction,
-	EthereumSignedTransaction2930,
-	EthereumSignedTransaction4844,
-	EthereumSignedTransaction7702,
-	EthereumSignedTransactionLegacy,
-	EthereumSignedTransactionOptimismDeposit,
-	EthereumSignedTransactionWithBlockReferences,
-	EthereumSignedTransaction1559,
+	EthereumSignedTransactionBlockGasPriceFields,
+	EthereumSignatureParityFields,
+	EthereumSignedTransaction7702Fields,
+	EthereumSignedTransactionOptimismDepositFields,
+	EthereumSignedTransactionWithBlockReferenceFields,
 	EthereumTimestamp,
+	EthereumTransaction2930And1559And4844SignatureFields,
+	EthereumTransactionAccessListFields,
+	EthereumTypedTransactionVFields,
+	EthereumUnsignedTransaction1559Fields,
+	EthereumUnsignedTransaction2930Fields,
+	EthereumUnsignedTransaction4844Fields,
+	EthereumUnsignedTransactionLegacyFields,
+	EthereumUnsignedTransactionLegacyOptionalFields,
+	isUnhandledEthereumTransactionType,
 	LiteralConverterParserFactory,
+	MessageSignatureFields,
 } from './wire-types.js'
 import { isJSONEncodeable } from '../utils/json.js'
-import { isHexEncodedNumber } from '../utils/bigint.js'
 import * as funtypes from 'funtypes'
 
 type AccountOverride = funtypes.Static<typeof AccountOverride>
@@ -39,44 +46,45 @@ function knownKeysOf(...fieldSets: readonly object[]) {
 	return fieldSets.flatMap(Object.keys)
 }
 
-function knownKeysOfRuntype(runtype: unknown): string[] {
-	if (typeof runtype !== 'object' || runtype === null) return []
-	const fields = Object.getOwnPropertyDescriptor(runtype, 'fields')?.value
-	if (typeof fields === 'object' && fields !== null && !Array.isArray(fields)) return Object.keys(fields)
-	const alternatives = Object.getOwnPropertyDescriptor(runtype, 'alternatives')?.value
-	if (Array.isArray(alternatives)) return alternatives.flatMap(knownKeysOfRuntype)
-	const intersectees = Object.getOwnPropertyDescriptor(runtype, 'intersectees')?.value
-	if (Array.isArray(intersectees)) return intersectees.flatMap(knownKeysOfRuntype)
-	return []
-}
-
-function knownKeysOfFuntypes(...runtypes: readonly unknown[]) {
-	return [...new Set(runtypes.flatMap(knownKeysOfRuntype))]
-}
-
-const transactionGasPrice = funtypes.ReadonlyObject({ gasPrice: EthereumQuantity })
+const signedTransactionSignatureFields = [
+	EthereumTransaction2930And1559And4844SignatureFields,
+	EthereumSignatureParityFields,
+	EthereumTypedTransactionVFields,
+]
 
 function getSignedBlockHeaderTransactionKeys(value: unknown) {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return knownKeysOfFuntypes(EthereumSignedTransactionLegacy, EthereumSignedTransactionWithBlockReferences)
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return knownKeysOf(
+		EthereumUnsignedTransactionLegacyFields,
+		EthereumUnsignedTransactionLegacyOptionalFields,
+		MessageSignatureFields,
+		EthereumSignatureParityFields,
+		EthereumSignedTransactionWithBlockReferenceFields,
+	)
 	const type = Object.getOwnPropertyDescriptor(value, 'type')?.value
 	switch (type) {
 		case '2930':
 		case '0x1':
-			return knownKeysOfFuntypes(EthereumSignedTransaction2930, EthereumSignedTransactionWithBlockReferences)
+			return knownKeysOf(EthereumUnsignedTransaction2930Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionWithBlockReferenceFields)
 		case '1559':
 		case '0x2':
-			return knownKeysOfFuntypes(EthereumSignedTransaction1559, transactionGasPrice, EthereumSignedTransactionWithBlockReferences)
+			return knownKeysOf(EthereumUnsignedTransaction1559Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionBlockGasPriceFields, EthereumSignedTransactionWithBlockReferenceFields)
 		case '4844':
 		case '0x3':
-			return knownKeysOfFuntypes(EthereumSignedTransaction4844, transactionGasPrice, EthereumSignedTransactionWithBlockReferences)
+			return knownKeysOf(EthereumUnsignedTransaction4844Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionBlockGasPriceFields, EthereumSignedTransactionWithBlockReferenceFields)
 		case '7702':
 		case '0x4':
-			return knownKeysOfFuntypes(EthereumSignedTransaction7702, transactionGasPrice, EthereumSignedTransactionWithBlockReferences)
+			return knownKeysOf(EthereumSignedTransaction7702Fields, EthereumTransactionAccessListFields, ...signedTransactionSignatureFields, EthereumSignedTransactionBlockGasPriceFields, EthereumSignedTransactionWithBlockReferenceFields)
 		case 'optimismDeposit':
 		case '0x7e':
-			return knownKeysOfFuntypes(EthereumSignedTransactionOptimismDeposit, EthereumSignedTransactionWithBlockReferences)
+			return knownKeysOf(EthereumSignedTransactionOptimismDepositFields, EthereumSignedTransactionWithBlockReferenceFields)
 		default:
-			return knownKeysOfFuntypes(EthereumSignedTransactionLegacy, EthereumSignedTransactionWithBlockReferences)
+			return knownKeysOf(
+				EthereumUnsignedTransactionLegacyFields,
+				EthereumUnsignedTransactionLegacyOptionalFields,
+				MessageSignatureFields,
+				EthereumSignatureParityFields,
+				EthereumSignedTransactionWithBlockReferenceFields,
+			)
 	}
 }
 
@@ -117,34 +125,56 @@ export const BlockOverrides = funtypes.Partial({
 }).asReadonly()
 
 type BlockCall = funtypes.Static<typeof BlockCall>
-const blockCallFields = {
+const blockCallLegacyTypeFields = {
 	type: funtypes.Union(
 		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
 		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
-		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
-		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
-		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
-		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	),
+}
+const blockCall2930TypeFields = {
+	type: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+}
+const blockCall1559TypeFields = {
+	type: funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+}
+const blockCall4844TypeFields = {
+	type: funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+}
+const blockCall7702TypeFields = {
+	type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+}
+const blockCallCommonFields = {
 	from: EthereumAddress,
 	nonce: EthereumQuantity,
-	maxFeePerGas: EthereumQuantity,
-	maxPriorityFeePerGas: EthereumQuantity,
-	maxFeePerBlobGas: EthereumQuantity,
-	gasPrice: EthereumQuantity,
 	gas: EthereumQuantity,
 	to: funtypes.Union(EthereumAddress, funtypes.Null),
 	value: EthereumQuantity,
 	input: EthereumInput,
 	data: EthereumInput,
 	chainId: EthereumQuantity,
+}
+const blockCallGasPriceFields = {
+	gasPrice: EthereumQuantity,
+}
+const blockCallFeeMarketFields = {
+	maxFeePerGas: EthereumQuantity,
+	maxPriorityFeePerGas: EthereumQuantity,
+}
+const blockCallAccessListFields = {
 	accessList: EthereumAccessList,
+}
+const blockCallBlobFields = {
+	maxFeePerBlobGas: EthereumQuantity,
 	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
 	blobs: funtypes.ReadonlyArray(EthereumData),
+}
+const blockCallSignatureFields = {
 	r: EthereumQuantity,
 	s: EthereumQuantity,
 	v: EthereumQuantity,
 	yParity: EthereumSignatureParity,
+}
+const blockCallAuthorizationListFields = {
 	authorizationList: funtypes.ReadonlyArray(funtypes.Intersect(
 		funtypes.ReadonlyObject({
 			chainId: EthereumQuantity,
@@ -159,9 +189,94 @@ const blockCallFields = {
 	))
 }
 
-const BlockCall = funtypes.Intersect(
-	EthSimulateV1AdditionalProperties(knownKeysOf(blockCallFields)),
-	funtypes.Partial(blockCallFields)
+function getBlockCallKeys(value: unknown) {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return knownKeysOf(
+		blockCallLegacyTypeFields,
+		blockCallCommonFields,
+		blockCallGasPriceFields,
+		blockCallSignatureFields,
+	)
+	const type = Object.getOwnPropertyDescriptor(value, 'type')?.value
+	switch (type) {
+		case '2930':
+		case '0x1':
+			return knownKeysOf(blockCall2930TypeFields, blockCallCommonFields, blockCallGasPriceFields, blockCallAccessListFields, blockCallSignatureFields)
+		case '1559':
+		case '0x2':
+			return knownKeysOf(blockCall1559TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallSignatureFields)
+		case '4844':
+		case '0x3':
+			return knownKeysOf(blockCall4844TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallBlobFields, blockCallSignatureFields)
+		case '7702':
+		case '0x4':
+			return knownKeysOf(blockCall7702TypeFields, blockCallCommonFields, blockCallFeeMarketFields, blockCallAccessListFields, blockCallAuthorizationListFields, blockCallSignatureFields)
+		default:
+			return knownKeysOf(
+				blockCallLegacyTypeFields,
+				blockCallCommonFields,
+				blockCallGasPriceFields,
+				blockCallSignatureFields,
+			)
+	}
+}
+
+const BlockCallAdditionalProperties = funtypes.Unknown.withParser({
+	parse: (value) => validateAdditionalProperties(value, new Set(getBlockCallKeys(value))),
+	serialize: (value) => validateAdditionalProperties(value, new Set(getBlockCallKeys(value))),
+})
+
+const BlockCall = funtypes.Union(
+	funtypes.Intersect(
+		BlockCallAdditionalProperties,
+		funtypes.Partial({
+			...blockCallLegacyTypeFields,
+			...blockCallCommonFields,
+			...blockCallGasPriceFields,
+			...blockCallSignatureFields,
+		})
+	),
+	funtypes.Intersect(
+		BlockCallAdditionalProperties,
+		funtypes.ReadonlyObject(blockCall2930TypeFields),
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallGasPriceFields,
+			...blockCallAccessListFields,
+			...blockCallSignatureFields,
+		})
+	),
+	funtypes.Intersect(
+		BlockCallAdditionalProperties,
+		funtypes.ReadonlyObject(blockCall1559TypeFields),
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallFeeMarketFields,
+			...blockCallAccessListFields,
+			...blockCallSignatureFields,
+		})
+	),
+	funtypes.Intersect(
+		BlockCallAdditionalProperties,
+		funtypes.ReadonlyObject(blockCall4844TypeFields),
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallFeeMarketFields,
+			...blockCallAccessListFields,
+			...blockCallBlobFields,
+			...blockCallSignatureFields,
+		})
+	),
+	funtypes.Intersect(
+		BlockCallAdditionalProperties,
+		funtypes.ReadonlyObject(blockCall7702TypeFields),
+		funtypes.Partial({
+			...blockCallCommonFields,
+			...blockCallFeeMarketFields,
+			...blockCallAccessListFields,
+			...blockCallAuthorizationListFields,
+			...blockCallSignatureFields,
+		})
+	)
 )
 
 export type StateOverrides = funtypes.Static<typeof StateOverrides>
@@ -284,29 +399,26 @@ const EthSimulateV1Withdrawal = funtypes.ReadonlyObject({
 	amount: EthereumQuantity,
 })
 
-const EthSimulateV1UnknownTransactionType = funtypes.ReadonlyObject({
+const ethSimulateV1UnknownTransactionTypeFields = {
 	hash: EthereumBytes32,
 	type: funtypes.String.withConstraint((type) => {
-		if (!isHexEncodedNumber(type)) return false
-		const alreadyHandled = ['0x0', '0x1', '0x2', '0x3', '0x4', '0x7e']
-		return !alreadyHandled.includes(type)
+		return isUnhandledEthereumTransactionType(type)
 	}),
-})
+}
+
+const EthSimulateV1UnknownTransactionType = funtypes.ReadonlyObject(ethSimulateV1UnknownTransactionTypeFields)
 
 const EthSimulateV1BlockHeaderTransaction = funtypes.Union(
 	funtypes.Intersect(
 		EthSimulateV1SignedTransactionAdditionalProperties,
 		EthereumSignedTransaction,
 		funtypes.ReadonlyPartial({
-			data: EthereumInput,
-			gasPrice: EthereumQuantity,
-			blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
-			blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
-			transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
+			...EthereumSignedTransactionWithBlockReferenceFields,
+			...EthereumSignedTransactionBlockGasPriceFields,
 		}),
 	),
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(knownKeysOfFuntypes(EthSimulateV1UnknownTransactionType)),
+		EthSimulateV1AdditionalProperties(knownKeysOf(ethSimulateV1UnknownTransactionTypeFields)),
 		EthSimulateV1UnknownTransactionType,
 	),
 )
