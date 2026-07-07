@@ -4,7 +4,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
-import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
+import { decodeFunctionOutputSafely, encodeFunctionCall } from './abiRuntime.js'
 import { isBigint, isBoolean, isNumberOrBigint, isString } from './typescript.js'
 
 type EOA = {
@@ -39,25 +39,9 @@ type MulticallResult = {
 	returnData: Uint8Array
 }
 
-const viemAbiDataDecodeErrorNames = new Set([
-	'AbiDecodingDataSizeInvalidError',
-	'AbiDecodingDataSizeTooSmallError',
-	'AbiDecodingZeroDataError',
-	'InvalidBytesBooleanError',
-	'PositionOutOfBoundsError',
-])
-
-const isViemAbiDataDecodeError = (error: unknown) => error instanceof Error && viemAbiDataDecodeErrorNames.has(error.name)
-
-const decodeFunctionOutputSafely = <T>(abi: Abi, functionName: string, result: MulticallResult, isExpectedType: (value: unknown) => value is T): T | undefined => {
+const decodeMulticallFunctionOutputSafely = <T>(abi: Abi, functionName: string, result: MulticallResult, isExpectedType: (value: unknown) => value is T): T | undefined => {
 	if (!result.success || result.returnData.length === 0) return undefined
-	try {
-		const decoded = decodeFunctionOutput(abi, functionName, result.returnData)
-		return isExpectedType(decoded) ? decoded : undefined
-	} catch (error) {
-		if (!isViemAbiDataDecodeError(error)) throw error
-		return undefined
-	}
+	return decodeFunctionOutputSafely(abi, functionName, result.returnData, isExpectedType)
 }
 
 export async function itentifyAddressViaOnChainInformation(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, address: EthereumAddress): Promise<IdentifiedAddress> {
@@ -77,20 +61,20 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 
 	const [isErc721, hasMetadata, isErc1155, name, symbol, decimals, totalSupply] = await tryAggregateMulticall(ethereumClientService, requestAbortController, calls)
 	if (isErc721 === undefined || hasMetadata === undefined || isErc1155 === undefined || name === undefined || symbol === undefined || decimals === undefined || totalSupply === undefined) throw new Error('Multicall result is too short')
-	const supportsErc721 = decodeFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc721, isBoolean)
-	const supportsMetadata = decodeFunctionOutputSafely(Erc721ABI, 'supportsInterface', hasMetadata, isBoolean)
-	const supportsErc1155 = decodeFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc1155, isBoolean)
-	const tokenName = decodeFunctionOutputSafely(Erc20ABI, 'name', name, isString)
-	const tokenSymbol = decodeFunctionOutputSafely(Erc20ABI, 'symbol', symbol, isString)
-	const tokenDecimals = decodeFunctionOutputSafely(Erc20ABI, 'decimals', decimals, isNumberOrBigint)
-	const tokenSupply = decodeFunctionOutputSafely(Erc20ABI, 'totalSupply', totalSupply, isBigint)
+	const supportsErc721 = decodeMulticallFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc721, isBoolean)
+	const supportsMetadata = decodeMulticallFunctionOutputSafely(Erc721ABI, 'supportsInterface', hasMetadata, isBoolean)
+	const supportsErc1155 = decodeMulticallFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc1155, isBoolean)
+	const tokenName = decodeMulticallFunctionOutputSafely(Erc20ABI, 'name', name, isString)
+	const tokenSymbol = decodeMulticallFunctionOutputSafely(Erc20ABI, 'symbol', symbol, isString)
+	const tokenDecimals = decodeMulticallFunctionOutputSafely(Erc20ABI, 'decimals', decimals, isNumberOrBigint)
+	const tokenSupply = decodeMulticallFunctionOutputSafely(Erc20ABI, 'totalSupply', totalSupply, isBigint)
 
 	if (supportsErc721 === true) {
 		return {
 			type: 'ERC721',
 			address,
-			name: supportsMetadata === true ? decodeFunctionOutputSafely(Erc721ABI, 'name', name, isString) ?? checksummedAddress(address) : checksummedAddress(address),
-			symbol: supportsMetadata === true ? decodeFunctionOutputSafely(Erc721ABI, 'symbol', symbol, isString) ?? '???' : '???',
+			name: supportsMetadata === true ? decodeMulticallFunctionOutputSafely(Erc721ABI, 'name', name, isString) ?? checksummedAddress(address) : checksummedAddress(address),
+			symbol: supportsMetadata === true ? decodeMulticallFunctionOutputSafely(Erc721ABI, 'symbol', symbol, isString) ?? '???' : '???',
 			entrySource: 'OnChain'
 		}
 	}
