@@ -89,12 +89,12 @@ export async function getLastKnownCurrentTabId() {
 	const tabId = await tabIdPromise
 	// skip restricted or insufficient permission tabs
 	if (tabs[0]?.id === undefined || tabs[0]?.url === undefined) return tabId
-	if (isRestrictedTabUrl(tabs[0].url)) return tabId
+	if (isExtensionPageUrl(tabs[0].url)) return tabId
 	if (tabId !== tabs[0].id) await saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
 }
 
-function isRestrictedTabUrl(urlString: string) {
+function isExtensionPageUrl(urlString: string) {
 	if (urlString.startsWith('/html/') || urlString.startsWith('/html3/')) return true
 	try {
 		const url = new URL(urlString)

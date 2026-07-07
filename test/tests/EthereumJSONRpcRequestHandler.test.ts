@@ -134,6 +134,44 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		}
 	})
 
+	test('serializes configure RPC eth_simulateV1 support probe before fetching', async () => {
+		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						blockOverrides: {
+							baseFeePerGas: 0x9n,
+						},
+						stateOverrides: {
+							'0xc000000000000000000000000000000000000000': {
+								balance: 0x1312d0000n,
+							},
+						},
+						calls: [{
+							type: '1559',
+							from: 0xc000000000000000000000000000000000000000n,
+							to: 0xc000000000000000000000000000000000000000n,
+							value: 0x1n,
+							maxFeePerGas: 0xfn,
+						}],
+					}],
+					validation: true,
+					traceTransfers: true,
+				}, 'latest'],
+			})
+
+			assert.deepEqual(result, [])
+			assert.equal(fetchMock.bodies.length, 1)
+			assert.equal(fetchMock.bodies[0], '{"jsonrpc":"2.0","id":2,"method":"eth_simulateV1","params":[{"blockStateCalls":[{"calls":[{"type":"0x2","from":"0xc000000000000000000000000000000000000000","to":"0xc000000000000000000000000000000000000000","value":"0x1","maxFeePerGas":"0xf"}],"stateOverrides":{"0xc000000000000000000000000000000000000000":{"balance":"0x1312d0000"}},"blockOverrides":{"baseFeePerGas":"0x9"}}],"traceTransfers":true,"validation":true},"latest"]}')
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
 	test('rejects unserialized BigInts in RPC request extension fields', async () => {
 		const fetchMock = installBodyCapturingFetchMock(new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: [] }), { status: HTTP_STATUS_OK, headers: responseHeaders }))
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)

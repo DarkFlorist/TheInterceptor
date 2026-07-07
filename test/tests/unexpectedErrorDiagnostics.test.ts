@@ -16,23 +16,30 @@ type RuntimeMessage = {
 async function captureConsoleCalls<T>(run: () => Promise<T>) {
 	const originalConsoleError = console.error
 	const originalConsoleTrace = console.trace
+	const originalConsoleWarn = console.warn
 	const consoleErrors: unknown[][] = []
 	const consoleTraces: unknown[][] = []
+	const consoleWarns: unknown[][] = []
 	console.error = (...args: unknown[]) => {
 		consoleErrors.push(args)
 	}
 	console.trace = (...args: unknown[]) => {
 		consoleTraces.push(args)
 	}
+	console.warn = (...args: unknown[]) => {
+		consoleWarns.push(args)
+	}
 	try {
 		return {
 			result: await run(),
 			consoleErrors,
 			consoleTraces,
+			consoleWarns,
 		}
 	} finally {
 		console.error = originalConsoleError
 		console.trace = originalConsoleTrace
+		console.warn = originalConsoleWarn
 	}
 }
 
@@ -395,6 +402,24 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.userVisible, false)
 		assert.equal(diagnostic?.code, 'test_local_recovery')
 		assert.equal(diagnostic?.details, '{"tokenId":"1"}')
+	})
+
+	test('logs local recovery diagnostics as readable console strings', async () => {
+		browserMock.reset()
+		const { reportLocalRecovery } = await modulesPromise
+
+		const { consoleWarns } = await captureConsoleCalls(async () => await reportLocalRecovery(new Error('decode failed'), {
+			code: 'test_local_recovery_log',
+			message: 'Continuing after a recovered test failure.',
+			details: { tokenId: 1n },
+		}))
+
+		assert.equal(consoleWarns.length, 2)
+		assert.equal(consoleWarns[0]?.length, 1)
+		assert.equal(typeof consoleWarns[0]?.[0], 'string')
+		assert.equal(String(consoleWarns[0]?.[0]).startsWith('Local Interceptor recovery: code=test_local_recovery_log'), true)
+		assert.equal(String(consoleWarns[0]?.[0]).includes('[object Object]'), false)
+		assert.equal(consoleWarns[1]?.[0], 'Local Interceptor recovery details: {"tokenId":"1"}')
 	})
 
 	test('best-effort local recovery does not block on diagnostic persistence', async () => {
