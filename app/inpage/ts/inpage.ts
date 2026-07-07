@@ -270,6 +270,12 @@ type ForwardedDiagnosticsRequestContext = {
 	readonly requestMethod?: string
 }
 
+type OutstandingRequest = {
+	readonly future: InterceptorFuture<unknown>
+	readonly method: string
+	requestScopedProviderEventCallbacks?: (() => void)[]
+}
+
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
 
@@ -383,9 +389,7 @@ class InterceptorMessageListener {
 	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private extensionMessagePort: MessagePort | undefined = undefined
 
-	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
-	private readonly outstandingRequestMethods: Map<number, string> = new Map()
-	private readonly requestScopedProviderEventCallbacks: Map<number, (() => void)[]> = new Map()
+	private readonly outstandingRequests: Map<number, OutstandingRequest> = new Map()
 
 	private readonly onMessageCallBacks: Set<((message: ProviderMessage) => void)> = new Set()
 	private readonly onConnectCallBacks: Set<((connectInfo: ProviderConnectInfo) => void)> = new Set()
@@ -505,9 +509,11 @@ class InterceptorMessageListener {
 		this.requestId++
 		const pendingRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
-		this.outstandingRequests.set(pendingRequestId, future)
-		this.outstandingRequestMethods.set(pendingRequestId, messageMethodAndParams.method)
-		this.requestScopedProviderEventCallbacks.set(pendingRequestId, [])
+		this.outstandingRequests.set(pendingRequestId, {
+			future,
+			method: messageMethodAndParams.method,
+			requestScopedProviderEventCallbacks: [],
+		})
 		try {
 			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
 			const message: BridgeRequest = {
@@ -522,14 +528,13 @@ class InterceptorMessageListener {
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
-			this.outstandingRequestMethods.delete(pendingRequestId)
-			this.requestScopedProviderEventCallbacks.delete(pendingRequestId)
 		}
 	}
 
 	private readonly drainRequestScopedProviderEventCallbacks = (requestId: number) => {
-		const providerEventCallbacks = this.requestScopedProviderEventCallbacks.get(requestId) ?? []
-		this.requestScopedProviderEventCallbacks.delete(requestId)
+		const outstandingRequest = this.outstandingRequests.get(requestId)
+		const providerEventCallbacks = outstandingRequest?.requestScopedProviderEventCallbacks ?? []
+		if (outstandingRequest !== undefined) delete outstandingRequest.requestScopedProviderEventCallbacks
 		let firstCallbackError: unknown
 		for (const callback of providerEventCallbacks) {
 			try {
@@ -543,7 +548,7 @@ class InterceptorMessageListener {
 
 	private readonly resolveWithRequestScopedProviderEvents = (requestId: number, value: unknown) => {
 		const callbackError = this.drainRequestScopedProviderEventCallbacks(requestId)
-		this.outstandingRequests.get(requestId)?.resolve(value)
+		this.outstandingRequests.get(requestId)?.future.resolve(value)
 		if (callbackError !== undefined) throw callbackError
 	}
 
@@ -849,7 +854,7 @@ class InterceptorMessageListener {
 						}
 					}
 					if (replayedForSettledRequest) {
-						const callbacks = this.requestScopedProviderEventCallbacks.get(replyRequest.requestId)
+						const callbacks = this.outstandingRequests.get(replyRequest.requestId)?.requestScopedProviderEventCallbacks
 						if (callbacks !== undefined) {
 							callbacks.push(notifyAccountsChanged)
 							return
@@ -868,7 +873,7 @@ class InterceptorMessageListener {
 						}
 					}
 					if (replyRequest.requestId !== undefined) {
-						const callbacks = this.requestScopedProviderEventCallbacks.get(replyRequest.requestId)
+						const callbacks = this.outstandingRequests.get(replyRequest.requestId)?.requestScopedProviderEventCallbacks
 						if (callbacks !== undefined) {
 							callbacks.push(notifyConnect)
 							return
@@ -914,12 +919,12 @@ class InterceptorMessageListener {
 			if (isRequestScopedProviderEventMethod(replyRequest.method)) return
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
-			const originalRequestMethod = this.outstandingRequestMethods.get(replyRequest.requestId)
+			const originalRequestMethod = pending.method
 			if (shouldResolveAfterRequestScopedProviderEvents(originalRequestMethod, replyRequest.method)) {
 				this.resolveWithRequestScopedProviderEvents(replyRequest.requestId, replyRequest.result)
 				return
 			}
-			return pending.resolve(replyRequest.result)
+			return pending.future.resolve(replyRequest.result)
 		}
 	}
 
@@ -972,7 +977,7 @@ class InterceptorMessageListener {
 				if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 				const pending = this.outstandingRequests.get(forwardRequest.requestId)
 				if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
-				return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
+				return pending.future.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 			}
 			if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
 				if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
@@ -1023,17 +1028,17 @@ class InterceptorMessageListener {
 							method: forwardRequest.method,
 							type: 'result',
 							result: signerReply.reply,
-						})
-						return
-					}
-					return pendingRequest.reject(this.parseRpcError(signerReply.error))
+					})
+					return
 				}
-				await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
-			} catch(error: unknown) {
-				if (error instanceof Error) return pendingRequest.reject(error)
-				return pendingRequest.reject(this.parseRpcError(error))
+				return pendingRequest.future.reject(this.parseRpcError(signerReply.error))
 			}
+			await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
 		} catch(error: unknown) {
+			if (error instanceof Error) return pendingRequest.future.reject(error)
+			return pendingRequest.future.reject(this.parseRpcError(error))
+		}
+	} catch(error: unknown) {
 			console.error(messageEvent)
 			console.error(error)
 			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
@@ -1041,8 +1046,8 @@ class InterceptorMessageListener {
 			if (requestId === undefined) return
 			const pendingRequest = this.outstandingRequests.get(requestId)
 			if (pendingRequest === undefined) return
-			if (error instanceof Error) return pendingRequest.reject(error)
-			return pendingRequest.reject(this.parseRpcError(error))
+			if (error instanceof Error) return pendingRequest.future.reject(error)
+			return pendingRequest.future.reject(this.parseRpcError(error))
 		}
 	}
 
@@ -1177,17 +1182,7 @@ class InterceptorMessageListener {
 			this.signerWindowEthereumRequest = signerWindowEthereum.request.bind(signerWindowEthereum) // store the request object to signer
 			this.fallbackSignerWindowEthereumRequest = mapSignerIsUsable ? inpageWindow.ethereum.request.bind(inpageWindow.ethereum) : undefined
 			subscribeToSignerEvents(signerWindowEthereum, signerName)
-			inpageWindow.ethereum = {
-				isInterceptor: true,
-				isConnected: this.WindowEthereumIsConnected.bind(signerWindowEthereum),
-				request: this.WindowEthereumRequest.bind(signerWindowEthereum),
-				send: this.WindowEthereumSend.bind(signerWindowEthereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(signerWindowEthereum),
-				on: this.WindowEthereumOn.bind(signerWindowEthereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(signerWindowEthereum),
-				enable: this.WindowEthereumEnable.bind(signerWindowEthereum),
-				...this.unsupportedMethods(signerWindowEthereum),
-			}
+			inpageWindow.ethereum = this.createInterceptorProvider(signerWindowEthereum)
 			this.installControlledAccountCompatibilityProperties()
 			this.connectToSigner(signerName)
 			return
