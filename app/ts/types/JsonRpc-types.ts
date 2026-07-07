@@ -277,10 +277,13 @@ const RequestPermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
 }).asReadonly()
 
-type RevokePermissions = funtypes.Static<typeof RevokePermissions>
-const RevokePermissions = funtypes.ReadonlyObject({
+const EmptyPermissionOptions = funtypes.Sealed(funtypes.ReadonlyObject({}))
+const WalletRevokePermissionsParams = funtypes.Sealed(funtypes.ReadonlyObject({ eth_accounts: EmptyPermissionOptions }), { deep: true })
+
+export type WalletRevokePermissions = funtypes.Static<typeof WalletRevokePermissions>
+export const WalletRevokePermissions = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_revokePermissions'),
-	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
+	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
 }).asReadonly()
 
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
@@ -401,7 +404,6 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	OldSignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,
-	RevokePermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
@@ -425,7 +427,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 // should be same as the above list, except with `params: funtypes.Unknown`
 export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
-	method: funtypes.Union(EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
+	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
 })
 
 export type OriginalSendRequestParameters = funtypes.Static<typeof OriginalSendRequestParameters>

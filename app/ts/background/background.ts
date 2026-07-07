@@ -20,7 +20,7 @@ import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } 
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain } from '../types/JsonRpc-types.js'
+import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -229,7 +229,6 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v4': return await personalSign(ethereum, tokenPriceService, activeAddress, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
-		case 'wallet_revokePermissions': return await revokeWebsitePermissions(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, website.websiteOrigin)
 		case 'wallet_getPermissions': return await getPermissions()
 		case 'eth_accounts': return await getAccounts(activeAddress)
 		case 'eth_requestAccounts': return await getAccounts(activeAddress)
@@ -404,27 +403,9 @@ async function revokeWebsitePermissions(
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
-function hasExactlyEthAccountsKey(value: unknown): value is { readonly eth_accounts: unknown } {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-	const keys = Object.keys(value)
-	return keys.length === 1 && keys[0] === 'eth_accounts'
-}
-
-function hasNoKeys(value: unknown) {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-	return Object.keys(value).length === 0
-}
-
-function isExactWalletRevokePermissionsRequest(request: InterceptedRequest) {
-	if (!('params' in request) || request.params === undefined || request.params.length !== 1) return false
-	const requestedPermissions = request.params[0]
-	if (!hasExactlyEthAccountsKey(requestedPermissions)) return false
-	return hasNoKeys(requestedPermissions.eth_accounts)
-}
-
 function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
-	if (maybeParsedRequest.success && maybeParsedRequest.value.method === 'wallet_revokePermissions' && isExactWalletRevokePermissionsRequest(request)) return maybeParsedRequest.value
+	const maybeParsedRequest = WalletRevokePermissions.safeParse(request)
+	if (maybeParsedRequest.success) return maybeParsedRequest.value
 	replyToInterceptedRequest(websiteTabConnections, {
 		type: 'result',
 		method: request.method,
