@@ -9,6 +9,7 @@ type FakeWindowOptions = {
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
 	readonly handleSignerRequest?: (request: { readonly method: string, readonly params?: readonly unknown[] }) => unknown | Promise<unknown>
 	readonly signerChainIdReply?: unknown
+	readonly signerInitialSelectedAddress?: string
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -28,18 +29,21 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1' }: FakeWindowOptions = {}) {
+function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
 	const backgroundSignerChainChanges: unknown[] = []
 	const interceptorErrorPayloads: unknown[] = []
 	const signerAccounts = ['0x1111111111111111111111111111111111111111']
+	const signerEventHandlers = new Map<string, Set<(value: unknown) => void>>()
 	let blockRequestAccounts = false
 	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined
+	let resolvePendingRequestAccounts: ((accounts: string[]) => void) | undefined
 	let bridgePort: MessagePort | undefined
 
 	const fakeSigner = {
+		...(signerInitialSelectedAddress === undefined ? {} : { selectedAddress: signerInitialSelectedAddress }),
 		isMetaMask: true,
 		isConnected: () => true,
 		request: async ({ method, params }: { method: string, params?: readonly unknown[] }) => {
@@ -54,7 +58,8 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 					return signerAccounts
 				case 'eth_requestAccounts':
 					if (blockRequestAccounts) {
-						return await new Promise<string[]>((_resolve, reject) => {
+						return await new Promise<string[]>((resolve, reject) => {
+							resolvePendingRequestAccounts = resolve
 							rejectPendingRequestAccounts = reject
 						})
 					}
@@ -63,12 +68,24 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 					throw new Error(`Unexpected signer request: ${ method }`)
 			}
 		},
-		on: () => fakeSigner,
-		removeListener: () => fakeSigner,
+		on: (kind: string, callback: (value: unknown) => void) => {
+			const existing = signerEventHandlers.get(kind)
+			if (existing === undefined) {
+				signerEventHandlers.set(kind, new Set([callback]))
+				return fakeSigner
+			}
+			existing.add(callback)
+			return fakeSigner
+		},
+		removeListener: (kind: string, callback: (value: unknown) => void) => {
+			signerEventHandlers.get(kind)?.delete(callback)
+			return fakeSigner
+		},
 	}
 
 	const fakeWindow = {
 		ethereum: fakeSigner,
+		...(signerInitialSelectedAddress === undefined ? {} : { web3: { accounts: [signerInitialSelectedAddress], currentProvider: fakeSigner } }),
 		addEventListener: (type: string, listener: Listener) => {
 			const existing = listeners.get(type)
 			if (existing === undefined) {
@@ -111,7 +128,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, activeAddress: signerAccounts[0] },
+						result: { metamaskCompatibilityMode: true, activeAddress: '' },
 					})
 					return
 				case 'InterceptorError':
@@ -158,7 +175,11 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		interceptorErrorPayloads,
 		sendBackgroundMessage,
 		setBlockRequestAccounts: (value: boolean) => { blockRequestAccounts = value },
+		resolvePendingRequestAccounts: (accounts: string[]) => resolvePendingRequestAccounts?.(accounts),
 		rejectPendingRequestAccounts: (error: { code: number, message: string }) => rejectPendingRequestAccounts?.(error),
+		emitSignerEvent: (kind: string, value: unknown) => {
+			for (const callback of signerEventHandlers.get(kind) ?? []) callback(value)
+		},
 	}
 }
 
@@ -292,7 +313,7 @@ describe('inpage signer bridge', () => {
 				if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
 				assert.equal(error.code, -32004)
 			}
-			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: signerAccounts[0] })
+			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: null })
 			let batchCallbackCount = 0
 			const batchReply = await new Promise<unknown>((resolve, reject) => {
 				provider.sendAsync([
@@ -424,7 +445,217 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('delivers request-scoped accountsChanged after eth_requestAccounts resolves even when address is cached', async () => {
+	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		let mutationAttempted = false
+		let pendingRequest: InpageRequest | undefined
+		let pendingSendBackgroundMessage: ((data: unknown) => void) | undefined
+		let exposedWindow: ReturnType<typeof createFakeWindow>['fakeWindow'] | undefined
+		const createdWindow = createFakeWindow({
+			signerInitialSelectedAddress: signerAccount,
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_requestAccounts') return false
+				if (exposedWindow === undefined) throw new Error('fake window was not initialized')
+				try {
+					;(exposedWindow.ethereum as { selectedAddress?: string }).selectedAddress = signerAccount
+				} catch (error: unknown) {
+					if (!(error instanceof TypeError)) throw error
+				}
+				if ('web3' in exposedWindow && exposedWindow.web3 !== undefined) {
+					try {
+						;(exposedWindow.web3 as { accounts?: readonly string[] }).accounts = [signerAccount]
+					} catch (error: unknown) {
+						if (!(error instanceof TypeError)) throw error
+					}
+				}
+				mutationAttempted = true
+				pendingRequest = request
+				pendingSendBackgroundMessage = sendBackgroundMessageForRequest
+				return true
+			},
+		})
+		const { fakeWindow, signerRequests } = createdWindow
+		exposedWindow = fakeWindow
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?selected-address-mutation-mask', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { readonly result: unknown }
+				selectedAddress?: string
+			}
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			assert.equal(provider.selectedAddress, undefined)
+			assert.deepEqual(provider.send({ id: 1, method: 'eth_accounts', params: [] }).result, [])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
+
+			const requestPromise = provider.request({ method: 'eth_requestAccounts' })
+			await waitFor(() => mutationAttempted)
+			assert.equal(provider.selectedAddress, undefined)
+			assert.deepEqual(provider.send({ id: 2, method: 'eth_accounts', params: [] }).result, [])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
+			if (pendingRequest === undefined || pendingSendBackgroundMessage === undefined) throw new Error('eth_requestAccounts was not captured')
+
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'connect',
+				result: ['0x1'],
+			})
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [signerAccount],
+			})
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'eth_accounts',
+				result: [signerAccount],
+			})
+			const accountReply = await requestPromise
+			assert.deepEqual(accountReply, [signerAccount])
+			assert.equal(provider.selectedAddress, signerAccount)
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [signerAccount],
+			})
+			await waitFor(() => provider.selectedAddress === signerAccount)
+			assert.deepEqual(provider.send({ id: 3, method: 'eth_accounts', params: [] }).result, [signerAccount])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [signerAccount])
+		})
+	})
+
+	test('freezes non-configurable writable compatibility properties before signer mutation can expose accounts', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		let mutationAttempted = false
+		let pendingRequest: InpageRequest | undefined
+		let pendingSendBackgroundMessage: ((data: unknown) => void) | undefined
+		let exposedWindow: ReturnType<typeof createFakeWindow>['fakeWindow'] | undefined
+		const createdWindow = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_requestAccounts') return false
+				if (exposedWindow === undefined) throw new Error('fake window was not initialized')
+				try {
+					;(exposedWindow.ethereum as { selectedAddress?: string }).selectedAddress = signerAccount
+				} catch (error: unknown) {
+					if (!(error instanceof TypeError)) throw error
+				}
+				if ('web3' in exposedWindow && exposedWindow.web3 !== undefined) {
+					try {
+						;(exposedWindow.web3 as { accounts?: readonly string[] }).accounts = [signerAccount]
+					} catch (error: unknown) {
+						if (!(error instanceof TypeError)) throw error
+					}
+				}
+				mutationAttempted = true
+				pendingRequest = request
+				pendingSendBackgroundMessage = sendBackgroundMessageForRequest
+				return true
+			},
+		})
+		const { fakeWindow, signerRequests } = createdWindow
+		exposedWindow = fakeWindow
+		Object.defineProperty(fakeWindow.ethereum, 'selectedAddress', {
+			configurable: false,
+			enumerable: true,
+			value: signerAccount,
+			writable: true,
+		})
+		;(fakeWindow as { web3?: { accounts?: readonly string[], currentProvider: unknown } }).web3 = { accounts: [signerAccount], currentProvider: fakeWindow.ethereum }
+		Object.defineProperty((fakeWindow as { web3: { accounts?: readonly string[] } }).web3, 'accounts', {
+			configurable: false,
+			enumerable: true,
+			value: [signerAccount],
+			writable: true,
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?non-configurable-writable-compatibility-mask', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { readonly result: unknown }
+				selectedAddress?: string
+			}
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			assert.equal(provider.selectedAddress, undefined)
+			assert.deepEqual(provider.send({ id: 1, method: 'eth_accounts', params: [] }).result, [])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
+
+			const requestPromise = provider.request({ method: 'eth_requestAccounts' })
+			await waitFor(() => mutationAttempted)
+			assert.equal(provider.selectedAddress, undefined)
+			assert.deepEqual(provider.send({ id: 2, method: 'eth_accounts', params: [] }).result, [])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
+			if (pendingRequest === undefined || pendingSendBackgroundMessage === undefined) throw new Error('eth_requestAccounts was not captured')
+
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'connect',
+				result: ['0x1'],
+			})
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [signerAccount],
+			})
+			pendingSendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: pendingRequest.requestId,
+				type: 'result',
+				method: 'eth_accounts',
+				result: [signerAccount],
+			})
+			assert.deepEqual(await requestPromise, [signerAccount])
+			assert.equal(provider.selectedAddress, signerAccount)
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [signerAccount])
+		})
+	})
+
+	test('does not forward signer accountsChanged as an unscoped update during eth_requestAccounts', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const {
+			fakeWindow,
+			signerRequests,
+			backgroundEthAccountsReplies,
+			sendBackgroundMessage,
+			setBlockRequestAccounts,
+			resolvePendingRequestAccounts,
+			emitSignerEvent,
+		} = createFakeWindow()
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?request-accounts-suppresses-signer-event', async () => {
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			setBlockRequestAccounts(true)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_requestAccounts',
+				result: [],
+			})
+			await waitFor(() => signerRequests.includes('eth_requestAccounts'))
+			emitSignerEvent('accountsChanged', [signerAccount])
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(backgroundEthAccountsReplies, [])
+
+			resolvePendingRequestAccounts([signerAccount])
+			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			assert.deepEqual(backgroundEthAccountsReplies, [
+				{ type: 'success', accounts: [signerAccount], requestAccounts: true },
+			])
+		})
+	})
+
+	test('delivers request-scoped connect and accountsChanged before eth_requestAccounts resumes even when address is cached', async () => {
 		const signerAccount = '0x1111111111111111111111111111111111111111'
 		const { fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
@@ -433,17 +664,28 @@ describe('inpage signer bridge', () => {
 					interceptorApproved: true,
 					requestId: request.requestId,
 					type: 'result',
-					method: 'eth_accounts',
+					method: 'connect',
+					result: ['0x1'],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'accountsChanged',
 					result: [signerAccount],
 				})
 				setTimeout(() => {
-					sendBackgroundMessageForRequest({
-						interceptorApproved: true,
-						requestId: request.requestId,
-						type: 'result',
-						method: 'accountsChanged',
-						result: [signerAccount],
-					})
+					setTimeout(() => {
+						setTimeout(() => {
+							sendBackgroundMessageForRequest({
+								interceptorApproved: true,
+								requestId: request.requestId,
+								type: 'result',
+								method: 'eth_accounts',
+								result: [signerAccount],
+							})
+						}, 0)
+					}, 0)
 				}, 0)
 				return true
 			},
@@ -452,7 +694,7 @@ describe('inpage signer bridge', () => {
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?request-scoped-accounts-changed', async () => {
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
-				on: (eventName: string, callback: (value: readonly string[]) => void) => void
+				on: (eventName: string, callback: (value: unknown) => void) => void
 			}
 			await waitFor(() => typeof provider.request === 'function')
 			await waitFor(() => signerRequests.includes('eth_chainId'))
@@ -462,11 +704,17 @@ describe('inpage signer bridge', () => {
 				method: 'accountsChanged',
 				result: [signerAccount],
 			})
+			await waitFor(() => (fakeWindow.ethereum as { selectedAddress?: string }).selectedAddress === signerAccount)
 			const events: string[] = []
 			const accountEvents: (readonly string[])[] = []
 			provider.on('accountsChanged', (accounts) => {
 				events.push('accountsChanged')
+				if (!Array.isArray(accounts) || !accounts.every((account): account is string => typeof account === 'string')) throw new Error('accountsChanged payload was not a string array')
 				accountEvents.push(accounts)
+			})
+			provider.on('connect', (connectInfo) => {
+				events.push('connect')
+				assert.deepEqual(connectInfo, { chainId: '0x1' })
 			})
 
 			const accountReply = await provider.request({ method: 'eth_requestAccounts' }).then((accounts) => {
@@ -477,7 +725,211 @@ describe('inpage signer bridge', () => {
 
 			assert.deepEqual(accountReply, [signerAccount])
 			assert.deepEqual(accountEvents, [[signerAccount]])
-			assert.deepEqual(events, ['resolved', 'accountsChanged'])
+			assert.deepEqual(events, ['connect', 'accountsChanged', 'resolved'])
+		})
+	})
+
+	test('delivers request-scoped connect and accountsChanged before wallet_requestPermissions resumes', async () => {
+		const signerAccount = '0x1212121212121212121212121212121212121212'
+		const permissions = [{ parentCapability: 'eth_accounts', caveats: [], invoker: 'https://example.test' }]
+		const { fakeWindow, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'wallet_requestPermissions') return false
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connect',
+					result: ['0x1'],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'accountsChanged',
+					result: [signerAccount],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'wallet_requestPermissions',
+					result: permissions,
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?request-scoped-wallet-permissions', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				on: (eventName: string, callback: (value: unknown) => void) => void
+			}
+			await waitFor(() => typeof provider.request === 'function')
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			const events: string[] = []
+			provider.on('connect', (connectInfo) => {
+				events.push('connect')
+				assert.deepEqual(connectInfo, { chainId: '0x1' })
+			})
+			provider.on('accountsChanged', (accounts) => {
+				events.push('accountsChanged')
+				assert.deepEqual(accounts, [signerAccount])
+			})
+
+			const permissionReply = await provider.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] }).then((reply) => {
+				events.push('resolved')
+				return reply
+			})
+
+			assert.deepEqual(permissionReply, permissions)
+			assert.deepEqual(events, ['connect', 'accountsChanged', 'resolved'])
+		})
+	})
+
+	test('resolves eth_requestAccounts when request-scoped provider listeners throw', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const { fakeWindow, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_requestAccounts') return false
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connect',
+					result: ['0x1'],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'accountsChanged',
+					result: [signerAccount],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'eth_accounts',
+					result: [signerAccount],
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?request-scoped-listener-throws', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				on: (eventName: string, callback: (value: unknown) => void) => void
+			}
+			await waitFor(() => typeof provider.request === 'function')
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			let connectCallbackCount = 0
+			let accountCallbackCount = 0
+			provider.on('connect', () => {
+				connectCallbackCount += 1
+				throw new Error('dapp connect listener failed')
+			})
+			provider.on('accountsChanged', () => {
+				accountCallbackCount += 1
+				throw new Error('dapp accounts listener failed')
+			})
+
+			const accountReply = await provider.request({ method: 'eth_requestAccounts' })
+
+			assert.deepEqual(accountReply, [signerAccount])
+			assert.equal(connectCallbackCount, 1)
+			assert.equal(accountCallbackCount, 1)
+		})
+	})
+
+	test('drops stale request-scoped provider events after eth_requestAccounts settles', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const staleAccount = '0x2222222222222222222222222222222222222222'
+		let accountRequest: InpageRequest | undefined
+		let sendForAccountRequest: ((data: unknown) => void) | undefined
+		const { fakeWindow, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_requestAccounts') return false
+				accountRequest = request
+				sendForAccountRequest = sendBackgroundMessageForRequest
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'eth_accounts',
+					result: [signerAccount],
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?stale-request-scoped-events', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				on: (eventName: string, callback: (value: unknown) => void) => void
+				isConnected: () => boolean
+				selectedAddress?: string
+				chainId?: string
+			}
+			await waitFor(() => typeof provider.request === 'function')
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			const events: string[] = []
+			provider.on('connect', () => {
+				events.push('connect')
+			})
+			provider.on('accountsChanged', () => {
+				events.push('accountsChanged')
+			})
+			provider.on('disconnect', () => {
+				events.push('disconnect')
+			})
+			provider.on('chainChanged', () => {
+				events.push('chainChanged')
+			})
+
+			assert.deepEqual(await provider.request({ method: 'eth_requestAccounts' }), [signerAccount])
+			const connectedAfterRequest = provider.isConnected()
+			const chainIdAfterRequest = provider.chainId
+			assert.equal(provider.selectedAddress, undefined)
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
+			if (accountRequest === undefined || sendForAccountRequest === undefined) throw new Error('eth_requestAccounts was not captured')
+			sendForAccountRequest({
+				interceptorApproved: true,
+				requestId: accountRequest.requestId,
+				type: 'result',
+				method: 'connect',
+				result: ['0x1'],
+			})
+			sendForAccountRequest({
+				interceptorApproved: true,
+				requestId: accountRequest.requestId,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [staleAccount],
+			})
+			sendForAccountRequest({
+				interceptorApproved: true,
+				requestId: accountRequest.requestId,
+				type: 'result',
+				method: 'disconnect',
+				result: [],
+			})
+			sendForAccountRequest({
+				interceptorApproved: true,
+				requestId: accountRequest.requestId,
+				type: 'result',
+				method: 'chainChanged',
+				result: '0x2',
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			await new Promise((resolve) => setTimeout(resolve, 0))
+
+			assert.deepEqual(events, [])
+			assert.equal(provider.isConnected(), connectedAfterRequest)
+			assert.equal(provider.chainId, chainIdAfterRequest)
+			assert.equal(provider.selectedAddress, undefined)
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
 		})
 	})
 
@@ -1391,7 +1843,12 @@ describe('inpage signer bridge', () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 		const previousWarn = console.warn
-		const { fakeWindow } = createFakeWindow()
+		let connectedToSigner = false
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
 		const warnings: unknown[] = []
 		fakeWindow.ethereum = createLockedCompatibilitySigner()
 		console.warn = (...args: unknown[]) => { warnings.push(args) }
@@ -1427,7 +1884,12 @@ describe('inpage signer bridge', () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 		const previousWarn = console.warn
-		const { fakeWindow } = createFakeWindow()
+		let connectedToSigner = false
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
 		const warnings: unknown[] = []
 		fakeWindow.ethereum = createConfigurableGetterOnlyCompatibilitySigner()
 		console.warn = (...args: unknown[]) => { warnings.push(args) }
@@ -1445,6 +1907,13 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
+			await waitFor(() => connectedToSigner)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'accountsChanged',
+				result: ['0x1111111111111111111111111111111111111111'],
+			})
 			await waitFor(() => (fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress === '0x1111111111111111111111111111111111111111')
 			assert.deepEqual((fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress, '0x1111111111111111111111111111111111111111')
 			assert.deepEqual(warnings, [])
@@ -1459,12 +1928,12 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('warns when compatibility assignments cannot be made on non-extensible targets', async () => {
+	test('keeps controlled compatibility properties working after target becomes non-extensible', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 		const previousWarn = console.warn
 		let fakeWindowWithSigner: { ethereum: { isMetamask?: boolean, [key: string]: unknown } } | undefined
-		const { fakeWindow } = createFakeWindow({
+		const { fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
 			onConnectedToSignerRequest: () => {
 				if (fakeWindowWithSigner === undefined) return
 				fakeWindowWithSigner.ethereum.isMetamask = true
@@ -1488,8 +1957,15 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
-			await waitFor(() => warnings.length > 0)
-			assert.ok(warnings.some((warning) => warning.includes('compatibility assignment was rejected for window.ethereum.selectedAddress')))
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'accountsChanged',
+				result: ['0x1111111111111111111111111111111111111111'],
+			})
+			await waitFor(() => (fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress === '0x1111111111111111111111111111111111111111')
+			assert.deepEqual(warnings, [])
 		} finally {
 			console.warn = previousWarn
 			;(globalThis as { window?: unknown }).window = previousWindow

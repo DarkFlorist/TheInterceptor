@@ -8,7 +8,7 @@ import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 
 type Listener = () => void
-type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+type PortMessage = { type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 function installBrowserMock() {
@@ -402,6 +402,7 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
+		const siblingSocket = { tabId: 1, connectionName: 1n }
 		const stateAtDappReply: Array<bigint | undefined> = []
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 			if (message.method === 'request_signer_to_eth_requestAccounts') {
@@ -421,9 +422,12 @@ describe('background eth_accounts', () => {
 			}
 		})
 		const port = createdPort
+		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId)
 		const connectionKey = websiteSocketToString(socket)
+		const siblingConnectionKey = websiteSocketToString(siblingSocket)
 		const websiteTabConnections = new Map([[socket.tabId, { connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
@@ -439,17 +443,142 @@ describe('background eth_accounts', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [account])
 		assert.deepEqual(stateAtDappReply, [account])
-		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 9)
 		assert.deepEqual(requestAccountsReplies.at(-1)?.result, ['0x4444444444444444444444444444444444444444'])
 		const requestAccountsReplyIndex = messages.findIndex((message) => message.method === 'eth_accounts' && message.requestId === 9)
+		const connectMessages = messages.filter((message) => message.method === 'connect')
+		const connectIndex = messages.findIndex((message) => message.method === 'connect')
 		const accountChangedMessages = messages.filter((message) => message.method === 'accountsChanged')
 		const accountChangedIndex = messages.findIndex((message) => message.method === 'accountsChanged')
 		assert.notEqual(requestAccountsReplyIndex, -1)
+		assert.notEqual(connectIndex, -1)
 		assert.notEqual(accountChangedIndex, -1)
-		assert.equal(requestAccountsReplyIndex < accountChangedIndex, true)
+		assert.equal(connectIndex < accountChangedIndex, true)
+		assert.equal(accountChangedIndex < requestAccountsReplyIndex, true)
+		assert.deepEqual(connectMessages.map((message) => message.result), [['0x1']])
+		assert.deepEqual(connectMessages.map((message) => message.requestId), [9])
 		assert.deepEqual(accountChangedMessages.map((message) => message.result), [[accountString]])
 		assert.deepEqual(accountChangedMessages.map((message) => message.requestId), [9])
+		const siblingAccountChangedMessages = siblingMessages.filter((message) => message.method === 'accountsChanged')
+		assert.deepEqual(siblingAccountChangedMessages.map((message) => message.result), [[accountString]])
+		assert.deepEqual(siblingAccountChangedMessages.map((message) => message.requestId), [undefined])
+	})
+
+	test('suppresses unscoped connect events for requester during signer refresh with page-level access', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x4545454545454545454545454545454545454545n
+		const accountString = '0x4545454545454545454545454545454545454545'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateUserAddressBookEntries(() => [{
+			type: 'contact',
+			name: 'signer account',
+			address: account,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: false,
+		}])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const siblingSocket = { tabId: 1, connectionName: 1n }
+		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 100, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		})
+		const port = createdPort
+		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const siblingConnectionKey = websiteSocketToString(siblingSocket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 17, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [17])
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [17])
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 17).map((message) => message.result), [[accountString]])
+		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'connect', 'accountsChanged', 'eth_accounts'])
+		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [undefined])
+		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
+	})
+
+	test('replays account state before resolving wallet_requestPermissions after signer refresh', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x4646464646464646464646464646464646464646n
+		const accountString = '0x4646464646464646464646464646464646464646'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 104, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		})
+		const port = createdPort
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 19, requestSocket: socket },
+			method: 'wallet_requestPermissions',
+			params: [{ eth_accounts: {} }],
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const permissionResult = [{ parentCapability: 'eth_accounts', caveats: [], invoker: websiteOrigin }]
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [19])
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [19])
+		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 19).map((message) => message.result), [permissionResult])
+		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'connect', 'accountsChanged', 'wallet_requestPermissions'])
 	})
 
 	test('replays account state after already-approved eth_requestAccounts with cached active signer address', async () => {
@@ -488,15 +617,75 @@ describe('background eth_accounts', () => {
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [])
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [['0x1']])
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [11])
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [11])
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 11)
 		assert.deepEqual(requestAccountsReplies.at(-1)?.result, [accountString])
-		assert.deepEqual(messages.map((message) => message.method), ['eth_accounts', 'accountsChanged'])
+		assert.deepEqual(messages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
 	})
 
-	test('does not expose connected_to_signer active address without address access', async () => {
+	test('replays account state for already-approved eth_requestAccounts on signer-only networks', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4cn
+		const accountString = '0x4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c'
+		await changeSimulationMode({
+			simulationMode: false,
+			rpcNetwork: {
+				name: 'Signer only',
+				chainId: 1n,
+				httpsRpc: undefined,
+				currencyName: 'Ether?',
+				currencyTicker: 'ETH?',
+				primary: false,
+				minimized: true,
+			},
+			activeSimulationAddress: undefined,
+			activeSigningAddress: account,
+		})
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 16, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
+		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 16)
+		assert.deepEqual(requestAccountsReplies.at(-1)?.result, [accountString])
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [['0x1']])
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [16])
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [16])
+		assert.deepEqual(messages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
+	})
+
+	test('does not expose connected_to_signer active address during provider initialization', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -511,7 +700,7 @@ describe('background eth_accounts', () => {
 		const account = 0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4bn
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
@@ -861,5 +1050,78 @@ describe('background eth_accounts', () => {
 		assert.equal(requestAccountsReplies.at(-1)?.error?.code, 4100)
 		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'The requested method and/or account has not been authorized by the user.')
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [])
+	})
+
+	test('keeps sibling connection events when popup approval resolves eth_requestAccounts', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+			getPendingAccessRequests,
+			resolveInterceptorAccess,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6868686868686868686868686868686868686868n
+		const accountString = '0x6868686868686868686868686868686868686868'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const siblingSocket = { tabId: 1, connectionName: 1n }
+		const { port, messages } = createPort(socket.tabId)
+		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const siblingConnectionKey = websiteSocketToString(siblingSocket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 18, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged'), false)
+		assert.equal(siblingMessages.length, 0)
+		const pendingRequests = await getPendingAccessRequests()
+		assert.equal(pendingRequests.length, 1)
+		const pendingRequest = pendingRequests[0]
+		if (pendingRequest === undefined) throw new Error('Missing pending request')
+		await resolveInterceptorAccess(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			{
+				userReply: 'Approved',
+				websiteOrigin,
+				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
+				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
+				accessRequestId: pendingRequest.accessRequestId,
+			},
+			noopPublishRpcConnectionStatus,
+		)
+
+		const requestLifecycleMessages = messages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged')
+		assert.deepEqual(requestLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged'])
+		assert.deepEqual(requestLifecycleMessages.map((message) => message.requestId), [18, 18])
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 18).at(-1)?.result, [accountString])
+		const siblingLifecycleMessages = siblingMessages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged')
+		assert.deepEqual(siblingLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged', 'chainChanged'])
+		assert.deepEqual(siblingLifecycleMessages.map((message) => message.requestId), [undefined, undefined, undefined])
+		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [accountString], '0x1'])
 	})
 })

@@ -378,6 +378,8 @@ class InterceptorMessageListener {
 	private extensionMessagePort: MessagePort | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
+	private readonly outstandingRequestMethods: Map<number, string> = new Map()
+	private readonly requestScopedProviderEventCallbacks: Map<number, (() => void)[]> = new Map()
 
 	private readonly onMessageCallBacks: Set<((message: ProviderMessage) => void)> = new Set()
 	private readonly onConnectCallBacks: Set<((connectInfo: ProviderConnectInfo) => void)> = new Set()
@@ -399,6 +401,79 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumIsConnected = () => this.connected
 
+	private readonly getControlledSelectedAddress = () => this.currentAddress === '' ? undefined : this.currentAddress
+
+	private readonly getControlledAccounts = () => this.currentAddress === '' ? [] : [this.currentAddress]
+
+	private readonly hasNonConfigurableAccountCompatibilityProperty = () => {
+		if (inpageWindow.ethereum !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.ethereum, 'selectedAddress')?.configurable === false) return true
+		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) return true
+		return false
+	}
+
+	private readonly createInterceptorProvider = (signerWindowEthereum: WindowEthereum | undefined): WindowEthereum => {
+		return {
+			isInterceptor: true,
+			isConnected: this.WindowEthereumIsConnected.bind(signerWindowEthereum),
+			request: this.WindowEthereumRequest.bind(signerWindowEthereum),
+			send: this.WindowEthereumSend.bind(signerWindowEthereum),
+			sendAsync: this.WindowEthereumSendAsync.bind(signerWindowEthereum),
+			on: this.WindowEthereumOn.bind(signerWindowEthereum),
+			removeListener: this.WindowEthereumRemoveListener.bind(signerWindowEthereum),
+			enable: this.WindowEthereumEnable.bind(signerWindowEthereum),
+			...this.unsupportedMethods(signerWindowEthereum),
+		}
+	}
+
+	private readonly installControlledCompatibilityProperty = (target: object, property: PropertyKey, getter: () => unknown, label: string) => {
+		const descriptor = Object.getOwnPropertyDescriptor(target, property)
+		if (descriptor?.configurable === false) {
+			if ('value' in descriptor && descriptor.writable === true) {
+				const controlledValue = getter()
+				const safeValue = Array.isArray(controlledValue) ? Object.freeze([...controlledValue]) : controlledValue
+				try {
+					Object.defineProperty(target, property, {
+						...descriptor,
+						value: safeValue,
+						writable: false,
+					})
+					return
+				} catch (error: unknown) {
+					console.warn(`Interceptor compatibility assignment failed for ${ label }.`, error)
+					return
+				}
+			}
+			if ('value' in descriptor && (descriptor.value === undefined || descriptor.value === null || descriptor.value === '' || (Array.isArray(descriptor.value) && descriptor.value.length === 0))) return
+			const currentValue = Reflect.get(target, property)
+			if ('set' in descriptor && descriptor.set === undefined && (currentValue === undefined || currentValue === null || currentValue === '' || (Array.isArray(currentValue) && currentValue.length === 0))) return
+			console.warn(`Interceptor compatibility assignment was rejected for ${ label }.`)
+			return
+		}
+		try {
+			Object.defineProperty(target, property, {
+				configurable: true,
+				enumerable: true,
+				get: getter,
+				set: () => undefined,
+			})
+		} catch (error: unknown) {
+			if (!Object.isExtensible(target)) return
+			console.warn(`Interceptor compatibility assignment failed for ${ label }.`, error)
+		}
+	}
+
+	private readonly installControlledAccountCompatibilityProperties = () => {
+		if (inpageWindow.ethereum !== undefined) {
+			this.installControlledCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.getControlledSelectedAddress, 'window.ethereum.selectedAddress')
+		}
+		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
+			if (Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) {
+				setCompatibilityProperty(inpageWindow, 'web3', { accounts: this.getControlledAccounts(), currentProvider: inpageWindow.ethereum as WindowEthereum }, 'window.web3')
+			}
+			this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
+		}
+	}
+
 	private readonly connectToContentScript = () => {
 		const channel = new MessageChannel()
 		this.extensionMessagePort = channel.port1
@@ -411,6 +486,8 @@ class InterceptorMessageListener {
 		const pendingRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, future)
+		this.outstandingRequestMethods.set(pendingRequestId, messageMethodAndParams.method)
+		this.requestScopedProviderEventCallbacks.set(pendingRequestId, [])
 		try {
 			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
 			const message: BridgeRequest = {
@@ -425,7 +502,29 @@ class InterceptorMessageListener {
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
+			this.outstandingRequestMethods.delete(pendingRequestId)
+			this.requestScopedProviderEventCallbacks.delete(pendingRequestId)
 		}
+	}
+
+	private readonly drainRequestScopedProviderEventCallbacks = (requestId: number) => {
+		const providerEventCallbacks = this.requestScopedProviderEventCallbacks.get(requestId) ?? []
+		this.requestScopedProviderEventCallbacks.delete(requestId)
+		let firstCallbackError: unknown
+		for (const callback of providerEventCallbacks) {
+			try {
+				callback()
+			} catch (error: unknown) {
+				if (firstCallbackError === undefined) firstCallbackError = error
+			}
+		}
+		return firstCallbackError
+	}
+
+	private readonly resolveWithRequestScopedProviderEvents = (requestId: number, value: unknown) => {
+		const callbackError = this.drainRequestScopedProviderEventCallbacks(requestId)
+		this.outstandingRequests.get(requestId)?.resolve(value)
+		if (callbackError !== undefined) throw callbackError
 	}
 
 	private readonly sendInternalMessageToBackgroundPage = async (messageMethodAndParams: Omit<MessageMethodAndParams, 'internal'>) => {
@@ -721,26 +820,51 @@ class InterceptorMessageListener {
 					const reply = replyRequest.result as readonly string[]
 					const replyAddress = reply[0] ?? ''
 					const replayedForSettledRequest = replyRequest.requestId !== undefined
+					const notifyAccountsChanged = () => {
+						if (this.currentAddress === replyAddress && !replayedForSettledRequest) return
+						this.currentAddress = replyAddress
+						if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
+							setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', replyAddress, 'window.ethereum.selectedAddress')
+							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) setCompatibilityProperty(inpageWindow.web3, 'accounts', reply, 'window.web3.accounts')
+						}
+						for (const callback of this.onAccountsChangedCallBacks) {
+							callback(reply)
+						}
+					}
+					if (replayedForSettledRequest) {
+						const callbacks = this.requestScopedProviderEventCallbacks.get(replyRequest.requestId)
+						if (callbacks !== undefined) {
+							callbacks.push(notifyAccountsChanged)
+							return
+						}
+						return
+					}
 					if (this.currentAddress === replyAddress && !replayedForSettledRequest) return
-					this.currentAddress = replyAddress
-					if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-						setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', replyAddress, 'window.ethereum.selectedAddress')
-						if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) setCompatibilityProperty(inpageWindow.web3, 'accounts', reply, 'window.web3.accounts')
-					}
-					for (const callback of this.onAccountsChangedCallBacks) {
-						callback(reply)
-					}
+					notifyAccountsChanged()
 					return
 				}
 				case 'connect': {
+					const notifyConnect = () => {
+						this.connected = true
+						for (const callback of this.onConnectCallBacks) {
+							callback(InterceptorMessageListener.getProviderConnectInfo(replyRequest.result))
+						}
+					}
+					if (replyRequest.requestId !== undefined) {
+						const callbacks = this.requestScopedProviderEventCallbacks.get(replyRequest.requestId)
+						if (callbacks !== undefined) {
+							callbacks.push(notifyConnect)
+							return
+						}
+						return
+					}
 					if (this.connected) return
 					this.connected = true
-					for (const callback of this.onConnectCallBacks) {
-						callback(InterceptorMessageListener.getProviderConnectInfo(replyRequest.result))
-					}
+					notifyConnect()
 					return
 				}
 				case 'disconnect': {
+					if (replyRequest.requestId !== undefined) return
 					if (!this.connected) return
 					this.connected = false
 					for (const callback of this.onDisconnectCallBacks) {
@@ -749,6 +873,7 @@ class InterceptorMessageListener {
 					return
 				}
 				case 'chainChanged': {
+					if (replyRequest.requestId !== undefined) return
 					const reply = replyRequest.result as string
 					if (this.activeChainId === reply) return
 					this.activeChainId = reply
@@ -769,8 +894,23 @@ class InterceptorMessageListener {
 			}
 		} finally {
 			if (replyRequest.requestId === undefined) return
+			if (replyRequest.method === 'accountsChanged' || replyRequest.method === 'connect' || replyRequest.method === 'disconnect' || replyRequest.method === 'chainChanged') return
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
+			const originalRequestMethod = this.outstandingRequestMethods.get(replyRequest.requestId)
+			if (
+				(
+					originalRequestMethod === 'eth_requestAccounts'
+					&& (replyRequest.method === 'eth_accounts' || replyRequest.method === 'eth_requestAccounts')
+				)
+				|| (
+					originalRequestMethod === 'wallet_requestPermissions'
+					&& replyRequest.method === 'wallet_requestPermissions'
+				)
+			) {
+				this.resolveWithRequestScopedProviderEvents(replyRequest.requestId, replyRequest.result)
+				return
+			}
 			return pending.resolve(replyRequest.result)
 		}
 	}
@@ -909,6 +1049,7 @@ class InterceptorMessageListener {
 			} else {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: [], currentProvider: inpageWindow.ethereum }, 'window.web3')
 			}
+			this.installControlledAccountCompatibilityProperties()
 		}
 	}
 
@@ -920,8 +1061,8 @@ class InterceptorMessageListener {
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean'
 				&& 'activeAddress' in connectSignerReply && connectSignerReply.activeAddress !== null
 				&& connectSignerReply.activeAddress !== undefined && typeof connectSignerReply.activeAddress === 'string') {
-					this.currentAddress = connectSignerReply.activeAddress
-					if (connectSignerReply.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
+					if (connectSignerReply.activeAddress !== '') this.currentAddress = connectSignerReply.activeAddress
+					if (connectSignerReply.activeAddress !== '' && connectSignerReply.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
 						setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.currentAddress, 'window.ethereum.selectedAddress')
 					}
 				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string }
@@ -996,7 +1137,11 @@ class InterceptorMessageListener {
 
 		const subscribeToSignerEvents = (provider: WindowEthereum, signerName: Signer) => {
 			provider.on('accountsChanged', (accounts: readonly string[]) => {
-				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
+				if (!Array.isArray(accounts)) return
+				if (!InterceptorMessageListener.isStringArray([...accounts])) return
+				this.signerAccounts = [...accounts]
+				if (this.pendingSignerAddressRequest !== undefined) return
+				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
 			})
 			provider.on('connect', (_connectInfo: ProviderConnectInfo) => {
 				this.connectToSigner(signerName)
@@ -1042,26 +1187,24 @@ class InterceptorMessageListener {
 				enable: this.WindowEthereumEnable.bind(signerWindowEthereum),
 				...this.unsupportedMethods(signerWindowEthereum),
 			}
+			this.installControlledAccountCompatibilityProperties()
 			this.connectToSigner(signerName)
 			return
 		}
-		const fallbackSignerName = getSignerName(inpageWindow.ethereum)
-		this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
+		const fallbackSignerWindowEthereum = inpageWindow.ethereum
+		const fallbackSignerName = getSignerName(fallbackSignerWindowEthereum)
+		this.signerWindowEthereumRequest = fallbackSignerWindowEthereum.request.bind(fallbackSignerWindowEthereum) // store the request object to signer
 		this.fallbackSignerWindowEthereumRequest = undefined
-		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
-		subscribeToSignerEvents(inpageWindow.ethereum, fallbackSignerName)
+		this.connected = !fallbackSignerWindowEthereum.isConnected || fallbackSignerWindowEthereum.isConnected()
+		subscribeToSignerEvents(fallbackSignerWindowEthereum, fallbackSignerName)
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-		Object.assign(inpageWindow.ethereum, {
-			isInterceptor: true,
-			isConnected: this.WindowEthereumIsConnected.bind(inpageWindow.ethereum),
-			request: this.WindowEthereumRequest.bind(inpageWindow.ethereum),
-			send: this.WindowEthereumSend.bind(inpageWindow.ethereum),
-			sendAsync: this.WindowEthereumSendAsync.bind(inpageWindow.ethereum),
-			on: this.WindowEthereumOn.bind(inpageWindow.ethereum),
-			removeListener: this.WindowEthereumRemoveListener.bind(inpageWindow.ethereum),
-			enable: this.WindowEthereumEnable.bind(inpageWindow.ethereum),
-			...this.unsupportedMethods(inpageWindow.ethereum),
-		})
+		if (this.hasNonConfigurableAccountCompatibilityProperty()) {
+			this.installControlledAccountCompatibilityProperties()
+			inpageWindow.ethereum = this.createInterceptorProvider(fallbackSignerWindowEthereum)
+		} else {
+			Object.assign(fallbackSignerWindowEthereum, this.createInterceptorProvider(fallbackSignerWindowEthereum))
+		}
+		this.installControlledAccountCompatibilityProperties()
 		this.connectToSigner(fallbackSignerName)
 	}
 }
