@@ -99,6 +99,7 @@ type InterceptedRequestForward = InterceptedRequestForwardWithResult | Intercept
 
 const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
 type InterceptorApprovedMessageCandidate = {
 	readonly interceptorApproved?: unknown
@@ -129,6 +130,11 @@ type BridgeRequest = {
 
 const isMessageCandidate = (value: unknown): value is InterceptorApprovedMessageCandidate => typeof value === 'object' && value !== null
 const isErrorCandidate = (value: unknown): value is InterceptorErrorCandidate => typeof value === 'object' && value !== null
+const isRequestAccountsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'eth_requestAccounts' && (replyMethod === 'eth_accounts' || replyMethod === 'eth_requestAccounts')
+const isRequestPermissionsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'wallet_requestPermissions' && replyMethod === 'wallet_requestPermissions'
+const shouldResolveAfterRequestScopedProviderEvents = (originalRequestMethod: string | undefined, replyMethod: string) => isRequestAccountsResolution(originalRequestMethod, replyMethod) || isRequestPermissionsResolution(originalRequestMethod, replyMethod)
+const isRequestScopedProviderEventMethod = (method: string) => REQUEST_SCOPED_PROVIDER_EVENT_METHODS.has(method)
+const canFallbackRequestToRootSigner = (method: string) => method === 'eth_requestAccounts'
 
 function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForward | undefined {
 	if (!isMessageCandidate(data)) return undefined
@@ -264,6 +270,12 @@ type ForwardedDiagnosticsRequestContext = {
 	readonly requestMethod?: string
 }
 
+type OutstandingRequest = {
+	readonly future: InterceptorFuture<unknown>
+	readonly method: string
+	requestScopedProviderEventCallbacks?: (() => void)[]
+}
+
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
 
@@ -374,9 +386,10 @@ class InterceptorMessageListener {
 	private requestId = 0
 	private metamaskCompatibilityMode = false
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
+	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private extensionMessagePort: MessagePort | undefined = undefined
 
-	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
+	private readonly outstandingRequests: Map<number, OutstandingRequest> = new Map()
 
 	private readonly onMessageCallBacks: Set<((message: ProviderMessage) => void)> = new Set()
 	private readonly onConnectCallBacks: Set<((connectInfo: ProviderConnectInfo) => void)> = new Set()
@@ -386,7 +399,8 @@ class InterceptorMessageListener {
 
 	private currentAddress = ''
 	private activeChainId = ''
-	private currentSigner: Signer = 'NoSigner'
+	private ethereumSelectedAddressControlled = false
+	private web3AccountsControlled = false
 
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
@@ -399,6 +413,92 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumIsConnected = () => this.connected
 
+	private readonly getControlledSelectedAddress = () => this.currentAddress === '' ? undefined : this.currentAddress
+
+	private readonly getControlledAccounts = () => this.currentAddress === '' ? [] : [this.currentAddress]
+
+	private readonly refreshAccountCompatibilityProperties = (accounts: readonly string[]) => {
+		const address = accounts[0] ?? ''
+		if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined && !this.ethereumSelectedAddressControlled) {
+			setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', address, 'window.ethereum.selectedAddress')
+		}
+		if (this.metamaskCompatibilityMode && 'web3' in inpageWindow && inpageWindow.web3 !== undefined && !this.web3AccountsControlled) {
+			setCompatibilityProperty(inpageWindow.web3, 'accounts', accounts, 'window.web3.accounts')
+		}
+	}
+
+	private readonly hasNonConfigurableAccountCompatibilityProperty = () => {
+		if (inpageWindow.ethereum !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.ethereum, 'selectedAddress')?.configurable === false) return true
+		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) return true
+		return false
+	}
+
+	private readonly createInterceptorProvider = (signerWindowEthereum: WindowEthereum | undefined): WindowEthereum => {
+		return {
+			isInterceptor: true,
+			isConnected: this.WindowEthereumIsConnected.bind(signerWindowEthereum),
+			request: this.WindowEthereumRequest.bind(signerWindowEthereum),
+			send: this.WindowEthereumSend.bind(signerWindowEthereum),
+			sendAsync: this.WindowEthereumSendAsync.bind(signerWindowEthereum),
+			on: this.WindowEthereumOn.bind(signerWindowEthereum),
+			removeListener: this.WindowEthereumRemoveListener.bind(signerWindowEthereum),
+			enable: this.WindowEthereumEnable.bind(signerWindowEthereum),
+			...this.unsupportedMethods(signerWindowEthereum),
+		}
+	}
+
+	private readonly installControlledCompatibilityProperty = (target: object, property: PropertyKey, getter: () => unknown, label: string) => {
+		const descriptor = Object.getOwnPropertyDescriptor(target, property)
+		if (descriptor?.configurable === false) {
+			if ('value' in descriptor && descriptor.writable === true) {
+				const controlledValue = getter()
+				const safeValue = Array.isArray(controlledValue) ? Object.freeze([...controlledValue]) : controlledValue
+				try {
+					Object.defineProperty(target, property, {
+						...descriptor,
+						value: safeValue,
+						writable: false,
+					})
+					return true
+				} catch (error: unknown) {
+					console.warn(`Interceptor compatibility assignment failed for ${ label }.`, error)
+					return false
+				}
+			}
+			if ('value' in descriptor && (descriptor.value === undefined || descriptor.value === null || descriptor.value === '' || (Array.isArray(descriptor.value) && descriptor.value.length === 0))) return false
+			const currentValue = Reflect.get(target, property)
+			if ('set' in descriptor && descriptor.set === undefined && (currentValue === undefined || currentValue === null || currentValue === '' || (Array.isArray(currentValue) && currentValue.length === 0))) return false
+			console.warn(`Interceptor compatibility assignment was rejected for ${ label }.`)
+			return false
+		}
+		try {
+			Object.defineProperty(target, property, {
+				configurable: true,
+				enumerable: true,
+				get: getter,
+				set: () => undefined,
+			})
+			return true
+		} catch (error: unknown) {
+			if (!Object.isExtensible(target)) return false
+			console.warn(`Interceptor compatibility assignment failed for ${ label }.`, error)
+			return false
+		}
+	}
+
+	private readonly installControlledAccountCompatibilityProperties = () => {
+		if (inpageWindow.ethereum !== undefined) {
+			this.ethereumSelectedAddressControlled = this.installControlledCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.getControlledSelectedAddress, 'window.ethereum.selectedAddress')
+		}
+		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
+			if (Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) {
+				setCompatibilityProperty(inpageWindow, 'web3', { accounts: this.getControlledAccounts(), currentProvider: inpageWindow.ethereum as WindowEthereum }, 'window.web3')
+			}
+			this.web3AccountsControlled = this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
+			setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum as WindowEthereum, 'window.web3.currentProvider')
+		}
+	}
+
 	private readonly connectToContentScript = () => {
 		const channel = new MessageChannel()
 		this.extensionMessagePort = channel.port1
@@ -410,7 +510,11 @@ class InterceptorMessageListener {
 		this.requestId++
 		const pendingRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
-		this.outstandingRequests.set(pendingRequestId, future)
+		this.outstandingRequests.set(pendingRequestId, {
+			future,
+			method: messageMethodAndParams.method,
+			requestScopedProviderEventCallbacks: [],
+		})
 		try {
 			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
 			const message: BridgeRequest = {
@@ -426,6 +530,27 @@ class InterceptorMessageListener {
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
 		}
+	}
+
+	private readonly drainRequestScopedProviderEventCallbacks = (requestId: number) => {
+		const outstandingRequest = this.outstandingRequests.get(requestId)
+		const providerEventCallbacks = outstandingRequest?.requestScopedProviderEventCallbacks ?? []
+		if (outstandingRequest !== undefined) delete outstandingRequest.requestScopedProviderEventCallbacks
+		let firstCallbackError: unknown
+		for (const callback of providerEventCallbacks) {
+			try {
+				callback()
+			} catch (error: unknown) {
+				if (firstCallbackError === undefined) firstCallbackError = error
+			}
+		}
+		return firstCallbackError
+	}
+
+	private readonly resolveWithRequestScopedProviderEvents = (requestId: number, value: unknown) => {
+		const callbackError = this.drainRequestScopedProviderEventCallbacks(requestId)
+		this.outstandingRequests.get(requestId)?.future.resolve(value)
+		if (callbackError !== undefined) throw callbackError
 	}
 
 	private readonly sendInternalMessageToBackgroundPage = async (messageMethodAndParams: Omit<MessageMethodAndParams, 'internal'>) => {
@@ -462,6 +587,19 @@ class InterceptorMessageListener {
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
 			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error: error, request: methodAndParams })
+		}
+	}
+
+	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false) => {
+		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
+		try {
+			return await this.signerWindowEthereumRequest(methodAndParams)
+		} catch (error: unknown) {
+			if (!allowRequestAccountsFallbackToRoot || this.fallbackSignerWindowEthereumRequest === undefined) throw error
+			if (methodAndParams.method === 'eth_accounts') throw error
+			if (!canFallbackRequestToRootSigner(methodAndParams.method)) throw error
+			if (InterceptorMessageListener.isUserRejectedRequestError(error)) throw error
+			return await this.fallbackSignerWindowEthereumRequest(methodAndParams)
 		}
 	}
 
@@ -581,7 +719,7 @@ class InterceptorMessageListener {
 	private readonly getAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -589,6 +727,8 @@ class InterceptorMessageListener {
 			return
 		} catch (error: unknown) {
 			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error }] })
+			const errorCode = InterceptorMessageListener.getErrorCode(error)
+			if (errorCode !== undefined) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: InterceptorMessageListener.getFallbackErrorMessage(errorCode), code: errorCode } }] })
 			if (error instanceof Error) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
 			return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
 		}
@@ -608,7 +748,7 @@ class InterceptorMessageListener {
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_requestAccounts', params: [] }, true)
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
@@ -617,11 +757,14 @@ class InterceptorMessageListener {
 			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 			return
 		} catch (error: unknown) {
+			const errorCode = InterceptorMessageListener.getErrorCode(error)
 			const signerReply = InterceptorMessageListener.getErrorCodeAndMessage(error)
 				? { type: 'error', requestAccounts: true, error } as const
-				: error instanceof Error
-					? { type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } } as const
-					: { type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } } as const
+				: errorCode !== undefined
+					? { type: 'error', requestAccounts: true, error: { message: InterceptorMessageListener.getFallbackErrorMessage(errorCode), code: errorCode } } as const
+					: error instanceof Error
+						? { type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } } as const
+						: { type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } } as const
 			this.pendingSignerAddressRequest.resolve(signerReply)
 			return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
 		} finally {
@@ -632,7 +775,7 @@ class InterceptorMessageListener {
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
+			const reply = await this.requestFromSigner({ method: 'eth_chainId', params: [] })
 			if (typeof reply !== 'string') {
 				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
 				return
@@ -655,6 +798,19 @@ class InterceptorMessageListener {
 		return true
 	}
 
+	private static readonly getErrorCode = (error: unknown) => {
+		if (typeof error !== 'object') return undefined
+		if (error === null) return undefined
+		if (!('code' in error)) return undefined
+		return typeof error.code === 'number' ? error.code : undefined
+	}
+
+	private static readonly getFallbackErrorMessage = (errorCode: number) => errorCode === METAMASK_ERROR_USER_REJECTED_REQUEST ? 'User rejected the request.' : 'Signer request failed.'
+
+	private static readonly isUserRejectedRequestError = (error: unknown): error is { code: number } => {
+		return InterceptorMessageListener.getErrorCode(error) === METAMASK_ERROR_USER_REJECTED_REQUEST
+	}
+
 	private static readonly getProviderConnectInfo = (result: unknown): ProviderConnectInfo => {
 		if (typeof result === 'string') return { chainId: result }
 		if (Array.isArray(result) && typeof result[0] === 'string') return { chainId: result[0] }
@@ -665,7 +821,7 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
+			const reply = await this.requestFromSigner({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
 			if (reply !== null) return
 			await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error: unknown) {
@@ -689,26 +845,49 @@ class InterceptorMessageListener {
 				case 'accountsChanged': {
 					const reply = replyRequest.result as readonly string[]
 					const replyAddress = reply[0] ?? ''
-					if (this.currentAddress === replyAddress) return
-					this.currentAddress = replyAddress
-					if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-						setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', replyAddress, 'window.ethereum.selectedAddress')
-						if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) setCompatibilityProperty(inpageWindow.web3, 'accounts', reply, 'window.web3.accounts')
+					const replayedForSettledRequest = replyRequest.requestId !== undefined
+					const notifyAccountsChanged = () => {
+						if (this.currentAddress === replyAddress && !replayedForSettledRequest) return
+						this.currentAddress = replyAddress
+						this.refreshAccountCompatibilityProperties(reply)
+						for (const callback of this.onAccountsChangedCallBacks) {
+							callback(reply)
+						}
 					}
-					for (const callback of this.onAccountsChangedCallBacks) {
-						callback(reply)
+					if (replayedForSettledRequest) {
+						const callbacks = this.outstandingRequests.get(replyRequest.requestId)?.requestScopedProviderEventCallbacks
+						if (callbacks !== undefined) {
+							callbacks.push(notifyAccountsChanged)
+							return
+						}
+						return
 					}
+					if (this.currentAddress === replyAddress && !replayedForSettledRequest) return
+					notifyAccountsChanged()
 					return
 				}
 				case 'connect': {
+					const notifyConnect = () => {
+						this.connected = true
+						for (const callback of this.onConnectCallBacks) {
+							callback(InterceptorMessageListener.getProviderConnectInfo(replyRequest.result))
+						}
+					}
+					if (replyRequest.requestId !== undefined) {
+						const callbacks = this.outstandingRequests.get(replyRequest.requestId)?.requestScopedProviderEventCallbacks
+						if (callbacks !== undefined) {
+							callbacks.push(notifyConnect)
+							return
+						}
+						return
+					}
 					if (this.connected) return
 					this.connected = true
-					for (const callback of this.onConnectCallBacks) {
-						callback(InterceptorMessageListener.getProviderConnectInfo(replyRequest.result))
-					}
+					notifyConnect()
 					return
 				}
 				case 'disconnect': {
+					if (replyRequest.requestId !== undefined) return
 					if (!this.connected) return
 					this.connected = false
 					for (const callback of this.onDisconnectCallBacks) {
@@ -717,6 +896,7 @@ class InterceptorMessageListener {
 					return
 				}
 				case 'chainChanged': {
+					if (replyRequest.requestId !== undefined) return
 					const reply = replyRequest.result as string
 					if (this.activeChainId === reply) return
 					this.activeChainId = reply
@@ -737,9 +917,15 @@ class InterceptorMessageListener {
 			}
 		} finally {
 			if (replyRequest.requestId === undefined) return
+			if (isRequestScopedProviderEventMethod(replyRequest.method)) return
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
-			return pending.resolve(replyRequest.result)
+			const originalRequestMethod = pending.method
+			if (shouldResolveAfterRequestScopedProviderEvents(originalRequestMethod, replyRequest.method)) {
+				this.resolveWithRequestScopedProviderEvents(replyRequest.requestId, replyRequest.result)
+				return
+			}
+			return pending.future.resolve(replyRequest.result)
 		}
 	}
 
@@ -765,12 +951,9 @@ class InterceptorMessageListener {
 
 	private parseRpcError = (maybeErrorObject: unknown) => {
 		if (typeof maybeErrorObject !== 'object' || maybeErrorObject === null) return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { rawError: maybeErrorObject } )
-		if ('code' in maybeErrorObject
-			&& maybeErrorObject.code !== undefined && typeof maybeErrorObject.code === 'number'
-			&& 'message' in maybeErrorObject && maybeErrorObject.message !== undefined && typeof maybeErrorObject.message === 'string'
-		) {
-			return new EthereumJsonRpcError(maybeErrorObject.code, maybeErrorObject.message, 'data' in maybeErrorObject && maybeErrorObject.data !== undefined ? maybeErrorObject.data : undefined)
-		}
+		if (InterceptorMessageListener.getErrorCodeAndMessage(maybeErrorObject)) return new EthereumJsonRpcError(maybeErrorObject.code, maybeErrorObject.message, 'data' in maybeErrorObject && maybeErrorObject.data !== undefined ? maybeErrorObject.data : undefined)
+		const errorCode = InterceptorMessageListener.getErrorCode(maybeErrorObject)
+		if (errorCode !== undefined) return new EthereumJsonRpcError(errorCode, InterceptorMessageListener.getFallbackErrorMessage(errorCode), 'data' in maybeErrorObject && maybeErrorObject.data !== undefined ? maybeErrorObject.data : undefined)
 		return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', maybeErrorObject )
 	}
 
@@ -795,7 +978,7 @@ class InterceptorMessageListener {
 				if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 				const pending = this.outstandingRequests.get(forwardRequest.requestId)
 				if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
-				return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
+				return pending.future.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 			}
 			if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
 				if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
@@ -805,9 +988,8 @@ class InterceptorMessageListener {
 							if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 							const addrArray = forwardRequest.result as string[]
 							const addr = addrArray[0] ?? ''
-							setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', addr, 'window.ethereum.selectedAddress')
-							if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) setCompatibilityProperty(inpageWindow.web3, 'accounts', addrArray, 'window.web3.accounts')
 							this.currentAddress = addr
+							this.refreshAccountCompatibilityProperties(addrArray)
 							break
 						}
 						case 'eth_chainId': {
@@ -827,12 +1009,11 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
 			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
-			const signerRequest = this.signerWindowEthereumRequest
-			if (signerRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
+			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 
 			const sendToSignerWithCatchError = async () => {
 				try {
-					const reply = await signerRequest({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
+					const reply = await this.requestFromSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
 					return { success: true as const, forwardRequest, reply }
 				} catch(error: unknown) {
 					return { success: false as const, forwardRequest, error }
@@ -848,17 +1029,17 @@ class InterceptorMessageListener {
 							method: forwardRequest.method,
 							type: 'result',
 							result: signerReply.reply,
-						})
-						return
-					}
-					return pendingRequest.reject(this.parseRpcError(signerReply.error))
+					})
+					return
 				}
-				await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
-			} catch(error: unknown) {
-				if (error instanceof Error) return pendingRequest.reject(error)
-				return pendingRequest.reject(this.parseRpcError(error))
+				return pendingRequest.future.reject(this.parseRpcError(signerReply.error))
 			}
+			await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
 		} catch(error: unknown) {
+			if (error instanceof Error) return pendingRequest.future.reject(error)
+			return pendingRequest.future.reject(this.parseRpcError(error))
+		}
+	} catch(error: unknown) {
 			console.error(messageEvent)
 			console.error(error)
 			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
@@ -866,8 +1047,8 @@ class InterceptorMessageListener {
 			if (requestId === undefined) return
 			const pendingRequest = this.outstandingRequests.get(requestId)
 			if (pendingRequest === undefined) return
-			if (error instanceof Error) return pendingRequest.reject(error)
-			return pendingRequest.reject(this.parseRpcError(error))
+			if (error instanceof Error) return pendingRequest.future.reject(error)
+			return pendingRequest.future.reject(this.parseRpcError(error))
 		}
 	}
 
@@ -881,23 +1062,17 @@ class InterceptorMessageListener {
 			} else {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: [], currentProvider: inpageWindow.ethereum }, 'window.web3')
 			}
+			this.installControlledAccountCompatibilityProperties()
 		}
 	}
 
 	private readonly connectToSigner = async (signerName: Signer) => {
-		this.currentSigner = signerName
-		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean, activeAddress: string  }> => {
+		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
 			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
-				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean'
-				&& 'activeAddress' in connectSignerReply && connectSignerReply.activeAddress !== null
-				&& connectSignerReply.activeAddress !== undefined && typeof connectSignerReply.activeAddress === 'string') {
-					this.currentAddress = connectSignerReply.activeAddress
-					if (connectSignerReply.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined) {
-						setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.currentAddress, 'window.ethereum.selectedAddress')
-					}
-				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string }
+				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
+				return connectSignerReply as { metamaskCompatibilityMode: boolean }
 			}
 			throw new Error('Failed to parse connected_to_signer reply')
 		}
@@ -967,55 +1142,67 @@ class InterceptorMessageListener {
 		}
 		if (inpageWindow.ethereum.isInterceptor) return
 
-		// subscribe for signers events
-		inpageWindow.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
-		})
-		inpageWindow.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
-			this.connectToSigner(this.currentSigner)
-		})
-		inpageWindow.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, this.currentSigner] })
-		})
-		inpageWindow.ethereum.on('chainChanged', (chainId: string) => {
-			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
-			this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
-		})
-
-		this.connected = !inpageWindow.ethereum.isConnected || inpageWindow.ethereum.isConnected()
-		this.signerWindowEthereumRequest = inpageWindow.ethereum.request.bind(inpageWindow.ethereum) // store the request object to signer
+		const subscribeToSignerEvents = (provider: WindowEthereum, signerName: Signer) => {
+			provider.on('accountsChanged', (accounts: readonly string[]) => {
+				if (!Array.isArray(accounts)) return
+				if (!InterceptorMessageListener.isStringArray([...accounts])) return
+				this.signerAccounts = [...accounts]
+				if (this.pendingSignerAddressRequest !== undefined) return
+				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
+			})
+			provider.on('connect', (_connectInfo: ProviderConnectInfo) => {
+				this.connectToSigner(signerName)
+			})
+			provider.on('disconnect', (_error: ProviderRpcError) => {
+				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName] })
+			})
+			provider.on('chainChanged', (chainId: string) => {
+				// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
+				const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
+				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
+			})
+		}
+		const getSignerName = (signerWindowEthereum: WindowEthereum) => {
+			if (signerWindowEthereum.isCoinbaseWallet) return 'CoinbaseWallet' as const
+			if (signerWindowEthereum.isBraveWallet) return 'Brave' as const
+			if (signerWindowEthereum.isMetaMask) return 'MetaMask' as const
+			return 'NotRecognizedSigner' as const
+		}
+		const hasRequestAndOn = (provider: WindowEthereum | undefined): provider is WindowEthereum => {
+			return provider !== undefined
+				&& typeof provider.request === 'function'
+				&& typeof provider.on === 'function'
+		}
 
 		if (inpageWindow.ethereum.isBraveWallet || inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet) {
-			const signerName = inpageWindow.ethereum.providerMap || inpageWindow.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
-			const oldWinEthereum = (inpageWindow.ethereum.providerMap ? inpageWindow.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? inpageWindow.ethereum
-			inpageWindow.ethereum = {
-				isInterceptor: true,
-				isConnected: this.WindowEthereumIsConnected.bind(oldWinEthereum),
-				request: this.WindowEthereumRequest.bind(oldWinEthereum),
-				send: this.WindowEthereumSend.bind(oldWinEthereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(oldWinEthereum),
-				on: this.WindowEthereumOn.bind(oldWinEthereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(oldWinEthereum),
-				enable: this.WindowEthereumEnable.bind(oldWinEthereum),
-				...this.unsupportedMethods(oldWinEthereum),
-			}
+			const mapSignerWindowEthereum = inpageWindow.ethereum.providerMap?.get('CoinbaseWallet')
+			const mapSignerIsUsable = hasRequestAndOn(mapSignerWindowEthereum)
+			const signerWindowEthereum = mapSignerIsUsable ? mapSignerWindowEthereum : inpageWindow.ethereum
+			const signerName = mapSignerIsUsable ? 'CoinbaseWallet' as const : getSignerName(signerWindowEthereum)
+			this.connected = !signerWindowEthereum.isConnected || signerWindowEthereum.isConnected()
+			this.signerWindowEthereumRequest = signerWindowEthereum.request.bind(signerWindowEthereum) // store the request object to signer
+			this.fallbackSignerWindowEthereumRequest = mapSignerIsUsable ? inpageWindow.ethereum.request.bind(inpageWindow.ethereum) : undefined
+			subscribeToSignerEvents(signerWindowEthereum, signerName)
+			inpageWindow.ethereum = this.createInterceptorProvider(signerWindowEthereum)
+			this.installControlledAccountCompatibilityProperties()
 			this.connectToSigner(signerName)
 			return
 		}
+		const fallbackSignerWindowEthereum = inpageWindow.ethereum
+		const fallbackSignerName = getSignerName(fallbackSignerWindowEthereum)
+		this.signerWindowEthereumRequest = fallbackSignerWindowEthereum.request.bind(fallbackSignerWindowEthereum) // store the request object to signer
+		this.fallbackSignerWindowEthereumRequest = undefined
+		this.connected = !fallbackSignerWindowEthereum.isConnected || fallbackSignerWindowEthereum.isConnected()
+		subscribeToSignerEvents(fallbackSignerWindowEthereum, fallbackSignerName)
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-		Object.assign(inpageWindow.ethereum, {
-			isInterceptor: true,
-			isConnected: this.WindowEthereumIsConnected.bind(inpageWindow.ethereum),
-			request: this.WindowEthereumRequest.bind(inpageWindow.ethereum),
-			send: this.WindowEthereumSend.bind(inpageWindow.ethereum),
-			sendAsync: this.WindowEthereumSendAsync.bind(inpageWindow.ethereum),
-			on: this.WindowEthereumOn.bind(inpageWindow.ethereum),
-			removeListener: this.WindowEthereumRemoveListener.bind(inpageWindow.ethereum),
-			enable: this.WindowEthereumEnable.bind(inpageWindow.ethereum),
-			...this.unsupportedMethods(inpageWindow.ethereum),
-		})
-		this.connectToSigner(inpageWindow.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
+		if (this.hasNonConfigurableAccountCompatibilityProperty()) {
+			this.installControlledAccountCompatibilityProperties()
+			inpageWindow.ethereum = this.createInterceptorProvider(fallbackSignerWindowEthereum)
+		} else {
+			Object.assign(fallbackSignerWindowEthereum, this.createInterceptorProvider(fallbackSignerWindowEthereum))
+		}
+		this.installControlledAccountCompatibilityProperties()
+		this.connectToSigner(fallbackSignerName)
 	}
 }
 

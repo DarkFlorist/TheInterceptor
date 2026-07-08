@@ -33,6 +33,45 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
+const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
+
+function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
+	const socketIdentifier = websiteSocketToString(socket)
+	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, (unscopedConnectionEventSuppressionCounts.get(socketIdentifier) ?? 0) + 1)
+	return socketIdentifier
+}
+
+function decrementUnscopedConnectionEventSuppression(socketIdentifier: string) {
+	const previousCount = unscopedConnectionEventSuppressionCounts.get(socketIdentifier)
+	if (previousCount === undefined || previousCount <= 1) {
+		unscopedConnectionEventSuppressionCounts.delete(socketIdentifier)
+		return
+	}
+	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, previousCount - 1)
+}
+
+function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
+	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
+}
+
+export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
+	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
+	try {
+		return action()
+	} finally {
+		decrementUnscopedConnectionEventSuppression(socketIdentifier)
+	}
+}
+
+export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
+	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
+	try {
+		return await action()
+	} finally {
+		decrementUnscopedConnectionEventSuppression(socketIdentifier)
+	}
+}
+
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
@@ -74,6 +113,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
+			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
@@ -172,14 +212,23 @@ function connectToPort(
 	connectWithActiveAddress: bigint | undefined,
 ): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-
-	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
-
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+	if (!shouldSendUnscopedConnectionEvents(socket)) return true
+	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
+}
+
+export function sendProviderConnectionEventsToPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	settings: Settings,
+	accounts: readonly bigint[],
+	options: { readonly requestId?: number, readonly includeChainChanged?: boolean } = {},
+) {
+	const requestScope = options.requestId === undefined ? {} : { requestId: options.requestId }
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId], ...requestScope })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, ...requestScope })
+	if (options.includeChainChanged === false) return
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId, ...requestScope })
 }
 
 function disconnectFromPort(

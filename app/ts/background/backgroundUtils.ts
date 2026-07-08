@@ -22,13 +22,26 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	return await getActiveAddressEntry(signingAddr)
 }
 
+export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
+	const activeAddress = await getActiveAddress(settings, tabId)
+	if (activeAddress !== undefined) return activeAddress
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return undefined
+	const tabState = await getTabState(tabId)
+	const firstSigner = tabState.signerAccounts[0]
+	if (firstSigner === undefined) return undefined
+	return await getActiveAddressEntry(firstSigner)
+}
+
 export async function getActiveAddressesForAllTabs(settings: Settings) {
 	const tabStates = await getAllTabStates()
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
 		const addressEntry = settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
 		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: addressEntry }))
 	}
-	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
+	return Promise.all(tabStates.map(async (state) => {
+		const signingAddr = state.activeSigningAddress
+		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntry(signingAddr) }
+	}))
 }
 
 export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
