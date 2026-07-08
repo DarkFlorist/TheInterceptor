@@ -2,10 +2,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress } from './wire-types.js'
 import { EIP712Message } from './eip721.js'
 
-const PersonalSignPassword = funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null).withParser({
-	parse: value => ({ success: true as const, value }),
-	serialize: value => ({ success: true as const, value: value ?? null }),
-})
+const PersonalSignPassword = funtypes.Union(funtypes.String, funtypes.Null)
 
 export type OldSignTypedDataParams = funtypes.Static<typeof OldSignTypedDataParams>
 export const OldSignTypedDataParams = funtypes.ReadonlyObject({

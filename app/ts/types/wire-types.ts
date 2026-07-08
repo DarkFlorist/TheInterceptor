@@ -226,7 +226,7 @@ export type EthereumAccessList = funtypes.Static<typeof EthereumAccessList>
 
 type EthereumUnsignedTransactionLegacy = funtypes.Static<typeof EthereumUnsignedTransactionLegacy>
 export const EthereumUnsignedTransactionLegacyFields = {
-	type: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
+	type: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
 	from: EthereumAddress,
 	nonce: EthereumQuantity,
 	gasPrice: EthereumQuantity,

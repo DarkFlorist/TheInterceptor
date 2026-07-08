@@ -65,61 +65,30 @@ function shouldCacheResponse(response: ResolvedResponse) {
 
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
 
-function omitUndefinedObjectProperties(value: unknown, ancestors = new WeakSet<object>()): unknown {
-	if (Array.isArray(value)) {
-		if (ancestors.has(value)) return value
-		ancestors.add(value)
-		try {
-			for (const key of Reflect.ownKeys(value)) {
-				if (key === 'length') continue
-				if (typeof key !== 'string') return value
-				const index = Number(key)
-				if (
-					!Number.isInteger(index)
-					|| index < 0
-					|| index >= value.length
-					|| `${ index }` !== key
-					|| !Object.prototype.propertyIsEnumerable.call(value, key)
-				) return value
-			}
-
-			const normalized = []
-			for (let index = 0; index < value.length; index++) {
-				if (!Object.prototype.hasOwnProperty.call(value, index)) return value
-				const descriptor = Object.getOwnPropertyDescriptor(value, `${ index }`)
-				if (descriptor === undefined || !('value' in descriptor)) return value
-				normalized.push(omitUndefinedObjectProperties(descriptor.value, ancestors))
-			}
-			return normalized
-		} finally {
-			ancestors.delete(value)
-		}
-	}
-	if (typeof value !== 'object' || value === null) return value
-	const prototype = Object.getPrototypeOf(value)
-	if (prototype !== Object.prototype && prototype !== null) return value
-	if (ancestors.has(value)) return value
-	ancestors.add(value)
-
-	const normalized: Record<string, unknown> = {}
-	try {
-		for (const key of Reflect.ownKeys(value)) {
-			if (typeof key !== 'string' || !Object.prototype.propertyIsEnumerable.call(value, key)) return value
-			const descriptor = Object.getOwnPropertyDescriptor(value, key)
-			if (descriptor === undefined || !('value' in descriptor)) return value
-			if (descriptor.value === undefined) continue
-			normalized[key] = omitUndefinedObjectProperties(descriptor.value, ancestors)
-		}
-		return normalized
-	} finally {
-		ancestors.delete(value)
-	}
+export function stringifyJsonRpcPayload(value: unknown) {
+	if (!isJSONEncodeable(value)) throw new Error('Serialized JSON-RPC payload contains an unsupported value.')
+	return JSON.stringify(value)
 }
 
-export function stringifyJsonRpcPayload(value: unknown) {
-	const normalizedValue = omitUndefinedObjectProperties(value)
-	if (!isJSONEncodeable(normalizedValue)) throw new Error('Serialized JSON-RPC payload contains an unsupported value.')
-	return JSON.stringify(normalizedValue)
+function validateRawJsonRpcRequestShape(value: unknown, path = 'request', visited = new WeakSet<object>()): void {
+	if (typeof value !== 'object' || value === null) return
+	if (visited.has(value)) return
+	visited.add(value)
+	if (Array.isArray(value)) {
+		for (const key of Reflect.ownKeys(value)) {
+			if (typeof key === 'symbol') throw new Error(`Additional property ${ String(key) } must not be present.`)
+			if (key === 'length') continue
+			if (!Object.prototype.propertyIsEnumerable.call(value, key)) throw new Error(`Additional property ${ key } must not be present.`)
+			if (!/^(0|[1-9]\d*)$/.test(key)) throw new Error(`Additional property ${ key } must not be present.`)
+			validateRawJsonRpcRequestShape(value[Number(key)], `${ path }[${ key }]`, visited)
+		}
+		return
+	}
+	for (const key of Reflect.ownKeys(value)) {
+		if (typeof key === 'symbol') throw new Error(`Additional property ${ String(key) } must not be present.`)
+		if (!Object.prototype.propertyIsEnumerable.call(value, key)) throw new Error(`Additional property ${ key } must not be present.`)
+		validateRawJsonRpcRequestShape((value as Record<string, unknown>)[key], `${ path }.${ key }`, visited)
+	}
 }
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
@@ -252,6 +221,7 @@ export class EthereumJSONRpcRequestHandler {
 	}
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, requestAbortController: AbortController | undefined = undefined, bypassCache = false, timeoutMs = 60000) => {
+		validateRawJsonRpcRequestShape(rpcRequest)
 		const requestId = ++this.nextRequestId
 		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs, requestAbortController)
 		if (responseObject.responseState === 'failed') {

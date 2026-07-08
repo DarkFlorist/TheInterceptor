@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJSONRpcRequestHandler, stringifyJsonRpcPayload, type SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1BlockHeader, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
@@ -139,11 +140,11 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		})
 	})
 
-	test('serializes personal_sign undefined password as explicit JSON null', async () => {
+	test('serializes personal_sign without a password before fetching', async () => {
 		await withBodyCapturingRequestHandler('0x', async (requestHandler, bodies) => {
 			const result = await requestHandler.jsonRpcRequest({
 				method: 'personal_sign',
-				params: ['0x', testAddress, undefined],
+				params: ['0x', testAddress],
 			})
 
 			assert.equal(result, '0x')
@@ -151,9 +152,117 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				jsonrpc: '2.0',
 				id: 2,
 				method: 'personal_sign',
-				params: ['0x', '0x0000000000000000000000000000000000000001', null],
+				params: ['0x', '0x0000000000000000000000000000000000000001'],
 			})
 		})
+	})
+
+	test('rejects personal_sign undefined password before fetching', async () => {
+		await withBodyCapturingRequestHandler('0x', async (requestHandler, bodies) => {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'personal_sign',
+					params: ['0x', testAddress, undefined],
+				}),
+				(error) => error instanceof Error,
+			)
+			assert.equal(bodies.length, 0)
+		})
+	})
+
+	test('rejects undefined object properties in the final JSON-RPC payload guard', () => {
+		assert.throws(
+			() => stringifyJsonRpcPayload({ jsonrpc: '2.0', id: 2, method: 'eth_simulateV1', payload: { type: undefined } }),
+			/Serialized JSON-RPC payload contains an unsupported value./,
+		)
+	})
+
+	test('rejects undefined eth_simulateV1 param object properties before fetching', async () => {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [],
+						foo: undefined,
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Unexpected property: foo'),
+			)
+			assert.equal(bodies.length, 0)
+		})
+	})
+
+	test('rejects undefined eth_simulateV1 block overrides before fetching', async () => {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [],
+							blockOverrides: {
+								baseFeePerGas: 1n,
+								foo: undefined,
+							},
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Unexpected property: foo'),
+			)
+			assert.equal(bodies.length, 0)
+		})
+	})
+
+	test('rejects undefined eth_simulateV1 state overrides before fetching', async () => {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [],
+							stateOverrides: {
+								'0x0000000000000000000000000000000000000001': {
+									balance: 1n,
+									foo: undefined,
+								},
+							},
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Unexpected property: foo'),
+			)
+			assert.equal(bodies.length, 0)
+		})
+	})
+
+	test('rejects undefined legacy eth_simulateV1 call type in the request schema', () => {
+		assert.equal(EthereumJsonRpcRequest.safeParse({
+			method: 'eth_simulateV1',
+			params: [{
+				blockStateCalls: [{
+					calls: [{
+						type: undefined,
+						from: '0x0000000000000000000000000000000000000001',
+						to: '0x0000000000000000000000000000000000000001',
+						value: '0x1',
+					}],
+				}],
+			}],
+		}).success, false)
+		assert.equal(EthereumJsonRpcRequest.safeParse({
+			method: 'eth_simulateV1',
+			params: [{
+				blockStateCalls: [{
+					calls: [{
+						from: '0x0000000000000000000000000000000000000001',
+						to: '0x0000000000000000000000000000000000000001',
+						value: '0x1',
+					}],
+				}],
+			}],
+		}).success, true)
 	})
 
 	test('rejects malformed arrays in the final JSON-RPC payload guard', () => {
@@ -201,7 +310,6 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 							},
 						},
 						calls: [{
-							type: '1559',
 							from: 0xc000000000000000000000000000000000000000n,
 							to: 0xc000000000000000000000000000000000000000n,
 							value: 0x1n,
@@ -221,7 +329,6 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				params: [{
 					blockStateCalls: [{
 						calls: [{
-							type: '0x2',
 							from: '0xc000000000000000000000000000000000000000',
 							to: '0xc000000000000000000000000000000000000000',
 							value: '0x1',
@@ -239,6 +346,41 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 					traceTransfers: true,
 					validation: true,
 				}, 'latest'],
+			})
+		})
+	})
+
+	test('serializes omitted-type eth_simulateV1 fee-market calls before fetching', async () => {
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			const result = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: testAddress,
+							to: testAddress,
+							maxFeePerGas: 4n,
+							maxPriorityFeePerGas: 5n,
+						}],
+					}],
+				}],
+			})
+
+			assert.deepEqual(result, [])
+			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'eth_simulateV1',
+				params: [{
+					blockStateCalls: [{
+						calls: [{
+							from: '0x0000000000000000000000000000000000000001',
+							to: '0x0000000000000000000000000000000000000001',
+							maxFeePerGas: '0x4',
+							maxPriorityFeePerGas: '0x5',
+						}],
+					}],
+				}],
 			})
 		})
 	})
@@ -320,57 +462,28 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		})
 	})
 
-	test('omits undefined legacy eth_simulateV1 call type before fetching', async () => {
+	test('rejects extra RPC request extension fields before fetching', async () => {
 		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
-			const result = await requestHandler.jsonRpcRequest({
-				method: 'eth_simulateV1',
-				params: [{
-					blockStateCalls: [{
-						calls: [{
-							type: undefined,
-							from: testAddress,
-							to: testAddress,
-							value: 1n,
-						}],
-					}],
-				}],
-			})
-
-			assert.deepEqual(result, [])
-			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
-				jsonrpc: '2.0',
-				id: 2,
-				method: 'eth_simulateV1',
-				params: [{
-					blockStateCalls: [{
-						calls: [{
-							from: '0x0000000000000000000000000000000000000001',
-							to: '0x0000000000000000000000000000000000000001',
-							value: '0x1',
-						}],
-					}],
-				}],
-			})
-		})
-	})
-
-	test('rejects unserialized BigInts in RPC request extension fields', async () => {
-		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
-			await assert.rejects(
-				async () => await requestHandler.jsonRpcRequest({
-					method: 'eth_simulateV1',
-					params: [{
-						blockStateCalls: [{
-							calls: [{
-								from: testAddress,
-								to: testAddress,
-								metadataNonce: 2n,
+			for (const metadata of [2n, true, { keep: true }]) {
+				await assert.rejects(
+					async () => await requestHandler.jsonRpcRequest({
+						method: 'eth_simulateV1',
+						params: [{
+							blockStateCalls: [{
+								calls: [{
+									from: testAddress,
+									to: testAddress,
+									metadata,
+								}],
 							}],
 						}],
-					}],
-				}),
-				(error) => error instanceof Error && error.message.includes('Additional property metadataNonce must be JSON encodeable.'),
-			)
+					}),
+				(error) => error instanceof Error && (
+					error.message.includes('Unexpected property: metadata')
+					|| error.message.includes('Additional property Symbol(unsafe) must not be present.')
+				),
+				)
+			}
 			assert.equal(bodies.length, 0)
 		})
 	})
@@ -391,51 +504,37 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 							}],
 						}],
 					}),
-					(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+					(error) => error instanceof Error && error.message.includes('Unexpected property: metadata'),
 				)
 			}
 			assert.equal(bodies.length, 0)
 		})
 	})
 
-	test('allows shared acyclic objects in RPC request extension fields', async () => {
+	test('rejects shared acyclic RPC request extension objects before fetching', async () => {
 		const sharedMetadata = { keep: true }
-
 		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
-			const result = await requestHandler.jsonRpcRequest({
-				method: 'eth_simulateV1',
-				params: [{
-					blockStateCalls: [{
-						calls: [{
-							from: testAddress,
-							to: testAddress,
-							metadataA: sharedMetadata,
-							metadataB: sharedMetadata,
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [{
+								from: testAddress,
+								to: testAddress,
+								metadataA: sharedMetadata,
+								metadataB: sharedMetadata,
+							}],
 						}],
 					}],
-				}],
-			})
-
-			assert.deepEqual(result, [])
-			assert.deepEqual(parseCapturedJsonRpcBody(bodies), {
-				jsonrpc: '2.0',
-				id: 2,
-				method: 'eth_simulateV1',
-				params: [{
-					blockStateCalls: [{
-						calls: [{
-							from: '0x0000000000000000000000000000000000000001',
-							to: '0x0000000000000000000000000000000000000001',
-							metadataA: { keep: true },
-							metadataB: { keep: true },
-						}],
-					}],
-				}],
-			})
+				}),
+				(error) => error instanceof Error && error.message.includes('Unexpected property: metadataA'),
+			)
+			assert.equal(bodies.length, 0)
 		})
 	})
 
-	test('rejects cyclic RPC payload objects before fetching', async () => {
+	test('rejects cyclic RPC request extension objects before fetching', async () => {
 		const metadata: { self?: unknown } = {}
 		metadata.self = metadata
 
@@ -453,7 +552,10 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 						}],
 					}],
 				}),
-				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+				(error) => error instanceof Error && (
+					error.message.includes('Unexpected property: metadata')
+					|| error.message.includes('Additional property metadata must not be present.')
+				),
 			)
 			assert.equal(bodies.length, 0)
 		})
@@ -476,7 +578,12 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 						}],
 					}],
 				}),
-				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+				(error) => error instanceof Error && (
+					error.message.includes('Unexpected property: metadata')
+					|| error.message.includes('Additional property Symbol(unsafe) must not be present.')
+					|| error.message.includes('Additional property metadata must not be present.')
+					|| error.message.includes('Unable to assign')
+				),
 			)
 			assert.equal(bodies.length, 0)
 		})
@@ -498,10 +605,13 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 									metadata,
 								}],
 							}],
-						}],
-					}),
-					(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
-				)
+					}],
+				}),
+				(error) => error instanceof Error && (
+					error.message.includes('Unexpected property: metadata')
+					|| error.message.includes(`Additional property ${ String(key) } must not be present.`)
+				),
+			)
 			}
 			assert.equal(bodies.length, 0)
 		})
@@ -521,7 +631,54 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 						}],
 					}],
 				}),
-				(error) => error instanceof Error && error.message.includes('Additional property metadata must be JSON encodeable.'),
+				(error) => error instanceof Error && (
+					error.message.includes('Unexpected property: metadata')
+					|| error.message.includes('Additional property metadata must not be present.')
+					|| error.message.includes('Unable to assign')
+				),
+			)
+			assert.equal(bodies.length, 0)
+		})
+	})
+
+	test('rejects extra own properties on eth_simulateV1 request arrays before fetching', async () => {
+		const blockStateCalls: unknown[] = []
+		Object.defineProperty(blockStateCalls, 'extra', { value: [], enumerable: true })
+
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls,
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Additional property extra must not be present.'),
+			)
+			assert.equal(bodies.length, 0)
+		})
+	})
+
+	test('rejects hidden own properties on eth_simulateV1 request records before fetching', async () => {
+		const state: Record<string, unknown> = { slot0: 0n }
+		Object.defineProperty(state, 'slot1', { value: 1n, enumerable: false })
+
+		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
+			await assert.rejects(
+				async () => await requestHandler.jsonRpcRequest({
+					method: 'eth_simulateV1',
+					params: [{
+						blockStateCalls: [{
+							calls: [],
+							stateOverrides: {
+								'0x0000000000000000000000000000000000000001': {
+									state,
+								},
+							},
+						}],
+					}],
+				}),
+				(error) => error instanceof Error && error.message.includes('Additional property slot1 must not be present.'),
 			)
 			assert.equal(bodies.length, 0)
 		})
@@ -530,8 +687,6 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 	test('rejects wrong-branch typed eth_simulateV1 call fields before fetching', async () => {
 		const calls: Record<string, unknown>[] = [
 			{ type: 'legacy', from: testAddress, to: testAddress, maxFeePerGas: 1n },
-			{ from: testAddress, to: testAddress, maxFeePerGas: 1n },
-			{ type: '1559', from: testAddress, to: testAddress, gasPrice: 1n },
 		]
 
 		await withBodyCapturingRequestHandler([], async (requestHandler, bodies) => {
@@ -541,11 +696,11 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 						method: 'eth_simulateV1',
 						params: [{
 							blockStateCalls: [{
-								calls: [call],
-							}],
+							calls: [call],
 						}],
+					}],
 					}),
-					(error) => error instanceof Error && error.message.includes('must be JSON encodeable.'),
+					(error) => error instanceof Error,
 				)
 			}
 			assert.equal(bodies.length, 0)

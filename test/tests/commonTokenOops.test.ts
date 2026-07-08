@@ -97,7 +97,7 @@ const simulationState: SimulationState = {
 describe('commonTokenOops', () => {
 	test('warns when a known token is transferred directly to a router contract', async () => {
 		const transaction = EthereumUnsignedTransaction.parse({
-			type: undefined,
+			type: '0x0',
 			from: '0x0000000000000000000000000000000000000001',
 			nonce: '0x0',
 			gasPrice: '0x1',

@@ -489,6 +489,26 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal('authorizationList' in receipt, false)
 		})
 
+		test('transaction receipt treats omitted type as legacy', async () => {
+			const receipt = EthTransactionReceiptResponse.parse({
+				blockHash: testBytes32('51'),
+				blockNumber: '0x1',
+				transactionHash: testBytes32('52'),
+				transactionIndex: '0x0',
+				contractAddress: null,
+				cumulativeGasUsed: '0x5208',
+				gasUsed: '0x5208',
+				effectiveGasPrice: '0x1',
+				from: '0x0000000000000000000000000000000000000001',
+				to: '0x0000000000000000000000000000000000000002',
+				logs: [],
+				logsBloom: zeroBytes256,
+				status: '0x1',
+			})
+			if (receipt === null) throw new Error('receipt should not be null')
+			assert.equal(receipt.type, 'legacy')
+		})
+
 		test('typed transaction serializers use the correct prefix bytes', async () => {
 			const unsigned7702 = EthereumUnsignedTransaction.parse({
 				type: '0x4',

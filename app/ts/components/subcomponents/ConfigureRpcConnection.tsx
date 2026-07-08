@@ -63,7 +63,6 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 				},
 				calls: [
 					{
-						type: '1559',
 						from: 0xc000000000000000000000000000000000000000n,
 						to: 0xc000000000000000000000000000000000000000n,
 						value: 0x1n,

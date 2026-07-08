@@ -2,7 +2,7 @@ import { type EIP712Message, type EIP712Types, Eip712Number } from '../types/eip
 import { EthereumAddress, EthereumData } from '../types/wire-types.js'
 import { String } from 'funtypes'
 import { hashStruct, hashTypedData } from './viem.js'
-import type { JSONEncodeableObject, typeJSONEncodeable } from './json.js'
+import type { JSONEncodeableObject, LooseJSONEncodeable } from './json.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-signing-types.js'
 import { addressString } from './bigint.js'
@@ -85,7 +85,7 @@ const isInvalidReservedType = (type: string): boolean => {
 	return false
 }
 
-const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityTypeTree: SolidityTypeTree): { valid: true } | { valid: false, reason: string } => {
+const validateTypeValue = (typeStr: string, value: LooseJSONEncodeable, solidityTypeTree: SolidityTypeTree): { valid: true } | { valid: false, reason: string } => {
 	// Check for tuple types e.g. tuple(uint256,MyStruct) or tuple(uint256,MyStruct)[]
 	if (typeStr.startsWith('tuple(')) return { valid: false, reason: 'tuples are not supported'}
 
@@ -118,7 +118,7 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 
 const getBaseType = (typeStr: string): string => typeStr.match(/^([^\[]+)/)?.[1] ?? typeStr
 
-const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, solidityTypeTree: SolidityTypeTree): { valid: true } | { valid: false, reason: string } => {
+const validatePrimitiveOrStruct = (typeStr: string, value: LooseJSONEncodeable, solidityTypeTree: SolidityTypeTree): { valid: true } | { valid: false, reason: string } => {
 	const identifierPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 	if (!identifierPattern.test(typeStr)) return { valid: false, reason: `invalid type: ${ typeStr }` }
 

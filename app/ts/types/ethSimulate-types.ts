@@ -1,6 +1,5 @@
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import {
-	EthereumAccessList,
 	EthereumAddress,
 	EthereumBytes16,
 	EthereumBytes256,
@@ -37,27 +36,41 @@ import {
 import { isJSONEncodeable } from '../utils/json.js'
 import * as funtypes from 'funtypes'
 
-type AccountOverride = funtypes.Static<typeof AccountOverride>
-const AccountOverride = funtypes.ReadonlyPartial({
-	state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
-	stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
-	nonce: EthereumQuantitySmall,
-	balance: EthereumQuantity,
-	code: EthereumData,
-	movePrecompileToAddress: EthereumAddress,
-})
-
-type FieldSet = Readonly<Record<string, unknown>>
-
-function knownKeysOf(...fieldSets: readonly FieldSet[]) {
-	return fieldSets.flatMap(Object.keys)
-}
-
 const signedTransactionSignatureFields = [
 	EthereumTransaction2930And1559And4844SignatureFields,
 	EthereumSignatureParityFields,
 	EthereumTypedTransactionVFields,
 ]
+
+function validateRequestObjectShape(value: unknown) {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return { success: true as const, value }
+	for (const key of Reflect.ownKeys(value)) {
+		if (typeof key === 'symbol') return { success: false as const, message: `Additional property ${ String(key) } must not be present.` }
+		if (!Object.prototype.propertyIsEnumerable.call(value, key)) return { success: false as const, message: `Additional property ${ key } must not be present.` }
+	}
+	return { success: true as const, value }
+}
+
+function validateRequestArrayShape(value: unknown) {
+	if (!Array.isArray(value)) return { success: true as const, value }
+	for (const key of Reflect.ownKeys(value)) {
+		if (typeof key === 'symbol') return { success: false as const, message: `Additional property ${ String(key) } must not be present.` }
+		if (key === 'length') continue
+		if (!Object.prototype.propertyIsEnumerable.call(value, key)) return { success: false as const, message: `Additional property ${ key } must not be present.` }
+		if (!/^(0|[1-9]\d*)$/.test(key)) return { success: false as const, message: `Additional property ${ key } must not be present.` }
+	}
+	return { success: true as const, value }
+}
+
+const EthSimulateV1RequestObject = funtypes.Unknown.withParser({
+	parse: validateRequestObjectShape,
+	serialize: validateRequestObjectShape,
+})
+
+const EthSimulateV1RequestArray = funtypes.Unknown.withParser({
+	parse: validateRequestArrayShape,
+	serialize: validateRequestArrayShape,
+})
 
 function validateAdditionalProperties(value: unknown, knownKeys: ReadonlySet<string>) {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) return { success: false as const, message: 'Additional properties must be on an object.' }
@@ -71,16 +84,32 @@ function validateAdditionalProperties(value: unknown, knownKeys: ReadonlySet<str
 	return { success: true as const, value }
 }
 
+type FieldSet = Readonly<Record<string, unknown>>
+
+const accountOverrideFields = {
+	state: funtypes.Intersect(EthSimulateV1RequestObject, funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32)),
+	stateDiff: funtypes.Intersect(EthSimulateV1RequestObject, funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32)),
+	nonce: EthereumQuantitySmall,
+	balance: EthereumQuantity,
+	code: EthereumData,
+	movePrecompileToAddress: EthereumAddress,
+}
+
 const EthSimulateV1AdditionalProperties = (...knownFieldSets: readonly FieldSet[]) => {
-	const knownKeySet = new Set(knownKeysOf(...knownFieldSets))
+	const knownKeySet = new Set(knownFieldSets.flatMap(Object.keys))
 	return funtypes.Unknown.withParser({
 		parse: (value) => validateAdditionalProperties(value, knownKeySet),
 		serialize: (value) => validateAdditionalProperties(value, knownKeySet),
 	})
 }
 
-export type BlockOverrides = funtypes.Static<typeof BlockOverrides>
-export const BlockOverrides = funtypes.Partial({
+type AccountOverride = funtypes.Static<typeof AccountOverride>
+const AccountOverride = funtypes.Intersect(
+	EthSimulateV1RequestObject,
+	funtypes.Sealed(funtypes.ReadonlyPartial(accountOverrideFields), { deep: true }),
+)
+
+const blockOverridesFields = {
 	number: EthereumQuantity,
 	prevRandao: EthereumBytes32,
 	time: EthereumTimestamp,
@@ -88,7 +117,12 @@ export const BlockOverrides = funtypes.Partial({
 	feeRecipient: EthereumAddress,
 	baseFeePerGas: EthereumQuantity,
 	blobBaseFee: EthereumQuantity,
-}).asReadonly()
+}
+export type BlockOverrides = funtypes.Static<typeof BlockOverrides>
+export const BlockOverrides = funtypes.Intersect(
+	EthSimulateV1RequestObject,
+	funtypes.Sealed(funtypes.Partial(blockOverridesFields).asReadonly(), { deep: true }),
+)
 
 type BlockCall = funtypes.Static<typeof BlockCall>
 const blockCallLegacyTypeFields = {
@@ -124,12 +158,18 @@ const blockCallFeeMarketFields = {
 	maxPriorityFeePerGas: EthereumQuantity,
 }
 const blockCallAccessListFields = {
-	accessList: EthereumAccessList,
+	accessList: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(funtypes.Intersect(
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.ReadonlyObject({
+			address: EthereumAddress,
+			storageKeys: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(EthereumBytes32)),
+		}), { deep: true }),
+	))),
 }
 const blockCallBlobFields = {
 	maxFeePerBlobGas: EthereumQuantity,
-	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
-	blobs: funtypes.ReadonlyArray(EthereumData),
+	blobVersionedHashes: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(EthereumBytes32)),
+	blobs: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(EthereumData)),
 }
 const blockCallSignatureFields = {
 	r: EthereumQuantity,
@@ -138,122 +178,126 @@ const blockCallSignatureFields = {
 	yParity: EthereumSignatureParity,
 }
 const blockCallAuthorizationListFields = {
-	authorizationList: funtypes.ReadonlyArray(funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			chainId: EthereumQuantity,
-			address: EthereumAddress,
-			nonce: EthereumQuantity,
-		}),
-		funtypes.ReadonlyPartial({
-			r: EthereumQuantity,
-			s: EthereumQuantity,
-			yParity: EthereumSignatureParity,
-		})
-	))
+	authorizationList: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(funtypes.Intersect(
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				chainId: EthereumQuantity,
+				address: EthereumAddress,
+				nonce: EthereumQuantity,
+			}),
+			funtypes.ReadonlyPartial({
+				r: EthereumQuantity,
+				s: EthereumQuantity,
+				yParity: EthereumSignatureParity,
+			})
+		), { deep: true }),
+	)))
 }
 
 const BlockCall = funtypes.Union(
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(
-			blockCallLegacyTypeFields,
-			blockCallCommonFields,
-			blockCallGasPriceFields,
-			blockCallSignatureFields,
-		),
-		funtypes.Partial(blockCallLegacyTypeFields),
-		funtypes.Partial(blockCallCommonFields),
-		funtypes.Partial(blockCallGasPriceFields),
-		funtypes.Partial(blockCallSignatureFields),
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.Partial(blockCallCommonFields),
+			funtypes.Partial(blockCallGasPriceFields),
+			funtypes.Partial(blockCallFeeMarketFields),
+			funtypes.Partial(blockCallAccessListFields),
+			funtypes.Partial(blockCallBlobFields),
+			funtypes.Partial(blockCallAuthorizationListFields),
+			funtypes.Partial(blockCallSignatureFields),
+		), { deep: true }),
 	),
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(
-			blockCall2930TypeFields,
-			blockCallCommonFields,
-			blockCallGasPriceFields,
-			blockCallAccessListFields,
-			blockCallSignatureFields,
-		),
-		funtypes.ReadonlyObject(blockCall2930TypeFields),
-		funtypes.Partial(blockCallCommonFields),
-		funtypes.Partial(blockCallGasPriceFields),
-		funtypes.Partial(blockCallAccessListFields),
-		funtypes.Partial(blockCallSignatureFields),
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.ReadonlyObject(blockCallLegacyTypeFields),
+			funtypes.Partial(blockCallCommonFields),
+			funtypes.Partial(blockCallGasPriceFields),
+			funtypes.Partial(blockCallSignatureFields),
+		), { deep: true }),
 	),
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(
-			blockCall1559TypeFields,
-			blockCallCommonFields,
-			blockCallFeeMarketFields,
-			blockCallAccessListFields,
-			blockCallSignatureFields,
-		),
-		funtypes.ReadonlyObject(blockCall1559TypeFields),
-		funtypes.Partial(blockCallCommonFields),
-		funtypes.Partial(blockCallFeeMarketFields),
-		funtypes.Partial(blockCallAccessListFields),
-		funtypes.Partial(blockCallSignatureFields),
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.ReadonlyObject(blockCall2930TypeFields),
+			funtypes.Partial(blockCallCommonFields),
+			funtypes.Partial(blockCallGasPriceFields),
+			funtypes.Partial(blockCallAccessListFields),
+			funtypes.Partial(blockCallSignatureFields),
+		), { deep: true }),
 	),
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(
-			blockCall4844TypeFields,
-			blockCallCommonFields,
-			blockCallFeeMarketFields,
-			blockCallAccessListFields,
-			blockCallBlobFields,
-			blockCallSignatureFields,
-		),
-		funtypes.ReadonlyObject(blockCall4844TypeFields),
-		funtypes.Partial(blockCallCommonFields),
-		funtypes.Partial(blockCallFeeMarketFields),
-		funtypes.Partial(blockCallAccessListFields),
-		funtypes.Partial(blockCallBlobFields),
-		funtypes.Partial(blockCallSignatureFields),
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.ReadonlyObject(blockCall1559TypeFields),
+			funtypes.Partial(blockCallCommonFields),
+			funtypes.Partial(blockCallFeeMarketFields),
+			funtypes.Partial(blockCallAccessListFields),
+			funtypes.Partial(blockCallSignatureFields),
+		), { deep: true }),
 	),
 	funtypes.Intersect(
-		EthSimulateV1AdditionalProperties(
-			blockCall7702TypeFields,
-			blockCallCommonFields,
-			blockCallFeeMarketFields,
-			blockCallAccessListFields,
-			blockCallAuthorizationListFields,
-			blockCallSignatureFields,
-		),
-		funtypes.ReadonlyObject(blockCall7702TypeFields),
-		funtypes.Partial(blockCallCommonFields),
-		funtypes.Partial(blockCallFeeMarketFields),
-		funtypes.Partial(blockCallAccessListFields),
-		funtypes.Partial(blockCallAuthorizationListFields),
-		funtypes.Partial(blockCallSignatureFields),
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.ReadonlyObject(blockCall4844TypeFields),
+			funtypes.Partial(blockCallCommonFields),
+			funtypes.Partial(blockCallFeeMarketFields),
+			funtypes.Partial(blockCallAccessListFields),
+			funtypes.Partial(blockCallBlobFields),
+			funtypes.Partial(blockCallSignatureFields),
+		), { deep: true }),
+	),
+	funtypes.Intersect(
+		EthSimulateV1RequestObject,
+		funtypes.Sealed(funtypes.Intersect(
+			funtypes.ReadonlyObject(blockCall7702TypeFields),
+			funtypes.Partial(blockCallCommonFields),
+			funtypes.Partial(blockCallFeeMarketFields),
+			funtypes.Partial(blockCallAccessListFields),
+			funtypes.Partial(blockCallAuthorizationListFields),
+			funtypes.Partial(blockCallSignatureFields),
+		), { deep: true }),
 	)
 )
 
 export type StateOverrides = funtypes.Static<typeof StateOverrides>
-export const StateOverrides = funtypes.ReadonlyRecord(funtypes.String, AccountOverride)
+export const StateOverrides = funtypes.Intersect(EthSimulateV1RequestObject, funtypes.ReadonlyRecord(funtypes.String, AccountOverride))
 
 export type MutableStateOverrides = funtypes.Static<typeof MutableStateOverrides>
-export const MutableStateOverrides = funtypes.Record(funtypes.String, AccountOverride)
+export const MutableStateOverrides = funtypes.Intersect(EthSimulateV1RequestObject, funtypes.Record(funtypes.String, AccountOverride))
 
 export type BlockCalls = funtypes.Static<typeof BlockCalls>
+const blockCallsFields = {
+	calls: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(BlockCall)),
+}
+const blockCallsOptionalFields = {
+	stateOverrides: StateOverrides,
+	blockOverrides: BlockOverrides,
+}
 export const BlockCalls = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		calls: funtypes.ReadonlyArray(BlockCall),
-	}),
-	funtypes.ReadonlyPartial({
-		stateOverrides: StateOverrides,
-		blockOverrides: BlockOverrides,
-	})
+	EthSimulateV1RequestObject,
+	funtypes.Sealed(funtypes.Intersect(
+		funtypes.ReadonlyObject(blockCallsFields),
+		funtypes.ReadonlyPartial(blockCallsOptionalFields),
+	), { deep: true }),
 )
 
 type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
+const ethSimulateV1ParamObjectFields = {
+	blockStateCalls: funtypes.Intersect(EthSimulateV1RequestArray, funtypes.ReadonlyArray(BlockCalls)),
+}
+const ethSimulateV1ParamObjectOptionalFields = {
+	traceTransfers: funtypes.Boolean,
+	validation: funtypes.Boolean,
+	returnFullTransactions: funtypes.Boolean,
+}
 const EthSimulateV1ParamObject = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
-	}),
-	funtypes.ReadonlyPartial({
-		traceTransfers: funtypes.Boolean,
-		validation: funtypes.Boolean,
-		returnFullTransactions: funtypes.Boolean,
-	}),
+	EthSimulateV1RequestObject,
+	funtypes.Sealed(funtypes.Intersect(
+		funtypes.ReadonlyObject(ethSimulateV1ParamObjectFields),
+		funtypes.ReadonlyPartial(ethSimulateV1ParamObjectOptionalFields),
+	), { deep: true }),
 )
 
 export type EthSimulateV1Params = funtypes.Static<typeof EthSimulateV1Params>
@@ -356,6 +400,10 @@ const ethSimulateV1UnknownTransactionTypeFields = {
 
 const EthSimulateV1UnknownTransactionType = funtypes.ReadonlyObject(ethSimulateV1UnknownTransactionTypeFields)
 
+// These response-side transaction branches intentionally mirror the handled
+// block transaction variants from wire-types so eth_simulateV1 can enforce the
+// same branch-specific field knowledge while still validating extra JSON-safe
+// properties on top of the parsed transaction shape.
 const EthSimulateV1LegacyBlockHeaderTransaction = funtypes.Intersect(
 	EthSimulateV1AdditionalProperties(
 		EthereumUnsignedTransactionLegacyFields,
