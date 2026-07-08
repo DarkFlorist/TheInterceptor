@@ -127,6 +127,38 @@ async function loadModules() {
 }
 
 describe('interceptor access close handling', () => {
+	test('does not emit pre-response connection events when eth_requestAccounts already has access', async () => {
+		const browserMock = installBrowserMock()
+		const { requestAccessFromUser, websiteSocketToString, changeSimulationMode, updateWebsiteAccess, getSettings } = await loadModules()
+		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
+		const account = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
+		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
+		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		const request: InterceptedRequest = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+		const ethereum = {} as never
+		const tokenPriceService = {} as never
+		const resetSimulationServices = (() => undefined) as never
+
+		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), account, async () => undefined)
+
+		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
+		assert.deepEqual(postedMessages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
+		assert.deepEqual(postedMessages.map((message) => message.requestId), [7, 7, 7])
+		assert.deepEqual(postedMessages[0]?.result, ['0x1'])
+		assert.deepEqual(postedMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		assert.deepEqual(postedMessages[2]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+	})
+
 	test('serializes dialog close cleanup with matching request creation', async () => {
 		const browserMock = installBrowserMock()
 		const { requestAccessFromUser, getPendingAccessRequests, websiteSocketToString } = await loadModules()
