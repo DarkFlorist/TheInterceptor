@@ -1131,7 +1131,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [accountString], '0x1'])
 	})
 
-	test('wallet_revokePermissions revokes website account access and disconnects approved ports', async () => {
+	test('wallet_revokePermissions clears website account access and disconnects approved ports', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -1162,8 +1162,7 @@ describe('background eth_accounts', () => {
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
-		assert.equal(access?.access, false)
-		assert.equal(access?.addressAccess, undefined)
+		assert.equal(access, undefined)
 	})
 
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
@@ -1194,7 +1193,7 @@ describe('background eth_accounts', () => {
 
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 11)
 		assert.equal(revokeReplies.at(-1)?.result, null)
-		assert.equal((await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.access, false)
+		assert.equal((await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin), undefined)
 	})
 
 	test('wallet_revokePermissions succeeds when the Interceptor is disabled for the website', async () => {
@@ -1225,10 +1224,7 @@ describe('background eth_accounts', () => {
 
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 12)
 		assert.equal(revokeReplies.at(-1)?.result, null)
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
-		assert.equal(access?.access, false)
-		assert.equal(access?.addressAccess, undefined)
-		assert.equal(access?.interceptorDisabled, true)
+		assert.equal((await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin), undefined)
 	})
 
 	test('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {

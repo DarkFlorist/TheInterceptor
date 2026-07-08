@@ -413,10 +413,7 @@ async function revokeWebsitePermissions(
 	websiteTabConnections: WebsiteTabConnections,
 	websiteOrigin: string,
 ) {
-	await updateWebsiteAccess((previousAccess) => previousAccess.map((access) => {
-		if (access.website.websiteOrigin !== websiteOrigin) return access
-		return { ...access, access: false, addressAccess: undefined }
-	}))
+	await updateWebsiteAccess((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== websiteOrigin))
 	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
