@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJSONRpcRequestHandler, type SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
@@ -117,6 +118,49 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 			assert.equal(fetchMock.getCalls(), 2)
 		} finally {
 			fetchMock.restore()
+		}
+	})
+
+	test('serializes leaked bigint request properties without throwing', async () => {
+		let requestBody: string | undefined
+		const previousFetch = globalThis.fetch
+		globalThis.fetch = async (_input, init) => {
+			requestBody = `${ init?.body ?? '' }`
+			return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x1' }), { status: HTTP_STATUS_OK, headers: responseHeaders })
+		}
+
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const request = EthSimulateV1Params.parse({
+			method: 'eth_simulateV1',
+			params: [{
+				blockStateCalls: [{
+					calls: [{
+						type: '0x2',
+						from: '0x0000000000000000000000000000000000000001',
+						nonce: '0x0',
+						maxFeePerGas: '0x2',
+						maxPriorityFeePerGas: '0x1',
+						gas: '0x5208',
+						to: '0x0000000000000000000000000000000000000002',
+						value: '0x0',
+						input: '0x',
+						chainId: '0x1',
+						r: '0x0',
+						s: '0x0',
+						yParity: '0x0',
+					}],
+				}],
+			}, 'latest'],
+		})
+		const firstCall = request.params[0].blockStateCalls[0]?.calls[0]
+		if (firstCall === undefined) throw new Error('missing eth_simulateV1 call')
+		Reflect.set(firstCall, 'hash', 0x12n)
+
+		try {
+			assert.equal(await requestHandler.jsonRpcRequest(request), '0x1')
+			assert.match(requestBody ?? '', /"hash":"0x12"/)
+		} finally {
+			globalThis.fetch = previousFetch
 		}
 	})
 
