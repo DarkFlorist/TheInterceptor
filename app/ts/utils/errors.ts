@@ -172,6 +172,19 @@ function createErrorReport(error: unknown, metadata: ErrorReportMetadata, policy
 	}
 }
 
+function formatLocalRecoveryConsoleMessage(report: InterceptorErrorReport) {
+	const parts = [
+		`code=${ report.code }`,
+		`message=${ JSON.stringify(report.message) }`,
+		`debugId=${ report.debugId }`,
+		`source=${ report.source }`,
+		`category=${ report.category }`,
+		`severity=${ report.severity }`,
+	]
+	if (report.cause !== undefined) parts.push(`cause=${ JSON.stringify(report.cause) }`)
+	return `Local Interceptor recovery: ${ parts.join(' ') }`
+}
+
 async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 	try {
 		await appendInterceptorErrorDiagnostic(report)
@@ -223,16 +236,8 @@ function logLocalRecovery(error: unknown, metadata: LocalRecoveryMetadata) {
 		userVisible: ERROR_REPORTING_POLICY.localRecovery.userVisible,
 		details: metadata.details,
 	}, ERROR_REPORTING_POLICY.localRecovery, metadata.code, metadata.message ?? getErrorMessage(error) ?? 'Recovered from an Interceptor error.')
-	console.warn('Local Interceptor recovery', {
-		debugId: report.debugId,
-		source: report.source,
-		code: report.code,
-		category: report.category,
-		severity: report.severity,
-		message: report.message,
-		...(report.cause === undefined ? {} : { cause: report.cause }),
-	})
-	if (report.details !== undefined) console.warn(report.details)
+	console.warn(formatLocalRecoveryConsoleMessage(report))
+	if (report.details !== undefined) console.warn(`Local Interceptor recovery details: ${ report.details }`)
 	printError(error)
 	return report
 }

@@ -252,6 +252,32 @@ export function decodeFunctionOutput(abi: Abi, functionName: string, data: Hex |
 	return decodeFunctionOutputUnchecked(abi, functionName, data)
 }
 
+const viemAbiDataDecodeErrorNames = new Set([
+	'AbiDecodingDataSizeInvalidError',
+	'AbiDecodingDataSizeTooSmallError',
+	'AbiDecodingZeroDataError',
+	'InvalidBytesBooleanError',
+	'PositionOutOfBoundsError',
+])
+
+const isViemAbiDataDecodeError = (error: unknown) => error instanceof Error && viemAbiDataDecodeErrorNames.has(error.name)
+
+export const decodeFunctionOutputSafely = <T>(
+	abi: Abi,
+	functionName: string,
+	data: Hex | Uint8Array,
+	isExpectedType: (value: unknown) => value is T,
+): T | undefined => {
+	let decoded: unknown
+	try {
+		decoded = decodeFunctionOutput(abi, functionName, data)
+	} catch (error) {
+		if (!isViemAbiDataDecodeError(error)) throw error
+		return undefined
+	}
+	return isExpectedType(decoded) ? decoded : undefined
+}
+
 export function decodeFunctionDataStrict<const TAbi extends Abi>(
 	abi: TAbi,
 	data: Hex | Uint8Array,

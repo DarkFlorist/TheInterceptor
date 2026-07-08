@@ -202,14 +202,14 @@ describe('open simulation stack tab', () => {
 		assert.equal(storageState.currentTabId, 12)
 	})
 
-	test('does not keep the stored website tab when the active tab is another extension page', async () => {
+	test('keeps the stored website tab when the active tab is another extension page', async () => {
 		const { storageState } = installBrowserMock([{ id: 77, url: 'chrome-extension://other-extension/page.html' }], emptyOpenedTabs(), false, 12)
 		const getLastKnownCurrentTabId = await loadGetLastKnownCurrentTabId()
 
 		const tabId = await getLastKnownCurrentTabId()
 
-		assert.equal(tabId, 77)
-		assert.equal(storageState.currentTabId, 77)
+		assert.equal(tabId, 12)
+		assert.equal(storageState.currentTabId, 12)
 	})
 
 	test('clears a stale simulation stack hash when focusing the existing stack tab without a target', async () => {
