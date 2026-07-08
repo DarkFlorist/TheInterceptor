@@ -333,8 +333,8 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websi
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
-	// If the website has been granted access, don't show this message
-	if (websiteAccess.deepValue === undefined || websiteAccess.deepValue.access === true) return <></>
+	// Only show the denied message for an explicit deny preference.
+	if (websiteAccess.deepValue === undefined || websiteAccess.deepValue.access !== false) return <></>
 
 	const confirmOrRejectRemoval = async (returnValue: string) => {
 		if (returnValue !== 'confirm' || !websiteAccess.deepValue) return

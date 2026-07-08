@@ -33,6 +33,17 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
+export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string) {
+	for (const [_tabId, tabConnection] of websiteTabConnections.entries()) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
+			if (connection === undefined) throw new Error('missing connection')
+			if (connection.websiteOrigin !== websiteOrigin) continue
+			connection.wantsToConnect = false
+		}
+	}
+}
+
 const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
 
 function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
@@ -72,7 +83,7 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 	}
 }
 
-export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
+export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
@@ -128,17 +139,20 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (web.interceptorDisabled) return 'interceptorDisabled'
-			return web.access ? 'hasAccess' : 'noAccess'
+			if (web.access === true) return 'hasAccess'
+			if (web.access === false) return 'noAccess'
+			return 'askAccess'
 		}
 	}
-	return 'notFound'
+	return 'askAccess'
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (!web.access) return 'noAccess'
+			if (web.access === false) return 'noAccess'
+			if (web.access !== true) return 'askAccess'
 			if (web.addressAccess !== undefined) {
 				for (const addressAccess of web.addressAccess) {
 					if (addressAccess.address === address.address) {
@@ -147,10 +161,10 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 				}
 			}
 			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'notFound'
+			return 'askAccess'
 		}
 	}
-	return 'notFound'
+	return 'askAccess'
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -284,7 +298,7 @@ async function updateTabConnections(
 			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
 
-		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
+		if (access === 'askAccess' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
 			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
