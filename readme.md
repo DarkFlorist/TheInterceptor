@@ -49,31 +49,5 @@ Then depending on your browser:
 - Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\app\manifest.json`.
 - Brave: Browse to `brave://extensions/` and click `Load unpacked` and point to `\app\manifest.json`.
 
-## Async popup button pattern
-
-Use `AsyncActionButton` for popup buttons that send a background message and need pending/retry/error UI while waiting for a reply.
-
-Use this pattern when the click:
-- sends a popup message via `sendPopupMessageToBackgroundPage`,
-- waits for a background reply or error path,
-- and expects the UI state to refresh after the result.
-
-Preferred pattern:
-```tsx
-const actionState = useAsyncState<void>()
-const action = createAsyncActionRunner(actionState, async () => {
-	await sendPopupMessageToBackgroundPage({ method: '...' })
-})
-
-<AsyncActionButton
-	state = { actionState.value.state }
-	text = 'Action'
-	pendingText = 'Applying...'
-	onClick = { action }
-/>
-```
-
-Do not use direct `void actionState.waitFor(...)` call sites for these async button flows.
-
 # Contact Us!
 You can reach us [Dark Florist](https://www.dark.florist/) via [Discord](https://discord.gg/b66SwRZAbu) and twitter [@DarkFlorist](https://twitter.com/DarkFlorist)!
