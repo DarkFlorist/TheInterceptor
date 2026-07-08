@@ -415,12 +415,11 @@ async function revokeWebsitePermissions(
 ) {
 	await updateWebsiteAccess((previousAccess) => previousAccess.map((access) => {
 		if (access.website.websiteOrigin !== websiteOrigin) return access
+		const { access: previousPermission, addressAccess: _removedAddressAccess, ...remainingAccess } = access
 		return {
-			website: access.website,
-			...access.access === false ? { access: false } : {},
-			...access.interceptorDisabled !== undefined ? { interceptorDisabled: access.interceptorDisabled } : {},
-			...access.declarativeNetRequestBlockMode !== undefined ? { declarativeNetRequestBlockMode: access.declarativeNetRequestBlockMode } : {},
+			...remainingAccess,
 			addressAccess: undefined,
+			...previousPermission === false ? { access: false } : {},
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
