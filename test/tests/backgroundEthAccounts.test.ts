@@ -581,7 +581,14 @@ describe('background eth_accounts', () => {
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const permissionResult = [{ parentCapability: 'eth_accounts', caveats: [], invoker: websiteOrigin }]
+		const permissionResult = [{
+			parentCapability: 'eth_accounts',
+			caveats: [{
+				type: 'restrictReturnedAccounts',
+				value: [accountString],
+			}],
+			invoker: websiteOrigin,
+		}]
 		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [19])
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [19])
 		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 19).map((message) => message.result), [permissionResult])
@@ -1189,6 +1196,75 @@ describe('background eth_accounts', () => {
 			noopPublishRpcConnectionStatus,
 		)
 
+		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		assert.equal(access?.access, true)
+		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
+	})
+
+	test('popup-approved wallet_requestPermissions stores address access and returns restrictReturnedAccounts', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+			getPendingAccessRequests,
+			resolveInterceptorAccess,
+			getSettings,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6767676767676767676767676767676767676767n
+		const accountString = '0x6767676767676767676767676767676767676767'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 22, requestSocket: socket },
+			method: 'wallet_requestPermissions',
+			params: [{ eth_accounts: {} }],
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing pending request')
+		await resolveInterceptorAccess(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			{
+				userReply: 'Approved',
+				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
+				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
+				accessRequestId: pendingRequest.accessRequestId,
+			},
+			noopPublishRpcConnectionStatus,
+		)
+
+		const permissionReply = messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 22).at(-1)
+		assert.deepEqual(permissionReply?.result, [{
+			parentCapability: 'eth_accounts',
+			caveats: [{
+				type: 'restrictReturnedAccounts',
+				value: [accountString],
+			}],
+			invoker: websiteOrigin,
+		}])
 		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, true)
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])

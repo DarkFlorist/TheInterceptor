@@ -5,9 +5,29 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 
+const ACCESS_DEBUG_PREFIX = '[Interceptor access debug]'
+const hasBridgeMethod = (message: InterceptorMessageToInpage): message is InterceptorMessageToInpage & { readonly method: string } => 'method' in message
+const shouldLogAccessBridgeMessage = (message: InterceptorMessageToInpage & { readonly method: string }) => message.method === 'wallet_requestPermissions'
+const summarizeBridgeMessage = (message: InterceptorMessageToInpage & { readonly method: string }) => {
+	if (message.type !== 'result') return { type: message.type, method: message.method, requestId: message.requestId }
+	if ('error' in message) return { type: message.type, method: message.method, requestId: message.requestId, errorCode: message.error.code, errorMessage: message.error.message }
+	if (message.method === 'accountsChanged' || message.method === 'eth_accounts') {
+		return {
+			type: message.type,
+			method: message.method,
+			requestId: message.requestId,
+			result: Array.isArray(message.result) ? message.result : message.result,
+		}
+	}
+	return { type: message.type, method: message.method, requestId: message.requestId, result: message.result }
+}
+
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
 		checkAndThrowRuntimeLastError()
+		if (hasBridgeMethod(message) && shouldLogAccessBridgeMessage(message)) {
+			console.warn(ACCESS_DEBUG_PREFIX, 'background sending message to inpage', summarizeBridgeMessage(message))
+		}
 		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {

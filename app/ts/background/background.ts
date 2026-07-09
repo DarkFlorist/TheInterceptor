@@ -423,6 +423,12 @@ function getApprovedAccountsForAccountRequest(request: InterceptedRequest, resol
 function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply, activeAddress: bigint | undefined) {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
+	logAccessDebug('replaying provider connection events for account request', {
+		method: request.method,
+		requestId: request.uniqueRequestIdentifier.requestId,
+		accounts: accounts.map((account) => formatDebugAddress(account)),
+		chainId: settings.activeRpcNetwork.chainId.toString(),
+	})
 	sendProviderConnectionEventsToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings, accounts, { requestId: request.uniqueRequestIdentifier.requestId, includeChainChanged: false })
 }
 
