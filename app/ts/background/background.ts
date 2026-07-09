@@ -36,11 +36,10 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
-import { addressString } from '../utils/bigint.js'
+import { formatDebugAddress, logBackgroundAccessDebug } from '../utils/accessDebug.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const ACCESS_DEBUG_PREFIX = '[Interceptor access debug]'
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
@@ -51,12 +50,6 @@ const INTERNAL_PROVIDER_METHODS = [
 ] as const
 
 const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
-
-const formatDebugAddress = (address: bigint | undefined) => address === undefined ? undefined : addressString(address)
-
-const logAccessDebug = (message: string, details: Record<string, unknown>) => {
-	console.warn(ACCESS_DEBUG_PREFIX, message, details)
-}
 
 export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
 	try {
@@ -381,6 +374,10 @@ function replyWithEmptyAccounts(websiteTabConnections: WebsiteTabConnections, re
 	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 }
 
+function replyWithEmptyPermissions(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_getPermissions' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+}
+
 function getRequestWithDefinedParams(request: InterceptedRequest) {
 	return 'params' in request && request.params !== undefined ? { ...request, params: request.params } : request
 }
@@ -408,7 +405,7 @@ function getAccountRequestResultAccounts(resolved: RPCReply) {
 function getApprovedAccountsForAccountRequest(request: InterceptedRequest, resolved: RPCReply, activeAddress: bigint | undefined) {
 	if (!isAccountConnectionMethod(request.method)) return undefined
 	if (request.method === 'wallet_requestPermissions' && resolved.type === 'result' && 'result' in resolved) {
-		logAccessDebug('deriving approved accounts for wallet_requestPermissions', {
+		logBackgroundAccessDebug('deriving approved accounts for wallet_requestPermissions', {
 			method: request.method,
 			requestId: request.uniqueRequestIdentifier.requestId,
 			activeAddress: formatDebugAddress(activeAddress),
@@ -423,7 +420,7 @@ function getApprovedAccountsForAccountRequest(request: InterceptedRequest, resol
 function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply, activeAddress: bigint | undefined) {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
-	logAccessDebug('replaying provider connection events for account request', {
+	logBackgroundAccessDebug('replaying provider connection events for account request', {
 		method: request.method,
 		requestId: request.uniqueRequestIdentifier.requestId,
 		accounts: accounts.map((account) => formatDebugAddress(account)),
@@ -444,7 +441,7 @@ async function persistApprovedAccountsForAccountRequest(
 ): Promise<Settings | undefined> {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts !== undefined) {
-		logAccessDebug('persistApprovedAccountsForAccountRequest start', {
+		logBackgroundAccessDebug('persistApprovedAccountsForAccountRequest start', {
 			method: request.method,
 			requestId: request.uniqueRequestIdentifier.requestId,
 			websiteOrigin: website.websiteOrigin,
@@ -459,7 +456,7 @@ async function persistApprovedAccountsForAccountRequest(
 	for (const account of accounts) {
 		const addressEntry = await getActiveAddressEntry(account)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
-		logAccessDebug('evaluating approved account for persistence', {
+		logBackgroundAccessDebug('evaluating approved account for persistence', {
 			method: request.method,
 			requestId: request.uniqueRequestIdentifier.requestId,
 			websiteOrigin: website.websiteOrigin,
@@ -471,7 +468,7 @@ async function persistApprovedAccountsForAccountRequest(
 		if (existingApprovalState === 'hasAccess') continue
 		await setAccess(website, true, account)
 		storedAddressAccess = true
-		logAccessDebug('persisted approved account access', {
+			logBackgroundAccessDebug('persisted approved account access', {
 			method: request.method,
 			requestId: request.uniqueRequestIdentifier.requestId,
 			websiteOrigin: website.websiteOrigin,
@@ -480,7 +477,7 @@ async function persistApprovedAccountsForAccountRequest(
 	}
 
 	if (!storedAddressAccess) {
-		logAccessDebug('no approved account access persisted', {
+		logBackgroundAccessDebug('no approved account access persisted', {
 			method: request.method,
 			requestId: request.uniqueRequestIdentifier.requestId,
 			websiteOrigin: website.websiteOrigin,
@@ -546,7 +543,7 @@ async function discoverAccountRequestAddressContext(
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	if (isAccountConnectionMethod(request.method)) {
-		logAccessDebug('discoverAccountRequestAddressContext initial', {
+		logBackgroundAccessDebug('discoverAccountRequestAddressContext initial', {
 			method: request.method,
 			requestId: request.uniqueRequestIdentifier.requestId,
 			websiteOrigin,
@@ -562,7 +559,7 @@ async function discoverAccountRequestAddressContext(
 	const accounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId)
-	logAccessDebug('discoverAccountRequestAddressContext signer fallback', {
+	logBackgroundAccessDebug('discoverAccountRequestAddressContext signer fallback', {
 		method: request.method,
 		requestId: request.uniqueRequestIdentifier.requestId,
 		websiteOrigin,
@@ -572,7 +569,7 @@ async function discoverAccountRequestAddressContext(
 	})
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true }
 	const firstSignerAddress = accounts[0] === undefined ? undefined : await getActiveAddressEntry(accounts[0])
-	logAccessDebug('discoverAccountRequestAddressContext derived first signer address', {
+	logBackgroundAccessDebug('discoverAccountRequestAddressContext derived first signer address', {
 		method: request.method,
 		requestId: request.uniqueRequestIdentifier.requestId,
 		websiteOrigin,
@@ -613,7 +610,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return refuseAccess(websiteTabConnections, request)
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
-	const verifyRequestAccess = () => verifyAccess(websiteTabConnections, socket, accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1', websiteOrigin, activeAddress, settings)
+	const accountIdentityRequest = isAccountOnlyMethod(request.method)
+	const verifyRequestAccess = () => verifyAccess(
+		websiteTabConnections,
+		socket,
+		accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1',
+		websiteOrigin,
+		activeAddress,
+		settings,
+		accountIdentityRequest,
+	)
 	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
@@ -624,16 +630,23 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 		return result
 	}
-	if (access === 'hasAccess' && activeAddress === undefined && request.method === 'eth_accounts' && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
-		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
-		if (account.length === 0) return replyWithEmptyAccounts(websiteTabConnections, request)
-		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
-		return result
+	if (access === 'hasAccess' && activeAddress === undefined && (request.method === 'eth_accounts' || request.method === 'wallet_getPermissions') && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
+		const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
+		if (signerAccounts.length === 0) return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		const firstSignerAccount = signerAccounts[0]
+		if (firstSignerAccount === undefined) return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		const refreshedSettings = await getSettings()
+		const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId) ?? await getActiveAddressEntry(firstSignerAccount)
+		if (refreshedActiveAddress === undefined) return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, true)
+		if (refreshedAccess !== 'hasAccess') return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress.address, publishRpcConnectionStatus)
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
 		switch (request.method) {
 			case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
+			case 'wallet_getPermissions': return replyWithEmptyPermissions(websiteTabConnections, request)
 			// if user has not given access, assume we are on chain 1
 			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })

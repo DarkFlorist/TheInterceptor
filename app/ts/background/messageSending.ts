@@ -4,8 +4,8 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
+import { logBackgroundAccessDebug } from '../utils/accessDebug.js'
 
-const ACCESS_DEBUG_PREFIX = '[Interceptor access debug]'
 const hasBridgeMethod = (message: InterceptorMessageToInpage): message is InterceptorMessageToInpage & { readonly method: string } => 'method' in message
 const shouldLogAccessBridgeMessage = (message: InterceptorMessageToInpage & { readonly method: string }) => message.method === 'wallet_requestPermissions'
 const summarizeBridgeMessage = (message: InterceptorMessageToInpage & { readonly method: string }) => {
@@ -26,7 +26,7 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 	try {
 		checkAndThrowRuntimeLastError()
 		if (hasBridgeMethod(message) && shouldLogAccessBridgeMessage(message)) {
-			console.warn(ACCESS_DEBUG_PREFIX, 'background sending message to inpage', summarizeBridgeMessage(message))
+			logBackgroundAccessDebug('background sending message to inpage', summarizeBridgeMessage(message))
 		}
 		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 		checkAndThrowRuntimeLastError()

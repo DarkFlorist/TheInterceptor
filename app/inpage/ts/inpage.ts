@@ -4,6 +4,7 @@ const METAMASK_ERROR_BLANKET_ERROR = -32603
 const METAMASK_METHOD_NOT_SUPPORTED = -32004
 const METAMASK_INVALID_METHOD_PARAMS = -32602
 const ACCESS_DEBUG_PREFIX = '[Interceptor inpage debug]'
+const ACCESS_DEBUG_ENABLED = false
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -102,7 +103,8 @@ const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 const shouldLogAccessRequestMethod = (method: string) => method === 'wallet_requestPermissions' || method === 'eth_requestAccounts'
-const logAccessDebug = (message: string, details: Record<string, unknown>) => {
+const logInpageAccessDebug = (message: string, details: Record<string, unknown>) => {
+	if (!ACCESS_DEBUG_ENABLED) return
 	console.warn(ACCESS_DEBUG_PREFIX, message, details)
 }
 
@@ -531,7 +533,7 @@ class InterceptorMessageListener {
 				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
 			}
 			if (shouldLogAccessRequestMethod(message.method)) {
-				logAccessDebug('sending page request to background', {
+				logInpageAccessDebug('sending page request to background', {
 					method: message.method,
 					requestId: pendingRequestId,
 				})
@@ -562,7 +564,7 @@ class InterceptorMessageListener {
 		const callbackError = this.drainRequestScopedProviderEventCallbacks(requestId)
 		const requestMethod = this.outstandingRequests.get(requestId)?.method
 		if (requestMethod !== undefined && shouldLogAccessRequestMethod(requestMethod)) {
-			logAccessDebug('resolving request after request-scoped provider events', {
+			logInpageAccessDebug('resolving request after request-scoped provider events', {
 				requestId,
 				requestMethod,
 				value,
@@ -864,7 +866,7 @@ class InterceptorMessageListener {
 					&& shouldLogAccessRequestMethod(originalRequestMethod)
 				)
 			if (shouldLogAccessReply) {
-				logAccessDebug('received background reply', {
+				logInpageAccessDebug('received background reply', {
 					method: replyRequest.method,
 					requestId: replyRequest.requestId,
 					originalRequestMethod,
