@@ -62,12 +62,17 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 		const promises = await getPendingAccessRequests()
 		const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 		if (pendingRequest === undefined) throw new Error('Access request missing!')
+		const replyWithPendingRequestAddresses = {
+			...reply,
+			requestAccessToAddress: reply.requestAccessToAddress ?? pendingRequest.requestAccessToAddress?.address,
+			originalRequestAccessToAddress: reply.originalRequestAccessToAddress ?? pendingRequest.originalRequestAccessToAddress?.address,
+		}
 		return await resolve(
 			ethereum,
 			tokenPriceService,
 			resetSimulationServices,
 			websiteTabConnections,
-			reply,
+			replyWithPendingRequestAddresses,
 			pendingRequest.request,
 			pendingRequest.website,
 			publishRpcConnectionStatus,
