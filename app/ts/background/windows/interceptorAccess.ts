@@ -20,6 +20,7 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
+import { addressString } from '../../utils/bigint.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -30,6 +31,12 @@ type OpenedDialogWithListeners = {
 let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
+const ACCESS_DEBUG_PREFIX = '[Interceptor access debug]'
+const formatDebugAddress = (address: bigint | undefined) => address === undefined ? undefined : addressString(address)
+const logAccessDebug = (message: string, details: Record<string, unknown>) => {
+	console.warn(ACCESS_DEBUG_PREFIX, message, details)
+}
+const shouldLogAccessDebugForRequest = (request: InterceptedRequest | undefined) => request !== undefined && isAccountConnectionMethod(request.method)
 
 const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
@@ -67,6 +74,19 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 			requestAccessToAddress: reply.requestAccessToAddress ?? pendingRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: reply.originalRequestAccessToAddress ?? pendingRequest.originalRequestAccessToAddress?.address,
 		}
+		if (shouldLogAccessDebugForRequest(pendingRequest.request)) {
+			logAccessDebug('resolveInterceptorAccess reply normalized', {
+				userReply: reply.userReply,
+				replyRequestAccessToAddress: formatDebugAddress(reply.requestAccessToAddress),
+				replyOriginalRequestAccessToAddress: formatDebugAddress(reply.originalRequestAccessToAddress),
+				pendingRequestAccessToAddress: pendingRequest.requestAccessToAddress?.address === undefined ? undefined : formatDebugAddress(pendingRequest.requestAccessToAddress.address),
+				pendingOriginalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address === undefined ? undefined : formatDebugAddress(pendingRequest.originalRequestAccessToAddress.address),
+				normalizedRequestAccessToAddress: formatDebugAddress(replyWithPendingRequestAddresses.requestAccessToAddress),
+				normalizedOriginalRequestAccessToAddress: formatDebugAddress(replyWithPendingRequestAddresses.originalRequestAccessToAddress),
+				requestMethod: pendingRequest.request?.method,
+				websiteOrigin: pendingRequest.website.websiteOrigin,
+			})
+		}
 		return await resolve(
 			ethereum,
 			tokenPriceService,
@@ -86,8 +106,19 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
 }
 
-async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
+async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true, request: InterceptedRequest | undefined = undefined) {
 	if (confirmation.userReply === 'noResponse') return
+	if (shouldLogAccessDebugForRequest(request)) {
+		logAccessDebug('changeAccess persisting approval', {
+			requestMethod: request?.method,
+			requestId: request?.uniqueRequestIdentifier.requestId,
+			websiteOrigin: website.websiteOrigin,
+			userReply: confirmation.userReply,
+			requestAccessToAddress: formatDebugAddress(confirmation.requestAccessToAddress),
+			originalRequestAccessToAddress: formatDebugAddress(confirmation.originalRequestAccessToAddress),
+			promptForAccessesIfNeeded,
+		})
+	}
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
 	await updateWebsiteApprovalAccesses(
 		ethereum,
@@ -174,6 +205,17 @@ export async function requestAccessFromUser(
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
+	if (shouldLogAccessDebugForRequest(request)) {
+		logAccessDebug('requestAccessFromUser start', {
+			requestMethod: request?.method,
+			requestId: request?.uniqueRequestIdentifier.requestId,
+			websiteOrigin: website.websiteOrigin,
+			activeAddress: formatDebugAddress(activeAddress),
+			requestAccessToAddress: requestAccessToAddress?.address === undefined ? undefined : formatDebugAddress(requestAccessToAddress.address),
+			askForAddressAccess,
+			accessAddress: accessAddress?.address === undefined ? undefined : formatDebugAddress(accessAddress.address),
+		})
+	}
 	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
 		const verify = () => verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, currentSettings)
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
@@ -244,6 +286,16 @@ export async function requestAccessFromUser(
 			simulationMode: settings.simulationMode,
 			activeAddress: activeAddress,
 		}
+		if (shouldLogAccessDebugForRequest(request)) {
+			logAccessDebug('requestAccessFromUser pending request prepared', {
+				requestMethod: request?.method,
+				requestId: request?.uniqueRequestIdentifier.requestId,
+				websiteOrigin: website.websiteOrigin,
+				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address === undefined ? undefined : formatDebugAddress(pendingRequest.requestAccessToAddress.address),
+				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address === undefined ? undefined : formatDebugAddress(pendingRequest.originalRequestAccessToAddress.address),
+				activeAddress: formatDebugAddress(activeAddress),
+			})
+		}
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
@@ -294,11 +346,11 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
 			if (!userRequestedAddressChange) {
-				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, true)
+				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, true, request)
 				return
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
-			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
+			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false, request)
 			const settings = await getSettings()
 			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
