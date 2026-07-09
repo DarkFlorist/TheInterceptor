@@ -1070,6 +1070,7 @@ describe('background eth_accounts', () => {
 			updateTabState,
 			getPendingAccessRequests,
 			resolveInterceptorAccess,
+			getSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1130,6 +1131,9 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged', 'chainChanged'])
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.requestId), [undefined, undefined, undefined])
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [accountString], '0x1'])
+		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		assert.equal(access?.access, true)
+		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('wallet_revokePermissions clears website account access and keeps the website entry', async () => {
