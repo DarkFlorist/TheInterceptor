@@ -177,6 +177,17 @@ const websiteAccessEntries: readonly WebsiteAccess[] = [
 	},
 ]
 
+const revokedWebsiteAccessEntry: WebsiteAccess = {
+	website: { websiteOrigin: 'revoked.example', icon: 'revoked.png', title: 'Revoked' },
+	addressAccess: undefined,
+}
+
+const deniedWebsiteAccessEntry: WebsiteAccess = {
+	website: { websiteOrigin: 'denied.example', icon: 'denied.png', title: 'Denied' },
+	addressAccess: undefined,
+	access: false,
+}
+
 const browserMock = createBrowserMock()
 const modulesPromise = import('../../app/ts/components/pages/WebsiteAccess.js')
 
@@ -214,6 +225,43 @@ describe('WebsiteAccessView selection', () => {
 
 		assert.equal(isChecked(alphaRadio), true)
 		assert.equal(isChecked(betaRadio), false)
+		dom.restore()
+	})
+
+	test('shows the denied prompt only for explicitly denied websites', async () => {
+		const dom = installWindowHashMock('#origin:revoked.example')
+		const { WebsiteAccessView } = await modulesPromise
+
+		await act(() => {
+			render(h(WebsiteAccessView, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browserMock.dispatch({
+				role: 'all',
+				method: 'popup_retrieveWebsiteAccessReply',
+				data: {
+					websiteAccess: [revokedWebsiteAccessEntry],
+					addressAccessMetadata: [],
+				},
+			})
+		})
+
+		assert.equal(dom.document.body.textContent.includes('This website was denied access to The Interceptor.'), false)
+
+		await act(() => {
+			dom.setHash('#origin:denied.example')
+			browserMock.dispatch({
+				role: 'all',
+				method: 'popup_retrieveWebsiteAccessReply',
+				data: {
+					websiteAccess: [deniedWebsiteAccessEntry],
+					addressAccessMetadata: [],
+				},
+			})
+		})
+
+		assert.equal(dom.document.body.textContent.includes('This website was denied access to The Interceptor.'), true)
 		dom.restore()
 	})
 })

@@ -8,7 +8,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
-import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -415,8 +415,14 @@ async function revokeWebsitePermissions(
 ) {
 	await updateWebsiteAccess((previousAccess) => previousAccess.map((access) => {
 		if (access.website.websiteOrigin !== websiteOrigin) return access
-		return { ...access, access: false, addressAccess: undefined }
+		const { access: previousPermission, addressAccess: _removedAddressAccess, ...remainingAccess } = access
+		return {
+			...remainingAccess,
+			addressAccess: undefined,
+			...previousPermission === false ? { access: false } : {},
+		}
 	}))
+	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
 	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }

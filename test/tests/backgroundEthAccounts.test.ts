@@ -80,6 +80,7 @@ function installBrowserMock() {
 
 async function loadModules() {
 	return {
+		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
@@ -1131,7 +1132,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [accountString], '0x1'])
 	})
 
-	test('wallet_revokePermissions revokes website account access and disconnects approved ports', async () => {
+	test('wallet_revokePermissions clears website account access and keeps the website entry', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -1162,13 +1163,15 @@ describe('background eth_accounts', () => {
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
-		assert.equal(access?.access, false)
+		assert.notEqual(access, undefined)
+		assert.equal(access?.website.websiteOrigin, websiteOrigin)
+		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 	})
 
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings, getPendingAccessRequests } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -1194,7 +1197,21 @@ describe('background eth_accounts', () => {
 
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 11)
 		assert.equal(revokeReplies.at(-1)?.result, null)
-		assert.equal((await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.access, false)
+		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		assert.notEqual(access, undefined)
+		assert.equal(access?.website.websiteOrigin, websiteOrigin)
+		assert.equal(access?.access, false)
+		assert.equal(access?.addressAccess, undefined)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 15, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const pendingRequests = await getPendingAccessRequests()
+		assert.equal(pendingRequests.length, 0)
 	})
 
 	test('wallet_revokePermissions succeeds when the Interceptor is disabled for the website', async () => {
@@ -1226,9 +1243,54 @@ describe('background eth_accounts', () => {
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 12)
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
-		assert.equal(access?.access, false)
+		assert.notEqual(access, undefined)
+		assert.equal(access?.website.websiteOrigin, websiteOrigin)
+		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 		assert.equal(access?.interceptorDisabled, true)
+	})
+
+	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getPendingAccessRequests, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'wallet_revokePermissions',
+			params: [{ eth_accounts: {} }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.wantsToConnect, false)
+		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
+		assert.equal((await getPendingAccessRequests()).length, 0)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const pendingRequests = await getPendingAccessRequests()
+		assert.equal(pendingRequests.length, 1)
+		assert.equal(pendingRequests[0]?.website.websiteOrigin, websiteOrigin)
 	})
 
 	test('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {
@@ -1272,5 +1334,17 @@ describe('background eth_accounts', () => {
 			assert.equal(access?.access, true)
 			assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 		}
+	})
+
+	test('stored websites without an active decision remain promptable instead of denied', async () => {
+		installBrowserMock()
+		const { hasAccess, hasAddressAccess } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+
+		assert.equal(hasAccess([{ website: { websiteOrigin, icon: undefined, title: undefined }, addressAccess: undefined }], websiteOrigin), 'askAccess')
+		assert.equal(hasAddressAccess([{ website: { websiteOrigin, icon: undefined, title: undefined }, addressAccess: undefined }], websiteOrigin, address), 'askAccess')
+		assert.equal(hasAccess([], websiteOrigin), 'askAccess')
+		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
 	})
 })
