@@ -41,7 +41,7 @@ describe('background messageSending port lifecycle', () => {
 		})
 	})
 
-	test('does not log request-scoped lifecycle messages at the bridge layer', () => {
+	test('keeps request-scoped lifecycle bridge messages free of console warnings', () => {
 		installBrowserMock()
 		const warnings: unknown[][] = []
 		const originalWarn = console.warn
@@ -62,7 +62,7 @@ describe('background messageSending port lifecycle', () => {
 		}
 	})
 
-	test('does not log standalone eth_accounts replies at the bridge layer', () => {
+	test('keeps standalone eth_accounts bridge replies free of console warnings', () => {
 		installBrowserMock()
 		const warnings: unknown[][] = []
 		const originalWarn = console.warn
@@ -86,7 +86,7 @@ describe('background messageSending port lifecycle', () => {
 				uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 			})
 
-			assert.equal(warnings.some((args) => String(args[0]).includes('[Interceptor access debug]')), false)
+			assert.equal(warnings.length, 0)
 		} finally {
 			console.warn = originalWarn
 		}

@@ -445,7 +445,7 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('does not log standalone eth_accounts replies as access debug traffic', async () => {
+	test('keeps standalone eth_accounts replies free of console warnings', async () => {
 		const signerAccount = '0x1111111111111111111111111111111111111111'
 		const warnings: unknown[][] = []
 		const previousWarn = console.warn
@@ -465,13 +465,13 @@ describe('inpage signer bridge', () => {
 		})
 
 		try {
-			await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?standalone-eth-accounts-no-access-debug', async () => {
+			await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?standalone-eth-accounts-no-warnings', async () => {
 				const provider = fakeWindow.ethereum as {
 					request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
 				}
 				assert.deepEqual(await provider.request({ method: 'eth_accounts' }), [signerAccount])
 			})
-			assert.equal(warnings.some((args) => String(args[0]).includes('[Interceptor inpage debug]')), false)
+			assert.equal(warnings.length, 0)
 		} finally {
 			console.warn = previousWarn
 		}
