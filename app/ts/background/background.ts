@@ -8,7 +8,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, setAccess, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -377,6 +377,14 @@ function replyWithEmptyPermissions(websiteTabConnections: WebsiteTabConnections,
 	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_getPermissions' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 }
 
+function replyWithEmptyAccountIdentity(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	switch (request.method) {
+		case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
+		case 'wallet_getPermissions': return replyWithEmptyPermissions(websiteTabConnections, request)
+		default: throw new Error(`Unsupported account identity request method: ${ request.method }`)
+	}
+}
+
 function getRequestWithDefinedParams(request: InterceptedRequest) {
 	return 'params' in request && request.params !== undefined ? { ...request, params: request.params } : request
 }
@@ -433,22 +441,21 @@ async function persistApprovedAccountsForAccountRequest(
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
 		if (addressEntry.askForAddressAccess === false) continue
 		if (existingApprovalState === 'hasAccess') continue
-		await setAccess(website, true, account)
+		await persistWebsiteAccessChange(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			website,
+			true,
+			account,
+			false,
+		)
 		storedAddressAccess = true
 	}
 
 	if (!storedAddressAccess) return settings
-	const refreshedSettings = await getSettings()
-	await updateWebsiteApprovalAccesses(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
-		websiteTabConnections,
-		refreshedSettings,
-		false,
-	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return refreshedSettings
+	return await getSettings()
 }
 
 async function revokeWebsitePermissions(
@@ -561,14 +568,14 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 	if (access === 'hasAccess' && activeAddress === undefined && (request.method === 'eth_accounts' || request.method === 'wallet_getPermissions') && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 		const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
-		if (signerAccounts.length === 0) return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		if (signerAccounts.length === 0) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
-		if (firstSignerAccount === undefined) return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		if (firstSignerAccount === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		const refreshedSettings = await getSettings()
 		const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId) ?? await getActiveAddressEntry(firstSignerAccount)
-		if (refreshedActiveAddress === undefined) return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		if (refreshedActiveAddress === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, true)
-		if (refreshedAccess !== 'hasAccess') return request.method === 'eth_accounts' ? replyWithEmptyAccounts(websiteTabConnections, request) : replyWithEmptyPermissions(websiteTabConnections, request)
+		if (refreshedAccess !== 'hasAccess') return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress.address, publishRpcConnectionStatus)
 	}
 

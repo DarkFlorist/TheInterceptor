@@ -1,4 +1,4 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
@@ -438,4 +438,28 @@ export async function updateWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 	return popupRefreshGeneration
+}
+
+export async function persistWebsiteAccessChange(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	website: Website,
+	access: boolean,
+	address: bigint | undefined,
+	promptForAccessesIfNeeded: boolean,
+): Promise<Settings> {
+	await setAccess(website, access, address)
+	const refreshedSettings = await getSettings()
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		refreshedSettings,
+		promptForAccessesIfNeeded,
+	)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return refreshedSettings
 }

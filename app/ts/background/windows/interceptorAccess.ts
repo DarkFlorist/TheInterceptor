@@ -3,7 +3,7 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
@@ -110,16 +110,16 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 
 async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
-	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
-	await updateWebsiteApprovalAccesses(
+	await persistWebsiteAccessChange(
 		ethereum,
 		tokenPriceService,
 		resetSimulationServices,
 		websiteTabConnections,
-		await getSettings(),
+		website,
+		confirmation.userReply === 'Approved',
+		confirmation.requestAccessToAddress,
 		promptForAccessesIfNeeded,
 	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
 export async function updateInterceptorAccessViewWithPendingRequests() {
