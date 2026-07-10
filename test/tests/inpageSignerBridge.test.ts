@@ -445,6 +445,38 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('keeps standalone eth_accounts replies free of console warnings', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const warnings: unknown[][] = []
+		const previousWarn = console.warn
+		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_accounts') return false
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'eth_accounts',
+					result: [signerAccount],
+				})
+				return true
+			},
+		})
+
+		try {
+			await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?standalone-eth-accounts-no-warnings', async () => {
+				const provider = fakeWindow.ethereum as {
+					request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+				}
+				assert.deepEqual(await provider.request({ method: 'eth_accounts' }), [signerAccount])
+			})
+			assert.equal(warnings.length, 0)
+		} finally {
+			console.warn = previousWarn
+		}
+	})
+
 	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {
 		const signerAccount = '0x1111111111111111111111111111111111111111'
 		let mutationAttempted = false
@@ -731,7 +763,14 @@ describe('inpage signer bridge', () => {
 
 	test('delivers request-scoped connect and accountsChanged before wallet_requestPermissions resumes', async () => {
 		const signerAccount = '0x1212121212121212121212121212121212121212'
-		const permissions = [{ parentCapability: 'eth_accounts', caveats: [], invoker: 'https://example.test' }]
+		const permissions = [{
+			parentCapability: 'eth_accounts',
+			caveats: [{
+				type: 'restrictReturnedAccounts',
+				value: [signerAccount],
+			}],
+			invoker: 'https://example.test',
+		}]
 		const { fakeWindow, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method !== 'wallet_requestPermissions') return false
