@@ -36,7 +36,6 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
-import { formatDebugAddress, logBackgroundAccessDebug } from '../utils/accessDebug.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -404,28 +403,13 @@ function getAccountRequestResultAccounts(resolved: RPCReply) {
 
 function getApprovedAccountsForAccountRequest(request: InterceptedRequest, resolved: RPCReply, activeAddress: bigint | undefined) {
 	if (!isAccountConnectionMethod(request.method)) return undefined
-	if (request.method === 'wallet_requestPermissions' && resolved.type === 'result' && 'result' in resolved) {
-		logBackgroundAccessDebug('deriving approved accounts for wallet_requestPermissions', {
-			method: request.method,
-			requestId: request.uniqueRequestIdentifier.requestId,
-			activeAddress: formatDebugAddress(activeAddress),
-			resolvedType: resolved.type,
-			hasResult: 'result' in resolved,
-		})
-		return activeAddress === undefined ? [] : [activeAddress]
-	}
+	if (request.method === 'wallet_requestPermissions' && resolved.type === 'result' && 'result' in resolved) return activeAddress === undefined ? [] : [activeAddress]
 	return getAccountRequestResultAccounts(resolved)
 }
 
 function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply, activeAddress: bigint | undefined) {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
-	logBackgroundAccessDebug('replaying provider connection events for account request', {
-		method: request.method,
-		requestId: request.uniqueRequestIdentifier.requestId,
-		accounts: accounts.map((account) => formatDebugAddress(account)),
-		chainId: settings.activeRpcNetwork.chainId.toString(),
-	})
 	sendProviderConnectionEventsToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings, accounts, { requestId: request.uniqueRequestIdentifier.requestId, includeChainChanged: false })
 }
 
@@ -440,15 +424,6 @@ async function persistApprovedAccountsForAccountRequest(
 	activeAddress: bigint | undefined,
 ): Promise<Settings | undefined> {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
-	if (accounts !== undefined) {
-		logBackgroundAccessDebug('persistApprovedAccountsForAccountRequest start', {
-			method: request.method,
-			requestId: request.uniqueRequestIdentifier.requestId,
-			websiteOrigin: website.websiteOrigin,
-			activeAddress: formatDebugAddress(activeAddress),
-			accounts: accounts.map((account) => formatDebugAddress(account)),
-		})
-	}
 	if (accounts === undefined || accounts.length === 0) return undefined
 
 	const settings = await getSettings()
@@ -456,34 +431,13 @@ async function persistApprovedAccountsForAccountRequest(
 	for (const account of accounts) {
 		const addressEntry = await getActiveAddressEntry(account)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
-		logBackgroundAccessDebug('evaluating approved account for persistence', {
-			method: request.method,
-			requestId: request.uniqueRequestIdentifier.requestId,
-			websiteOrigin: website.websiteOrigin,
-			account: formatDebugAddress(account),
-			askForAddressAccess: addressEntry.askForAddressAccess,
-			existingApprovalState,
-		})
 		if (addressEntry.askForAddressAccess === false) continue
 		if (existingApprovalState === 'hasAccess') continue
 		await setAccess(website, true, account)
 		storedAddressAccess = true
-			logBackgroundAccessDebug('persisted approved account access', {
-			method: request.method,
-			requestId: request.uniqueRequestIdentifier.requestId,
-			websiteOrigin: website.websiteOrigin,
-			account: formatDebugAddress(account),
-		})
 	}
 
-	if (!storedAddressAccess) {
-		logBackgroundAccessDebug('no approved account access persisted', {
-			method: request.method,
-			requestId: request.uniqueRequestIdentifier.requestId,
-			websiteOrigin: website.websiteOrigin,
-		})
-		return settings
-	}
+	if (!storedAddressAccess) return settings
 	const refreshedSettings = await getSettings()
 	await updateWebsiteApprovalAccesses(
 		ethereum,
@@ -542,16 +496,6 @@ async function discoverAccountRequestAddressContext(
 ) {
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
-	if (isAccountConnectionMethod(request.method)) {
-		logBackgroundAccessDebug('discoverAccountRequestAddressContext initial', {
-			method: request.method,
-			requestId: request.uniqueRequestIdentifier.requestId,
-			websiteOrigin,
-			tabId: socket.tabId,
-			activeAddress: activeAddress?.address === undefined ? undefined : formatDebugAddress(activeAddress.address),
-			websiteApprovalState: getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin),
-		})
-	}
 	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
 	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
 	if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) !== 'hasAccess') return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
@@ -559,23 +503,8 @@ async function discoverAccountRequestAddressContext(
 	const accounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId)
-	logBackgroundAccessDebug('discoverAccountRequestAddressContext signer fallback', {
-		method: request.method,
-		requestId: request.uniqueRequestIdentifier.requestId,
-		websiteOrigin,
-		tabId: socket.tabId,
-		signerAccounts: accounts.map((account) => formatDebugAddress(account)),
-		refreshedActiveAddress: refreshedActiveAddress?.address === undefined ? undefined : formatDebugAddress(refreshedActiveAddress.address),
-	})
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true }
 	const firstSignerAddress = accounts[0] === undefined ? undefined : await getActiveAddressEntry(accounts[0])
-	logBackgroundAccessDebug('discoverAccountRequestAddressContext derived first signer address', {
-		method: request.method,
-		requestId: request.uniqueRequestIdentifier.requestId,
-		websiteOrigin,
-		tabId: socket.tabId,
-		firstSignerAddress: firstSignerAddress?.address === undefined ? undefined : formatDebugAddress(firstSignerAddress.address),
-	})
 	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForSiteAccess: true }
 }
 

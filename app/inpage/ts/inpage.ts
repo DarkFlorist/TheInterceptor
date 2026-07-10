@@ -3,8 +3,6 @@ const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
 const METAMASK_ERROR_BLANKET_ERROR = -32603
 const METAMASK_METHOD_NOT_SUPPORTED = -32004
 const METAMASK_INVALID_METHOD_PARAMS = -32602
-const ACCESS_DEBUG_PREFIX = '[Interceptor inpage debug]'
-const ACCESS_DEBUG_ENABLED = false
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -102,11 +100,6 @@ type InterceptedRequestForward = InterceptedRequestForwardWithResult | Intercept
 const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
-const shouldLogAccessRequestMethod = (method: string) => method === 'wallet_requestPermissions' || method === 'eth_requestAccounts'
-const logInpageAccessDebug = (message: string, details: Record<string, unknown>) => {
-	if (!ACCESS_DEBUG_ENABLED) return
-	console.warn(ACCESS_DEBUG_PREFIX, message, details)
-}
 
 type InterceptorApprovedMessageCandidate = {
 	readonly interceptorApproved?: unknown
@@ -532,12 +525,6 @@ class InterceptorMessageListener {
 				requestId: pendingRequestId,
 				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
 			}
-			if (shouldLogAccessRequestMethod(message.method)) {
-				logInpageAccessDebug('sending page request to background', {
-					method: message.method,
-					requestId: pendingRequestId,
-				})
-			}
 			this.extensionMessagePort.postMessage(message)
 			return await future
 		} finally {
@@ -562,15 +549,6 @@ class InterceptorMessageListener {
 
 	private readonly resolveWithRequestScopedProviderEvents = (requestId: number, value: unknown) => {
 		const callbackError = this.drainRequestScopedProviderEventCallbacks(requestId)
-		const requestMethod = this.outstandingRequests.get(requestId)?.method
-		if (requestMethod !== undefined && shouldLogAccessRequestMethod(requestMethod)) {
-			logInpageAccessDebug('resolving request after request-scoped provider events', {
-				requestId,
-				requestMethod,
-				value,
-				callbackError: callbackError instanceof Error ? callbackError.message : callbackError,
-			})
-		}
 		this.outstandingRequests.get(requestId)?.future.resolve(value)
 		if (callbackError !== undefined) throw callbackError
 	}
@@ -856,23 +834,6 @@ class InterceptorMessageListener {
 
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
 		try {
-			const originalRequestMethod = replyRequest.requestId === undefined ? undefined : this.outstandingRequests.get(replyRequest.requestId)?.method
-			const shouldLogAccessReply = shouldLogAccessRequestMethod(replyRequest.method)
-				|| (replyRequest.method === 'eth_accounts' && originalRequestMethod === 'eth_requestAccounts')
-				|| (
-					replyRequest.requestId !== undefined
-					&& (replyRequest.method === 'connect' || replyRequest.method === 'accountsChanged')
-					&& originalRequestMethod !== undefined
-					&& shouldLogAccessRequestMethod(originalRequestMethod)
-				)
-			if (shouldLogAccessReply) {
-				logInpageAccessDebug('received background reply', {
-					method: replyRequest.method,
-					requestId: replyRequest.requestId,
-					originalRequestMethod,
-					result: replyRequest.result,
-				})
-			}
 			if (replyRequest.subscription !== undefined) {
 				for (const callback of this.onMessageCallBacks) {
 					callback({ type: 'eth_subscription', data: replyRequest.result })
