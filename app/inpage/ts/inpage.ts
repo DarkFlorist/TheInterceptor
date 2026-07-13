@@ -778,7 +778,7 @@ class InterceptorMessageListener {
 		const { provider, info } = announcement
 		if (provider === this.signerWindowEthereumProvider) return
 		if (this.announcedMetaMaskUuid !== undefined) return
-		if (this.signerName !== 'NoSigner' && this.signerName !== 'MetaMask') return
+		if (this.signerName !== 'NoSigner' && this.signerName !== 'MetaMask' && this.signerName !== 'Brave') return
 		const preparedSigner = this.prepareSignerProvider(provider, 'MetaMask')
 		if (preparedSigner === undefined) return
 		this.announcedMetaMaskUuid = info.uuid

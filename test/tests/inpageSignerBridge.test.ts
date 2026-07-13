@@ -575,7 +575,7 @@ describe('inpage signer bridge', () => {
 		assert.equal(statefulMetaMaskMarkerReads, 3)
 	})
 
-	test('uses an EIP-6963 announced MetaMask provider instead of a hanging aggregate for signing', async () => {
+	test('uses an EIP-6963 announced MetaMask provider instead of Brave for signing', async () => {
 		const concreteSignerRequests: string[] = []
 		const aggregateSignerRequests: string[] = []
 		const aggregateEventHandlers = new Map<string, (value: unknown) => void>()
@@ -624,7 +624,7 @@ describe('inpage signer bridge', () => {
 		})
 		const concreteMetaMaskProvider = fakeWindow.ethereum
 		const aggregateProvider = {
-			isMetaMask: true,
+			isBraveWallet: true,
 			isConnected: () => true,
 			request: async ({ method }: { method: string }) => {
 				aggregateSignerRequests.push(method)
@@ -811,9 +811,8 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
 	})
 
-	test('does not replace Brave, Coinbase, or unrecognized signers from MetaMask announcements', async () => {
+	test('does not replace Coinbase or unrecognized signers from MetaMask announcements', async () => {
 		const signerCases = [
-			{ name: 'Brave', marker: { isBraveWallet: true } },
 			{ name: 'CoinbaseWallet', marker: { isCoinbaseWallet: true } },
 			{ name: 'NotRecognizedSigner', marker: {} },
 		] as const

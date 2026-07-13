@@ -71,15 +71,23 @@ const fakeSignerPreload = `(() => {
 	globalThis.__fakeSignerRequests = requests
 	globalThis.__aggregateSignerRequests = aggregateRequests
 	globalThis.ethereum = {
-		...signer,
-		providers: [signer],
+		isBraveWallet: true,
+		isConnected: () => true,
 		request: async ({ method }) => {
 			aggregateRequests.push(method)
 			if (method === 'eth_chainId') return '0x1'
 			if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [${ JSON.stringify(FAKE_SIGNER_ADDRESS) }]
 			return await new Promise(() => undefined)
 		},
+		on: () => globalThis.ethereum,
+		removeListener: () => globalThis.ethereum,
 	}
+	globalThis.addEventListener('eip6963:requestProvider', () => globalThis.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+		detail: {
+			info: { uuid: '44444444-4444-4444-8444-444444444444', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+			provider: signer,
+		},
+	})))
 })()`
 
 async function main() {
@@ -140,7 +148,7 @@ async function main() {
 			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__signingResult')
 			if (signingResult.result !== FAKE_SIGNED_TRANSACTION_HASH) throw new Error(`Unexpected signing result: ${ signingResult.result ?? 'missing' }`)
 			const aggregateReceivedSigningRequest = await pageConnection.evaluate<boolean>(`globalThis.__aggregateSignerRequests?.includes('eth_sendTransaction')`)
-			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to the legacy aggregate instead of its concrete MetaMask provider')
+			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to Brave instead of its EIP-6963 MetaMask provider')
 			console.warn('Interceptor Chrome signing communication test passed.')
 		} finally {
 			pageConnection.close()
