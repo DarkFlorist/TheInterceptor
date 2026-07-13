@@ -233,6 +233,20 @@ function createConfigurableGetterOnlyCompatibilitySigner() {
 	return baseSigner
 }
 
+function createThrowingMetaMaskProviderProperty(property: 'isMetaMask' | 'request' | 'on' | 'isBraveWallet') {
+	const provider = {
+		isMetaMask: true,
+		isConnected: () => true,
+		request: async () => undefined,
+		on: () => provider,
+	}
+	Object.defineProperty(provider, property, {
+		configurable: true,
+		get: () => { throw new Error(`Invalid ${ property } getter`) },
+	})
+	return provider
+}
+
 async function waitFor(condition: () => boolean, timeoutMs = 2000) {
 	const start = Date.now()
 	while (!condition()) {
@@ -477,12 +491,102 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('uses the concrete MetaMask provider behind a legacy providers aggregate for signing', async () => {
+	test('uses a concrete MetaMask provider from an unmarked legacy aggregate for signing', async () => {
 		const concreteSignerRequests: string[] = []
 		const aggregateSignerRequests: string[] = []
-		const signedTransactionHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+		const signedTransactionHash = '0x2222222222222222222222222222222222222222222222222222222222222222'
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params })
+					return true
+				}
+				if (request.method !== 'signer_reply') return false
+				const signerReply = request.params?.[0]
+				if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest) || typeof signerReply.forwardRequest.requestId !== 'number') throw new Error('Malformed signer reply')
+				sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: signerReply.forwardRequest.requestId, type: 'result', method: 'eth_sendTransaction', result: signerReply.reply })
+				sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'signer_reply', result: '0x' })
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				concreteSignerRequests.push(method)
+				if (method === 'eth_sendTransaction') return signedTransactionHash
+				return undefined
+			},
+		})
+		const concreteMetaMaskProvider = fakeWindow.ethereum
+		const invalidConnectedMetaMaskProvider = {
+			isMetaMask: true,
+			isConnected: true,
+			request: async () => undefined,
+			on: () => invalidConnectedMetaMaskProvider,
+		}
+		const throwingMetaMaskProvider = {
+			isMetaMask: true,
+			request: async () => undefined,
+			on: () => { throw new Error('Invalid provider subscription') },
+		}
+		const throwingConnectedMetaMaskProvider = {
+			isMetaMask: true,
+			isConnected: () => { throw new Error('Invalid provider connection state') },
+			request: async () => undefined,
+			on: () => throwingConnectedMetaMaskProvider,
+		}
+		const conflictingMetaMaskProviders = [
+			{ ...concreteMetaMaskProvider, isBraveWallet: true },
+			{ ...concreteMetaMaskProvider, isCoinbaseWallet: true },
+			{ ...concreteMetaMaskProvider, isInterceptor: true },
+		]
+		let statefulMetaMaskMarkerReads = 0
+		const statefulMetaMaskProvider = { ...concreteMetaMaskProvider }
+		Object.defineProperty(statefulMetaMaskProvider, 'isMetaMask', {
+			get: () => {
+				statefulMetaMaskMarkerReads++
+				if (statefulMetaMaskMarkerReads > 3) throw new Error('MetaMask marker was read after preparation')
+				return true
+			},
+		})
+		const throwingGetterProviders = (['isMetaMask', 'request', 'on', 'isBraveWallet'] as const).map(createThrowingMetaMaskProviderProperty)
+		const legacyProviders = [undefined, null, 1, ...throwingGetterProviders, invalidConnectedMetaMaskProvider, throwingConnectedMetaMaskProvider, throwingMetaMaskProvider, ...conflictingMetaMaskProviders, statefulMetaMaskProvider, concreteMetaMaskProvider]
+		Object.defineProperty(legacyProviders, 0, { configurable: true, get: () => { throw new Error('Invalid legacy provider entry') } })
+		const aggregateProvider = {
+			providers: legacyProviders,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				aggregateSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				return await new Promise<never>(() => undefined)
+			},
+			on: () => aggregateProvider,
+			removeListener: () => aggregateProvider,
+		}
+		for (const rootProperty of ['isBraveWallet', 'providerMap', 'isCoinbaseWallet'] as const) {
+			Object.defineProperty(aggregateProvider, rootProperty, { get: () => { throw new Error(`Invalid aggregate ${ rootProperty }`) } })
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: aggregateProvider })
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?legacy-unmarked-metamask-signing', async () => {
+			const result = await fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] })
+			assert.equal(result, signedTransactionHash)
+		})
+
+		assert.equal(concreteSignerRequests.includes('eth_sendTransaction'), true)
+		assert.equal(aggregateSignerRequests.includes('eth_sendTransaction'), false)
+		assert.equal(statefulMetaMaskMarkerReads, 3)
+	})
+
+	test('uses an EIP-6963 announced MetaMask provider instead of a hanging aggregate for signing', async () => {
+		const concreteSignerRequests: string[] = []
+		const aggregateSignerRequests: string[] = []
+		const aggregateEventHandlers = new Map<string, (value: unknown) => void>()
+		const ignoredProviderSubscriptions: string[] = []
+		const announcedProviderSubscriptions: string[] = []
+		const duplicateProviderSubscriptions: string[] = []
+		const backgroundMessages: InpageRequest[] = []
+		const signedTransactionHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+		const { fakeWindow, emitSignerEvent } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				backgroundMessages.push(request)
 				if (request.method === 'eth_sendTransaction') {
 					sendBackgroundMessageForRequest({
 						interceptorApproved: true,
@@ -520,24 +624,237 @@ describe('inpage signer bridge', () => {
 		})
 		const concreteMetaMaskProvider = fakeWindow.ethereum
 		const aggregateProvider = {
-			...concreteMetaMaskProvider,
-			providers: [concreteMetaMaskProvider],
+			isMetaMask: true,
+			isConnected: () => true,
 			request: async ({ method }: { method: string }) => {
 				aggregateSignerRequests.push(method)
 				if (method === 'eth_chainId') return '0x1'
 				if (method === 'eth_accounts' || method === 'eth_requestAccounts') return ['0x1111111111111111111111111111111111111111']
 				return await new Promise<never>(() => undefined)
 			},
+			on: (kind: string, callback: (value: unknown) => void) => {
+				aggregateEventHandlers.set(kind, callback)
+				return aggregateProvider
+			},
+			removeListener: () => aggregateProvider,
 		}
+		const announcedMetaMaskProvider = {
+			isConnected: concreteMetaMaskProvider.isConnected,
+			request: concreteMetaMaskProvider.request,
+			on: (kind: string, callback: (value: unknown) => void) => {
+				announcedProviderSubscriptions.push(kind)
+				return concreteMetaMaskProvider.on(kind, callback)
+			},
+			removeListener: concreteMetaMaskProvider.removeListener,
+		}
+		const ignoredProvider = {
+			request: async () => undefined,
+			on: (kind: string) => {
+				ignoredProviderSubscriptions.push(kind)
+				return ignoredProvider
+			},
+		}
+		const duplicateMetaMaskProvider = {
+			request: async () => undefined,
+			on: (kind: string) => {
+				duplicateProviderSubscriptions.push(kind)
+				return duplicateMetaMaskProvider
+			},
+		}
+		const throwingAnnouncedProvider = {
+			request: async () => undefined,
+			on: () => { throw new Error('Invalid announced provider subscription') },
+		}
+		const partialSubscriptions = new Map<string, (value: unknown) => void>()
+		const partiallyThrowingAnnouncedProvider = {
+			request: async () => undefined,
+			on: (kind: string, callback: (value: unknown) => void) => {
+				partialSubscriptions.set(kind, callback)
+				if (partialSubscriptions.size === 3) throw new Error('Invalid partial provider subscription')
+				return partiallyThrowingAnnouncedProvider
+			},
+			removeListener: (kind: string) => {
+				partialSubscriptions.delete(kind)
+				return partiallyThrowingAnnouncedProvider
+			},
+		}
+		let statefulRequestProviderSubscriptions = 0
+		let statefulRequestReads = 0
+		const statefulRequestAnnouncedProvider = {
+			on: () => {
+				statefulRequestProviderSubscriptions++
+				return statefulRequestAnnouncedProvider
+			},
+			removeListener: () => statefulRequestAnnouncedProvider,
+		}
+		Object.defineProperty(statefulRequestAnnouncedProvider, 'request', {
+			get: () => {
+				statefulRequestReads++
+				if (statefulRequestReads > 1) throw new Error('Invalid stateful request getter')
+				return async () => undefined
+			},
+		})
+		const metaMaskInfo = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' }
+		const throwingGetterProviders = (['isMetaMask', 'request', 'on', 'isBraveWallet'] as const).map(createThrowingMetaMaskProviderProperty)
 		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: aggregateProvider })
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			const throwingDetailEvent = { type: 'eip6963:announceProvider', detail: undefined }
+			Object.defineProperty(throwingDetailEvent, 'detail', { get: () => { throw new Error('Invalid announcement detail') } })
+			fakeWindow.dispatchEvent(throwingDetailEvent)
+			for (const detailProperty of ['provider', 'info'] as const) {
+				const detail = { provider: ignoredProvider, info: metaMaskInfo }
+				Object.defineProperty(detail, detailProperty, { get: () => { throw new Error(`Invalid announcement ${ detailProperty }`) } })
+				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail })
+			}
+			for (const infoProperty of ['uuid', 'name', 'icon', 'rdns'] as const) {
+				const info = { ...metaMaskInfo }
+				Object.defineProperty(info, infoProperty, { get: () => { throw new Error(`Invalid announcement ${ infoProperty }`) } })
+				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { provider: ignoredProvider, info } })
+			}
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { provider: announcedMetaMaskProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, rdns: 'com.example.wallet' }, provider: { ...ignoredProvider, isMetaMask: true } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, uuid: 'not-a-uuid' }, provider: ignoredProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, name: 'Another wallet' }, provider: ignoredProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, icon: '' }, provider: ignoredProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, icon: 'data:image/not-a-data-uri' }, provider: ignoredProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, icon: 'data:image/png;base64,not@@base64' }, provider: ignoredProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, icon: 'data:image/svg+xml,%ZZ' }, provider: ignoredProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isMetaMask: 'yes' } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isMetaMask: false } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isBraveWallet: true } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isCoinbaseWallet: true } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isInterceptor: true } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isConnected: true } } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: throwingAnnouncedProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: partiallyThrowingAnnouncedProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: statefulRequestAnnouncedProvider } })
+			for (const provider of throwingGetterProviders) fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider } })
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: {
+					info: metaMaskInfo,
+					provider: announcedMetaMaskProvider,
+				},
+			})
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: {
+					info: metaMaskInfo,
+					provider: duplicateMetaMaskProvider,
+				},
+			})
+		})
 
-		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?legacy-providers-metamask-signing', async () => {
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-metamask-signing', async () => {
 			const result = await fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] })
 			assert.equal(result, signedTransactionHash)
 		})
 
 		assert.equal(concreteSignerRequests.includes('eth_sendTransaction'), true)
 		assert.equal(aggregateSignerRequests.includes('eth_sendTransaction'), false)
+		assert.deepEqual(ignoredProviderSubscriptions, [])
+		assert.deepEqual(announcedProviderSubscriptions, ['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
+		assert.deepEqual(duplicateProviderSubscriptions, [])
+		assert.equal(partialSubscriptions.size, 0)
+		assert.equal(statefulRequestProviderSubscriptions, 0)
+		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged'))
+
+		const messageCountBeforeStaleEvents = backgroundMessages.length
+		aggregateEventHandlers.get('accountsChanged')?.(['0x2222222222222222222222222222222222222222'])
+		aggregateEventHandlers.get('connect')?.({ chainId: '0x2' })
+		aggregateEventHandlers.get('disconnect')?.({ code: 4900, message: 'disconnected' })
+		aggregateEventHandlers.get('chainChanged')?.('0x2')
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(backgroundMessages.length, messageCountBeforeStaleEvents)
+
+		emitSignerEvent('chainChanged', '0x3')
+		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x3'))
+	})
+
+	test('serializes unusable-root NoSigner recovery before EIP-6963 MetaMask connection', async () => {
+		const connectedSignerNames: unknown[] = []
+		const { fakeWindow, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'connected_to_signer') return false
+				connectedSignerNames.push(request.params?.[1])
+				const delay = request.params?.[1] === 'NoSigner' ? 10 : 0
+				setTimeout(() => sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connected_to_signer',
+					result: { metamaskCompatibilityMode: true },
+				}), delay)
+				return true
+			},
+		})
+		const announcedMetaMaskProvider = fakeWindow.ethereum
+		const unusableRootProvider = {
+			on: () => unusableRootProvider,
+			removeListener: () => unusableRootProvider,
+		}
+		Object.defineProperty(unusableRootProvider, 'request', { get: () => { throw new Error('Invalid root request') } })
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: unusableRootProvider })
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: {
+				info: { uuid: '33333333-3333-4333-8333-333333333333', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+				provider: announcedMetaMaskProvider,
+			},
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?serialized-no-signer-eip-recovery', async () => {
+			await waitFor(() => connectedSignerNames.length === 2)
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+		})
+
+		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
+	})
+
+	test('does not replace Brave, Coinbase, or unrecognized signers from MetaMask announcements', async () => {
+		const signerCases = [
+			{ name: 'Brave', marker: { isBraveWallet: true } },
+			{ name: 'CoinbaseWallet', marker: { isCoinbaseWallet: true } },
+			{ name: 'NotRecognizedSigner', marker: {} },
+		] as const
+
+		for (const signerCase of signerCases) {
+			const connectedSignerNames: unknown[] = []
+			let announcedProviderSubscriptionCount = 0
+			const { fakeWindow } = createFakeWindow({
+				handleRequest: (request) => {
+					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+					return false
+				},
+			})
+			const signer = {
+				...signerCase.marker,
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+				on: () => signer,
+				removeListener: () => signer,
+			}
+			Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: signer })
+
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?eip6963-protect-${ signerCase.name }-${ Date.now() }-${ Math.random() }`, async () => {
+				await waitFor(() => connectedSignerNames.includes(signerCase.name))
+				const announcedProvider = {
+					isMetaMask: true,
+					request: async () => undefined,
+					on: () => {
+						announcedProviderSubscriptionCount++
+						return announcedProvider
+					},
+				}
+				fakeWindow.dispatchEvent({
+					type: 'eip6963:announceProvider',
+					detail: { info: { uuid: '22222222-2222-4222-8222-222222222222', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' }, provider: announcedProvider },
+				})
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				assert.equal(announcedProviderSubscriptionCount, 0)
+				assert.equal(connectedSignerNames.includes('MetaMask'), false)
+			})
+		}
 	})
 
 	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {
