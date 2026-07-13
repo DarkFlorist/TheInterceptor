@@ -2,7 +2,7 @@ import { type InterceptedRequestForward, InterceptorMessageToInpage, type Subscr
 import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
-import { serialize } from '../types/wire-types.js'
+import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
@@ -30,6 +30,37 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		return postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true, requestId: message.uniqueRequestIdentifier.requestId })
 	}
 	return false
+}
+
+const waitForReplacementWebsiteConnection = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, previousPort: browser.runtime.Port | undefined) => {
+	const identifier = websiteSocketToString(socket)
+	const deadline = Date.now() + 1_000
+	while (true) {
+		const currentPort = websiteTabConnections.get(socket.tabId)?.connections[identifier]?.port
+		if (currentPort !== undefined && currentPort !== previousPort) return true
+		const remainingTime = deadline - Date.now()
+		if (remainingTime <= 0) return false
+		await new Promise((resolve) => setTimeout(resolve, Math.min(50, remainingTime)))
+	}
+}
+
+export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+	const socket = message.uniqueRequestIdentifier.requestSocket
+	const previousPort = websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.port
+	const delivered = replyToInterceptedRequest(websiteTabConnections, message)
+	if (delivered !== false || browser.runtime.getManifest().manifest_version !== 2 || message.type === 'doNotReply') return delivered
+	try {
+		await browser.tabs.sendMessage(socket.tabId, {
+			method: 'interceptor_reconnect_content_script_port',
+			connectionName: serialize(EthereumQuantity, socket.connectionName),
+		})
+	} catch (error: unknown) {
+		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return false
+		if (isMissingBrowserTargetError(error)) return false
+		throw error
+	}
+	if (!await waitForReplacementWebsiteConnection(websiteTabConnections, socket, previousPort)) return false
+	return replyToInterceptedRequest(websiteTabConnections, message)
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {

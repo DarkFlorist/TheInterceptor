@@ -277,6 +277,27 @@ function injectScript(_content: string) {
 			return connectedExtensionPort
 		}
 		connect()
+		browser.runtime.onMessage.addListener(async (message: unknown) => {
+			if (
+				typeof message !== 'object'
+				|| message === null
+				|| !('method' in message)
+				|| message.method !== 'interceptor_reconnect_content_script_port'
+				|| !('connectionName' in message)
+				|| typeof message.connectionName !== 'string'
+			) return undefined
+			try {
+				if (BigInt(message.connectionName) !== BigInt(connectionNameNotUndefined)) return undefined
+				connect()
+				return { reconnected: true }
+			} catch (error: unknown) {
+				if (error instanceof Error && isIgnorableContentScriptPortError(error)) {
+					if (!isTerminalContentScriptPortError(error)) scheduleReconnect()
+					return { reconnected: false }
+				}
+				throw error
+			}
+		})
 
 		// https://web.dev/articles/bfcache
 		const bfCachePageShow = () => {

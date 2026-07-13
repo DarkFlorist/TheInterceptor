@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
 function installBrowserMock() {
@@ -80,6 +80,50 @@ describe('background messageSending port lifecycle', () => {
 		assert.equal(replyToInterceptedRequest(createConnections(disconnectedPort), message), false)
 		assert.equal(replyToInterceptedRequest(new Map(), message), false)
 		assert.equal(replyToInterceptedRequest(new Map([[socket.tabId, { connections: {} }]]), message), false)
+	})
+
+	test('requests an MV2 content-script reconnect and retries the exact signing route', async () => {
+		const socket = { tabId: 1, connectionName: 0x123n }
+		const connectionKey = websiteSocketToString(socket)
+		const postedMessages: unknown[] = []
+		const port = createPort((message) => { postedMessages.push(message) })
+		let disconnectedPostAttempts = 0
+		const disconnectedPort = createPort(() => {
+			disconnectedPostAttempts += 1
+			throw new Error('Attempting to use a disconnected port object')
+		})
+		const websiteTabConnections = new Map<number, { connections: Record<string, { port: browser.runtime.Port, socket: typeof socket, websiteOrigin: string, approved: boolean, wantsToConnect: boolean }> }>([[socket.tabId, { connections: {
+			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const reconnectMessages: unknown[] = []
+		globalThis.browser = {
+			runtime: {
+				lastError: undefined,
+				getManifest: () => ({ manifest_version: 2 }),
+			},
+			tabs: {
+				async sendMessage(_tabId: number, message: unknown) {
+					reconnectMessages.push(message)
+					setTimeout(() => {
+						websiteTabConnections.set(socket.tabId, { connections: {
+							[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+						} })
+					}, 975)
+					return { reconnected: true }
+				},
+			},
+		} as unknown as typeof globalThis.browser
+		const message = {
+			type: 'forwardToSigner' as const,
+			method: 'eth_sendTransaction' as const,
+			params: [{ from: 0x1111111111111111111111111111111111111111n }],
+			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
+		}
+
+		assert.equal(await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, message), true)
+		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
+		assert.equal(disconnectedPostAttempts, 1)
+		assert.equal(postedMessages.length, 1)
 	})
 
 	test('keeps request-scoped lifecycle bridge messages free of console warnings', () => {
