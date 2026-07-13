@@ -11,6 +11,21 @@ function installBrowserMock() {
 	} as unknown as typeof globalThis.browser
 }
 
+function createPort(postMessage: (message: unknown) => void): browser.runtime.Port {
+	const event = {
+		addListener() { return undefined },
+		removeListener() { return undefined },
+		hasListener() { return false },
+	}
+	return {
+		name: 'test-port',
+		disconnect() { return undefined },
+		postMessage,
+		onMessage: event,
+		onDisconnect: event,
+	}
+}
+
 describe('background messageSending port lifecycle', () => {
 	test('ignores disconnected runtime lastError after posting to a content-script port', () => {
 		installBrowserMock()
@@ -39,6 +54,32 @@ describe('background messageSending port lifecycle', () => {
 		assert.doesNotThrow(() => {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [] })
 		})
+	})
+
+	test('reports whether a request reached its exact content-script connection', () => {
+		installBrowserMock()
+		const socket = { tabId: 1, connectionName: 0n }
+		const connectionKey = websiteSocketToString(socket)
+		const connectedPort = createPort(() => {
+				return undefined
+		})
+		const disconnectedPort = createPort(() => {
+				throw new Error('Attempting to use a disconnected port object')
+		})
+		const createConnections = (port: browser.runtime.Port) => new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const message = {
+			type: 'forwardToSigner' as const,
+			method: 'eth_sendTransaction' as const,
+			params: [{ from: 0x1111111111111111111111111111111111111111n }],
+			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
+		}
+
+		assert.equal(replyToInterceptedRequest(createConnections(connectedPort), message), true)
+		assert.equal(replyToInterceptedRequest(createConnections(disconnectedPort), message), false)
+		assert.equal(replyToInterceptedRequest(new Map(), message), false)
+		assert.equal(replyToInterceptedRequest(new Map([[socket.tabId, { connections: {} }]]), message), false)
 	})
 
 	test('keeps request-scoped lifecycle bridge messages free of console warnings', () => {

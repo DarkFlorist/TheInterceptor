@@ -10,9 +10,10 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 		checkAndThrowRuntimeLastError()
 		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 		checkAndThrowRuntimeLastError()
+		return true
 	} catch (error) {
-		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return
-		if (isMissingBrowserTargetError(error)) return
+		if (error instanceof Error && isIgnorablePortLifecycleError(error)) return false
+		if (isMissingBrowserTargetError(error)) return false
 		throw error
 	}
 }
@@ -26,9 +27,9 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true, requestId: message.uniqueRequestIdentifier.requestId })
+		return postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true, requestId: message.uniqueRequestIdentifier.requestId })
 	}
-	return true
+	return false
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {

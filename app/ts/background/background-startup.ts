@@ -131,7 +131,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
-				removeWebsiteTabConnection(websiteTabConnections, socket)
+				removeWebsiteTabConnection(websiteTabConnections, socket, port)
 			})
 		},
 		(payload) => {

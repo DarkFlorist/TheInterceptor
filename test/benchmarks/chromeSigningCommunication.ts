@@ -42,6 +42,7 @@ async function clickButton(connection: CdpConnection, selector: string) {
 }
 
 const fakeSignerPreload = `(() => {
+	globalThis.__fakeSignerPreloadStarted = true
 	const requests = []
 	const aggregateRequests = []
 	const listeners = new Map()
@@ -111,6 +112,7 @@ async function main() {
 		pageTargetId = await createTargetPage(chrome.browserConnection, 'about:blank')
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
+			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
 			await pageConnection.send('Page.navigate', { url: server.baseUrl })
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'access request')
@@ -124,7 +126,12 @@ async function main() {
 			} finally {
 				accessConnection.close()
 			}
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'access approval')
+			try {
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'access approval')
+			} catch (error) {
+				const accessState = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, preloadStarted: globalThis.__fakeSignerPreloadStarted, signerRequests: globalThis.__fakeSignerRequests, aggregateRequests: globalThis.__aggregateSignerRequests, ethereumType: typeof globalThis.ethereum, isBraveWallet: globalThis.ethereum?.isBraveWallet, isMetaMask: globalThis.ethereum?.isMetaMask })')
+				throw new Error(`Access approval failed with page state ${ JSON.stringify(accessState) }`, { cause: error })
+			}
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__signingResult = { status: 'pending' }

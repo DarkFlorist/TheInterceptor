@@ -8,6 +8,10 @@ type RuntimeMessage = {
 	data?: unknown
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
 
 function createBrowserMock() {
@@ -88,35 +92,44 @@ function createBrowserMock() {
 async function loadModules() {
 	const [
 		ethereumClientService,
+		priceEstimator,
 		simulationModeEthereumClientService,
 		constants,
 		settings,
 		popupMessageHandlers,
+		confirmTransaction,
 		storageVariables,
 		storageUtils,
+		backgroundUtils,
 		wireTypes,
 		ethSimulateTypes,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
+		import('../../app/ts/simulation/services/priceEstimator.js'),
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/utils/constants.js'),
 		import('../../app/ts/background/settings.js'),
 		import('../../app/ts/background/popupMessageHandlers.js'),
+		import('../../app/ts/background/windows/confirmTransaction.js'),
 		import('../../app/ts/background/storageVariables.js'),
 		import('../../app/ts/utils/storageUtils.js'),
+		import('../../app/ts/background/backgroundUtils.js'),
 		import('../../app/ts/types/wire-types.js'),
 		import('../../app/ts/types/ethSimulate-types.js'),
 	])
 
 	return {
 		EthereumClientService: ethereumClientService.EthereumClientService,
+		TokenPriceService: priceEstimator.TokenPriceService,
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
@@ -219,9 +232,7 @@ const fakeRequestHandler = {
 const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 const simulator = {
 	ethereum,
-	tokenPriceService: {
-		estimateEthereumPricesForTokens: async () => [],
-	},
+	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
 }
 
 const activeAddress = modules.defaultActiveAddresses[0]?.address
@@ -289,8 +300,7 @@ const popupVisualisation = {
 	},
 }
 
-await modules.browserStorageLocalSet2({
-	pendingTransactionsAndMessages: [{
+const pendingTransaction = {
 		type: 'Transaction',
 		popupOrTabId: { type: 'popup', id: 1 },
 		originalRequestParameters: popupVisualisation.data.transactionToSimulate.originalRequestParameters,
@@ -304,20 +314,91 @@ await modules.browserStorageLocalSet2({
 		popupVisualisation,
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
-	}],
+	} as const
+
+await modules.browserStorageLocalSet2({
+	pendingTransactionsAndMessages: [pendingTransaction],
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 	const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
 	if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
 	if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
 	const refreshedTimestamp = pendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp
 	assert.ok(refreshedTimestamp.getTime() > oldTimestamp.getTime())
 	assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true)
+})
+
+function createDisconnectedPort() {
+	let postAttempts = 0
+	const event = {
+		addListener() { return undefined },
+		removeListener() { return undefined },
+		hasListener() { return false },
+	}
+	const port: browser.runtime.Port = {
+		name: 'disconnected-test-port',
+		disconnect() { return undefined },
+		postMessage() {
+			postAttempts += 1
+			throw new Error('Attempting to use a disconnected port object')
+		},
+		onMessage: event,
+		onDisconnect: event,
+	}
+	return { port, getPostAttempts: () => postAttempts }
+}
+
+test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
+	await browser.storage.local.set({ simulationMode: false })
+	const disconnectedPort = createDisconnectedPort()
+	const socketKey = modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)
+	const connectionCases = [
+		{ connections: new Map(), expectedPostAttempts: 0 },
+		{ connections: new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
+			[socketKey]: {
+				port: disconnectedPort.port,
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		} }]]), expectedPostAttempts: 1 },
+	]
+
+	for (const connectionCase of connectionCases) {
+		browserMock.sentMessages.length = 0
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForUser' },
+		}] })
+
+		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'accept', uniqueRequestIdentifier },
+		})
+		const retainedRequests = await modules.getPendingTransactionsAndMessages()
+		const retainedRequest = retainedRequests[0]
+
+		assert.equal(delivered, false)
+		assert.equal(retainedRequests.length, 1)
+		assert.equal(retainedRequest?.approvalStatus.status, 'SignerError')
+		if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing signer delivery error')
+		assert.match(retainedRequest.approvalStatus.message, /request reached your wallet/)
+		const pendingUpdates = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		assert.equal(pendingUpdates.length, 2)
+		const finalUpdateData = pendingUpdates.at(-1)?.data
+		if (!isRecord(finalUpdateData) || !Array.isArray(finalUpdateData.pendingTransactionAndSignableMessages)) throw new Error('missing final pending transaction popup update')
+		const finalUpdatedRequest = finalUpdateData.pendingTransactionAndSignableMessages[0]
+		if (!isRecord(finalUpdatedRequest) || !isRecord(finalUpdatedRequest.approvalStatus)) throw new Error('missing approval status in final popup update')
+		assert.equal(finalUpdatedRequest.approvalStatus.status, 'SignerError')
+		assert.equal(disconnectedPort.getPostAttempts(), connectionCase.expectedPostAttempts)
+	}
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
