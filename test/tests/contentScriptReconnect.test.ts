@@ -6,6 +6,7 @@ type ContentScriptMockState = {
 	readonly disconnectListeners: (() => void)[]
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
 	readonly postedMessages: unknown[]
+	readonly connectionNames: string[]
 	readonly runtime: { lastError: { message?: string } | undefined }
 	readonly getConnectionCount: () => number
 	readonly failNextPost: () => void
@@ -18,6 +19,7 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 	const disconnectListeners: (() => void)[] = []
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
 	const postedMessages: unknown[] = []
+	const connectionNames: string[] = []
 	const runtime: { lastError: { message?: string } | undefined } = { lastError: undefined }
 	let connectionCount = 0
 	let shouldFailNextPost = false
@@ -25,8 +27,9 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 	const browserMock = {
 		runtime: {
 			get lastError() { return runtime.lastError },
-			connect: () => {
+			connect: ({ name }: { name: string }) => {
 				connectionCount += 1
+				connectionNames.push(name)
 				return {
 					disconnect: () => undefined,
 					onDisconnect: { addListener: (listener: () => void) => { disconnectListeners.push(listener) } },
@@ -50,7 +53,7 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 
 	try {
 		await import('../../app/inpage/ts/listenContentScript.js?background-port-recovery')
-		await run({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
+		await run({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
@@ -82,7 +85,7 @@ async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOr
 }
 
 test('content script recovers its background port without reconnect churn', async () => {
-	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, runtime, getConnectionCount, failNextPost }) => {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount, failNextPost }) => {
 		assert.equal(getConnectionCount(), 1)
 		assert.equal(disconnectListeners.length, 1)
 
@@ -112,9 +115,19 @@ test('content script recovers its background port without reconnect churn', asyn
 		assert.equal(getConnectionCount(), 4)
 		assert.equal(postedMessages.length, 1)
 
-		runtime.lastError = { message: 'Extension context invalidated' }
+		runtime.lastError = { message: 'Could not establish connection. Receiving end does not exist.' }
 		disconnectListeners[3]?.()
 
 		assert.equal(getConnectionCount(), 4)
+		await new Promise((resolve) => setTimeout(resolve, 300))
+		assert.equal(getConnectionCount(), 5)
+		assert.equal(disconnectListeners.length, 5)
+		assert.equal(new Set(connectionNames).size, 1)
+
+		runtime.lastError = { message: 'Extension context invalidated' }
+		disconnectListeners[4]?.()
+		await new Promise((resolve) => setTimeout(resolve, 150))
+
+		assert.equal(getConnectionCount(), 5)
 	})
 })

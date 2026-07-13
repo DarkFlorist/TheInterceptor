@@ -118,22 +118,46 @@ function injectScript(_content: string) {
 		const isIgnorableContentScriptPortError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
 			|| error.message.includes('Could not establish connection. Receiving end does not exist')
 			|| error.message.includes('Extension context invalidated')
-		const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
-			|| error.message.includes('Extension context invalidated')
+		const isMissingContentScriptPortReceiverError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
+		const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Extension context invalidated')
 		const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
 			if (extensionPort !== port) return
 			extensionPort = undefined
 			pageHidden = true
 		}
 		let connect: () => browser.runtime.Port
+		let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+		const scheduleReconnect = () => {
+			if (reconnectTimer !== undefined) return
+			reconnectTimer = setTimeout(() => {
+				reconnectTimer = undefined
+				if (extensionPort !== undefined) return
+				try {
+					connect()
+				} catch (reconnectError: unknown) {
+					if (reconnectError instanceof Error && isIgnorableContentScriptPortError(reconnectError)) {
+						if (!isTerminalContentScriptPortError(reconnectError)) scheduleReconnect()
+						return
+					}
+					throw reconnectError
+				}
+			}, 250)
+		}
 		const reconnectAfterPortFailure = (port: browser.runtime.Port, error: Error | undefined) => {
 			if (extensionPort !== port) return extensionPort
 			markExtensionPortDisconnected(port)
 			if (error !== undefined && isTerminalContentScriptPortError(error)) return undefined
+			if (error !== undefined && isMissingContentScriptPortReceiverError(error)) {
+				scheduleReconnect()
+				return undefined
+			}
 			try {
 				return connect()
 			} catch (reconnectError: unknown) {
-				if (reconnectError instanceof Error && isIgnorableContentScriptPortError(reconnectError)) return undefined
+				if (reconnectError instanceof Error && isIgnorableContentScriptPortError(reconnectError)) {
+					if (!isTerminalContentScriptPortError(reconnectError)) scheduleReconnect()
+					return undefined
+				}
 				throw reconnectError
 			}
 		}
@@ -208,6 +232,10 @@ function injectScript(_content: string) {
 		})
 
 		connect = () => {
+			if (reconnectTimer !== undefined) {
+				clearTimeout(reconnectTimer)
+				reconnectTimer = undefined
+			}
 			const previousExtensionPort = extensionPort
 			extensionPort = undefined
 			if (previousExtensionPort !== undefined) {
