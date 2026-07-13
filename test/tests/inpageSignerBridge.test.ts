@@ -477,6 +477,69 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('uses the concrete MetaMask provider behind a legacy providers aggregate for signing', async () => {
+		const concreteSignerRequests: string[] = []
+		const aggregateSignerRequests: string[] = []
+		const signedTransactionHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'forwardToSigner',
+						method: request.method,
+						params: request.params,
+					})
+					return true
+				}
+				if (request.method !== 'signer_reply') return false
+				const signerReply = request.params?.[0]
+				if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest) || typeof signerReply.forwardRequest.requestId !== 'number') throw new Error('Malformed signer reply')
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: signerReply.forwardRequest.requestId,
+					type: 'result',
+					method: 'eth_sendTransaction',
+					result: signerReply.reply,
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_reply',
+					result: '0x',
+				})
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				concreteSignerRequests.push(method)
+				if (method === 'eth_sendTransaction') return signedTransactionHash
+				return undefined
+			},
+		})
+		const concreteMetaMaskProvider = fakeWindow.ethereum
+		const aggregateProvider = {
+			...concreteMetaMaskProvider,
+			providers: [concreteMetaMaskProvider],
+			request: async ({ method }: { method: string }) => {
+				aggregateSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				if (method === 'eth_accounts' || method === 'eth_requestAccounts') return ['0x1111111111111111111111111111111111111111']
+				return await new Promise<never>(() => undefined)
+			},
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: aggregateProvider })
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?legacy-providers-metamask-signing', async () => {
+			const result = await fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] })
+			assert.equal(result, signedTransactionHash)
+		})
+
+		assert.equal(concreteSignerRequests.includes('eth_sendTransaction'), true)
+		assert.equal(aggregateSignerRequests.includes('eth_sendTransaction'), false)
+	})
+
 	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {
 		const signerAccount = '0x1111111111111111111111111111111111111111'
 		let mutationAttempted = false

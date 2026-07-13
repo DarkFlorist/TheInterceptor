@@ -239,6 +239,7 @@ type WindowEthereum = InjectFunctions & {
 	isMetaMask?: boolean,
 	isInterceptor?: boolean,
 	providerMap?: Map<string, WindowEthereum>, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
+	providers?: readonly WindowEthereum[],
 	isCoinbaseWallet?: boolean,
 
 	// for metamask compatibility mode
@@ -1188,14 +1189,16 @@ class InterceptorMessageListener {
 			this.connectToSigner(signerName)
 			return
 		}
-		const fallbackSignerWindowEthereum = inpageWindow.ethereum
+		const injectedWindowEthereum = inpageWindow.ethereum
+		const providersMetaMask = injectedWindowEthereum.providers?.find((provider) => provider !== injectedWindowEthereum && hasRequestAndOn(provider) && provider.isMetaMask)
+		const fallbackSignerWindowEthereum = injectedWindowEthereum.isMetaMask && providersMetaMask !== undefined ? providersMetaMask : injectedWindowEthereum
 		const fallbackSignerName = getSignerName(fallbackSignerWindowEthereum)
 		this.signerWindowEthereumRequest = fallbackSignerWindowEthereum.request.bind(fallbackSignerWindowEthereum) // store the request object to signer
 		this.fallbackSignerWindowEthereumRequest = undefined
 		this.connected = !fallbackSignerWindowEthereum.isConnected || fallbackSignerWindowEthereum.isConnected()
 		subscribeToSignerEvents(fallbackSignerWindowEthereum, fallbackSignerName)
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-		if (this.hasNonConfigurableAccountCompatibilityProperty()) {
+		if (fallbackSignerWindowEthereum !== injectedWindowEthereum || this.hasNonConfigurableAccountCompatibilityProperty()) {
 			this.installControlledAccountCompatibilityProperties()
 			inpageWindow.ethereum = this.createInterceptorProvider(fallbackSignerWindowEthereum)
 		} else {
