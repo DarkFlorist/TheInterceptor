@@ -109,10 +109,24 @@ function listenContentScript(connectionName: string | undefined) {
 	const isIgnorableContentScriptPortError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
 		|| error.message.includes('Could not establish connection. Receiving end does not exist')
 		|| error.message.includes('Extension context invalidated')
+	const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
+		|| error.message.includes('Extension context invalidated')
 	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
 		if (extensionPort !== port) return
 		extensionPort = undefined
 		pageHidden = true
+	}
+	let connect: () => browser.runtime.Port
+	const reconnectAfterPortFailure = (port: browser.runtime.Port, error: Error | undefined) => {
+		if (extensionPort !== port) return extensionPort
+		markExtensionPortDisconnected(port)
+		if (error !== undefined && isTerminalContentScriptPortError(error)) return undefined
+		try {
+			return connect()
+		} catch (reconnectError: unknown) {
+			if (reconnectError instanceof Error && isIgnorableContentScriptPortError(reconnectError)) return undefined
+			throw reconnectError
+		}
 	}
 	const reportInterceptorError = (diagnostics: string) => {
 		const currentExtensionPort = extensionPort
@@ -121,7 +135,7 @@ function listenContentScript(connectionName: string | undefined) {
 			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
 		} catch(reportingError: unknown) {
 			if (reportingError instanceof Error && isIgnorableContentScriptPortError(reportingError)) {
-				markExtensionPortDisconnected(currentExtensionPort)
+				reconnectAfterPortFailure(currentExtensionPort, reportingError)
 				return
 			}
 			console.error(reportingError)
@@ -132,20 +146,32 @@ function listenContentScript(connectionName: string | undefined) {
 		const currentExtensionPort = extensionPort
 		if (currentExtensionPort === undefined) return
 		if (!isBridgeRequest(data)) return
+		const message = { data: {
+			interceptorRequest: true,
+			method: data.method,
+			...(data.params !== undefined ? { params: data.params } : {}),
+			usingInterceptorWithoutSigner: data.usingInterceptorWithoutSigner,
+			requestId: data.requestId,
+			...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
+		} }
 		try {
-			currentExtensionPort.postMessage({ data: {
-				interceptorRequest: true,
-				method: data.method,
-				...(data.params !== undefined ? { params: data.params } : {}),
-				usingInterceptorWithoutSigner: data.usingInterceptorWithoutSigner,
-				requestId: data.requestId,
-				...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
-			} })
+			currentExtensionPort.postMessage(message)
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
 			if (error instanceof Error) {
 				if (isIgnorableContentScriptPortError(error)) {
-					markExtensionPortDisconnected(currentExtensionPort)
+					const reconnectedPort = reconnectAfterPortFailure(currentExtensionPort, error)
+					if (reconnectedPort === undefined) return
+					try {
+						reconnectedPort.postMessage(message)
+						checkAndThrowRuntimeLastError()
+					} catch (retryError: unknown) {
+						if (retryError instanceof Error && isIgnorableContentScriptPortError(retryError)) {
+							reconnectAfterPortFailure(reconnectedPort, retryError)
+							return
+						}
+						throw retryError
+					}
 					return
 				}
 				if (error.message?.includes('User denied')) return // user denied signature
@@ -172,7 +198,7 @@ function listenContentScript(connectionName: string | undefined) {
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
 	})
 
-	const connect = () => {
+	connect = () => {
 		const previousExtensionPort = extensionPort
 		extensionPort = undefined
 		if (previousExtensionPort !== undefined) {
@@ -205,7 +231,13 @@ function listenContentScript(connectionName: string | undefined) {
 			}
 		})
 
-		connectedExtensionPort.onDisconnect.addListener(() => { markExtensionPortDisconnected(connectedExtensionPort) })
+		connectedExtensionPort.onDisconnect.addListener(() => {
+			if (extensionPort !== connectedExtensionPort) return
+			const lastError = browser.runtime.lastError
+			const disconnectError = lastError?.message === undefined ? undefined : new Error(lastError.message)
+			reconnectAfterPortFailure(connectedExtensionPort, disconnectError)
+		})
+		return connectedExtensionPort
 	}
 	connect()
 
