@@ -4,9 +4,11 @@ import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.j
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
+const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
 const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extension:// URL of different extension'
-const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url))
-const isOtherExtensionInjectionTargetError = (error: unknown) => error instanceof Error && error.message === otherExtensionInjectionTargetErrorMessage
+const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
+const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
+const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map((origin) => `*://*.${ origin }/*`)
@@ -55,7 +57,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
-		if (isMissingBrowserTargetError(error) || isOtherExtensionInjectionTargetError(error)) return false
+		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
 		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
 	}
 	return false

@@ -44,11 +44,11 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 			},
 			storage: {
 				local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					const storageItems = getStorageItems(keys)
-					currentTabUrl = tabUrlAfterStorageRead ?? currentTabUrl
-					return storageItems
-				},
+					async get(keys?: string | string[] | Record<string, unknown> | null) {
+						const storageItems = getStorageItems(keys)
+						currentTabUrl = tabUrlAfterStorageRead ?? currentTabUrl
+						return storageItems
+					},
 					async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
 					async remove(keys: string | string[]) {
 						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -172,6 +172,30 @@ describe('content script injection strategy errors', () => {
 		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
 	})
 
+	test('skips manifest v2 injection for extension galleries', async () => {
+		for (const extensionGalleryUrl of [
+			'https://chromewebstore.google.com/detail/an-extension-id',
+			'https://chrome.google.com/webstore/category/extensions',
+			'https://chrome.google.com/webstore?hl=en',
+			'https://chrome.google.com/webstore#extensions',
+		]) {
+			const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+				tabUrl: extensionGalleryUrl,
+				executeScriptError: new Error('The extensions gallery cannot be scripted.'),
+			})
+			const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
+
+			await updateContentScriptInjectionStrategyManifestV2()
+			await withSilencedConsole(async () => {
+				await getCommittedListener()({ ...committedDetails, url: extensionGalleryUrl })
+			})
+
+			assert.equal(getExecuteScriptCalls(), 0)
+			assert.equal(await getLatestUnexpectedError(), undefined)
+			assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+		}
+	})
+
 	test('skips manifest v2 injection when the tab URL is unavailable', async () => {
 		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
 			hasVisibleTabUrl: false,
@@ -222,10 +246,28 @@ describe('content script injection strategy errors', () => {
 		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
 	})
 
-	test('records non-exact different extension target errors as local recovery', async () => {
+	test('ignores an extension gallery target that appears after the final tab URL check', async () => {
+		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+			executeScriptError: new Error('The extensions gallery cannot be scripted.'),
+		})
+		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
+
+		assert.equal(getExecuteScriptCalls(), 1)
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+	})
+
+	test('records non-exact restricted-target errors as local recovery', async () => {
 		for (const errorMessage of [
 			'Unexpected executeScript failure: Cannot access a chrome-extension:// URL of different extension',
 			'Cannot access a chrome-extension:// URL of different extension after navigation',
+			'Unexpected executeScript failure: The extensions gallery cannot be scripted.',
+			'The extensions gallery cannot be scripted. after navigation',
 		]) {
 			const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error(errorMessage) })
 			const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
