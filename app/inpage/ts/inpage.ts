@@ -139,8 +139,9 @@ const isValidImageDataUri = (value: string) => {
 	if (match[1] === ';base64') return /^(?:[a-z0-9+/]{4})*(?:[a-z0-9+/]{2}==|[a-z0-9+/]{3}=|[a-z0-9+/]{2}|[a-z0-9+/]{3})?$/i.test(payload)
 	try {
 		return decodeURIComponent(payload).length > 0
-	} catch (_error: unknown) {
-		return false
+	} catch (error: unknown) {
+		if (error instanceof URIError) return false
+		throw error
 	}
 }
 const isEip6963MetaMaskInfo = (value: unknown): value is EIP6963ProviderInfo & { rdns: 'io.metamask' } => {
@@ -158,19 +159,15 @@ const isEip6963MetaMaskInfo = (value: unknown): value is EIP6963ProviderInfo & {
 		&& value.rdns === 'io.metamask'
 }
 const getEip6963MetaMaskAnnouncement = (event: Event) => {
-	try {
-		if (!('detail' in event)) return undefined
-		const detail = event.detail
-		if (!isEip6963AnnouncementDetail(detail)) return undefined
-		const provider = detail.provider
-		const info = detail.info
-		if (!isEip6963MetaMaskInfo(info)) return undefined
-		return {
-			provider,
-			info: Object.freeze({ uuid: info.uuid, name: info.name, icon: info.icon, rdns: info.rdns }),
-		}
-	} catch (_error: unknown) {
-		return undefined
+	if (!('detail' in event)) return undefined
+	const detail = event.detail
+	if (!isEip6963AnnouncementDetail(detail)) return undefined
+	const provider = detail.provider
+	const info = detail.info
+	if (!isEip6963MetaMaskInfo(info)) return undefined
+	return {
+		provider,
+		info: Object.freeze({ uuid: info.uuid, name: info.name, icon: info.icon, rdns: info.rdns }),
 	}
 }
 const isRequestAccountsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'eth_requestAccounts' && (replyMethod === 'eth_accounts' || replyMethod === 'eth_requestAccounts')
@@ -328,7 +325,12 @@ function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, u
 }
 
 function stringifyForwardedFallbackError(error: unknown) {
-	return error instanceof Error ? `${ error.name }: ${ error.message }` : `Unexpected thrown value: ${ String(error) }`
+	try {
+		if (error instanceof Error) return `${ error.name }: ${ error.message }`
+		return `Unexpected thrown value: ${ String(error) }`
+	} catch {
+		return 'Unexpected thrown value: [unprintable error]'
+	}
 }
 
 function stringifyForwardedFallbackValue(value: unknown) {
@@ -340,9 +342,9 @@ function stringifyForwardedFallbackValue(value: unknown) {
 }
 
 function stringifyForwardedThrownValue(value: unknown) {
-	if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
-	if (typeof value === 'bigint') return value.toString()
 	try {
+		if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
+		if (typeof value === 'bigint') return value.toString()
 		const stringified = JSON.stringify(value, (_key: string, nestedValue: unknown) => typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue)
 		if (stringified !== undefined) return stringified
 	} catch (error: unknown) {
@@ -353,15 +355,19 @@ function stringifyForwardedThrownValue(value: unknown) {
 }
 
 function getForwardedDiagnosticsSummary(error: unknown) {
-	if (error instanceof Error) return error.message
-	if (typeof error === 'string') return error
-	if (error === undefined) return 'Unexpected thrown value: undefined'
-	if (error === null) return 'Unexpected thrown value: null'
-	if (isForwardedDiagnosticsRecord(error)) {
-		const { message } = error
-		if (typeof message === 'string') return message
+	try {
+		if (error instanceof Error) return error.message
+		if (typeof error === 'string') return error
+		if (error === undefined) return 'Unexpected thrown value: undefined'
+		if (error === null) return 'Unexpected thrown value: null'
+		if (isForwardedDiagnosticsRecord(error)) {
+			const { message } = error
+			if (typeof message === 'string') return message
+		}
+		return String(error)
+	} catch (summaryError: unknown) {
+		return `Failed to read thrown-value summary: ${ stringifyForwardedFallbackError(summaryError) }`
 	}
-	return String(error)
 }
 
 function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnosticsRequestContext {
@@ -646,6 +652,10 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private readonly reportSignerDiscoveryError = (phase: string, error: unknown) => {
+		this.reportInterceptorError(serializeForwardedDiagnostics('inpage', phase, error))
+	}
+
 	// sends a message to interceptors background script
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
 		try {
@@ -710,8 +720,9 @@ class InterceptorMessageListener {
 			for (const registration of registrations.reverse()) {
 				try {
 					signerRemoveListener(registration.kind, registration.callback)
-				} catch (_rollbackError: unknown) {
+				} catch (rollbackError: unknown) {
 					this.rejectedSignerProviders.add(provider)
+					this.reportSignerDiscoveryError('roll back signer event subscription', rollbackError)
 				}
 			}
 			throw error
@@ -723,7 +734,8 @@ class InterceptorMessageListener {
 		try {
 			this.subscribeToSignerEvents(provider, signerName, signerOn, signerRemoveListener)
 			return true
-		} catch (_error: unknown) {
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('subscribe to signer events', error)
 			return false
 		}
 	}
@@ -739,7 +751,8 @@ class InterceptorMessageListener {
 			const connected = provider.isConnected === undefined || provider.isConnected()
 			if (!this.trySubscribeToSignerEvents(provider, signerName, signerOn, signerRemoveListener)) return undefined
 			return { provider, connected, request }
-		} catch (_error: unknown) {
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('prepare signer provider', error)
 			return undefined
 		}
 	}
@@ -749,21 +762,24 @@ class InterceptorMessageListener {
 		try {
 			const possibleProviders = injectedWindowEthereum.providers
 			if (Array.isArray(possibleProviders)) providers = possibleProviders
-		} catch (_error: unknown) {
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('read legacy signer providers', error)
 			return undefined
 		}
 		if (providers === undefined) return undefined
 		let providerCount = 0
 		try {
 			providerCount = providers.length
-		} catch (_error: unknown) {
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('read legacy signer provider count', error)
 			return undefined
 		}
 		for (let providerIndex = 0; providerIndex < providerCount; providerIndex++) {
 			let provider: unknown
 			try {
 				provider = providers[providerIndex]
-			} catch (_error: unknown) {
+			} catch (error: unknown) {
+				this.reportSignerDiscoveryError('read legacy signer provider', error)
 				continue
 			}
 			if (provider === injectedWindowEthereum) continue
@@ -775,7 +791,13 @@ class InterceptorMessageListener {
 
 	private readonly useAnnouncedMetaMaskProvider = (event: Event) => {
 		if (!this.acceptingAnnouncedMetaMaskProviders) return
-		const announcement = getEip6963MetaMaskAnnouncement(event)
+		let announcement: ReturnType<typeof getEip6963MetaMaskAnnouncement>
+		try {
+			announcement = getEip6963MetaMaskAnnouncement(event)
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('read EIP-6963 MetaMask announcement', error)
+			return
+		}
 		if (announcement === undefined) return
 		const { provider, info } = announcement
 		if (provider === this.signerWindowEthereumProvider) return
@@ -1361,7 +1383,7 @@ class InterceptorMessageListener {
 			this.connectToSigner('NoSigner')
 		}
 		let rootIsInterceptor = false
-		try { rootIsInterceptor = injectedWindowEthereum.isInterceptor === true } catch (_error: unknown) { rootIsInterceptor = false }
+		try { rootIsInterceptor = injectedWindowEthereum.isInterceptor === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Interceptor marker', error) }
 		if (rootIsInterceptor) return
 		const preparedMetaMaskProvider = this.findPreparedLegacyMetaMaskProvider(injectedWindowEthereum)
 
@@ -1369,15 +1391,15 @@ class InterceptorMessageListener {
 		let rootIsCoinbaseWallet = false
 		let rootIsMetaMask = false
 		let rootProviderMap: Map<string, WindowEthereum> | undefined
-		try { rootIsBraveWallet = injectedWindowEthereum.isBraveWallet === true } catch (_error: unknown) { rootIsBraveWallet = false }
-		try { rootIsCoinbaseWallet = injectedWindowEthereum.isCoinbaseWallet === true } catch (_error: unknown) { rootIsCoinbaseWallet = false }
-		try { rootIsMetaMask = injectedWindowEthereum.isMetaMask === true } catch (_error: unknown) { rootIsMetaMask = false }
-		try { rootProviderMap = injectedWindowEthereum.providerMap } catch (_error: unknown) { rootProviderMap = undefined }
+		try { rootIsBraveWallet = injectedWindowEthereum.isBraveWallet === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Brave marker', error) }
+		try { rootIsCoinbaseWallet = injectedWindowEthereum.isCoinbaseWallet === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Coinbase marker', error) }
+		try { rootIsMetaMask = injectedWindowEthereum.isMetaMask === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root MetaMask marker', error) }
+		try { rootProviderMap = injectedWindowEthereum.providerMap } catch (error: unknown) { this.reportSignerDiscoveryError('read root provider map', error) }
 		const rootSignerName = rootIsCoinbaseWallet ? 'CoinbaseWallet' as const : rootIsBraveWallet ? 'Brave' as const : rootIsMetaMask ? 'MetaMask' as const : 'NotRecognizedSigner' as const
 
 		if (preparedMetaMaskProvider === undefined && (rootIsBraveWallet || rootProviderMap !== undefined || rootIsCoinbaseWallet)) {
 			let mapSignerWindowEthereum: WindowEthereum | undefined
-			try { mapSignerWindowEthereum = rootProviderMap?.get('CoinbaseWallet') } catch (_error: unknown) { mapSignerWindowEthereum = undefined }
+			try { mapSignerWindowEthereum = rootProviderMap?.get('CoinbaseWallet') } catch (error: unknown) { this.reportSignerDiscoveryError('read mapped Coinbase signer', error) }
 			const preparedMapSigner = this.prepareSignerProvider(mapSignerWindowEthereum, 'CoinbaseWallet', false, false)
 			const preparedRootSigner = preparedMapSigner === undefined ? this.prepareSignerProvider(injectedWindowEthereum, rootSignerName, false, false) : undefined
 			const preparedSigner = preparedMapSigner ?? preparedRootSigner
@@ -1388,7 +1410,7 @@ class InterceptorMessageListener {
 			const signerName = preparedMapSigner === undefined ? rootSignerName : 'CoinbaseWallet'
 			let fallbackRequest: EthereumRequest | undefined
 			if (preparedMapSigner !== undefined) {
-				try { fallbackRequest = injectedWindowEthereum.request.bind(injectedWindowEthereum) } catch (_error: unknown) { fallbackRequest = undefined }
+				try { fallbackRequest = injectedWindowEthereum.request.bind(injectedWindowEthereum) } catch (error: unknown) { this.reportSignerDiscoveryError('bind root fallback signer request', error) }
 			}
 			this.connected = preparedSigner.connected
 			this.signerWindowEthereumProvider = preparedSigner.provider

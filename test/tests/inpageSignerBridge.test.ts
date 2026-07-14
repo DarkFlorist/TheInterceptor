@@ -730,8 +730,12 @@ describe('inpage signer bridge', () => {
 		const throwingGetterProviders = (['isMetaMask', 'request', 'on', 'isBraveWallet'] as const).map(createThrowingMetaMaskProviderProperty)
 		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: aggregateProvider })
 		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			const hostileAnnouncementError = {
+				get message() { throw new Error('Invalid hostile announcement error message getter') },
+				toString() { throw new Error('Invalid hostile announcement error toString') },
+			}
 			const throwingDetailEvent = { type: 'eip6963:announceProvider', detail: undefined }
-			Object.defineProperty(throwingDetailEvent, 'detail', { get: () => { throw new Error('Invalid announcement detail') } })
+			Object.defineProperty(throwingDetailEvent, 'detail', { get: () => { throw hostileAnnouncementError } })
 			fakeWindow.dispatchEvent(throwingDetailEvent)
 			for (const detailProperty of ['provider', 'info'] as const) {
 				const detail = { provider: ignoredProvider, info: metaMaskInfo }
@@ -789,6 +793,9 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(duplicateProviderSubscriptions, [])
 		assert.equal(partialSubscriptions.size, 0)
 		assert.equal(statefulRequestProviderSubscriptions, 0)
+		const hostileAnnouncementDiagnostic = backgroundMessages.find((message) => message.method === 'InterceptorError' && typeof message.params?.[0] === 'string' && message.params[0].includes('phase: read EIP-6963 MetaMask announcement'))
+		if (hostileAnnouncementDiagnostic === undefined || typeof hostileAnnouncementDiagnostic.params?.[0] !== 'string') throw new Error('missing hostile EIP-6963 announcement diagnostic')
+		assert.match(hostileAnnouncementDiagnostic.params[0], /Failed to read thrown-value summary: Error: Invalid hostile announcement error message getter/)
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged'))
 
 		const messageCountBeforeStaleEvents = backgroundMessages.length
