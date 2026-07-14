@@ -8,7 +8,9 @@ function injectScript(_content: string) {
 	}
 
 	try {
-		listenContentScript(undefined, 'document-start')
+		const contentScriptListener = Reflect.get(globalThis, Symbol.for('TheInterceptor.listenContentScript'))
+		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
+		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
 		const scriptTag = document.createElement('script')
 		scriptTag.setAttribute('async', 'false')

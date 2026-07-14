@@ -15,13 +15,14 @@ type ContentScriptMockState = {
 
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
+const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
-async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>) {
+async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
-	const listenContentScriptDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'listenContentScript')
+	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
 	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
@@ -60,6 +61,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	}
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
+	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 	const scriptContainer = {
 		children: [{}, {}],
 		insertBefore: () => undefined,
@@ -90,8 +92,8 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		else Object.defineProperty(globalThis, 'document', documentDescriptor)
 		if (interceptorInjectedDescriptor === undefined) Reflect.deleteProperty(globalThis, 'interceptorInjected')
 		else Object.defineProperty(globalThis, 'interceptorInjected', interceptorInjectedDescriptor)
-		if (listenContentScriptDescriptor === undefined) Reflect.deleteProperty(globalThis, 'listenContentScript')
-		else Object.defineProperty(globalThis, 'listenContentScript', listenContentScriptDescriptor)
+		if (contentScriptListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, contentScriptListenerGlobalKey)
+		else Object.defineProperty(globalThis, contentScriptListenerGlobalKey, contentScriptListenerDescriptor)
 	}
 }
 
@@ -212,6 +214,14 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start queues requests while its background port reconnects', async () => {
 		await verifyRequestQueuedDuringReconnect('manifest-v2-document-start')
+	})
+
+	test('does not redefine a non-configurable legacy content script listener', async () => {
+		const legacyListener = () => undefined
+		await withContentScriptMock('standalone-listener', async ({ getConnectionCount }) => {
+			assert.equal(Reflect.get(globalThis, 'listenContentScript'), legacyListener)
+			assert.equal(getConnectionCount(), 1)
+		}, { configurable: false, value: legacyListener })
 	})
 } else {
 	test('content script reconnect scenarios pass in an isolated browser-global harness', async () => {

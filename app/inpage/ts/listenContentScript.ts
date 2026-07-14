@@ -1,3 +1,5 @@
+const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
+
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
@@ -328,4 +330,4 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		console.error(error)
 	}
 }
-Object.defineProperty(globalThis, 'listenContentScript', { configurable: true, value: listenContentScript })
+Object.defineProperty(globalThis, contentScriptListenerGlobalKey, { configurable: true, value: listenContentScript })
