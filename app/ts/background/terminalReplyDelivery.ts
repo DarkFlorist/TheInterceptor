@@ -4,10 +4,12 @@ import { reportLocalRecovery } from '../utils/errors.js'
 import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
-import { replyToInterceptedRequest, requestManifestV2ContentScriptReconnect } from './messageSending.js'
+import { replyToInterceptedRequest } from './messageSending.js'
+import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
+const terminalReplyReservations = new Set<string>()
 const completedTerminalReplies = new Set<string>()
 const terminalReplySemaphore = new Semaphore(1)
 const terminalReplyFlushRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -26,34 +28,44 @@ async function recordSuccessfulTerminalReplyDelivery(identifier: string, message
 	if (!keepCompletionMarker) completedTerminalReplies.delete(identifier)
 }
 
-export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+export async function queueTerminalReply(message: InterceptedRequestForward) {
+	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
+	terminalReplyReservations.add(identifier)
+	try {
+		await terminalReplySemaphore.execute(async () => {
+			await appendPendingTerminalReply(message)
+		})
+	} catch (error) {
+		terminalReplyReservations.delete(identifier)
+		throw error
+	}
+}
+
+export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
 	if (existingProduction !== undefined) return await existingProduction
 	const production = (async () => {
-		let delivered = await terminalReplySemaphore.execute(async () => {
+		const deliver = async () => await terminalReplySemaphore.execute(async () => {
 			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
-			await appendPendingTerminalReply(message)
-			const initialDelivery = replyToInterceptedRequest(websiteTabConnections, message)
-			if (initialDelivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
-			return initialDelivery
+			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
+			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
+			return delivery
 		})
-		if (delivered !== false || browser.runtime.getManifest().manifest_version !== 2 || message.type === 'doNotReply') return delivered
-		if (!await requestManifestV2ContentScriptReconnect(message.uniqueRequestIdentifier.requestSocket)) return false
-		delivered = await terminalReplySemaphore.execute(async () => {
-			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
-			const reconnectDelivery = replyToInterceptedRequest(websiteTabConnections, message)
-			if (reconnectDelivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
-			return reconnectDelivery
-		})
-		return delivered
+		return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, deliver)
 	})()
 	terminalReplyProductions.set(identifier, production)
 	try {
 		return await production
 	} finally {
 		if (terminalReplyProductions.get(identifier) === production) terminalReplyProductions.delete(identifier)
+		terminalReplyReservations.delete(identifier)
 	}
+}
+
+export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+	await queueTerminalReply(message)
+	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
 }
 
 export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -69,7 +81,7 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 				continue
 			}
 			if (replyToInterceptedRequest(websiteTabConnections, reply) !== true) continue
-			await recordSuccessfulTerminalReplyDelivery(identifier, reply, terminalReplyProductions.has(identifier))
+			await recordSuccessfulTerminalReplyDelivery(identifier, reply, terminalReplyProductions.has(identifier) || terminalReplyReservations.has(identifier))
 			deliveredReplies += 1
 		}
 		return deliveredReplies

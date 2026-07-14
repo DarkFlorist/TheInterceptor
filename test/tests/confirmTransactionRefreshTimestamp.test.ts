@@ -25,6 +25,7 @@ function createBrowserMock() {
 	let manifestVersion = 3
 	let tabMessageHandler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
+	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
 
 	const getItems = (keys?: StorageKeys) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -58,7 +59,10 @@ function createBrowserMock() {
 					if (storageGetHandler !== undefined) return await storageGetHandler(keys, () => getItems(keys))
 					return getItems(keys)
 				},
-				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
+				async set(items: Record<string, unknown>) {
+					if (storageSetHandler !== undefined) return await storageSetHandler(items, () => Object.assign(storageState, items))
+					Object.assign(storageState, items)
+				},
 				async remove(keys: string | string[]) { removeItems(keys) },
 			},
 		},
@@ -112,6 +116,7 @@ function createBrowserMock() {
 			for (const windowId of windowIds) liveWindowIds.add(windowId)
 		},
 		setStorageGetHandler(handler: typeof storageGetHandler) { storageGetHandler = handler },
+		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
@@ -122,6 +127,7 @@ function createBrowserMock() {
 			liveWindowIds.clear()
 			tabMessageHandler = undefined
 			storageGetHandler = undefined
+			storageSetHandler = undefined
 		},
 	}
 }
@@ -178,10 +184,13 @@ async function loadModules() {
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		flushPendingTerminalRepliesForSocket: terminalReplyDelivery.flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
+		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
+		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
+		EthereumBytes32: wireTypes.EthereumBytes32,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
 		EthSimulateV1Result: ethSimulateTypes.EthSimulateV1Result,
@@ -472,6 +481,89 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		if (!isRecord(finalUpdatedRequest) || !isRecord(finalUpdatedRequest.approvalStatus)) throw new Error('missing approval status in final popup update')
 		assert.equal(finalUpdatedRequest.approvalStatus.status, 'SignerError')
 		assert.equal(disconnectedPort.getPostAttempts(), connectionCase.expectedPostAttempts)
+	}
+})
+
+test('reject and result replies remain durable after their pending request is removed', async () => {
+	delete browserMock.storageState.pendingTerminalReplies
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const disconnectedConnections = new Map()
+	const terminalReplies = [
+		{
+			name: 'reject',
+			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'reject' as const, errorString: undefined, uniqueRequestIdentifier } },
+			transaction: pendingTransaction,
+		},
+		{
+			name: 'result',
+			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
+			transaction: { ...pendingTransaction, simulationMode: false as const },
+		},
+	]
+
+	for (const terminalReply of terminalReplies) {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
+		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], terminalReply.name)
+		assert.equal((await modules.getPendingTerminalReplies()).length, 1, terminalReply.name)
+
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[socketKey]: {
+				port: createRecordingPort(postedMessages),
+				socket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		} }]])
+		assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1, terminalReply.name)
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [], terminalReply.name)
+	}
+	assert.equal(postedMessages.length, 2)
+})
+
+test('terminal replies are persisted before removing the pending rejection or result request', async () => {
+	const terminalReplies = [
+		{
+			name: 'reject',
+			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'reject' as const, errorString: undefined, uniqueRequestIdentifier } },
+			transaction: pendingTransaction,
+		},
+		{
+			name: 'result',
+			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
+			transaction: { ...pendingTransaction, simulationMode: false as const },
+		},
+	]
+
+	try {
+		for (const terminalReply of terminalReplies) {
+			delete browserMock.storageState.pendingTerminalReplies
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
+			let signalPersistenceStarted: (() => void) | undefined
+			const persistenceStarted = new Promise<void>((resolve) => { signalPersistenceStarted = resolve })
+			let releasePersistence: (() => void) | undefined
+			const allowPersistence = new Promise<void>((resolve) => { releasePersistence = resolve })
+			browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+				if ('pendingTerminalReplies' in items) {
+					signalPersistenceStarted?.()
+					await allowPersistence
+				}
+				writeStoredItems()
+			})
+
+			const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), terminalReply.confirmation)
+			await persistenceStarted
+			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, terminalReply.name)
+			releasePersistence?.()
+			assert.equal(await resolution, false, terminalReply.name)
+			assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], terminalReply.name)
+			assert.equal((await modules.getPendingTerminalReplies()).length, 1, terminalReply.name)
+		}
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
 	}
 })
 
@@ -866,6 +958,33 @@ test('socket flush overlapping terminal reply persistence delivers exactly once'
 	const flush = modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
 	await Promise.all([production, flush])
 
+	assert.equal(postedMessages.length, 1)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+test('socket flush during terminal reply queueing keeps the completion marker for the original delivery attempt', async () => {
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const terminalReply = {
+		...pendingTransaction.originalRequestParameters,
+		type: 'result' as const,
+		error: { code: 4001, message: 'User denied transaction signature' },
+		uniqueRequestIdentifier,
+	}
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[socketKey]: {
+			port: createRecordingPort(postedMessages),
+			socket,
+			websiteOrigin: 'https://example.com',
+			approved: true,
+			wantsToConnect: true,
+		},
+	} }]])
+
+	await modules.queueTerminalReply(terminalReply)
+	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply), true)
 	assert.equal(postedMessages.length, 1)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
