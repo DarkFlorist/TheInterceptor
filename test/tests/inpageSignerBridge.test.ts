@@ -771,6 +771,57 @@ describe('inpage signer bridge', () => {
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x3'))
 	})
 
+	test('normalizes object-valued MetaMask rejection data before sending signer_reply', async () => {
+		const signerReplies: unknown[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'forwardToSigner',
+						method: request.method,
+						params: request.params,
+					})
+					return true
+				}
+				if (request.method !== 'signer_reply') return false
+				signerReplies.push(request.params?.[0])
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_reply',
+					result: '0x',
+				})
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				if (method === 'eth_sendTransaction') return Promise.reject({
+					code: 4001,
+					message: 'MetaMask Tx Signature: User denied transaction signature.',
+					data: { location: 'confirmation', cause: null },
+				})
+				return undefined
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?metamask-rejection-object-data', async () => {
+			void fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] })
+			await waitFor(() => signerReplies.length === 1)
+		})
+
+		const signerReply = signerReplies[0]
+		if (!isRecord(signerReply) || !isRecord(signerReply.error)) throw new Error('Malformed signer reply')
+		assert.equal(signerReply.success, false)
+		assert.deepEqual(signerReply.error, {
+			code: 4001,
+			message: 'MetaMask Tx Signature: User denied transaction signature.',
+		})
+		const { SignerReply } = await import('../../app/ts/types/interceptor-messages.js')
+		assert.doesNotThrow(() => SignerReply.parse({ method: 'signer_reply', params: [signerReply] }))
+	})
+
 	test('serializes unusable-root NoSigner recovery before EIP-6963 MetaMask connection', async () => {
 		const connectedSignerNames: unknown[] = []
 		const { fakeWindow, signerRequests } = createFakeWindow({

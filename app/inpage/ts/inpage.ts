@@ -1143,6 +1143,15 @@ class InterceptorMessageListener {
 		return new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', maybeErrorObject )
 	}
 
+	private normalizeSignerErrorForBackground = (error: unknown) => {
+		const parsedError = this.parseRpcError(error)
+		return {
+			code: parsedError.code,
+			message: parsedError.message,
+			...(typeof parsedError.data === 'string' ? { data: parsedError.data } : {}),
+		}
+	}
+
 	public readonly onWindowMessage = (messageEvent: unknown) => {
 		this.checkIfCoinbaseInjectionMessageAndInject(messageEvent)
 	}
@@ -1202,7 +1211,7 @@ class InterceptorMessageListener {
 					const reply = await this.requestFromSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
 					return { success: true as const, forwardRequest, reply }
 				} catch(error: unknown) {
-					return { success: false as const, forwardRequest, error }
+					return { success: false as const, forwardRequest, error: this.normalizeSignerErrorForBackground(error) }
 				}
 			}
 			const signerReply = await sendToSignerWithCatchError()
