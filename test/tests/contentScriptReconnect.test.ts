@@ -21,6 +21,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
+	const listenContentScriptDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'listenContentScript')
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
 	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
@@ -76,8 +77,9 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 
 	try {
 		contentScriptMockImportId += 1
+		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
 		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
-		else await import(`../../app/inpage/ts/listenContentScript.js?background-port-recovery-${ contentScriptMockImportId }`)
+		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
@@ -88,6 +90,8 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		else Object.defineProperty(globalThis, 'document', documentDescriptor)
 		if (interceptorInjectedDescriptor === undefined) Reflect.deleteProperty(globalThis, 'interceptorInjected')
 		else Object.defineProperty(globalThis, 'interceptorInjected', interceptorInjectedDescriptor)
+		if (listenContentScriptDescriptor === undefined) Reflect.deleteProperty(globalThis, 'listenContentScript')
+		else Object.defineProperty(globalThis, 'listenContentScript', listenContentScriptDescriptor)
 	}
 }
 

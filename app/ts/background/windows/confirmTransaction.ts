@@ -10,7 +10,8 @@ import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { queueTerminalReplyAndAttemptDelivery, replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import {
 	stringToBytes,
 	keccak256,

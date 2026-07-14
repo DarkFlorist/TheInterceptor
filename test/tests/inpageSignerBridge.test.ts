@@ -726,7 +726,7 @@ describe('inpage signer bridge', () => {
 				return async () => undefined
 			},
 		})
-		const metaMaskInfo = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' }
+		const metaMaskInfo = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
 		const throwingGetterProviders = (['isMetaMask', 'request', 'on', 'isBraveWallet'] as const).map(createThrowingMetaMaskProviderProperty)
 		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: aggregateProvider })
 		fakeWindow.addEventListener('eip6963:requestProvider', () => {

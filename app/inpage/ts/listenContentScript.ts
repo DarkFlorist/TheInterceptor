@@ -1,4 +1,4 @@
-function listenContentScript(connectionName: string | undefined) {
+function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 	const checkAndThrowRuntimeLastError = () => {
@@ -217,7 +217,7 @@ function listenContentScript(connectionName: string | undefined) {
 		try {
 			flushPendingBridgeMessages(currentExtensionPort)
 		} catch (error: unknown) {
-			reportInterceptorError(serializeForwardedDiagnostics('content-script', 'forward page message', error, getForwardedDiagnosticsRequestContext(data)))
+			reportInterceptorError(serializeForwardedDiagnostics(diagnosticsSource, 'forward page message', error, getForwardedDiagnosticsRequestContext(data)))
 			throw error
 		}
 	}
@@ -232,7 +232,7 @@ function listenContentScript(connectionName: string | undefined) {
 		) return
 		const port = messageEvent.ports[0]
 		if (port === undefined) {
-			reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
+			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			return
 		}
 		inpagePort = port
@@ -261,12 +261,12 @@ function listenContentScript(connectionName: string | undefined) {
 			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
-				reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'receive background message', 'Malformed message from background script', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
+				reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'receive background message', 'Malformed message from background script', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 				return
 			}
 			try {
 				if (inpagePort === undefined) {
-					reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
+					reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 					return
 				}
 				inpagePort.postMessage(messageEvent)
@@ -328,4 +328,4 @@ function listenContentScript(connectionName: string | undefined) {
 		console.error(error)
 	}
 }
-listenContentScript(undefined)
+Object.defineProperty(globalThis, 'listenContentScript', { configurable: true, value: listenContentScript })

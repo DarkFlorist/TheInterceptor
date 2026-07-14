@@ -136,7 +136,7 @@ const isValidImageDataUri = (value: string) => {
 	if (match === null) return false
 	const payload = match[2]
 	if (payload === undefined) return false
-	if (match[1] === ';base64') return /^(?:[a-z0-9+/]{4})*(?:[a-z0-9+/]{2}==|[a-z0-9+/]{3}=)?$/i.test(payload)
+	if (match[1] === ';base64') return /^(?:[a-z0-9+/]{4})*(?:[a-z0-9+/]{2}==|[a-z0-9+/]{3}=|[a-z0-9+/]{2}|[a-z0-9+/]{3})?$/i.test(payload)
 	try {
 		return decodeURIComponent(payload).length > 0
 	} catch (_error: unknown) {

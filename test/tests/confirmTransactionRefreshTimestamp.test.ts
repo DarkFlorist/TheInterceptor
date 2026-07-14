@@ -142,6 +142,7 @@ async function loadModules() {
 		ethSimulateTypes,
 		messageSending,
 		pendingTerminalReplies,
+		terminalReplyDelivery,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -157,6 +158,7 @@ async function loadModules() {
 		import('../../app/ts/types/ethSimulate-types.js'),
 		import('../../app/ts/background/messageSending.js'),
 		import('../../app/ts/background/pendingTerminalReplies.js'),
+		import('../../app/ts/background/terminalReplyDelivery.js'),
 	])
 
 	return {
@@ -174,9 +176,9 @@ async function loadModules() {
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		flushPendingTerminalRepliesForSocket: messageSending.flushPendingTerminalRepliesForSocket,
-		flushPendingTerminalRepliesForConnectedPortWithRetry: messageSending.flushPendingTerminalRepliesForConnectedPortWithRetry,
-		queueTerminalReplyAndAttemptDelivery: messageSending.queueTerminalReplyAndAttemptDelivery,
+		flushPendingTerminalRepliesForSocket: terminalReplyDelivery.flushPendingTerminalRepliesForSocket,
+		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
+		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
