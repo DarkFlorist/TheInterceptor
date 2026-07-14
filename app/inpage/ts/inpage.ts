@@ -456,6 +456,7 @@ class InterceptorMessageListener {
 	private readonly subscribedSignerProviders = new WeakSet<object>()
 	private readonly rejectedSignerProviders = new WeakSet<object>()
 	private announcedMetaMaskUuid: string | undefined = undefined
+	private acceptingAnnouncedMetaMaskProviders = false
 	private signerSelectionGeneration = 0
 	private signerConnectionTransition: Promise<void> = Promise.resolve()
 
@@ -773,6 +774,7 @@ class InterceptorMessageListener {
 	}
 
 	private readonly useAnnouncedMetaMaskProvider = (event: Event) => {
+		if (!this.acceptingAnnouncedMetaMaskProviders) return
 		const announcement = getEip6963MetaMaskAnnouncement(event)
 		if (announcement === undefined) return
 		const { provider, info } = announcement
@@ -1169,6 +1171,7 @@ class InterceptorMessageListener {
 			const forwardRequest = parseInterceptorApprovedMessage(messageEvent.data)
 			if (forwardRequest === undefined) throw new Error('Malformed message from content script')
 			if (!('type' in messageEvent)) throw new Error('missing type field')
+			if (forwardRequest.type === 'result' && forwardRequest.requestId !== undefined && !this.outstandingRequests.has(forwardRequest.requestId)) return
 			if (forwardRequest.type === 'result' && 'error' in forwardRequest) {
 				if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 				const pending = this.outstandingRequests.get(forwardRequest.requestId)
@@ -1321,7 +1324,13 @@ class InterceptorMessageListener {
 		}
 		window.addEventListener('eip6963:requestProvider', () => { announceProvider() } )
 		announceProvider()
-		window.dispatchEvent(new Event('eip6963:requestProvider'))
+		this.acceptingAnnouncedMetaMaskProviders = true
+		try {
+			window.dispatchEvent(new Event('eip6963:requestProvider'))
+		} finally {
+			this.acceptingAnnouncedMetaMaskProviders = false
+			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+		}
 	}
 
 	public readonly injectEthereumIntoWindow = () => {

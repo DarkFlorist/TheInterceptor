@@ -283,6 +283,38 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('ignores replayed terminal replies after the original request settles', async () => {
+		let capturedRequest: InpageRequest | undefined
+		const { fakeWindow, interceptorErrorPayloads, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method !== 'eth_sendTransaction') return false
+				capturedRequest = request
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?terminal-reply-replay', async () => {
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown> }
+			const requestPromise = provider.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] })
+			await waitFor(() => capturedRequest !== undefined)
+			const request = capturedRequest
+			if (request === undefined) throw new Error('request was not captured')
+			const rejection = {
+				interceptorApproved: true,
+				requestId: request.requestId,
+				type: 'result',
+				method: request.method,
+				error: { code: 4001, message: 'User denied transaction signature' },
+			}
+			sendBackgroundMessage(rejection)
+			await assert.rejects(async () => await requestPromise, (error: unknown) => isRecord(error) && error.code === 4001)
+
+			sendBackgroundMessage(rejection)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(interceptorErrorPayloads, [])
+		})
+	})
+
 	test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
@@ -905,6 +937,50 @@ describe('inpage signer bridge', () => {
 				assert.equal(connectedSignerNames.includes('MetaMask'), false)
 			})
 		}
+	})
+
+	test('does not let a late page announcement replace the selected Brave signer', async () => {
+		const connectedSignerNames: unknown[] = []
+		let announcedProviderSubscriptionCount = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				return false
+			},
+		})
+		const braveSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+			on: () => braveSigner,
+			removeListener: () => braveSigner,
+		}
+		const announcedProvider = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async () => undefined,
+			on: () => {
+				announcedProviderSubscriptionCount += 1
+				return announcedProvider
+			},
+			removeListener: () => announcedProvider,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: braveSigner })
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-ignore-late-page-announcement', async () => {
+			await waitFor(() => connectedSignerNames.includes('Brave'))
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: {
+					info: { uuid: '44444444-4444-4444-8444-444444444444', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+					provider: announcedProvider,
+				},
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		})
+
+		assert.equal(announcedProviderSubscriptionCount, 0)
+		assert.deepEqual(connectedSignerNames, ['Brave'])
 	})
 
 	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {

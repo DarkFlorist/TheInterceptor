@@ -10,7 +10,7 @@ import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { queueTerminalReplyAndAttemptDelivery, replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import {
 	stringToBytes,
 	keccak256,
@@ -36,6 +36,8 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
+const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const NO_RESPONSE_RETRY_DELAY_MS = 50
 
 type TimestampedPopupVisualisation = {
 	statusCode: 'success' | 'failed'
@@ -197,11 +199,19 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
 	}
+	let noResponseDelivery: boolean | undefined
+	if (confirmation.data.action === 'noResponse') {
+		noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
+			...pendingTransactionOrMessage.originalRequestParameters,
+			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
+			uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier,
+		})
+	}
 	await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 	if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 	if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 
-	if (confirmation.data.action === 'noResponse') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
+	if (confirmation.data.action === 'noResponse') return noResponseDelivery
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
 	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
@@ -241,16 +251,48 @@ export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: Et
 	await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, ethereum, tokenPriceService, websiteTabConnections)
 }
 
+export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
+	const pendingTransactions = await getPendingTransactionsAndMessages()
+	const missingConfirmationWindows = new Map<string, boolean>()
+	const orphanedTransactions: PendingTransactionOrSignableMessage[] = []
+	for (const transaction of pendingTransactions) {
+		const windowIdentifier = `${ transaction.popupOrTabId.type }:${ transaction.popupOrTabId.id }`
+		let confirmationWindowIsMissing = missingConfirmationWindows.get(windowIdentifier)
+		if (confirmationWindowIsMissing === undefined) {
+			confirmationWindowIsMissing = await getPopupOrTabById(transaction.popupOrTabId) === undefined
+			missingConfirmationWindows.set(windowIdentifier, confirmationWindowIsMissing)
+		}
+		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
+	}
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, ethereum, tokenPriceService, websiteTabConnections)
+}
+
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
 	for (const transaction of transactions) {
 		try {
 			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
-		} finally {
-			await removePendingTransactionOrMessage(transaction.uniqueRequestIdentifier)
+			schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
 		}
 	}
+}
+
+function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
+	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
+	if (pendingNoResponseRetryTimers.has(identifier)) return
+	const retryTimer = setTimeout(() => {
+		pendingNoResponseRetryTimers.delete(identifier)
+		void (async () => {
+			try {
+				await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+			} catch (error) {
+				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
+				schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
+			}
+		})()
+	}, NO_RESPONSE_RETRY_DELAY_MS)
+	pendingNoResponseRetryTimers.set(identifier, retryTimer)
 }
 
 const formRejectMessage = (code: number, errorString: string) => {

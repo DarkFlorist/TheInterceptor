@@ -14,6 +14,7 @@ type ContentScriptMockState = {
 }
 
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
+let contentScriptMockImportId = 0
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
@@ -74,8 +75,9 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	} })
 
 	try {
-		if (source === 'manifest-v2-document-start') await import('../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery')
-		else await import('../../app/inpage/ts/listenContentScript.js?background-port-recovery')
+		contentScriptMockImportId += 1
+		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
+		else await import(`../../app/inpage/ts/listenContentScript.js?background-port-recovery-${ contentScriptMockImportId }`)
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
@@ -165,10 +167,60 @@ async function verifyContentScriptReconnect(source: ContentScriptSource) {
 	})
 }
 
-test('standalone content script recovers its background port without reconnect churn', async () => {
-	await verifyContentScriptReconnect('standalone-listener')
-})
+async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ disconnectListeners, eventListeners, postedMessages, runtimeMessageListeners, connectionNames, runtime, getConnectionCount }) => {
+		runtime.lastError = { message: 'Could not establish connection. Receiving end does not exist.' }
+		disconnectListeners[0]?.()
+		assert.equal(getConnectionCount(), 1)
 
-test('manifest v2 document-start content script recovers its background port without reconnect churn', async () => {
-	await verifyContentScriptReconnect('manifest-v2-document-start')
-})
+		await dispatchBridgeRequest(eventListeners)
+		assert.deepEqual(postedMessages, [])
+
+		runtime.lastError = undefined
+		assert.deepEqual(await runtimeMessageListeners[0]?.({
+			method: 'interceptor_reconnect_content_script_port',
+			connectionName: connectionNames[0],
+		}), { reconnected: true })
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 1)
+		assert.deepEqual(postedMessages[0], { data: {
+			interceptorRequest: true,
+			method: 'eth_sendTransaction',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 1,
+		} })
+	})
+}
+
+if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
+	test('standalone content script recovers its background port without reconnect churn', async () => {
+		await verifyContentScriptReconnect('standalone-listener')
+	})
+
+	test('manifest v2 document-start content script recovers its background port without reconnect churn', async () => {
+		await verifyContentScriptReconnect('manifest-v2-document-start')
+	})
+
+	test('standalone content script queues requests while its background port reconnects', async () => {
+		await verifyRequestQueuedDuringReconnect('standalone-listener')
+	})
+
+	test('manifest v2 document-start queues requests while its background port reconnects', async () => {
+		await verifyRequestQueuedDuringReconnect('manifest-v2-document-start')
+	})
+} else {
+	test('content script reconnect scenarios pass in an isolated browser-global harness', async () => {
+		const child = Bun.spawn([process.execPath, 'test', import.meta.path], {
+			env: { ...process.env, INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD: 'true' },
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		const [exitCode, stdout, stderr] = await Promise.all([
+			child.exited,
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+		])
+		assert.equal(exitCode, 0, `Isolated content-script reconnect tests failed.\n${ stdout }\n${ stderr }`)
+	})
+}

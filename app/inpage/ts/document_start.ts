@@ -73,6 +73,16 @@ function injectScript(_content: string) {
 			if (value.internal !== undefined && value.internal !== true) return false
 			return true
 		}
+		type ForwardedBridgeMessage = {
+			readonly data: {
+				readonly interceptorRequest: true
+				readonly method: string
+				readonly params?: readonly unknown[]
+				readonly usingInterceptorWithoutSigner: boolean
+				readonly requestId: number
+				readonly interceptorInternalRequest?: true
+			}
+		}
 		const stringifyForwardedThrownValue = (value: unknown) => {
 			if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
 			if (typeof value === 'bigint') return value.toString()
@@ -127,6 +137,7 @@ function injectScript(_content: string) {
 		}
 		let connect: () => browser.runtime.Port
 		let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+		const pendingBridgeMessages: ForwardedBridgeMessage[] = []
 		const scheduleReconnect = () => {
 			if (reconnectTimer !== undefined) return
 			reconnectTimer = setTimeout(() => {
@@ -161,6 +172,27 @@ function injectScript(_content: string) {
 				throw reconnectError
 			}
 		}
+		const flushPendingBridgeMessages = (port: browser.runtime.Port) => {
+			while (extensionPort === port) {
+				const message = pendingBridgeMessages[0]
+				if (message === undefined) return
+				try {
+					port.postMessage(message)
+					checkAndThrowRuntimeLastError()
+					pendingBridgeMessages.shift()
+				} catch (error: unknown) {
+					if (error instanceof Error && isIgnorableContentScriptPortError(error)) {
+						reconnectAfterPortFailure(port, error)
+						return
+					}
+					if (error instanceof Error && error.message.includes('User denied')) {
+						pendingBridgeMessages.shift()
+						continue
+					}
+					throw error
+				}
+			}
+		}
 		const reportInterceptorError = (diagnostics: string) => {
 			const currentExtensionPort = extensionPort
 			if (currentExtensionPort === undefined) return
@@ -176,10 +208,8 @@ function injectScript(_content: string) {
 		}
 
 		const forwardInpageMessageToBackground = (data: unknown) => {
-			const currentExtensionPort = extensionPort
-			if (currentExtensionPort === undefined) return
 			if (!isBridgeRequest(data)) return
-			const message = { data: {
+			const message: ForwardedBridgeMessage = { data: {
 				interceptorRequest: true,
 				method: data.method,
 				...(data.params !== undefined ? { params: data.params } : {}),
@@ -187,28 +217,15 @@ function injectScript(_content: string) {
 				requestId: data.requestId,
 				...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
 			} }
+			pendingBridgeMessages.push(message)
+			const currentExtensionPort = extensionPort
+			if (currentExtensionPort === undefined) {
+				scheduleReconnect()
+				return
+			}
 			try {
-				currentExtensionPort.postMessage(message)
-				checkAndThrowRuntimeLastError()
-			} catch (error) {
-				if (error instanceof Error) {
-					if (isIgnorableContentScriptPortError(error)) {
-						const reconnectedPort = reconnectAfterPortFailure(currentExtensionPort, error)
-						if (reconnectedPort === undefined) return
-						try {
-							reconnectedPort.postMessage(message)
-							checkAndThrowRuntimeLastError()
-						} catch (retryError: unknown) {
-							if (retryError instanceof Error && isIgnorableContentScriptPortError(retryError)) {
-								reconnectAfterPortFailure(reconnectedPort, retryError)
-								return
-							}
-							throw retryError
-						}
-						return
-					}
-					if (error.message?.includes('User denied')) return // user denied signature
-				}
+				flushPendingBridgeMessages(currentExtensionPort)
+			} catch (error: unknown) {
 				reportInterceptorError(serializeForwardedDiagnostics('document-start', 'forward page message', error, getForwardedDiagnosticsRequestContext(data)))
 				throw error
 			}
@@ -274,6 +291,7 @@ function injectScript(_content: string) {
 				const disconnectError = lastError?.message === undefined ? undefined : new Error(lastError.message)
 				reconnectAfterPortFailure(connectedExtensionPort, disconnectError)
 			})
+			flushPendingBridgeMessages(connectedExtensionPort)
 			return connectedExtensionPort
 		}
 		connect()

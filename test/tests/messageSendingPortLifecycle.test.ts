@@ -108,7 +108,7 @@ describe('background messageSending port lifecycle', () => {
 						websiteTabConnections.set(socket.tabId, { connections: {
 							[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 						} })
-					}, 975)
+					}, 100)
 					return { reconnected: true }
 				},
 			},
