@@ -17,6 +17,8 @@ const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'h
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	let manifestVersion = 3
+	let tabMessageHandler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined
 
 	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -40,7 +42,7 @@ function createBrowserMock() {
 				}
 				return undefined
 			},
-			getManifest: () => ({ manifest_version: 3 }),
+			getManifest: () => ({ manifest_version: manifestVersion }),
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
@@ -52,6 +54,10 @@ function createBrowserMock() {
 			},
 		},
 		tabs: {
+			async sendMessage(tabId: number, message: unknown) {
+				if (tabMessageHandler === undefined) throw new Error('Could not establish connection. Receiving end does not exist.')
+				return await tabMessageHandler(tabId, message)
+			},
 			async query() { return [] },
 			async get() { return undefined },
 			async update() { return undefined },
@@ -81,10 +87,14 @@ function createBrowserMock() {
 	return {
 		sentMessages,
 		storageState,
+		setManifestVersion(version: number) { manifestVersion = version },
+		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
 			browser.runtime.lastError = undefined
+			manifestVersion = 3
+			tabMessageHandler = undefined
 		},
 	}
 }
@@ -126,7 +136,9 @@ async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
+		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
@@ -353,6 +365,21 @@ function createDisconnectedPort() {
 	return { port, getPostAttempts: () => postAttempts }
 }
 
+function createRecordingPort(postedMessages: unknown[]): browser.runtime.Port {
+	const event = {
+		addListener() { return undefined },
+		removeListener() { return undefined },
+		hasListener() { return false },
+	}
+	return {
+		name: 'recording-test-port',
+		disconnect() { return undefined },
+		postMessage(message: unknown) { postedMessages.push(message) },
+		onMessage: event,
+		onDisconnect: event,
+	}
+}
+
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
 	const disconnectedPort = createDisconnectedPort()
@@ -398,6 +425,76 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		if (!isRecord(finalUpdatedRequest) || !isRecord(finalUpdatedRequest.approvalStatus)) throw new Error('missing approval status in final popup update')
 		assert.equal(finalUpdatedRequest.approvalStatus.status, 'SignerError')
 		assert.equal(disconnectedPort.getPostAttempts(), connectionCase.expectedPostAttempts)
+	}
+})
+
+test('MV2 popup close rejects its captured requests without deleting a concurrently appended request', async () => {
+	const postedMessages: unknown[] = []
+	const replacementPort = createRecordingPort(postedMessages)
+	const disconnectedPort = createDisconnectedPort()
+	const socketKey = modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)
+	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
+		[socketKey]: {
+			port: disconnectedPort.port,
+			socket: uniqueRequestIdentifier.requestSocket,
+			websiteOrigin: 'https://example.com',
+			approved: true,
+			wantsToConnect: true,
+		},
+	} }]])
+	const secondCapturedRequest = {
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' },
+		uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 2 },
+		transactionIdentifier: 2n,
+	} as const
+	const concurrentlyAppendedRequest = {
+		...secondCapturedRequest,
+		popupOrTabId: { type: 'popup' as const, id: 2 },
+		uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 3 },
+		transactionIdentifier: 3n,
+	}
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' },
+	}, secondCapturedRequest] })
+	let reconnectRequests = 0
+	browserMock.setManifestVersion(2)
+	browserMock.setTabMessageHandler(async () => {
+		reconnectRequests += 1
+		await modules.appendPendingTransactionOrMessage(concurrentlyAppendedRequest)
+		websiteTabConnections.set(uniqueRequestIdentifier.requestSocket.tabId, { connections: {
+			[socketKey]: {
+				port: replacementPort,
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		} })
+		return { reconnected: true }
+	})
+
+	try {
+		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+	} finally {
+		browserMock.setManifestVersion(3)
+		browserMock.setTabMessageHandler(undefined)
+	}
+
+	const remainingRequests = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(remainingRequests.map((request) => request.uniqueRequestIdentifier.requestId), [3])
+	assert.equal(disconnectedPort.getPostAttempts(), 1)
+	assert.equal(reconnectRequests, 1)
+	assert.equal(postedMessages.length, 2)
+	for (const [index, rejection] of postedMessages.entries()) {
+		if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('missing dapp rejection after popup close')
+		assert.equal(rejection.requestId, index + 1)
+		assert.equal(rejection.method, 'eth_sendTransaction')
+		assert.equal(rejection.error.code, 4001)
+		assert.equal(rejection.error.message, 'User denied transaction signature')
 	}
 })
 
