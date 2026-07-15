@@ -31,14 +31,14 @@ import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
-import { acknowledgeBridgeRequest } from './bridgeRequestDelivery.js'
+import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
 let resetActiveRpcNetwork: ResetSimulationServices | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
+// Keep request watermarks across port reconnects so replayed messages are acknowledged without being handled twice. Tab removal clears them.
 const latestReceivedBridgeRequestIds = new Map<string, number>()
-const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
@@ -158,7 +158,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 					&& 'interceptorRequest' in payload.data
 				)) return
 				const rawMessage = RawInterceptedRequest.parse(payload.data)
-				const shouldHandleRequest = acknowledgeBridgeRequest(latestReceivedBridgeRequestIds, identifier, rawMessage.requestId, () => {
+				const shouldHandleRequest = acknowledgeAndTrackBridgeRequest(latestReceivedBridgeRequestIds, identifier, rawMessage.requestId, () => {
 					port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: rawMessage.requestId })
 					checkAndThrowRuntimeLastError()
 				})

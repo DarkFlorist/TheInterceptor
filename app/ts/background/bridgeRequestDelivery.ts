@@ -1,4 +1,6 @@
-export function acknowledgeBridgeRequest(
+export const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
+
+export function acknowledgeAndTrackBridgeRequest(
 	latestReceivedRequestIds: Map<string, number>,
 	socketIdentifier: string,
 	requestId: number,
