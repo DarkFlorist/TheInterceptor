@@ -31,11 +31,14 @@ import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
+import { acknowledgeBridgeRequest } from './bridgeRequestDelivery.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
 let resetActiveRpcNetwork: ResetSimulationServices | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
+const latestReceivedBridgeRequestIds = new Map<string, number>()
+const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
@@ -104,6 +107,9 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 }
 
 browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
+	for (const socketIdentifier of latestReceivedBridgeRequestIds.keys()) {
+		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
+	}
 	await removeTabState(tabId)
 	await removePendingTerminalRepliesForTab(tabId)
 }))
@@ -151,8 +157,13 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 					&& payload.data !== null
 					&& 'interceptorRequest' in payload.data
 				)) return
+				const rawMessage = RawInterceptedRequest.parse(payload.data)
+				const shouldHandleRequest = acknowledgeBridgeRequest(latestReceivedBridgeRequestIds, identifier, rawMessage.requestId, () => {
+					port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: rawMessage.requestId })
+					checkAndThrowRuntimeLastError()
+				})
+				if (!shouldHandleRequest) return
 				await pendingRequestLimiter.execute(async () => {
-					const rawMessage = RawInterceptedRequest.parse(payload.data)
 					const { resetActiveRpcNetwork, simulationServices } = await waitForStartup()
 					const request = {
 						method: rawMessage.method,

@@ -3,6 +3,7 @@ const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentS
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
@@ -123,9 +124,11 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		|| error.message.includes('Extension context invalidated')
 	const isMissingContentScriptPortReceiverError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
 	const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Extension context invalidated')
+	let inFlightBridgeMessage: ForwardedBridgeMessage | undefined
 	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
 		if (extensionPort !== port) return
 		extensionPort = undefined
+		inFlightBridgeMessage = undefined
 		pageHidden = true
 	}
 	let connect: () => browser.runtime.Port
@@ -167,12 +170,14 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	}
 	const flushPendingBridgeMessages = (port: browser.runtime.Port) => {
 		while (extensionPort === port) {
+			if (inFlightBridgeMessage !== undefined) return
 			const message = pendingBridgeMessages[0]
 			if (message === undefined) return
+			inFlightBridgeMessage = message
 			try {
 				port.postMessage(message)
 				checkAndThrowRuntimeLastError()
-				pendingBridgeMessages.shift()
+				return
 			} catch (error: unknown) {
 				if (error instanceof Error && isIgnorableContentScriptPortError(error)) {
 					reconnectAfterPortFailure(port, error)
@@ -180,6 +185,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 				}
 				if (error instanceof Error && error.message.includes('User denied')) {
 					pendingBridgeMessages.shift()
+					inFlightBridgeMessage = undefined
 					continue
 				}
 				throw error
@@ -248,6 +254,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 		const previousExtensionPort = extensionPort
 		extensionPort = undefined
+		inFlightBridgeMessage = undefined
 		if (previousExtensionPort !== undefined) {
 			try {
 				previousExtensionPort.disconnect()
@@ -260,6 +267,22 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		connectedExtensionPort.onMessage.addListener(messageEvent => {
+			if (
+				extensionPort === connectedExtensionPort
+				&& typeof messageEvent === 'object'
+				&& messageEvent !== null
+				&& 'type' in messageEvent
+				&& messageEvent.type === INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE
+				&& 'requestId' in messageEvent
+				&& typeof messageEvent.requestId === 'number'
+			) {
+				const acknowledgedMessage = pendingBridgeMessages[0]
+				if (acknowledgedMessage?.data.requestId !== messageEvent.requestId) return
+				pendingBridgeMessages.shift()
+				inFlightBridgeMessage = undefined
+				flushPendingBridgeMessages(connectedExtensionPort)
+				return
+			}
 			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)

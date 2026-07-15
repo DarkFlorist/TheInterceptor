@@ -135,6 +135,7 @@ async function verifyContentScriptReconnect(source: ContentScriptSource) {
 		assert.equal(getConnectionCount(), 3)
 		assert.equal(postedMessages.length, 1)
 		assert.equal(disconnectListeners.length, 3)
+		backgroundMessageListeners[2]?.({ type: 'interceptor_bridge_acknowledgement', requestId: 1 })
 
 		disconnectListeners[1]?.()
 		assert.equal(getConnectionCount(), 3)
@@ -199,6 +200,24 @@ async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
 	})
 }
 
+async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		await dispatchBridgeRequest(eventListeners)
+		assert.equal(postedMessages.length, 1)
+
+		disconnectListeners[0]?.()
+
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 2)
+		assert.deepEqual(postedMessages[1], postedMessages[0])
+
+		backgroundMessageListeners[1]?.({ type: 'interceptor_bridge_acknowledgement', requestId: 1 })
+		disconnectListeners[1]?.()
+		assert.equal(getConnectionCount(), 3)
+		assert.equal(postedMessages.length, 2)
+	})
+}
+
 if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 	test('standalone content script recovers its background port without reconnect churn', async () => {
 		await verifyContentScriptReconnect('standalone-listener')
@@ -214,6 +233,14 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start queues requests while its background port reconnects', async () => {
 		await verifyRequestQueuedDuringReconnect('manifest-v2-document-start')
+	})
+
+	test('standalone content script replays an unacknowledged request after disconnect', async () => {
+		await verifyUnacknowledgedRequestReplayedAfterDisconnect('standalone-listener')
+	})
+
+	test('manifest v2 document-start replays an unacknowledged request after disconnect', async () => {
+		await verifyUnacknowledgedRequestReplayedAfterDisconnect('manifest-v2-document-start')
 	})
 
 	test('does not redefine a non-configurable legacy content script listener', async () => {
