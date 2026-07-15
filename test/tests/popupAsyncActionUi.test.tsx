@@ -375,7 +375,9 @@ describe('popup async action UI', () => {
 			render(h(modules.AccessRequests, props), dom.document.body)
 		})
 		const approveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Grant Access'))
+		const rejectButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Deny Access'))
 		if (approveButton === undefined) throw new Error('Expected access approval button to render')
+		if (rejectButton === undefined) throw new Error('Expected access rejection button to render')
 
 		await act(async () => {
 			await clickElement(approveButton)
@@ -385,6 +387,7 @@ describe('popup async action UI', () => {
 
 		assert.equal(approveCount, 1)
 		assert.equal(isDisabled(approveButton), true)
+		assert.equal(isDisabled(rejectButton), true)
 		assert.equal(approveButton.textContent?.includes('Granting access...'), true)
 
 		await act(async () => {

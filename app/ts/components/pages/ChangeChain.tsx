@@ -69,6 +69,8 @@ export function ChangeChain() {
 		hasSupportedRpc: chainChangeData.value.rpcNetwork.httpsRpc !== undefined,
 		simulationMode: chainChangeData.value.simulationMode,
 	})
+	const rejectPending = rejectChainChangeState.value.state === 'pending'
+	const approvePending = approveChainChangeState.value.state === 'pending'
 	const websiteIcon = sanitizeStoredWebsiteIcon(chainChangeData.value.website.icon)
 	return (
 		<main>
@@ -112,13 +114,14 @@ export function ChangeChain() {
 							class = { 'button is-danger' }
 							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 							state = { rejectChainChangeState.value.state }
+							disabled = { approvePending }
 							text = { `Don't change` }
 							pendingText = 'Not changing...'
 							onClick = { reject } >
 						</AsyncActionButton>
 						<AsyncActionButton
 							class = { 'button is-primary' }
-							disabled = { actionState.approveDisabled }
+							disabled = { actionState.approveDisabled || rejectPending }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							state = { approveChainChangeState.value.state }
 							text = { actionState.approveButtonText }

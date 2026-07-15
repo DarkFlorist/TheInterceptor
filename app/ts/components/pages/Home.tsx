@@ -64,6 +64,8 @@ function FirstCardHeader(param: FirstCardParams) {
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
 	const { value: setSimulatingState, waitFor: waitForSetSimulating } = useAsyncState<void>()
 	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
+	const simulatingPending = setSimulatingState.value.state === 'pending'
+	const signingPending = setSigningState.value.state === 'pending'
 
 	async function enableSimulationMode(enabled: boolean ) {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
@@ -88,7 +90,8 @@ function FirstCardHeader(param: FirstCardParams) {
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
 						state = { setSimulatingState.value.state }
-						disabled = { param.simulationMode.value }
+						disabled = { param.simulationMode.value || signingPending }
+						keepTextWhilePending = { true }
 						pendingText = 'Switching to simulating mode...'
 						text = 'Simulating'
 						onClick = { enableSimulating }
@@ -97,7 +100,8 @@ function FirstCardHeader(param: FirstCardParams) {
 						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
 						state = { setSigningState.value.state }
-						disabled = { !param.simulationMode.value }
+						disabled = { !param.simulationMode.value || simulatingPending }
+						keepTextWhilePending = { true }
 						text = { <SignerLogoText signerName = { signerName } text = 'Signing' /> }
 						pendingText = 'Switching to signing mode...'
 						onClick = { enableSigning }
@@ -110,7 +114,7 @@ function FirstCardHeader(param: FirstCardParams) {
 }
 
 type InterceptorDisabledButtonParams = {
-	disableInterceptorToggle: (disabled: boolean) => void,
+	disableInterceptorToggle: (disabled: boolean) => Promise<void>,
 	interceptorDisabled: Signal<boolean>,
 	website: ReadonlySignal<Website | undefined>
 }
@@ -118,9 +122,7 @@ type InterceptorDisabledButtonParams = {
 function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
 	const { value: disableButtonState, waitFor: waitForDisableInterceptor } = useAsyncState<void>()
 	const toggleInterceptor = () => {
-		void waitForDisableInterceptor(async () => {
-			disableInterceptorToggle(!interceptorDisabled.value)
-		})
+		void waitForDisableInterceptor(() => disableInterceptorToggle(!interceptorDisabled.value))
 	}
 
 	return <AsyncActionButton
@@ -322,7 +324,7 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 type SimulationResultsHeaderParams = {
 	openSimulationStack?: () => void
 	disableReset?: ReadonlySignal<boolean>
-	resetSimulation?: () => void
+	resetSimulation?: () => Promise<void>
 }
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
@@ -331,9 +333,7 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	const resetSimulation = param.resetSimulation
 	const clearSimulation = () => {
 		if (resetSimulation === undefined) return
-		void waitForClearSimulation(async () => {
-			resetSimulation()
-		})
+		void waitForClearSimulation(resetSimulation)
 	}
 
 	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
@@ -514,7 +514,7 @@ export function Home(param: HomeParams) {
 	async function disableInterceptorToggle() {
 		if (param.tabState.value?.website === undefined) return
 		const newValue = !param.interceptorDisabled.value
-		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
 	}
 
 	async function openSimulationStack(target?: TransactionOrMessageIdentifier) {

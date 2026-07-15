@@ -21,14 +21,14 @@ export function useResetSimulation(resetButtonRecoveryDelayMs = RESET_BUTTON_REC
 
 	useEffect(() => () => clearResetRecoveryTimeout(), [])
 
-	function resetSimulation() {
+	async function resetSimulation() {
 		disableReset.value = true
 		clearResetRecoveryTimeout()
 		resetRecoveryTimeoutId.current = globalThis.setTimeout(() => {
 			resetRecoveryTimeoutId.current = undefined
 			disableReset.value = false
 		}, resetButtonRecoveryDelayMs)
-		void sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
 	}
 
 	return { disableReset, resetSimulation, markSimulationDataReceived }

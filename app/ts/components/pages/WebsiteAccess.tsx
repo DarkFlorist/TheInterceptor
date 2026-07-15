@@ -458,7 +458,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 
 	const setWebsiteExternalRequestBlocking = async (shouldBlock: boolean) => {
 		if (!websiteAccess.deepValue) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_blockOrAllowExternalRequests', data: { website: websiteAccess.deepValue.website, shouldBlock } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_blockOrAllowExternalRequests', data: { website: websiteAccess.deepValue.website, shouldBlock } })
 	}
 
 	const requestBlockMode = useComputed(() => websiteAccess.deepValue?.declarativeNetRequestBlockMode)
@@ -515,7 +515,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 
 	const disableWebsiteProtection = async (shouldDisable = true) => {
 		if (!websiteAccess.deepValue) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor',  data: { website: websiteAccess.deepValue.website, interceptorDisabled: shouldDisable } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor',  data: { website: websiteAccess.deepValue.website, interceptorDisabled: shouldDisable } })
 	}
 
 	const confirmOrRejectDialog = (response: 'confirm' | 'reject') => {

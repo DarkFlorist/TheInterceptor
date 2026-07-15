@@ -92,6 +92,8 @@ export function FetchSimulationStack() {
 	const allowRequest = () => {
 		void waitForAllowRequest(() => approve())
 	}
+	const rejectPending = rejectRequestState.value.state === 'pending'
+	const allowPending = allowRequestState.value.state === 'pending'
 	const rejectRequest = () => {
 		void waitForRejectRequest(() => reject())
 	}
@@ -206,6 +208,7 @@ export function FetchSimulationStack() {
 								class = { 'button is-danger' }
 								style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 								state = { rejectRequestState.value.state }
+								disabled = { allowPending }
 								text = { 'Don' + '\u0027' + 't allow' }
 								pendingText = 'Rejecting request...'
 								onClick = { rejectRequest }
@@ -214,7 +217,7 @@ export function FetchSimulationStack() {
 								class = { 'button is-primary' }
 								style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 								state = { allowRequestState.value.state }
-								disabled = { false }
+								disabled = { rejectPending }
 								text = 'Allow'
 								pendingText = 'Allowing request...'
 								onClick = { allowRequest }

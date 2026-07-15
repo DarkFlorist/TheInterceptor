@@ -153,6 +153,8 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 	const { value: rejectState, waitFor: waitForReject } = useAsyncState<void>()
 	const { value: approveState, waitFor: waitForApprove } = useAsyncState<void>()
 	const disabled = informationChangedRecently.value
+	const rejectPending = rejectState.value.state === 'pending'
+	const approvePending = approveState.value.state === 'pending'
 	const onReject = () => {
 		void waitForReject(() => reject(accessRequest.accessRequestId))
 	}
@@ -168,7 +170,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 			text = 'Deny Access'
 			pendingText = 'Denying access...'
 			onClick = { onReject }
-			disabled = { disabled }
+		disabled = { disabled || approvePending }
 		/>
 		<AsyncActionButton
 			class = 'button is-primary'
@@ -176,7 +178,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 			text = 'Grant Access'
 			pendingText = 'Granting access...'
 			onClick = { onApprove }
-			disabled = { disabled }
+		disabled = { disabled || rejectPending }
 		/>
 		</div>
 	</nav>

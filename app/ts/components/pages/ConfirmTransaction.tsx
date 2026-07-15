@@ -566,6 +566,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectBut
 		<AsyncActionButton
 			class = 'button is-primary is-danger button-overflow dialog-button-left'
 			state = { rejectButtonState }
+			disabled = { approveButtonState === 'pending' }
 			text = { identified.rejectAction }
 			pendingText = 'Rejecting...'
 			onClick = { reject }
@@ -586,7 +587,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectBut
 					: `Sign with ${ signerName }...`
 			}
 			onClick = { approve }
-			disabled = { confirmDisabled }
+			disabled = { confirmDisabled || rejectButtonState === 'pending' }
 		/>
 	</div>
 }

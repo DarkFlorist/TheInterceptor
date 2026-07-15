@@ -48,7 +48,7 @@ function getMadeRichAddressBookEntries(
 
 function SimulationStackToolbar({ openImportSimulation, resetSimulation, disableReset }: {
 	openImportSimulation: () => void
-	resetSimulation: () => void
+	resetSimulation: () => Promise<void>
 	disableReset: Signal<boolean>
 }) {
 	const { value: exportSimulationStackState, waitFor: waitForExportSimulationStack } = useAsyncState<void>()
@@ -65,9 +65,7 @@ function SimulationStackToolbar({ openImportSimulation, resetSimulation, disable
 	}
 
 	const clearStack = () => {
-		void waitForClearSimulationStack(async () => {
-			resetSimulation()
-		})
+		void waitForClearSimulationStack(resetSimulation)
 	}
 
 	return <header class = 'simulation-stack-page-header'>

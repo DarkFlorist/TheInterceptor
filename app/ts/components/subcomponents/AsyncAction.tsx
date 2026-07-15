@@ -39,6 +39,7 @@ type AsyncActionButtonProps = {
 	state: AsyncStates
 	text: ComponentChildren
 	pendingText: ComponentChildren
+	keepTextWhilePending?: boolean
 	onClick: () => void | Promise<void>
 	disabled?: boolean
 	class?: string
@@ -60,7 +61,7 @@ export function AsyncActionButton(props: AsyncActionButtonProps) {
 			{ pending
 				? <span style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5em' } }>
 					<AsyncStatusIcon state = 'pending' />
-					<span>{ props.pendingText }</span>
+					<span>{ props.keepTextWhilePending ? props.text : props.pendingText }</span>
 				</span>
 				: props.text
 			}
