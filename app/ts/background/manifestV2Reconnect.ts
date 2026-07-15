@@ -31,12 +31,16 @@ const requestManifestV2ContentScriptReconnect = async (socket: WebsiteSocket) =>
 	}
 }
 
-export async function attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, attemptDelivery: () => boolean | undefined | Promise<boolean | undefined>) {
-	const socket = message.uniqueRequestIdentifier.requestSocket
+export async function attemptSocketDeliveryAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, attemptDelivery: () => boolean | undefined | Promise<boolean | undefined>) {
 	const previousPort = websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.port
 	const delivered = await attemptDelivery()
-	if (delivered !== false || browser.runtime.getManifest().manifest_version !== 2 || message.type === 'doNotReply') return delivered
+	if (delivered !== false || browser.runtime.getManifest().manifest_version !== 2) return delivered
 	if (!await requestManifestV2ContentScriptReconnect(socket)) return false
 	if (!await waitForReplacementWebsiteConnection(websiteTabConnections, socket, previousPort)) return false
 	return await attemptDelivery()
+}
+
+export async function attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, attemptDelivery: () => boolean | undefined | Promise<boolean | undefined>) {
+	if (message.type === 'doNotReply') return await attemptDelivery()
+	return await attemptSocketDeliveryAfterManifestV2Reconnect(websiteTabConnections, message.uniqueRequestIdentifier.requestSocket, attemptDelivery)
 }

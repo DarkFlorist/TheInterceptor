@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
 function installBrowserMock() {
@@ -82,6 +82,24 @@ describe('background messageSending port lifecycle', () => {
 		assert.equal(replyToInterceptedRequest(new Map([[socket.tabId, { connections: {} }]]), message), false)
 	})
 
+	test('reports when a signer account request misses a disconnected content-script port', () => {
+		installBrowserMock()
+		const socket = { tabId: 1, connectionName: 0x123n }
+		const connectionKey = websiteSocketToString(socket)
+		const disconnectedPort = createPort(() => {
+			throw new Error('Attempting to use a disconnected port object')
+		})
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+
+		assert.equal(sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, {
+			type: 'result',
+			method: 'request_signer_to_eth_requestAccounts',
+			result: [],
+		}), false)
+	})
+
 	test('requests an MV2 content-script reconnect and retries the exact signing route', async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
 		const connectionKey = websiteSocketToString(socket)
@@ -123,6 +141,46 @@ describe('background messageSending port lifecycle', () => {
 		assert.equal(await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, message), true)
 		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
 		assert.equal(disconnectedPostAttempts, 1)
+		assert.equal(postedMessages.length, 1)
+	})
+
+	test('reconnects an MV2 content-script port before requesting signer accounts', async () => {
+		const socket = { tabId: 1, connectionName: 0x123n }
+		const connectionKey = websiteSocketToString(socket)
+		const postedMessages: unknown[] = []
+		const connectedPort = createPort((message) => { postedMessages.push(message) })
+		const disconnectedPort = createPort(() => {
+			throw new Error('Attempting to use a disconnected port object')
+		})
+		const websiteTabConnections = new Map<number, { connections: Record<string, { port: browser.runtime.Port, socket: typeof socket, websiteOrigin: string, approved: boolean, wantsToConnect: boolean }> }>([[socket.tabId, { connections: {
+			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const reconnectMessages: unknown[] = []
+		globalThis.browser = {
+			runtime: {
+				lastError: undefined,
+				getManifest: () => ({ manifest_version: 2 }),
+			},
+			tabs: {
+				async sendMessage(_tabId: number, message: unknown) {
+					reconnectMessages.push(message)
+					setTimeout(() => {
+						websiteTabConnections.set(socket.tabId, { connections: {
+							[connectionKey]: { port: connectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+						} })
+					}, 100)
+					return { reconnected: true }
+				},
+			},
+		} as unknown as typeof globalThis.browser
+		const message = {
+			type: 'result' as const,
+			method: 'request_signer_to_eth_requestAccounts' as const,
+			result: [] as const,
+		}
+
+		assert.equal(await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, message), true)
+		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
 		assert.equal(postedMessages.length, 1)
 	})
 
