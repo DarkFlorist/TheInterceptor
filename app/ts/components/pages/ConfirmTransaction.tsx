@@ -573,7 +573,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectBut
 		<AsyncActionButton
 			class = 'button is-primary button-overflow dialog-button-right'
 			state = { approveButtonState }
-			text = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' 
+			text = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner'
 				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>
 				: currentPendingTransactionOrSignableMessage.simulationMode
 					? `${ identified.simulationAction }!`

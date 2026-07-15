@@ -142,45 +142,47 @@ type AccessRequestParam = {
 	informationChangedRecently: ReadonlySignal<boolean>
 }
 
-function AccessRequests(param: AccessRequestParam) {
+type AccessRequestActionsProps = {
+	accessRequest: PendingAccessRequest
+	reject: (accessRequestId: string) => Promise<void>
+	approve: (accessRequestId: string) => Promise<void>
+	informationChangedRecently: ReadonlySignal<boolean>
+}
 
-	const AccessRequestActions = ({ accessRequest, reject, approve, informationChangedRecently }: {
-		accessRequest: PendingAccessRequest
-		reject: (accessRequestId: string) => Promise<void>
-		approve: (accessRequestId: string) => Promise<void>
-		informationChangedRecently: ReadonlySignal<boolean>
-	}) => {
-		const { value: rejectState, waitFor: waitForReject } = useAsyncState<void>()
-		const { value: approveState, waitFor: waitForApprove } = useAsyncState<void>()
-		const disabled = informationChangedRecently.value
-		const onReject = () => {
-			void waitForReject(() => reject(accessRequest.accessRequestId))
-		}
-		const onApprove = () => {
-			void waitForApprove(() => approve(accessRequest.accessRequestId))
-		}
-
-		return <nav class = 'popup-button-row'>
-			<div style = 'display: flex; flex-direction: row;'>
-		<AsyncActionButton
-				class = 'button is-primary is-danger'
-				state = { rejectState.value.state }
-					text = 'Deny Access'
-					pendingText = 'Denying access...'
-					onClick = { onReject }
-					disabled = { disabled }
-				/>
-			<AsyncActionButton
-				class = 'button is-primary'
-				state = { approveState.value.state }
-					text = 'Grant Access'
-					pendingText = 'Granting access...'
-					onClick = { onApprove }
-					disabled = { disabled }
-				/>
-			</div>
-			</nav>
+export function AccessRequestActions({ accessRequest, reject, approve, informationChangedRecently }: AccessRequestActionsProps) {
+	const { value: rejectState, waitFor: waitForReject } = useAsyncState<void>()
+	const { value: approveState, waitFor: waitForApprove } = useAsyncState<void>()
+	const disabled = informationChangedRecently.value
+	const onReject = () => {
+		void waitForReject(() => reject(accessRequest.accessRequestId))
 	}
+	const onApprove = () => {
+		void waitForApprove(() => approve(accessRequest.accessRequestId))
+	}
+
+	return <nav class = 'popup-button-row'>
+		<div style = 'display: flex; flex-direction: row;'>
+		<AsyncActionButton
+			class = 'button is-primary is-danger'
+			state = { rejectState.value.state }
+			text = 'Deny Access'
+			pendingText = 'Denying access...'
+			onClick = { onReject }
+			disabled = { disabled }
+		/>
+		<AsyncActionButton
+			class = 'button is-primary'
+			state = { approveState.value.state }
+			text = 'Grant Access'
+			pendingText = 'Granting access...'
+			onClick = { onApprove }
+			disabled = { disabled }
+		/>
+		</div>
+	</nav>
+}
+
+export function AccessRequests(param: AccessRequestParam) {
 
 	return <> { param.pendingAccessRequests.map((pendingRequest) => <>
 		<div class = 'card' style = 'margin-bottom: 10px;'>

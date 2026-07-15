@@ -7,6 +7,7 @@ import { type GovernanceVoteInputParameters, SimulateExecutionReply } from '../.
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
 
@@ -77,6 +78,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/components/pages/AddNewAddress.js'),
 		...await import('../../app/ts/components/pages/ChangeChain.js'),
+		...await import('../../app/ts/components/pages/InterceptorAccess.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GovernanceVoteVisualizer.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GnosisSafeVisualizer.js'),
 	}
@@ -118,6 +120,23 @@ function createDeferred<T>() {
 		rejectPromise = reject
 	})
 	return { promise, resolve: resolvePromise, reject: rejectPromise }
+}
+
+function createAccessRequestFixture(): PendingAccessRequest {
+	return {
+		website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Example' },
+		requestAccessToAddress: undefined,
+		originalRequestAccessToAddress: undefined,
+		associatedAddresses: [],
+		signerAccounts: [0x1111111111111111111111111111111111111111n],
+		signerName: 'MetaMask',
+		simulationMode: false,
+		popupOrTabId: { type: 'popup', id: 1 },
+		socket: { tabId: 1, connectionName: 1n },
+		request: undefined,
+		activeAddress: undefined,
+		accessRequestId: 'access-request',
+	}
 }
 
 function createSimulationFailureReply(transactionOrMessageIdentifier: bigint, errorMessage: string) {
@@ -333,6 +352,51 @@ function createChangeChainMessage() {
 }
 
 describe('popup async action UI', () => {
+	test('keeps access approval pending across parent re-renders until the background reply settles', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferredReply = createDeferred<void>()
+		let approveCount = 0
+		const request = createAccessRequestFixture()
+		const props = {
+			pendingAccessRequests: [request],
+			renameAddressCallBack: () => undefined,
+			changeActiveAddress: () => undefined,
+			refreshActiveAddress: async () => undefined,
+			approve: async () => {
+				approveCount += 1
+				await deferredReply.promise
+			},
+			reject: async () => undefined,
+			informationChangedRecently: signal(false),
+		}
+
+		await act(() => {
+			render(h(modules.AccessRequests, props), dom.document.body)
+		})
+		const approveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Grant Access'))
+		if (approveButton === undefined) throw new Error('Expected access approval button to render')
+
+		await act(async () => {
+			await clickElement(approveButton)
+			await settleAsyncUpdates()
+			render(h(modules.AccessRequests, props), dom.document.body)
+		})
+
+		assert.equal(approveCount, 1)
+		assert.equal(isDisabled(approveButton), true)
+		assert.equal(approveButton.textContent?.includes('Granting access...'), true)
+
+		await act(async () => {
+			deferredReply.resolve()
+			await deferredReply.promise
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(isDisabled(approveButton), false)
+		dom.restore()
+	})
+
 	test('sends the change-chain request and resolves once a background reply arrives', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()

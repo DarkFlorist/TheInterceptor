@@ -211,8 +211,6 @@ const RpcListings = () => {
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
 	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs }))
 
-	
-
 	if (rpcEntries.value.length < 2 && latestEntry.value !== undefined) {
 		return (
 			<>
