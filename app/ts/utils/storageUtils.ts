@@ -11,6 +11,7 @@ import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
+import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
@@ -82,6 +83,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	popupRefreshGeneration: funtypes.Number,
+	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 })
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
@@ -120,6 +122,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('fixedAddressRichList'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('popupRefreshGeneration'),
+	funtypes.Literal('pendingTerminalReplies'),
 )
 
 const LocalStorageItems2Runtype: funtypes.Partial<{

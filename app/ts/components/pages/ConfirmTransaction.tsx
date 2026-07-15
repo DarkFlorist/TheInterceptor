@@ -464,10 +464,16 @@ type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
 	forceSend: Signal<boolean>,
 }
-const CheckBoxes = (params: CheckBoxesParams) => {
+export const CheckBoxes = (params: CheckBoxesParams) => {
 	const current = params.currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
 	if (current?.transactionOrMessageCreationStatus !== 'Simulated') return <></>
+	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
+	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
+		<div style = { margins }>
+			<ErrorComponent text = { current.approvalStatus.message } />
+		</div>
+	</div>
 	if (current?.type === 'SignableMessage') {
 		const visualizedPersonalSignRequest = current.visualizedPersonalSignRequest
 		return  <>
@@ -484,13 +490,7 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 	if (current?.popupVisualisation.statusCode !== 'success' || current.popupVisualisation.data.visualizedSimulationState.success === false) return <></>
 	const currentResults = getResultsForTransaction(current.popupVisualisation.data.visualizedSimulationState, current.transactionIdentifier)
 
-	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
 	if (currentResults === undefined) return <></>
-	if (current?.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
-		<div style = { margins }>
-			<ErrorComponent text = { current.approvalStatus.message } />
-		</div>
-	</div>
 	if (currentResults.transactionStatus !== 'Transaction Succeeded') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { params.forceSend } />
