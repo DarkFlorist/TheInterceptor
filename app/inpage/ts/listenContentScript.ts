@@ -1,4 +1,6 @@
-function listenContentScript(connectionName: string | undefined) {
+const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
+
+function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 	const checkAndThrowRuntimeLastError = () => {
@@ -64,6 +66,16 @@ function listenContentScript(connectionName: string | undefined) {
 		if (value.internal !== undefined && value.internal !== true) return false
 		return true
 	}
+	type ForwardedBridgeMessage = {
+		readonly data: {
+			readonly interceptorRequest: true
+			readonly method: string
+			readonly params?: readonly unknown[]
+			readonly usingInterceptorWithoutSigner: boolean
+			readonly requestId: number
+			readonly interceptorInternalRequest?: true
+		}
+	}
 	const stringifyForwardedThrownValue = (value: unknown) => {
 		if (value instanceof Error) return value.stack ?? `${ value.name }: ${ value.message }`
 		if (typeof value === 'bigint') return value.toString()
@@ -109,10 +121,70 @@ function listenContentScript(connectionName: string | undefined) {
 	const isIgnorableContentScriptPortError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
 		|| error.message.includes('Could not establish connection. Receiving end does not exist')
 		|| error.message.includes('Extension context invalidated')
+	const isMissingContentScriptPortReceiverError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
+	const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Extension context invalidated')
 	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
 		if (extensionPort !== port) return
 		extensionPort = undefined
 		pageHidden = true
+	}
+	let connect: () => browser.runtime.Port
+	let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+	const pendingBridgeMessages: ForwardedBridgeMessage[] = []
+	const scheduleReconnect = () => {
+		if (reconnectTimer !== undefined) return
+		reconnectTimer = setTimeout(() => {
+			reconnectTimer = undefined
+			if (extensionPort !== undefined) return
+			try {
+				connect()
+			} catch (reconnectError: unknown) {
+				if (reconnectError instanceof Error && isIgnorableContentScriptPortError(reconnectError)) {
+					if (!isTerminalContentScriptPortError(reconnectError)) scheduleReconnect()
+					return
+				}
+				throw reconnectError
+			}
+		}, 250)
+	}
+	const reconnectAfterPortFailure = (port: browser.runtime.Port, error: Error | undefined) => {
+		if (extensionPort !== port) return extensionPort
+		markExtensionPortDisconnected(port)
+		if (error !== undefined && isTerminalContentScriptPortError(error)) return undefined
+		if (error !== undefined && isMissingContentScriptPortReceiverError(error)) {
+			scheduleReconnect()
+			return undefined
+		}
+		try {
+			return connect()
+		} catch (reconnectError: unknown) {
+			if (reconnectError instanceof Error && isIgnorableContentScriptPortError(reconnectError)) {
+				if (!isTerminalContentScriptPortError(reconnectError)) scheduleReconnect()
+				return undefined
+			}
+			throw reconnectError
+		}
+	}
+	const flushPendingBridgeMessages = (port: browser.runtime.Port) => {
+		while (extensionPort === port) {
+			const message = pendingBridgeMessages[0]
+			if (message === undefined) return
+			try {
+				port.postMessage(message)
+				checkAndThrowRuntimeLastError()
+				pendingBridgeMessages.shift()
+			} catch (error: unknown) {
+				if (error instanceof Error && isIgnorableContentScriptPortError(error)) {
+					reconnectAfterPortFailure(port, error)
+					return
+				}
+				if (error instanceof Error && error.message.includes('User denied')) {
+					pendingBridgeMessages.shift()
+					continue
+				}
+				throw error
+			}
+		}
 	}
 	const reportInterceptorError = (diagnostics: string) => {
 		const currentExtensionPort = extensionPort
@@ -121,7 +193,7 @@ function listenContentScript(connectionName: string | undefined) {
 			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
 		} catch(reportingError: unknown) {
 			if (reportingError instanceof Error && isIgnorableContentScriptPortError(reportingError)) {
-				markExtensionPortDisconnected(currentExtensionPort)
+				reconnectAfterPortFailure(currentExtensionPort, reportingError)
 				return
 			}
 			console.error(reportingError)
@@ -129,28 +201,25 @@ function listenContentScript(connectionName: string | undefined) {
 	}
 
 	const forwardInpageMessageToBackground = (data: unknown) => {
-		const currentExtensionPort = extensionPort
-		if (currentExtensionPort === undefined) return
 		if (!isBridgeRequest(data)) return
+		const message: ForwardedBridgeMessage = { data: {
+			interceptorRequest: true,
+			method: data.method,
+			...(data.params !== undefined ? { params: data.params } : {}),
+			usingInterceptorWithoutSigner: data.usingInterceptorWithoutSigner,
+			requestId: data.requestId,
+			...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
+		} }
+		pendingBridgeMessages.push(message)
+		const currentExtensionPort = extensionPort
+		if (currentExtensionPort === undefined) {
+			scheduleReconnect()
+			return
+		}
 		try {
-			currentExtensionPort.postMessage({ data: {
-				interceptorRequest: true,
-				method: data.method,
-				...(data.params !== undefined ? { params: data.params } : {}),
-				usingInterceptorWithoutSigner: data.usingInterceptorWithoutSigner,
-				requestId: data.requestId,
-				...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
-			} })
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			if (error instanceof Error) {
-				if (isIgnorableContentScriptPortError(error)) {
-					markExtensionPortDisconnected(currentExtensionPort)
-					return
-				}
-				if (error.message?.includes('User denied')) return // user denied signature
-			}
-			reportInterceptorError(serializeForwardedDiagnostics('content-script', 'forward page message', error, getForwardedDiagnosticsRequestContext(data)))
+			flushPendingBridgeMessages(currentExtensionPort)
+		} catch (error: unknown) {
+			reportInterceptorError(serializeForwardedDiagnostics(diagnosticsSource, 'forward page message', error, getForwardedDiagnosticsRequestContext(data)))
 			throw error
 		}
 	}
@@ -165,14 +234,18 @@ function listenContentScript(connectionName: string | undefined) {
 		) return
 		const port = messageEvent.ports[0]
 		if (port === undefined) {
-			reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
+			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			return
 		}
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
 	})
 
-	const connect = () => {
+	connect = () => {
+		if (reconnectTimer !== undefined) {
+			clearTimeout(reconnectTimer)
+			reconnectTimer = undefined
+		}
 		const previousExtensionPort = extensionPort
 		extensionPort = undefined
 		if (previousExtensionPort !== undefined) {
@@ -190,12 +263,12 @@ function listenContentScript(connectionName: string | undefined) {
 			if (typeof messageEvent !== 'object' || messageEvent === null || !('interceptorApproved' in messageEvent)) {
 				console.error('Malformed message:')
 				console.error(messageEvent)
-				reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'receive background message', 'Malformed message from background script', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
+				reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'receive background message', 'Malformed message from background script', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 				return
 			}
 			try {
 				if (inpagePort === undefined) {
-					reportInterceptorError(createForwardedDiagnosticsFromRaw('content-script', 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
+					reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 					return
 				}
 				inpagePort.postMessage(messageEvent)
@@ -205,9 +278,37 @@ function listenContentScript(connectionName: string | undefined) {
 			}
 		})
 
-		connectedExtensionPort.onDisconnect.addListener(() => { markExtensionPortDisconnected(connectedExtensionPort) })
+		connectedExtensionPort.onDisconnect.addListener(() => {
+			if (extensionPort !== connectedExtensionPort) return
+			const lastError = browser.runtime.lastError
+			const disconnectError = lastError?.message === undefined ? undefined : new Error(lastError.message)
+			reconnectAfterPortFailure(connectedExtensionPort, disconnectError)
+		})
+		flushPendingBridgeMessages(connectedExtensionPort)
+		return connectedExtensionPort
 	}
 	connect()
+	browser.runtime.onMessage.addListener(async (message: unknown) => {
+		if (
+			typeof message !== 'object'
+			|| message === null
+			|| !('method' in message)
+			|| message.method !== 'interceptor_reconnect_content_script_port'
+			|| !('connectionName' in message)
+			|| typeof message.connectionName !== 'string'
+		) return undefined
+		try {
+			if (BigInt(message.connectionName) !== BigInt(connectionNameNotUndefined)) return undefined
+			connect()
+			return { reconnected: true }
+		} catch (error: unknown) {
+			if (error instanceof Error && isIgnorableContentScriptPortError(error)) {
+				if (!isTerminalContentScriptPortError(error)) scheduleReconnect()
+				return { reconnected: false }
+			}
+			throw error
+		}
+	})
 
 	// https://web.dev/articles/bfcache
 	const bfCachePageShow = () => {
@@ -229,4 +330,4 @@ function listenContentScript(connectionName: string | undefined) {
 		console.error(error)
 	}
 }
-listenContentScript(undefined)
+Object.defineProperty(globalThis, contentScriptListenerGlobalKey, { configurable: true, value: listenContentScript })

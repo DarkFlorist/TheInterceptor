@@ -323,8 +323,31 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		removeWebsiteTabConnection(websiteTabConnections, socket)
+		removeWebsiteTabConnection(websiteTabConnections, socket, port)
 
+		assert.equal(websiteTabConnections.has(1), false)
+	})
+
+	test('stale port disconnect keeps a replacement connection with the same socket identifier', async () => {
+		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { removeWebsiteTabConnection, websiteSocketToString } = await loadModules()
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const disconnectedPort = createPort(1)
+		const replacementPort = createPort(1)
+		const connectionIdentifier = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([
+			[1, {
+				connections: {
+					[connectionIdentifier]: { port: replacementPort, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
+				},
+			}],
+		])
+
+		removeWebsiteTabConnection(websiteTabConnections, socket, disconnectedPort)
+
+		assert.strictEqual(websiteTabConnections.get(1)?.connections[connectionIdentifier]?.port, replacementPort)
+		removeWebsiteTabConnection(websiteTabConnections, socket, replacementPort)
 		assert.equal(websiteTabConnections.has(1), false)
 	})
 })

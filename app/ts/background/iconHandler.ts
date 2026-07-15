@@ -102,7 +102,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	const activeAddress = await getActiveAddress(settings, tabId)
 	if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
-	if (addressAccess === 'notFound') return setIcon(ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
+	if (addressAccess === 'askAccess') return setIcon(ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
 	if (addressAccess !== 'hasAccess') {
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setIcon(ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)

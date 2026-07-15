@@ -16,7 +16,7 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
+import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -28,6 +28,9 @@ import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
+import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
+import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -100,7 +103,10 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	return undefined
 }
 
-browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(() => removeTabState(tabId)))
+browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
+	await removeTabState(tabId)
+	await removePendingTerminalRepliesForTab(tabId)
+}))
 
 if (browser.runtime.getManifest().manifest_version === 2) {
 	updateContentScriptInjectionStrategyManifestV2()
@@ -131,7 +137,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
-				removeWebsiteTabConnection(websiteTabConnections, socket)
+				removeWebsiteTabConnection(websiteTabConnections, socket, port)
 			})
 		},
 		(payload) => {
@@ -178,6 +184,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
+	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
 		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
@@ -244,6 +251,7 @@ async function startup() {
 	resetActiveRpcNetwork = (rpcNetwork) => {
 		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 	}
+	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
@@ -255,6 +263,21 @@ async function startup() {
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
 }
+
+const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
+	recover: async () => {
+		const { ethereum, tokenPriceService } = getSimulationServices()
+		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
+		await prunePendingTerminalRepliesForMissingTabs()
+	},
+	onFailure: (error) => {
+		reportLocalRecoveryBestEffort(error, {
+			source: 'pending_terminal_replies',
+			code: 'pending_terminal_state_startup_recovery_failed',
+			message: 'Retrying pending terminal state recovery without blocking background startup.',
+		})
+	},
+})
 
 const backgroundStartupPromise = startup()
 

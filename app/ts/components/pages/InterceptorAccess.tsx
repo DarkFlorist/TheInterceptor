@@ -5,7 +5,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
+import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
@@ -21,6 +21,7 @@ import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
+import { respondToAccessRequest } from './interceptorAccessResponse.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	const websiteIcon = sanitizeStoredWebsiteIcon(icon)
@@ -136,8 +137,8 @@ type AccessRequestParam = {
 	pendingAccessRequests: PendingAccessRequests
 	changeActiveAddress: (accessRequestId: string) => void
 	refreshActiveAddress: (accessRequestId: string) => Promise<void>
-	approve: (accessRequestId: string) => void
-	reject: (accessRequestId: string) => void
+	approve: (accessRequestId: string) => Promise<void>
+	reject: (accessRequestId: string) => Promise<void>
 	informationChangedRecently: ReadonlySignal<boolean>
 }
 
@@ -145,22 +146,18 @@ function AccessRequests(param: AccessRequestParam) {
 
 	const AccessRequestActions = ({ accessRequest, reject, approve, informationChangedRecently }: {
 		accessRequest: PendingAccessRequest
-		reject: (accessRequestId: string) => void
-		approve: (accessRequestId: string) => void
+		reject: (accessRequestId: string) => Promise<void>
+		approve: (accessRequestId: string) => Promise<void>
 		informationChangedRecently: ReadonlySignal<boolean>
 	}) => {
 		const { value: rejectState, waitFor: waitForReject } = useAsyncState<void>()
 		const { value: approveState, waitFor: waitForApprove } = useAsyncState<void>()
 		const disabled = informationChangedRecently.value
 		const onReject = () => {
-			void waitForReject(async () => {
-				reject(accessRequest.accessRequestId)
-			})
+			void waitForReject(() => reject(accessRequest.accessRequestId))
 		}
 		const onApprove = () => {
-			void waitForApprove(async () => {
-				approve(accessRequest.accessRequestId)
-			})
+			void waitForApprove(() => approve(accessRequest.accessRequestId))
 		}
 
 		return <nav class = 'popup-button-row'>
@@ -263,31 +260,15 @@ export function InterceptorAccess() {
 	async function approve(accessRequestId: string) {
 		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
-		const data = {
-			userReply: 'Approved' as const,
-			websiteOrigin: accessRequest.website.websiteOrigin,
-			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
-			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
-			accessRequestId: accessRequest.accessRequestId,
-		}
 		informationUpdatedTimestamp.value = Date.now()
-		if (pendingAccessRequests.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
+		await respondToAccessRequest(accessRequest, 'Approved', pendingAccessRequests.value.length)
 	}
 
 	async function reject(accessRequestId: string) {
 		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
-		const data = {
-			userReply: 'Rejected' as const,
-			websiteOrigin: accessRequest.website.websiteOrigin,
-			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
-			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
-			accessRequestId: accessRequest.accessRequestId,
-		}
 		informationUpdatedTimestamp.value = Date.now()
-		if (pendingAccessRequests.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
+		await respondToAccessRequest(accessRequest, 'Rejected', pendingAccessRequests.value.length)
 	}
 
 	function renameAddressCallBack(accessRequestId: string, entry: AddressBookEntry) {
