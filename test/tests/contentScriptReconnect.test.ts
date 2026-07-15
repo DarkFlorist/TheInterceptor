@@ -263,6 +263,25 @@ async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScript
 	})
 }
 
+async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, postedMessages, getConnectionCount }) => {
+		disconnectListeners[0]?.()
+		assert.equal(getConnectionCount(), 2)
+
+		const originalConsoleError = console.error
+		const consoleErrors: unknown[][] = []
+		console.error = (...args: unknown[]) => consoleErrors.push(args)
+		try {
+			backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		} finally {
+			console.error = originalConsoleError
+		}
+
+		assert.deepEqual(consoleErrors, [])
+		assert.deepEqual(postedMessages, [])
+	})
+}
+
 if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 	test('standalone content script recovers its background port without reconnect churn', async () => {
 		await verifyContentScriptReconnect('standalone-listener')
@@ -294,6 +313,14 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start advances queued requests only after the matching acknowledgement', async () => {
 		await verifyAcknowledgementAdvancesQueuedRequests('manifest-v2-document-start')
+	})
+
+	test('standalone content script ignores acknowledgements from a stale port without diagnostics', async () => {
+		await verifyStalePortAcknowledgementIsIgnored('standalone-listener')
+	})
+
+	test('manifest v2 document-start ignores acknowledgements from a stale port without diagnostics', async () => {
+		await verifyStalePortAcknowledgementIsIgnored('manifest-v2-document-start')
 	})
 
 	test('does not redefine a non-configurable legacy content script listener', async () => {

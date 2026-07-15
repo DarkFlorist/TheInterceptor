@@ -268,15 +268,14 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		connectedExtensionPort.onMessage.addListener(messageEvent => {
-			if (
-				extensionPort === connectedExtensionPort
-				&& typeof messageEvent === 'object'
+			const isBridgeAcknowledgement = typeof messageEvent === 'object'
 				&& messageEvent !== null
 				&& 'type' in messageEvent
 				&& messageEvent.type === INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE
 				&& 'requestId' in messageEvent
 				&& typeof messageEvent.requestId === 'number'
-			) {
+			if (isBridgeAcknowledgement) {
+				if (extensionPort !== connectedExtensionPort) return
 				const acknowledgedMessage = pendingBridgeMessages[0]
 				if (acknowledgedMessage?.data.requestId !== messageEvent.requestId) return
 				pendingBridgeMessages.shift()
