@@ -28,7 +28,12 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		return postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true, requestId: message.uniqueRequestIdentifier.requestId })
+		return postMessageToPortIfConnected(connection.port, {
+			...message,
+			interceptorApproved: true,
+			requestId: message.uniqueRequestIdentifier.requestId,
+			...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
+		})
 	}
 	return false
 }

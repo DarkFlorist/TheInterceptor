@@ -250,6 +250,9 @@ function disconnectFromPort(
 	socket: WebsiteSocket,
 ): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
+	// Account access can be revoked without the provider losing chain connectivity.
+	// Notify account listeners before the legacy disconnect event so dapps clear stale account state.
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
@@ -300,7 +303,7 @@ async function updateTabConnections(
 
 		if (access === 'askAccess' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
 	return iconRefreshTargets
