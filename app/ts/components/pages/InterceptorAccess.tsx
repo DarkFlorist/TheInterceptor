@@ -166,6 +166,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 		<div style = 'display: flex; flex-direction: row;'>
 		<AsyncActionButton
 			class = 'button is-primary is-danger'
+			style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 			state = { rejectState.value.state }
 			text = 'Deny Access'
 			pendingText = 'Denying access...'
@@ -174,6 +175,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 		/>
 		<AsyncActionButton
 			class = 'button is-primary'
+			style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 			state = { approveState.value.state }
 			text = 'Grant Access'
 			pendingText = 'Granting access...'
