@@ -87,7 +87,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
 						disabled = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
 						onClick = { () => enableSimulationMode(false) }>
-						<SignerLogoText signerName = { signerName } text = { 'Signing' } />
+						<SignerLogoText signerName = { signerName } text = { 'Signing' } reserveLogoSpace = { true } />
 					</button>
 				</div>
 			</div>

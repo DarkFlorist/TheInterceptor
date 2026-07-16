@@ -260,6 +260,53 @@ describe('popup icon sync', () => {
 		}
 	})
 
+	test('keeps the signing mode logo slot stable while signer identity loads', async () => {
+		const dom = installDomMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+
+			const logoSlotBeforeHomeData = collectElements(dom.document.body, 'span').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('signer-logo-slot'))
+			if (logoSlotBeforeHomeData === undefined) throw new Error('Expected reserved signer logo slot before home data loads')
+			assert.notEqual(collectElements(logoSlotBeforeHomeData, 'svg').find((element) => element.getAttribute?.('class') === 'signer-logo-placeholder'), undefined)
+			assert.equal(collectElements(logoSlotBeforeHomeData, 'img').length, 0)
+
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			const homePage = defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1)
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...homePage,
+					data: {
+						...homePage.data,
+						tabState: { ...homePage.data.tabState, signerName: 'MetaMask' },
+					},
+				}, undefined, () => undefined)
+			})
+
+			const logoSlotAfterHomeData = collectElements(dom.document.body, 'span').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('signer-logo-slot'))
+			assert.equal(logoSlotAfterHomeData, logoSlotBeforeHomeData)
+			if (logoSlotAfterHomeData === undefined) throw new Error('Expected signer logo slot after home data loads')
+			assert.equal(collectElements(logoSlotAfterHomeData, 'svg').find((element) => element.getAttribute?.('class') === 'signer-logo-placeholder'), undefined)
+			assert.equal(collectElements(logoSlotAfterHomeData, 'img')[0]?.getAttribute?.('src'), '../img/signers/metamask.svg')
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('keeps mutation controls disabled until initial home data arrives', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
