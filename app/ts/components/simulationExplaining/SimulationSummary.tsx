@@ -21,6 +21,8 @@ import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
@@ -826,12 +828,17 @@ type GasLimitEditorParams = {
 
 export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
 	const gasLimit = useOptionalSignal<bigint>(initialGasLimit)
+	const { value: forceSetGasLimitState, waitFor: waitForForceSetGasLimit, reset: resetForceSetGasLimit } = useAsyncState<void>()
 
 	async function forceSetGasLimitForTransaction() {
 		const gas = gasLimit.deepPeek()
 		if (gas === undefined || gas === initialGasLimit) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gas, transactionIdentifier } })
 	}
+	const forceSetGasLimit = createAsyncActionRunner(
+		{ value: forceSetGasLimitState, waitFor: waitForForceSetGasLimit, reset: resetForceSetGasLimit },
+		forceSetGasLimitForTransaction
+	)
 
 	return <>
 		<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
@@ -843,7 +850,14 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 			/>
 		</span>
 		&nbsp;gas&nbsp;
-		<button disabled = { isRawTransaction || gasLimit.deepValue === initialGasLimit } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+		<AsyncActionButton
+			disabled = { isRawTransaction || gasLimit.deepValue === initialGasLimit }
+			class = 'button is-primary is-small'
+			state = { forceSetGasLimitState.value.state }
+			text = 'Change'
+			pendingText = 'Saving...'
+			onClick = { forceSetGasLimit }
+		/>
 	</>
 }
 

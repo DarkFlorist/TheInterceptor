@@ -1,18 +1,19 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
-import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, requestPopupSimulateGovernanceContractExecution } from '../../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
-import type { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
+import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
+import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
 
 type MissingAbiParams = {
 	errorMessage: string
@@ -82,13 +83,16 @@ type ShowSuccessOrFailureParams = {
 	simTx: Signal<SimulatedAndVisualizedTransaction | undefined>
 	activeAddress: ReadonlySignal<bigint | undefined>
 	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
+	governanceSimulationState: AsyncStates
+	requestErrorText: string | undefined
+	simulateGovernanceVote: () => void
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
+const GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Simulating governance execution')
 
-const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack }: ShowSuccessOrFailureParams) => {
+const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, governanceSimulationState, requestErrorText, simulateGovernanceVote }: ShowSuccessOrFailureParams) => {
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
@@ -121,15 +125,18 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 
 	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: flex; justify-content: center;'>
+		return <div style = 'display: grid; row-gap: 10px;'>
+			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			{ simTx.value.transaction.to !== undefined && 'abi' in simTx.value.transaction.to && simTx.value.transaction.to.abi !== undefined ?
-				<button
-					class = { 'button is-primary' }
-					onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }
-					disabled = { false }
-				>
-					Simulate execution on a passing vote
-				</button>
+				<div style = 'display: flex; justify-content: center;'>
+					<AsyncActionButton
+						class = 'button is-primary'
+						state = { governanceSimulationState }
+						text = 'Simulate execution on a passing vote'
+						pendingText = 'Simulating...'
+						onClick = { simulateGovernanceVote }
+					/>
+				</div>
 			: <> <MissingAbi
 					errorMessage = { missingAbiText }
 					addressBookEntry = { simTx.value.transaction.to }
@@ -139,7 +146,8 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		</div>
 	}
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content' >
+		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			{ simulateExecutionReply.value.data.errorType === 'MissingAbi' ? <MissingAbi
 				errorMessage = { missingAbiText }
 				addressBookEntry = { simulateExecutionReply.value.data.errorAddressBookEntry }
@@ -148,13 +156,15 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content' >
+		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
 	if (govSimTx.value === undefined) return <></>
 
-	return <div style = 'display: grid; grid-template-rows: max-content' >
+	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 		<Transaction
 			simTx = { govSimTx.value }
 			simulationAndVisualisationResults = { results.value }
@@ -180,6 +190,12 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	const governanceVoteInputParameters = useSignal<GovernanceVoteInputParameters | undefined>(undefined)
 	const simTx = useSignal<SimulatedAndVisualizedTransaction | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
+	const { value: governanceSimulationRequest, waitFor: waitForGovernanceSimulation, reset: resetGovernanceSimulationRequest } = useAsyncState<void>()
+	const requestErrorText = useComputed(() => governanceSimulationRequest.value.state === 'rejected' ? governanceSimulationRequest.value.error.message : undefined)
+	const currentTransactionIdentifier = useRef(param.simTx.transactionIdentifier)
+	currentTransactionIdentifier.current = param.simTx.transactionIdentifier
+
+	const isReplyForCurrentTransaction = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentTransactionIdentifier.current
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -190,7 +206,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 			if (parsed.method !== 'popup_simulateExecutionReply') return false
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (reply.data.transactionOrMessageIdentifier !== param.simTx.transactionIdentifier) return false
+			if (!isReplyForCurrentTransaction(reply)) return false
+			resetGovernanceSimulationRequest()
 			simulateExecutionReply.value = reply
 			return false
 		}
@@ -203,31 +220,52 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		simTx.value = param.simTx
 		activeAddress.value = param.activeAddress.value
 		simulateExecutionReply.value = undefined
+		resetGovernanceSimulationRequest()
 	}, [param.simTx.transactionIdentifier, param.governanceVoteInputParameters, param.activeAddress.value])
+
+	const simulateGovernanceVote = () => {
+		const transactionIdentifier = simTx.value?.transactionIdentifier
+		if (transactionIdentifier === undefined) return
+		waitForGovernanceSimulation(async () => {
+			const reply = await requestPopupSimulateGovernanceContractExecution({ transactionIdentifier })
+			if (reply === undefined) throw new Error(GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR)
+			if (transactionIdentifier !== currentTransactionIdentifier.current || !isReplyForCurrentTransaction(reply)) return
+			simulateExecutionReply.value = reply
+		})
+	}
 
 	if (governanceVoteInputParameters.value === undefined || simTx.value === undefined || activeAddress.value === undefined) return <></>
 	return <>
 	<VotePanel inputParams = { governanceVoteInputParameters } />
 
 		<div style = 'display: grid; grid-template-rows: max-content max-content'>
-			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
-				<div class = 'log-cell'>
-					<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
-				</div>
-				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ simulateExecutionReply.value === undefined ? <></> :
-						<button class = { 'button is-primary is-small' } onClick = { () => simulateGovernanceVote(simTx.value!.transactionIdentifier) }>Refresh</button>
-					}
-				</div>
-			</span>
+				<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
+					<div class = 'log-cell'>
+						<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						{ simulateExecutionReply.value === undefined ? <></> :
+							<AsyncActionButton
+								class = 'button is-primary is-small'
+								state = { governanceSimulationRequest.value.state }
+								text = 'Refresh'
+								pendingText = 'Simulating...'
+								onClick = { simulateGovernanceVote }
+							/>
+						}
+					</div>
+				</span>
 		</div>
 
-		<div class = 'notification dashed-notification'>
-			<ShowSuccessOrFailure
-				simulateExecutionReply = { simulateExecutionReply }
-				renameAddressCallBack = { param.renameAddressCallBack }
-				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-				simTx = { simTx }
+			<div class = 'notification dashed-notification'>
+				<ShowSuccessOrFailure
+					simulateExecutionReply = { simulateExecutionReply }
+					governanceSimulationState = { governanceSimulationRequest.value.state }
+					requestErrorText = { requestErrorText.value }
+					simulateGovernanceVote = { simulateGovernanceVote }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					simTx = { simTx }
 				activeAddress = { activeAddress }
 			/>
 		</div>

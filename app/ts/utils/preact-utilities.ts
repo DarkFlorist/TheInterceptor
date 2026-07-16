@@ -5,7 +5,12 @@ type Resolved<T> = { state: 'resolved', value: T }
 type Rejected = { state: 'rejected', error: Error }
 type AsyncProperty<T> = Inactive | Pending | Resolved<T> | Rejected
 type AsyncState<T> = { value: Signal<AsyncProperty<T>>, waitFor: (resolver: () => Promise<T>) => void, reset: () => void }
+export type AsyncActionContext<T> = { value: Signal<AsyncProperty<T>>, waitFor: (resolver: () => Promise<T>) => void, reset: () => void }
 export type AsyncStates = AsyncState<unknown>['value']['value']['state']
+
+export function createAsyncActionRunner<T>(asyncAction: AsyncActionContext<T>, resolver: () => Promise<T>) {
+	return () => { void asyncAction.waitFor(resolver) }
+}
 
 export function useAsyncState<T>(): AsyncState<T> {
 	function getCaptureAndCancelOthers() {

@@ -92,7 +92,7 @@ export type SimulationStateParam = {
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	disableReset: Signal<boolean>
-	resetSimulation: () => void
+	resetSimulation: () => Promise<void>
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>

@@ -1373,10 +1373,11 @@ svg.spinner > circle {
 	margin-bottom: 0px;
 }
 
-.dialog-button-right {
-	flex-grow: 1;
+.dialog-action-button {
+	flex: 1 1 0;
+	min-width: 0px;
 	margin-left: 5px;
-	margin-right: 10px;
+	margin-right: 5px;
 	margin-top: 0px;
 	margin-bottom: 0px;
 }
