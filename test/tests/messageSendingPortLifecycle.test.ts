@@ -218,6 +218,35 @@ describe('background messageSending port lifecycle', () => {
 		}
 	})
 
+	test('marks direct result replies as bridge settlements but not request-scoped callbacks', () => {
+		installBrowserMock()
+		const socket = { tabId: 1, connectionName: 0n }
+		const postedMessages: unknown[] = []
+		const port = createPort((message) => postedMessages.push(message))
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+
+		replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result',
+			method: 'eth_accounts',
+			result: [],
+			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
+		})
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, {
+			type: 'result',
+			method: 'accountsChanged',
+			result: [],
+			requestId: 7,
+		})
+
+		const terminalReply = postedMessages[0]
+		const intermediateEvent = postedMessages[1]
+		assert.equal(typeof terminalReply === 'object' && terminalReply !== null && 'bridgeRequestSettled' in terminalReply && terminalReply.bridgeRequestSettled === true, true)
+		assert.equal(typeof intermediateEvent === 'object' && intermediateEvent !== null && 'bridgeRequestSettled' in intermediateEvent, false)
+	})
+
 	test('keeps standalone eth_accounts bridge replies free of console warnings', () => {
 		installBrowserMock()
 		const warnings: unknown[][] = []

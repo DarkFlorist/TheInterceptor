@@ -180,6 +180,7 @@ export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>
 const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
+	funtypes.ReadonlyPartial({ bridgeRequestSettled: funtypes.Literal(true) }),
 	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
