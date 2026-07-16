@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
@@ -135,6 +136,7 @@ async function verifyContentScriptReconnect(source: ContentScriptSource) {
 		assert.equal(getConnectionCount(), 3)
 		assert.equal(postedMessages.length, 1)
 		assert.equal(disconnectListeners.length, 3)
+		backgroundMessageListeners[2]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 
 		disconnectListeners[1]?.()
 		assert.equal(getConnectionCount(), 3)
@@ -199,6 +201,87 @@ async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
 	})
 }
 
+async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		await dispatchBridgeRequest(eventListeners)
+		assert.equal(postedMessages.length, 1)
+
+		disconnectListeners[0]?.()
+
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 2)
+		assert.deepEqual(postedMessages[1], postedMessages[0])
+
+		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		disconnectListeners[1]?.()
+		assert.equal(getConnectionCount(), 3)
+		assert.equal(postedMessages.length, 2)
+	})
+}
+
+async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		const channel = new MessageChannel()
+		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+		for (const requestId of [1, 2]) {
+			channel.port1.postMessage({
+				type: 'interceptor_bridge_request',
+				method: 'eth_sendTransaction',
+				params: [],
+				usingInterceptorWithoutSigner: false,
+				requestId,
+			})
+		}
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		assert.equal(postedMessages.length, 1)
+		assert.deepEqual(postedMessages[0], { data: {
+			interceptorRequest: true,
+			method: 'eth_sendTransaction',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 1,
+		} })
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 2 })
+		assert.equal(postedMessages.length, 1)
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		assert.equal(postedMessages.length, 2)
+		assert.deepEqual(postedMessages[1], { data: {
+			interceptorRequest: true,
+			method: 'eth_sendTransaction',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 2,
+		} })
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 2 })
+
+		disconnectListeners[0]?.()
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 2)
+		channel.port1.close()
+		channel.port2.close()
+	})
+}
+
+async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, postedMessages, getConnectionCount }) => {
+		disconnectListeners[0]?.()
+		assert.equal(getConnectionCount(), 2)
+
+		const originalConsoleError = console.error
+		const consoleErrors: unknown[][] = []
+		console.error = (...args: unknown[]) => consoleErrors.push(args)
+		try {
+			backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		} finally {
+			console.error = originalConsoleError
+		}
+
+		assert.deepEqual(consoleErrors, [])
+		assert.deepEqual(postedMessages, [])
+	})
+}
+
 if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 	test('standalone content script recovers its background port without reconnect churn', async () => {
 		await verifyContentScriptReconnect('standalone-listener')
@@ -214,6 +297,30 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start queues requests while its background port reconnects', async () => {
 		await verifyRequestQueuedDuringReconnect('manifest-v2-document-start')
+	})
+
+	test('standalone content script replays an unacknowledged request after disconnect', async () => {
+		await verifyUnacknowledgedRequestReplayedAfterDisconnect('standalone-listener')
+	})
+
+	test('manifest v2 document-start replays an unacknowledged request after disconnect', async () => {
+		await verifyUnacknowledgedRequestReplayedAfterDisconnect('manifest-v2-document-start')
+	})
+
+	test('standalone content script advances queued requests only after the matching acknowledgement', async () => {
+		await verifyAcknowledgementAdvancesQueuedRequests('standalone-listener')
+	})
+
+	test('manifest v2 document-start advances queued requests only after the matching acknowledgement', async () => {
+		await verifyAcknowledgementAdvancesQueuedRequests('manifest-v2-document-start')
+	})
+
+	test('standalone content script ignores acknowledgements from a stale port without diagnostics', async () => {
+		await verifyStalePortAcknowledgementIsIgnored('standalone-listener')
+	})
+
+	test('manifest v2 document-start ignores acknowledgements from a stale port without diagnostics', async () => {
+		await verifyStalePortAcknowledgementIsIgnored('manifest-v2-document-start')
 	})
 
 	test('does not redefine a non-configurable legacy content script listener', async () => {

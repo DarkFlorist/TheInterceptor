@@ -10,7 +10,7 @@ import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import type { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -144,7 +144,7 @@ export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabCon
 		const requestSignerAccountsMessage = requestAccounts
 			? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
 			: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
-		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, requestSignerAccountsMessage)
+		const messageSent = await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, requestSignerAccountsMessage)
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
