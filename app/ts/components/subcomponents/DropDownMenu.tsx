@@ -8,23 +8,28 @@ type DropDownMenuParams<OptionType> = {
 	dropDownOptions: Signal<readonly OptionType[]>
 	onChangedCallBack: (newValue: OptionType) => void
 	buttonClassses: string
+	disabled?: boolean
 }
 
-export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses }: DropDownMenuParams<OptionType>) => {
+export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, disabled = false }: DropDownMenuParams<OptionType>) => {
 	const isOpen = useSignal(false)
 	const ref = useRef<HTMLDivElement>(null)
 	clickOutsideAlerter(ref, () => { isOpen.value = false })
 
-	const toggle = () => { isOpen.value = !isOpen.value }
+	const toggle = () => {
+		if (disabled) return
+		isOpen.value = !isOpen.value
+	}
 
 	const onChanged = (newValue: OptionType) => {
+		if (disabled) return
 		isOpen.value = false
 		onChangedCallBack(newValue)
 	}
 
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button class = { buttonClassses } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
+			<button class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
 				<span class = 'truncate' style = { { contain: 'content' } }>{ selected.value }</span>
 				<span class = 'dropdown-chevron'><ChevronIcon /></span>
 			</button>

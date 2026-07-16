@@ -47,6 +47,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		readonly usingInterceptorWithoutSigner?: unknown
 		readonly requestId?: unknown
 		readonly internal?: unknown
+		readonly replayOnDisconnect?: unknown
 	}
 
 	const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -58,6 +59,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		readonly usingInterceptorWithoutSigner: boolean
 		readonly requestId: number
 		readonly internal?: true
+		readonly replayOnDisconnect?: true
 	} => {
 		if (!isBridgeRequestCandidate(value)) return false
 		if (value.type !== INTERCEPTOR_BRIDGE_REQUEST_MESSAGE) return false
@@ -66,9 +68,11 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
 		if (typeof value.requestId !== 'number') return false
 		if (value.internal !== undefined && value.internal !== true) return false
+		if (value.replayOnDisconnect !== undefined && value.replayOnDisconnect !== true) return false
 		return true
 	}
 	type ForwardedBridgeMessage = {
+		readonly replayOnDisconnect: boolean
 		readonly data: {
 			readonly interceptorRequest: true
 			readonly method: string
@@ -125,16 +129,50 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		|| error.message.includes('Extension context invalidated')
 	const isMissingContentScriptPortReceiverError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
 	const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Extension context invalidated')
+	const pendingBridgeMessages: ForwardedBridgeMessage[] = []
+	// Replay and settlement are transport metadata supplied by the inpage and background layers; this proxy does not infer RPC semantics.
+	const unsettledReplayableRequests = new Map<number, ForwardedBridgeMessage>()
+	const getSettledBridgeRequestId = (message: unknown) => {
+		if (typeof message !== 'object' || message === null) return undefined
+		if (!('requestId' in message) || typeof message.requestId !== 'number') return undefined
+		if (!('bridgeRequestSettled' in message) || message.bridgeRequestSettled !== true) return undefined
+		return message.requestId
+	}
+	const withoutBridgeSettlementMarker = (message: unknown) => {
+		if (typeof message !== 'object' || message === null || !('bridgeRequestSettled' in message)) return message
+		const { bridgeRequestSettled: _bridgeRequestSettled, ...messageWithoutSettlementMarker } = message
+		return messageWithoutSettlementMarker
+	}
 	let inFlightBridgeMessage: ForwardedBridgeMessage | undefined
+	const settleReplayableRequest = (requestId: number) => {
+		const settledRequest = unsettledReplayableRequests.get(requestId)
+		if (settledRequest === undefined) return
+		unsettledReplayableRequests.delete(requestId)
+		const queuedRequestIndex = pendingBridgeMessages.indexOf(settledRequest)
+		if (queuedRequestIndex === -1) return
+		const settledRequestWasInFlight = pendingBridgeMessages[queuedRequestIndex] === inFlightBridgeMessage
+		pendingBridgeMessages.splice(queuedRequestIndex, 1)
+		if (!settledRequestWasInFlight) return
+		inFlightBridgeMessage = undefined
+		if (extensionPort !== undefined) flushPendingBridgeMessages(extensionPort)
+	}
+	const queueUnsettledReplayableRequests = () => {
+		const queuedRequestIds = new Set(pendingBridgeMessages.map((message) => message.data.requestId))
+		for (const [requestId, message] of unsettledReplayableRequests) {
+			if (queuedRequestIds.has(requestId)) continue
+			pendingBridgeMessages.push(message)
+		}
+		pendingBridgeMessages.sort((first, second) => first.data.requestId - second.data.requestId)
+	}
 	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
 		if (extensionPort !== port) return
 		extensionPort = undefined
 		inFlightBridgeMessage = undefined
+		queueUnsettledReplayableRequests()
 		pageHidden = true
 	}
 	let connect: () => browser.runtime.Port
 	let reconnectTimer: ReturnType<typeof setTimeout> | undefined
-	const pendingBridgeMessages: ForwardedBridgeMessage[] = []
 	const scheduleReconnect = () => {
 		if (reconnectTimer !== undefined) return
 		reconnectTimer = setTimeout(() => {
@@ -176,7 +214,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			if (message === undefined) return
 			inFlightBridgeMessage = message
 			try {
-				port.postMessage(message)
+				port.postMessage({ data: message.data })
 				checkAndThrowRuntimeLastError()
 				return
 			} catch (error: unknown) {
@@ -185,7 +223,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 					return
 				}
 				if (error instanceof Error && error.message.includes('User denied')) {
-					pendingBridgeMessages.shift()
+					const discardedMessage = pendingBridgeMessages.shift()
+					if (discardedMessage !== undefined) unsettledReplayableRequests.delete(discardedMessage.data.requestId)
 					inFlightBridgeMessage = undefined
 					continue
 				}
@@ -209,7 +248,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 
 	const forwardInpageMessageToBackground = (data: unknown) => {
 		if (!isBridgeRequest(data)) return
-		const message: ForwardedBridgeMessage = { data: {
+		const message: ForwardedBridgeMessage = { replayOnDisconnect: data.replayOnDisconnect === true, data: {
 			interceptorRequest: true,
 			method: data.method,
 			...(data.params !== undefined ? { params: data.params } : {}),
@@ -217,6 +256,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			requestId: data.requestId,
 			...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
 		} }
+		if (message.replayOnDisconnect) unsettledReplayableRequests.set(data.requestId, message)
 		pendingBridgeMessages.push(message)
 		const currentExtensionPort = extensionPort
 		if (currentExtensionPort === undefined) {
@@ -294,8 +334,10 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 					reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 					return
 				}
-				inpagePort.postMessage(messageEvent)
+				inpagePort.postMessage(withoutBridgeSettlementMarker(messageEvent))
 				checkAndThrowRuntimeLastError()
+				const settledBridgeRequestId = getSettledBridgeRequestId(messageEvent)
+				if (settledBridgeRequestId !== undefined) settleReplayableRequest(settledBridgeRequestId)
 			} catch (error) {
 				console.error(error)
 			}

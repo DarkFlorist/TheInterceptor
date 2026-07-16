@@ -55,6 +55,7 @@ export type HomeParams = {
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
 	numberOfAddressesMadeRich: Signal<number>
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
 export type ChangeActiveAddressParam = {
@@ -82,6 +83,7 @@ export type FirstCardParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcEntries: Signal<RpcEntries>,
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
 export type SimulationStateParam = {
@@ -91,7 +93,7 @@ export type SimulationStateParam = {
 	activeSimulationAddress: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	disableReset: Signal<boolean>
+	disableReset: ReadonlySignal<boolean>
 	resetSimulation: () => Promise<void>
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	rpcConnectionStatus: Signal<RpcConnectionStatus>

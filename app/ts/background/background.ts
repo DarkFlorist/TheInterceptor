@@ -344,7 +344,7 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
 
@@ -725,7 +725,7 @@ export async function popupMessageHandler(
 				case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
 				case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_openAddressBook': return await openNewTab('addressBook')
-				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, true, simulationAbortController, bumpPopupRefreshGeneration())
+				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, parsedRequest.data.refreshSignerAccounts, parsedRequest.data.includeWebsiteAccessAddressMetadata, simulationAbortController, bumpPopupRefreshGeneration())
 				case 'popup_refreshHomeData': return await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, bumpPopupRefreshGeneration(), publishRpcConnectionStatus)
 				case 'popup_requestSettings': return await settingsOpened()
 				case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
