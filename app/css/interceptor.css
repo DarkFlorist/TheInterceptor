@@ -1574,6 +1574,10 @@ svg.spinner > circle {
 	place-items: center;
 }
 
+.safe-outcome-panel__loading {
+	color: var(--primary-color);
+}
+
 .popup-footer {
 	position: fixed;
 	left: 20px;

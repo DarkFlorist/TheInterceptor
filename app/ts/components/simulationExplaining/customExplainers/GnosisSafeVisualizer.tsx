@@ -4,8 +4,8 @@ import { MessageToPopup, SimulateExecutionReply } from '../../../types/intercept
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
-import { Spinner } from '../../subcomponents/Spinner.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { Transaction } from '../Transactions.js'
@@ -56,7 +56,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 
 	if (gnosisSimulationState === 'pending') {
 		return <div class = 'safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating outcome'>
-			<Spinner height = '2.5rem'/>
+			<AsyncStatusIcon state = 'pending' size = '2.5rem'/>
 		</div>
 	}
 
