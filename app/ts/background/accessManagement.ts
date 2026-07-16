@@ -1,4 +1,4 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
@@ -33,11 +33,61 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
-export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
+export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string) {
+	for (const [_tabId, tabConnection] of websiteTabConnections.entries()) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
+			if (connection === undefined) throw new Error('missing connection')
+			if (connection.websiteOrigin !== websiteOrigin) continue
+			connection.wantsToConnect = false
+		}
+	}
+}
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
+const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
+
+function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
+	const socketIdentifier = websiteSocketToString(socket)
+	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, (unscopedConnectionEventSuppressionCounts.get(socketIdentifier) ?? 0) + 1)
+	return socketIdentifier
+}
+
+function decrementUnscopedConnectionEventSuppression(socketIdentifier: string) {
+	const previousCount = unscopedConnectionEventSuppressionCounts.get(socketIdentifier)
+	if (previousCount === undefined || previousCount <= 1) {
+		unscopedConnectionEventSuppressionCounts.delete(socketIdentifier)
+		return
+	}
+	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, previousCount - 1)
+}
+
+function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
+	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
+}
+
+export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
+	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
+	try {
+		return action()
+	} finally {
+		decrementUnscopedConnectionEventSuppression(socketIdentifier)
+	}
+}
+
+export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
+	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
+	try {
+		return await action()
+	} finally {
+		decrementUnscopedConnectionEventSuppression(socketIdentifier)
+	}
+}
+
+export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
+
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, ignoreConnectionApproval = false) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection?.approved) return 'hasAccess'
+	if (connection?.approved && !ignoreConnectionApproval) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -47,7 +97,9 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 			settings,
 			requestAccessForAddress?.address,
 		)
-		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)
+		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration).catch((error: unknown) => {
+			void reportUnexpectedError(error)
+		})
 		return 'hasAccess'
 	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
@@ -72,6 +124,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
+			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
@@ -86,17 +139,20 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (web.interceptorDisabled) return 'interceptorDisabled'
-			return web.access ? 'hasAccess' : 'noAccess'
+			if (web.access === true) return 'hasAccess'
+			if (web.access === false) return 'noAccess'
+			return 'askAccess'
 		}
 	}
-	return 'notFound'
+	return 'askAccess'
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (!web.access) return 'noAccess'
+			if (web.access === false) return 'noAccess'
+			if (web.access !== true) return 'askAccess'
 			if (web.addressAccess !== undefined) {
 				for (const addressAccess of web.addressAccess) {
 					if (addressAccess.address === address.address) {
@@ -105,10 +161,10 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 				}
 			}
 			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'notFound'
+			return 'askAccess'
 		}
 	}
-	return 'notFound'
+	return 'askAccess'
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -170,14 +226,23 @@ function connectToPort(
 	connectWithActiveAddress: bigint | undefined,
 ): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-
-	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
-
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+	if (!shouldSendUnscopedConnectionEvents(socket)) return true
+	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
+}
+
+export function sendProviderConnectionEventsToPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	settings: Settings,
+	accounts: readonly bigint[],
+	options: { readonly requestId?: number, readonly includeChainChanged?: boolean } = {},
+) {
+	const requestScope = options.requestId === undefined ? {} : { requestId: options.requestId }
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId], ...requestScope })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, ...requestScope })
+	if (options.includeChainChanged === false) return
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId, ...requestScope })
 }
 
 function disconnectFromPort(
@@ -185,6 +250,9 @@ function disconnectFromPort(
 	socket: WebsiteSocket,
 ): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
+	// Account access can be revoked without the provider losing chain connectivity.
+	// Notify account listeners before the legacy disconnect event so dapps clear stale account state.
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
@@ -201,7 +269,7 @@ async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientServic
 	if (details === undefined) return
 
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
+	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address, undefined)
 }
 
 function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
@@ -233,9 +301,9 @@ async function updateTabConnections(
 			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
 
-		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
+		if (access === 'askAccess' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
 	return iconRefreshTargets
@@ -373,4 +441,28 @@ export async function updateWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 	return popupRefreshGeneration
+}
+
+export async function persistWebsiteAccessChange(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	website: Website,
+	access: boolean,
+	address: bigint | undefined,
+	promptForAccessesIfNeeded: boolean,
+): Promise<Settings> {
+	await setAccess(website, access, address)
+	const refreshedSettings = await getSettings()
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		refreshedSettings,
+		promptForAccessesIfNeeded,
+	)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return refreshedSettings
 }

@@ -22,13 +22,26 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	return await getActiveAddressEntry(signingAddr)
 }
 
+export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
+	const activeAddress = await getActiveAddress(settings, tabId)
+	if (activeAddress !== undefined) return activeAddress
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return undefined
+	const tabState = await getTabState(tabId)
+	const firstSigner = tabState.signerAccounts[0]
+	if (firstSigner === undefined) return undefined
+	return await getActiveAddressEntry(firstSigner)
+}
+
 export async function getActiveAddressesForAllTabs(settings: Settings) {
 	const tabStates = await getAllTabStates()
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
 		const addressEntry = settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
 		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: addressEntry }))
 	}
-	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
+	return Promise.all(tabStates.map(async (state) => {
+		const signingAddr = state.activeSigningAddress
+		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntry(signingAddr) }
+	}))
 }
 
 export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
@@ -136,6 +149,10 @@ export async function requestPopupSimulationMetadata() {
 	return reply?.method === 'popup_requestSimulationMetadata' ? reply : undefined
 }
 
+export function getMissingPopupReplyErrorMessage(actionDescription: string) {
+	return `${ actionDescription } failed because the background page did not return a reply.`
+}
+
 export async function requestPopupAbiAndNameFromBlockExplorer(data: PopupRequestByMethod<'popup_requestAbiAndNameFromBlockExplorer'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data })
 	return reply?.method === 'popup_requestAbiAndNameFromBlockExplorer' ? reply : undefined
@@ -146,9 +163,24 @@ export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'po
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
+export async function requestPopupSimulateGovernanceContractExecution(data: PopupRequestByMethod<'popup_simulateGovernanceContractExecution'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_simulateGovernanceContractExecution', data })
+	return reply?.method === 'popup_simulateExecutionReply' ? reply : undefined
+}
+
+export async function requestPopupSimulateGnosisSafeTransaction(data: PopupRequestByMethod<'popup_simulateGnosisSafeTransaction'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_simulateGnosisSafeTransaction', data })
+	return reply?.method === 'popup_simulateExecutionReply' ? reply : undefined
+}
+
 export async function requestIsMainPopupWindowOpen() {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_isMainPopupWindowOpen' })
 	return reply?.method === 'popup_isMainPopupWindowOpen' ? reply : undefined
+}
+
+export async function requestIsSimulationDataConsumerOpen() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_isSimulationVisualizerOpen' })
+	return reply?.method === 'popup_isSimulationVisualizerOpen' ? reply : undefined
 }
 
 export async function sendPopupReadyAndListening(page: PopupReadyAndListeningPage): Promise<PopupOrTabId | undefined> {
@@ -169,7 +201,7 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack'
+type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) return `/html/${ file }.html`

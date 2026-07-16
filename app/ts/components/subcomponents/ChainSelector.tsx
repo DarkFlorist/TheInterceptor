@@ -8,6 +8,7 @@ interface RpcSelectorParams {
 	rpcNetwork: ReadonlySignal<RpcNetwork | undefined>
 	rpcEntries: Signal<RpcEntries>
 	changeRpc: (entry: RpcEntry) => void
+	disabled?: boolean
 }
 
 export function RpcSelector(params: RpcSelectorParams) {
@@ -18,7 +19,7 @@ export function RpcSelector(params: RpcSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${ rpcName }`)
 		params.changeRpc(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small'/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small' disabled = { params.disabled }/>
 }
 
 interface ChainSelectorParams {

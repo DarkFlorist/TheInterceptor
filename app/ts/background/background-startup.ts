@@ -2,19 +2,21 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
+import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { reportUnexpectedError, isExpectedInfrastructureError, printError } from '../utils/errors.js'
+import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
+import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -26,15 +28,62 @@ import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
+import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
+import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
+import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
 let resetActiveRpcNetwork: ResetSimulationServices | undefined
+const slowRpcRequests = new Map<string, SlowRpcRequest>()
+// Keep request watermarks across port reconnects so replayed messages are acknowledged without being handled twice. Tab removal clears them.
+const latestReceivedBridgeRequestIds = new Map<string, number>()
 
 function getSimulationServices() {
 	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
 	return simulationServices
 }
+
+async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
+	await setRpcConnectionStatus(rpcConnectionStatus)
+	await updateExtensionBadge()
+	await sendPopupMessageToOpenWindows({ method, data: { rpcConnectionStatus } })
+}
+
+const rpcConnectionStatusPublisher = createRpcConnectionStatusPublisher({
+	getEthereumClientService: () => getSimulationServices().ethereum,
+	getRpcConnectionStatus,
+	publishRpcConnectionStatus,
+	slowRpcRequests,
+})
+
+async function publishSlowRpcRequestStatus() {
+	try {
+		await rpcConnectionStatusPublisher.publishSlowRpcRequestStatus()
+	} catch(error: unknown) {
+		await reportUnexpectedError(error)
+	}
+}
+
+const rpcRequestLifecycleCallbacks = {
+	onSlowRequest: (request: SlowRpcRequest) => {
+		slowRpcRequests.set(slowRpcRequestKey(request), request)
+		silenceChromeUnCaughtPromise(publishSlowRpcRequestStatus())
+	},
+	onSlowRequestSettled: (request: SlowRpcRequest) => {
+		slowRpcRequests.delete(slowRpcRequestKey(request))
+		silenceChromeUnCaughtPromise(publishSlowRpcRequestStatus())
+	},
+	onLifecycleCallbackError: (error, request, callbackName) => {
+		reportLocalRecoveryBestEffort(error, {
+			source: 'rpc_request_lifecycle',
+			code: 'rpc_request_lifecycle_callback_failed',
+			message: `RPC request lifecycle callback ${ callbackName } failed.`,
+			details: { callbackName, request },
+		})
+	},
+} satisfies RpcRequestLifecycleCallbacks
 
 const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	try {
@@ -44,7 +93,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return
 		if (error instanceof Error) {
-			if (error.message.startsWith('No tab with id')) return
+			if (isMissingBrowserTargetError(error)) return
 			if (error.message.includes('the message channel is closed')) {
 				// ignore bfcache error. It means that the page is hibernating and we cannot communicate with it anymore. We get a normal disconnect about it.
 				// https://developer.chrome.com/blog/bfcache-extension-messaging-changes
@@ -57,7 +106,13 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 	return undefined
 }
 
-browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(() => removeTabState(tabId)))
+browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
+	for (const socketIdentifier of latestReceivedBridgeRequestIds.keys()) {
+		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
+	}
+	await removeTabState(tabId)
+	await removePendingTerminalRepliesForTab(tabId)
+}))
 
 if (browser.runtime.getManifest().manifest_version === 2) {
 	updateContentScriptInjectionStrategyManifestV2()
@@ -88,7 +143,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
-				removeWebsiteTabConnection(websiteTabConnections, socket)
+				removeWebsiteTabConnection(websiteTabConnections, socket, port)
 			})
 		},
 		(payload) => {
@@ -102,8 +157,13 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 					&& payload.data !== null
 					&& 'interceptorRequest' in payload.data
 				)) return
+				const rawMessage = RawInterceptedRequest.parse(payload.data)
+				const shouldHandleRequest = acknowledgeAndTrackBridgeRequest(latestReceivedBridgeRequestIds, identifier, rawMessage.requestId, () => {
+					port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: rawMessage.requestId })
+					checkAndThrowRuntimeLastError()
+				})
+				if (!shouldHandleRequest) return
 				await pendingRequestLimiter.execute(async () => {
-					const rawMessage = RawInterceptedRequest.parse(payload.data)
 					const { resetActiveRpcNetwork, simulationServices } = await waitForStartup()
 					const request = {
 						method: rawMessage.method,
@@ -113,7 +173,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections)
+					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 				})
 			})
 		},
@@ -131,16 +191,17 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
+		void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
+	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
 		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		if (isMissingBrowserTargetError(error)) return
 		await reportUnexpectedError(error)
 	}
 }
@@ -156,21 +217,17 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await updateExtensionBadge()
+		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
-				await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, getUpdatedSimulationState)
 		}
-		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	} catch(error) {
 		if (isExpectedInfrastructureError(error)) return
 		await reportUnexpectedError(error)
@@ -187,9 +244,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await updateExtensionBadge()
-		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus)
 	} catch(error) {
 		await reportUnexpectedError(error)
 	}
@@ -203,12 +258,13 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
-	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	resetActiveRpcNetwork = (rpcNetwork) => {
-		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 	}
+	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum))
+		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
 	}
 
@@ -218,6 +274,21 @@ async function startup() {
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
 }
+
+const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
+	recover: async () => {
+		const { ethereum, tokenPriceService } = getSimulationServices()
+		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
+		await prunePendingTerminalRepliesForMissingTabs()
+	},
+	onFailure: (error) => {
+		reportLocalRecoveryBestEffort(error, {
+			source: 'pending_terminal_replies',
+			code: 'pending_terminal_state_startup_recovery_failed',
+			message: 'Retrying pending terminal state recovery without blocking background startup.',
+		})
+	},
+})
 
 const backgroundStartupPromise = startup()
 
@@ -260,6 +331,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServices, resetActiveRpcNetwork } = await waitForBackgroundStartup()
-	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, await getSettings())
+	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, await getSettings(), rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

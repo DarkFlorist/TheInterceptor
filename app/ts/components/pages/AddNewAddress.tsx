@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { type ComponentChildren, createRef } from 'preact'
@@ -18,6 +18,8 @@ import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/si
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
@@ -48,6 +50,8 @@ const readableAddressType = {
 	ERC1155: 'ERC1155',
 	contract: 'contract',
 }
+
+export const BLOCK_EXPLORER_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Fetching ABI from the block explorer')
 
 type IncompleteAddressIconParams = {
 	addressInput: string | undefined,
@@ -107,6 +111,7 @@ type RenderinCompleteAddressBookParams = {
 	modifyAddressWindowState: Signal<ModifyAddressWindowState>
 	rpcEntries: Signal<RpcEntries>
 	canFetchFromEtherScan: Signal<boolean>
+	blockExplorerLookupState: AsyncStates
 	fetchAbiAndNameFromBlockExplorer: () => Promise<void>
 }
 
@@ -157,7 +162,7 @@ export async function updateModifyAddressWindowState(
 	}
 }
 
-function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, fetchAbiAndNameFromBlockExplorer }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, fetchAbiAndNameFromBlockExplorer }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
@@ -237,7 +242,14 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<CellElement element = { <>
 						<AbiInput abiInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
 						<div style = 'padding-left: 5px'/>
-						<button class = 'btn btn--outline is-small' disabled = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan.value || !blockExplorerAvailable.value } onClick = { async  () => { fetchAbiAndNameFromBlockExplorer() } }> Fetch from Block Explorer</button>
+						<AsyncActionButton
+							class = 'btn btn--outline is-small'
+							state = { blockExplorerLookupState }
+							text = 'Fetch from Block Explorer'
+							pendingText = 'Fetching...'
+							disabled = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan.value || !blockExplorerAvailable.value }
+							onClick = { fetchAbiAndNameFromBlockExplorer }
+						/>
 					</> }/>
 				</span>
 			</div>
@@ -262,6 +274,8 @@ export function AddNewAddress(param: AddAddressParam) {
 	const onChainInformationVerifiedByUser = useSignal<boolean>(false)
 	const canFetchFromEtherScan = useSignal<boolean>(false)
 	const lastCheckedAddress = useSignal<bigint>(0n)
+	const { value: blockExplorerLookup, waitFor: waitForBlockExplorerLookup, reset: resetBlockExplorerLookup } = useAsyncState<void>()
+	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -309,9 +323,11 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (param.modifyAddressWindowState.value !== undefined) {
 			canFetchFromEtherScan.value = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) !== undefined
 		}
+		resetBlockExplorerLookup()
 	}, [
 		param.modifyAddressWindowState.value.windowStateId,
 		param.modifyAddressWindowState.value.incompleteAddressBookEntry.address,
+		param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId,
 		param.activeAddress,
 	])
 
@@ -397,32 +413,44 @@ export function AddNewAddress(param: AddAddressParam) {
 	async function fetchAbiAndNameFromBlockExplorer() {
 		const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
 		if (address === undefined) return
-		canFetchFromEtherScan.value = false
-		const reply = await requestPopupAbiAndNameFromBlockExplorer({
-			address,
-			chainId: param.modifyAddressWindowState.value.incompleteAddressBookEntry.chainId
-		})
-		canFetchFromEtherScan.value = true
-		if (reply === undefined) return
-		if (!reply.data.success) {
-			const error = reply.data.error
+		const requestedChainId = param.modifyAddressWindowState.peek().incompleteAddressBookEntry.chainId
+		const isCurrentLookup = () => {
+			const currentEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
+			return stringToAddress(currentEntry.address) === address && currentEntry.chainId === requestedChainId
+		}
+		waitForBlockExplorerLookup(async () => {
+			const reply = await requestPopupAbiAndNameFromBlockExplorer({
+				address,
+				chainId: requestedChainId,
+			})
+			if (!isCurrentLookup()) return
+			if (reply === undefined) {
+				await updateModifyAddressWindowState(
+					param.modifyAddressWindowState,
+					previousState => modifyObject(previousState, { errorState: { blockEditing: false, message: BLOCK_EXPLORER_REPLY_MISSING_ERROR } })
+				)
+				return
+			}
+			if (!reply.data.success) {
+				const error = reply.data.error
+				await updateModifyAddressWindowState(
+					param.modifyAddressWindowState,
+					previousState => modifyObject(previousState, { errorState: { blockEditing: false, message: error } })
+				)
+				return
+			}
+			const { abi, contractName } = reply.data
 			await updateModifyAddressWindowState(
 				param.modifyAddressWindowState,
-				previousState => modifyObject(previousState, { errorState: { blockEditing: false, message: error } })
+				previousState => modifyObject(previousState, {
+					incompleteAddressBookEntry: modifyObject(previousState.incompleteAddressBookEntry, {
+						abi,
+						name: previousState.incompleteAddressBookEntry.name === undefined ? contractName : previousState.incompleteAddressBookEntry.name
+					}),
+					errorState: undefined
+				})
 			)
-			return
-		}
-		const { abi, contractName } = reply.data
-		await updateModifyAddressWindowState(
-			param.modifyAddressWindowState,
-			previousState => modifyObject(previousState, {
-				incompleteAddressBookEntry: modifyObject(previousState.incompleteAddressBookEntry, {
-					abi,
-					name: previousState.incompleteAddressBookEntry.name === undefined ? contractName : previousState.incompleteAddressBookEntry.name
-				}),
-				errorState: undefined
-			})
-		)
+		})
 	}
 
 	const showOnChainVerificationErrorBox = useComputed(() => {
@@ -434,6 +462,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		return !areInputsValid.value
 			|| (param.modifyAddressWindowState.value.errorState?.blockEditing)
 			|| (showOnChainVerificationErrorBox.value && !onChainInformationVerifiedByUser.value)
+			|| isBlockExplorerLookupPending.value
 	})
 
 	function getCardTitle() {
@@ -458,7 +487,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				<div class = 'card-header-title'>
 					<p class = 'paragraph'> { getCardTitle() } </p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>
 					<XMarkIcon />
 				</button>
 			</header>
@@ -469,6 +498,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							modifyAddressWindowState = { param.modifyAddressWindowState }
 							rpcEntries = { param.rpcEntries }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
+							blockExplorerLookupState = { blockExplorerLookup.value.state }
 							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
 						/>
 					</div>
@@ -486,11 +516,11 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { !areInputsValid.value }>
+				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { !areInputsValid.value || isBlockExplorerLookupPending.value }>
 					{ param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' }
 				</button> }
 				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
+				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
 			</footer>
 		</div>
 	</> )

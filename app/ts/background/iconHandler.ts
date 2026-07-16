@@ -6,7 +6,7 @@ import { TabIcon, type TabState, type WebsiteTabConnections } from '../types/use
 import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { checkAndPrintRuntimeLastError, doesTabExist, safeGetTab, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
@@ -14,6 +14,7 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
+const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'Timed out waiting for tab to finish loading.'
 
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	const storedWebsiteAccess = await getWebsiteAccess()
@@ -69,16 +70,17 @@ async function waitForLoadedTab(tabId: number) {
 
 	try {
 		browser.tabs.onUpdated.addListener(listener)
-		const tab = await safeGetTab(tabId)
+		const tab = await getTabIfExists(tabId)
+		if (tab === undefined) return undefined
 		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
-			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
+			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error(WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE)), 60000)
 			await waitForLoadedFuture
 		} finally {
 			if (timeout !== undefined) clearTimeout(timeout)
 		}
-		return await safeGetTab(tabId)
+		return await getTabIfExists(tabId)
 	} finally {
 		browser.tabs.onUpdated.removeListener(listener)
 		checkAndPrintRuntimeLastError()
@@ -100,7 +102,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	const activeAddress = await getActiveAddress(settings, tabId)
 	if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
-	if (addressAccess === 'notFound') return setIcon(ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
+	if (addressAccess === 'askAccess') return setIcon(ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
 	if (addressAccess !== 'hasAccess') {
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setIcon(ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
@@ -127,9 +129,12 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	let loadedTab
 	try {
 		loadedTab = await waitForLoadedTab(tabId)
-	} catch {
-		return { title: undefined, icon: undefined }
+	} catch (error) {
+		if (error instanceof Error && error.message === WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE) return { title: undefined, icon: undefined }
+		if (isMissingBrowserTargetError(error)) return { title: undefined, icon: undefined }
+		throw error
 	}
+	if (loadedTab === undefined) return { title: undefined, icon: undefined }
 
 	if (websiteOrigin !== undefined) {
 		const { cachedIcon, hasStoredWebsiteAccess } = await getCachedWebsiteIcon(tabId, websiteOrigin)
@@ -143,12 +148,12 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: stri
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
 	// below is my attempt to try to get favicon...
-	while ((await safeGetTab(tabId))?.favIconUrl === undefined) {
+	while ((await getTabIfExists(tabId))?.favIconUrl === undefined) {
 		await new Promise(resolve => setTimeout(resolve, 100))
 		maxRetries--
 		if (maxRetries <= 0) break // timeout
 	}
-	const tab = await safeGetTab(tabId)
+	const tab = await getTabIfExists(tabId)
 	const pageUrl = tab?.url ?? 'unknown'
 	const failToLoadFavicon = (reason: string) => {
 		console.warn(`Failed to load favicon for tab ${ tabId } (${ pageUrl }): ${ reason }`)

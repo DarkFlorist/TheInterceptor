@@ -277,6 +277,15 @@ const RequestPermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
 }).asReadonly()
 
+const EmptyPermissionOptions = funtypes.Sealed(funtypes.ReadonlyObject({}))
+const WalletRevokePermissionsParams = funtypes.Sealed(funtypes.ReadonlyObject({ eth_accounts: EmptyPermissionOptions }), { deep: true })
+
+export type WalletRevokePermissions = funtypes.Static<typeof WalletRevokePermissions>
+export const WalletRevokePermissions = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_revokePermissions'),
+	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
+}).asReadonly()
+
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
@@ -415,10 +424,11 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	InterceptorError,
 )
 
-// should be same as the above list, except with `params: funtypes.Unknown`
+// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus
+// methods handled before normal RPC dispatch such as wallet_revokePermissions.
 export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
-	method: funtypes.Union(EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
+	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
 })
 
 export type OriginalSendRequestParameters = funtypes.Static<typeof OriginalSendRequestParameters>

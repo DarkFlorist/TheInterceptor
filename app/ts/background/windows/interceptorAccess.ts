@@ -3,21 +3,23 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
-import type { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
+import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
+import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -29,7 +31,7 @@ let openedDialog: OpenedDialogWithListeners
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
-const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
@@ -50,23 +52,54 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			reply,
 			pendingRequest.request,
 			pendingRequest.website,
+			undefined,
 		)
 	}
-}
+})
 
-export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
-	const promises = await getPendingAccessRequests()
-	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
-	if (pendingRequest === undefined) throw new Error('Access request missing!')
-	return await resolve(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
-		websiteTabConnections,
-		reply,
-		pendingRequest.request,
-		pendingRequest.website,
-	)
+export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	const resolution = await pendingInterceptorAccessSemaphore.execute(async () => {
+		const promises = await getPendingAccessRequests()
+		const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
+		if (pendingRequest === undefined) throw new Error('Access request missing!')
+		const replyWithPendingRequestAddresses = {
+			...reply,
+			requestAccessToAddress: reply.requestAccessToAddress ?? pendingRequest.requestAccessToAddress?.address,
+			originalRequestAccessToAddress: reply.originalRequestAccessToAddress ?? pendingRequest.originalRequestAccessToAddress?.address,
+		}
+		return {
+			pendingRequestsToReplay: await resolve(
+				ethereum,
+				tokenPriceService,
+				resetSimulationServices,
+				websiteTabConnections,
+				replyWithPendingRequestAddresses,
+				pendingRequest.request,
+				pendingRequest.website,
+				publishRpcConnectionStatus,
+			),
+			replayRequestSocket: pendingRequest.request !== undefined && isAccountConnectionMethod(pendingRequest.request.method)
+				? pendingRequest.request.uniqueRequestIdentifier.requestSocket
+				: undefined,
+		}
+	})
+	const replayPendingRequests = async () => await Promise.all(resolution.pendingRequestsToReplay.map((pendingRequest) => handleInterceptedRequest(
+			undefined,
+			pendingRequest.website.websiteOrigin,
+			pendingRequest.website,
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			pendingRequest.socket,
+			pendingRequest.request,
+			websiteTabConnections,
+			publishRpcConnectionStatus,
+		)))
+	if (resolution.replayRequestSocket === undefined) {
+		await replayPendingRequests()
+		return
+	}
+	await withSuppressedUnscopedConnectionEventsForSocketAsync(resolution.replayRequestSocket, replayPendingRequests)
 }
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
@@ -77,16 +110,16 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 
 async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
-	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
-	await updateWebsiteApprovalAccesses(
+	await persistWebsiteAccessChange(
 		ethereum,
 		tokenPriceService,
 		resetSimulationServices,
 		websiteTabConnections,
-		await getSettings(),
+		website,
+		confirmation.userReply === 'Approved',
+		confirmation.requestAccessToAddress,
 		promptForAccessesIfNeeded,
 	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
 export async function updateInterceptorAccessViewWithPendingRequests() {
@@ -111,7 +144,7 @@ export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabCon
 		const requestSignerAccountsMessage = requestAccounts
 			? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
 			: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
-		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, requestSignerAccountsMessage)
+		const messageSent = await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, requestSignerAccountsMessage)
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
@@ -127,39 +160,95 @@ export async function requestAccessFromUser(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
+	request: InterceptedRequest,
+	requestAccessToAddress: AddressBookEntry | undefined,
+	settings: Settings,
+	activeAddress: bigint | undefined,
+	publishRpcConnectionStatus: PublishRpcConnectionStatus,
+): Promise<void>
+export async function requestAccessFromUser(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	website: Website,
+	request: undefined,
+	requestAccessToAddress: AddressBookEntry | undefined,
+	settings: Settings,
+	activeAddress: bigint | undefined,
+	publishRpcConnectionStatus: undefined,
+): Promise<void>
+export async function requestAccessFromUser(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	website: Website,
 	request: InterceptedRequest | undefined,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
 	activeAddress: bigint | undefined,
+	publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
+	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
+		const verify = () => verifyAccess(
+			websiteTabConnections,
+			socket,
+			true,
+			website.websiteOrigin,
+			activeAddressEntry,
+			currentSettings,
+			request !== undefined && isAccountConnectionMethod(request.method),
+		)
+		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
+		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
+	}
 	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(ethereum, tokenPriceService, resetSimulationServices, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
-	await pendingInterceptorAccessSemaphore.execute(async () => {
+	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
 		const verifyPendingRequests = async () => {
 			const previousRequests = await getPendingAccessRequests()
 			if (previousRequests.length !== 0) {
 				const previousRequest = previousRequests[0]
 				if (previousRequest === undefined) throw new Error('missing previous request')
-				if (await getPopupOrTabById(previousRequest.popupOrTabId) !== undefined) {
-					return true
+				const existingPopupOrTab = await getPopupOrTabById(previousRequest.popupOrTabId)
+				if (existingPopupOrTab !== undefined) {
+					if (openedDialog === undefined) {
+						addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
+						openedDialog = { popupOrTab: existingPopupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback }
+					}
+					return previousRequests
 				}
 				await clearPendingAccessRequests()
 			}
-			return false
+			return []
 		}
 
-		const justAddToPending = await verifyPendingRequests()
-		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings())
+		const previousPendingRequests = await verifyPendingRequests()
+		const justAddToPending = previousPendingRequests.length !== 0
+		const hasAccess = verifyAccessForCurrentRequest(await getSettings())
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
-			if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections)
-			return
+			if (request !== undefined) {
+				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
+				return { website, socket, request }
+			}
+			return undefined
 		}
-		if (hasAccess !== 'askAccess') return
+		if (hasAccess !== 'askAccess') return undefined
+		const replayedPendingRequest = request === undefined ? undefined : previousPendingRequests.find((pendingRequest) => {
+			return pendingRequest.request !== undefined && doesUniqueRequestIdentifiersMatch(pendingRequest.request.uniqueRequestIdentifier, request.uniqueRequestIdentifier)
+		})
+		if (replayedPendingRequest !== undefined) {
+			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
+			return undefined
+		}
 		if (!justAddToPending) {
 			addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
 			const popupOrTab = await openPopupOrTab({
@@ -201,7 +290,7 @@ export async function requestAccessFromUser(
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
-			if (verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings()) !== 'askAccess') return previousPendingAccessRequests
+			if (verifyAccessForCurrentRequest(await getSettings()) !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
@@ -220,7 +309,7 @@ export async function requestAccessFromUser(
 					error: METAMASK_ERROR_ALREADY_PENDING.error,
 				})
 			}
-			return
+			return undefined
 		}
 		if (pendingRequests.current.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
@@ -236,17 +325,37 @@ export async function requestAccessFromUser(
 			}
 		})
 		if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
+		return undefined
 	})
+	if (pendingReplay === undefined) return
+	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
+	await handleInterceptedRequest(
+		undefined,
+		pendingReplay.website.websiteOrigin,
+		pendingReplay.website,
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		pendingReplay.socket,
+		pendingReplay.request,
+		websiteTabConnections,
+		publishRpcConnectionStatus,
+	)
 }
 
-async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website) {
+async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined) {
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
-		if (!userRequestedAddressChange) {
-			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website)
-		} else {
+		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
+		const shouldPromptForFollowUpAccesses = !(replyCompletesAccountRequest && accessReply.requestAccessToAddress === undefined)
+		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
+		const applyAccessReply = async () => {
+			if (!userRequestedAddressChange) {
+				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, shouldPromptForFollowUpAccesses)
+				return
+			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
@@ -254,6 +363,11 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 				simulationMode: settings.simulationMode,
 				activeAddress: accessReply.requestAccessToAddress,
 			})
+		}
+		if (accountRequestSocket === undefined) {
+			await applyAccessReply()
+		} else {
+			await withSuppressedUnscopedConnectionEventsForSocketAsync(accountRequestSocket, applyAccessReply)
 		}
 	}
 
@@ -263,7 +377,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 
 	if (pendingRequests.current.length > 0) {
 		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getActiveAddresses(), pendingAccessRequests: pendingRequests.current } })
-		return
+		return []
 	}
 
 	if (openedDialog) {
@@ -273,7 +387,9 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	await Promise.all(affectedEntryWithPendingRequest.map((r) => handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, ethereum, tokenPriceService, resetSimulationServices, r.socket, r.request, websiteTabConnections)))
+	if (affectedEntryWithPendingRequest.length === 0) return []
+	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
+	return affectedEntryWithPendingRequest
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {

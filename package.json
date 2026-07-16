@@ -13,6 +13,7 @@
 		"build-chrome": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run chrome",
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
+		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",

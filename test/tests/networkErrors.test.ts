@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Signal } from '@preact/signals'
 import { describe, test } from 'bun:test'
+import { NetworkErrors } from '../../app/ts/components/subcomponents/NetworkErrors.js'
 import { installDateMock, installDomMock } from './domMock.js'
 
 function installBrowserMock() {
@@ -73,7 +74,6 @@ describe('NetworkErrors', () => {
 	test('shows a paused disconnect immediately on first render', async () => {
 		installBrowserMock()
 		const dom = installDomMock()
-		const { NetworkErrors } = await import('../../app/ts/components/App.js')
 
 		await act(() => {
 			render(h(NetworkErrors, {
@@ -95,7 +95,6 @@ describe('NetworkErrors', () => {
 		installBrowserMock()
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:00.000Z')
-		const { NetworkErrors } = await import('../../app/ts/components/App.js')
 
 		await act(() => {
 			render(h(NetworkErrors, {
@@ -110,6 +109,34 @@ describe('NetworkErrors', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Retrying in 12s.'), true)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('shows slow request copy when the active RPC request exceeds its expected duration', async () => {
+		installBrowserMock()
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:12.000Z')
+		const { NetworkErrors } = await import('../../app/ts/components/App.js')
+
+		await act(() => {
+			render(h(NetworkErrors, {
+				rpcConnectionStatus: new Signal({
+					isConnected: true,
+					lastConnnectionAttempt: new Date('2024-01-01T00:00:12.000Z'),
+					latestBlock: undefined,
+					rpcNetwork,
+					retrying: true,
+					slowRequest: {
+						method: 'eth_call',
+						startedAt: new Date('2024-01-01T00:00:00.000Z'),
+					},
+				}),
+			}), dom.document.body)
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('is taking longer than expected to answer eth_call'), true)
+		assert.equal(dom.document.body.textContent?.includes('It has been waiting for 12s.'), true)
 		clock.restore()
 		dom.restore()
 	})

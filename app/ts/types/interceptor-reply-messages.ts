@@ -6,6 +6,8 @@ import { CompleteVisualizedSimulation, InterceptorSimulationExport, NamedTokenId
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
 import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
+import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
+import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -138,6 +140,14 @@ const RequestIsMainWindowOpen = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+type RequestIsSimulationVisualizerOpen = funtypes.Static<typeof RequestIsSimulationVisualizerOpen>
+const RequestIsSimulationVisualizerOpen = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_isSimulationVisualizerOpen'),
+	data: funtypes.ReadonlyObject({
+		isOpen: funtypes.Boolean,
+	})
+}).asReadonly()
+
 type ConfirmTransactionBootstrapReply = funtypes.Static<typeof ConfirmTransactionBootstrapReply>
 const ConfirmTransactionBootstrapReply = funtypes.ReadonlyObject({
 	pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
@@ -166,7 +176,10 @@ type PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: typeof RequestSimulationMetadataReply
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
+	popup_simulateGovernanceContractExecution: typeof PopupSimulateExecutionReply
+	popup_simulateGnosisSafeTransaction: typeof PopupSimulateExecutionReply
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
+	popup_isSimulationVisualizerOpen: typeof RequestIsSimulationVisualizerOpen
 	popup_readyAndListening: typeof PopupReadyAndListeningReply
 }
 
@@ -181,7 +194,10 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
+	popup_simulateGovernanceContractExecution: PopupSimulateExecutionReply,
+	popup_simulateGnosisSafeTransaction: PopupSimulateExecutionReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
+	popup_isSimulationVisualizerOpen: RequestIsSimulationVisualizerOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
 }
 
@@ -198,6 +214,8 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
+	RequestSimulateGovernanceContractExecution,
+	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -207,6 +225,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isSimulationVisualizerOpen') }),
 	funtypes.ReadonlyObject({
 		method: funtypes.Literal('popup_readyAndListening'),
 		data: funtypes.ReadonlyObject({
@@ -234,7 +253,9 @@ export type PopupReplyOption =
 	| RequestSimulationMetadataReply
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
+	| funtypes.Static<typeof PopupSimulateExecutionReply>
 	| RequestIsMainWindowOpen
+	| RequestIsSimulationVisualizerOpen
 	| PopupReadyAndListeningReply
 	| undefined
 
@@ -249,7 +270,9 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
+	PopupSimulateExecutionReply,
 	RequestIsMainWindowOpen,
+	RequestIsSimulationVisualizerOpen,
 	PopupReadyAndListeningReply,
 	funtypes.Undefined,
 )

@@ -11,6 +11,7 @@ const vendoredDependencyMirrorDirectoryName = '__dependencies__'
 const browserResolvedImports = {
 	'webextension-polyfill': path.join(nodeModulesDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
 } as const
+const externalRuntimeModules = ['webextension-polyfill'] as const
 const resolvedImportCache = new Map<string, string | undefined>()
 const packageJsonCache = new Map<string, PackageJson | undefined>()
 const resolutionConditionPriority = ['browser', 'import', 'default', 'module', 'require'] as const
@@ -58,6 +59,9 @@ const isInsideDirectory = (candidatePath: string, directoryPath: string) => {
 }
 const forbiddenRuntimeModules = new Set<string>()
 const requiredRuntimeAssetPaths = new Set([
+	path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
+])
+const requiredImportedRuntimeAssetPaths = new Set([
 	path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
 ])
 const addressMetadataImagesDirectory = path.join(vendorDirectory, '@darkflorist', 'address-metadata', 'images')
@@ -368,10 +372,12 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'interceptorAccess.js'),
 	path.join(appDirectory, 'js', 'popup.js'),
 	path.join(appDirectory, 'js', 'settingsView.js'),
+	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
 	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
 	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
+	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
@@ -393,6 +399,7 @@ async function bundleChromeRuntimeEntrypoints() {
 		format: 'esm',
 		splitting: false,
 		sourcemap: 'external',
+		external: [...externalRuntimeModules],
 	})
 	if (!buildResult.success) {
 		throw new Error(`Failed to bundle Chrome runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
@@ -501,6 +508,11 @@ export function shouldKeepRuntimeOutputFile(filePath: string, reachableRuntimeFi
 		|| isInsideDirectory(filePath, addressMetadataImagesDirectory)
 }
 
+export function findMissingRequiredImportedRuntimeAssets(reachableRuntimeFiles: ReadonlySet<string>) {
+	return [...requiredImportedRuntimeAssetPaths]
+		.filter((requiredAssetPath) => !reachableRuntimeFiles.has(requiredAssetPath))
+}
+
 function removeEmptyChildDirectories(directoryPath: string) {
 	for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
 		if (!entry.isDirectory()) continue
@@ -547,9 +559,14 @@ export async function replaceImportsInJSFiles() {
 			fs.writeFileSync(filePath, replaced)
 		}
 	}
-	const missingRuntimeImportIssues = findMissingRuntimeImportsInRuntimeFiles()
-	const bareImportIssues = findBareImportsInRuntimeFiles()
-	const forbiddenRuntimeModuleIssues = findForbiddenRuntimeModulesInRuntimeFiles()
+	const runtimeDependencyGraph = collectRuntimeDependencyGraph()
+	const missingRuntimeImportIssues = runtimeDependencyGraph.missingRuntimeImportIssues
+	const bareImportIssues = runtimeDependencyGraph.files.flatMap((filePath) => getBareImportIssues(filePath, fs.readFileSync(filePath, 'utf8')))
+	const forbiddenRuntimeModuleIssues = runtimeDependencyGraph.files
+		.filter(isBrowserIncompatibleRuntimeModule)
+		.map((filePath) => ({ filePath }))
+	const reachableRuntimeFiles = new Set(runtimeDependencyGraph.files)
+	const missingRequiredImportedRuntimeAssets = findMissingRequiredImportedRuntimeAssets(reachableRuntimeFiles)
 	if (missingRuntimeImportIssues.length > 0) {
 		throw new Error(`Runtime modules import missing files after bundling:\n${ formatMissingRuntimeImportIssues(missingRuntimeImportIssues) }`)
 	}
@@ -559,7 +576,10 @@ export async function replaceImportsInJSFiles() {
 	if (forbiddenRuntimeModuleIssues.length > 0) {
 		throw new Error(`Browser-incompatible runtime modules remain after bundling:\n${ formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues) }`)
 	}
-	pruneRuntimeOutputFiles(new Set(collectRuntimeDependencyGraph().files))
+	if (missingRequiredImportedRuntimeAssets.length > 0) {
+		throw new Error(`Required runtime assets were bundled inline or left unreachable after bundling:\n${ missingRequiredImportedRuntimeAssets.join('\n') }\nEnsure vendored runtime-only modules remain listed in Bun.build external.`)
+	}
+	pruneRuntimeOutputFiles(reachableRuntimeFiles)
 	stripSourceMappingUrlCommentsInRuntimeFiles()
 }
 

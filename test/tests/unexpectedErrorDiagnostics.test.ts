@@ -13,6 +13,36 @@ type RuntimeMessage = {
 	data?: unknown
 }
 
+async function captureConsoleCalls<T>(run: () => Promise<T>) {
+	const originalConsoleError = console.error
+	const originalConsoleTrace = console.trace
+	const originalConsoleWarn = console.warn
+	const consoleErrors: unknown[][] = []
+	const consoleTraces: unknown[][] = []
+	const consoleWarns: unknown[][] = []
+	console.error = (...args: unknown[]) => {
+		consoleErrors.push(args)
+	}
+	console.trace = (...args: unknown[]) => {
+		consoleTraces.push(args)
+	}
+	console.warn = (...args: unknown[]) => {
+		consoleWarns.push(args)
+	}
+	try {
+		return {
+			result: await run(),
+			consoleErrors,
+			consoleTraces,
+			consoleWarns,
+		}
+	} finally {
+		console.error = originalConsoleError
+		console.trace = originalConsoleTrace
+		console.warn = originalConsoleWarn
+	}
+}
+
 function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
@@ -264,6 +294,39 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(typeof diagnostic?.debugId, 'string')
 	})
 
+	test('does not log user-facing unexpected errors to the extension console', async () => {
+		browserMock.reset()
+		const { reportUnexpectedError } = await modulesPromise
+
+		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
+
+		assert.equal(consoleErrors.length, 0)
+		assert.equal(consoleTraces.length, 0)
+	})
+
+	test('still logs reporting pipeline failures to the extension console', async () => {
+		browserMock.reset()
+		browserMock.setStorageSet(async () => { throw new Error('storage failed') })
+		const { reportUnexpectedError } = await modulesPromise
+
+		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
+
+		assert.equal(consoleTraces.length, 0)
+		assert.equal(consoleErrors.some((args) => args.includes('Failed to persist interceptor error diagnostic.')), true)
+		assert.equal(consoleErrors.some((args) => args.includes('Failed to persist unexpected error.')), true)
+	})
+
+	test('still logs popup broadcast failures to the extension console', async () => {
+		browserMock.reset()
+		browserMock.setSendMessage(async () => { throw new Error('broadcast failed') })
+		const { reportUnexpectedError } = await modulesPromise
+
+		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
+
+		assert.equal(consoleTraces.length, 0)
+		assert.equal(consoleErrors.some((args) => args.includes('Failed to broadcast unexpected error to open popup windows.')), true)
+	})
+
 	test('uses metadata message without dropping the original error cause', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
@@ -339,6 +402,24 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.userVisible, false)
 		assert.equal(diagnostic?.code, 'test_local_recovery')
 		assert.equal(diagnostic?.details, '{"tokenId":"1"}')
+	})
+
+	test('logs local recovery diagnostics as readable console strings', async () => {
+		browserMock.reset()
+		const { reportLocalRecovery } = await modulesPromise
+
+		const { consoleWarns } = await captureConsoleCalls(async () => await reportLocalRecovery(new Error('decode failed'), {
+			code: 'test_local_recovery_log',
+			message: 'Continuing after a recovered test failure.',
+			details: { tokenId: 1n },
+		}))
+
+		assert.equal(consoleWarns.length, 2)
+		assert.equal(consoleWarns[0]?.length, 1)
+		assert.equal(typeof consoleWarns[0]?.[0], 'string')
+		assert.equal(String(consoleWarns[0]?.[0]).startsWith('Local Interceptor recovery: code=test_local_recovery_log'), true)
+		assert.equal(String(consoleWarns[0]?.[0]).includes('[object Object]'), false)
+		assert.equal(consoleWarns[1]?.[0], 'Local Interceptor recovery details: {"tokenId":"1"}')
 	})
 
 	test('best-effort local recovery does not block on diagnostic persistence', async () => {

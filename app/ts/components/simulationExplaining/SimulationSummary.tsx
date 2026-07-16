@@ -17,10 +17,12 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
-import { ChevronIcon, ExportIcon, XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { IntegerInput } from '../subcomponents/AutosizingInput.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
@@ -583,47 +585,82 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 type TransactionHeaderParams = {
 	simTx: MaybeSimulatedTransaction
 	removeTransactionOrSignedMessage?: () => void
+	onHeaderClick?: () => void
+	headerActionLabel?: string
+	ariaExpanded?: boolean
 }
 
-export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : TransactionHeaderParams) {
+export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onHeaderClick, headerActionLabel, ariaExpanded } : TransactionHeaderParams) {
 	const icon = useComputed(() => {
 		if (simTx.transactionStatus === 'Failed To Simulate' || simTx.transactionStatus === 'Transaction Failed') return '../img/error-icon.svg'
 		if (simTx.quarantine) return '../img/warning-sign.svg'
 		return '../img/success-icon.svg'
 	})
-	return <header class = 'card-header'>
+	const actionLabel = headerActionLabel ?? 'Open this transaction in the full simulation stack'
+	return <header
+		class = { `card-header stack-card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { onHeaderClick }
+		onKeyDown = { (event) => {
+			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			onHeaderClick()
+		} }
+		role = { onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
+		title = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-label = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-expanded = { onHeaderClick === undefined ? undefined : ariaExpanded }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { icon.value } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
-			{ identifyTransaction(simTx).title }
+			<span class = 'card-header-title-text'>{ identifyTransaction(simTx).title }</span>
 		</p>
 		{ simTx.transaction.to === undefined
 			? <></>
-			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
-				<WebsiteOriginText website = { simTx.website } />
-			</p>
+			: <WebsiteOriginText
+				website = { simTx.website }
+				class = { `card-header-website${ removeTransactionOrSignedMessage !== undefined ? ' card-header-website--flush' : ''}` }
+			/>
 		}
 		{ removeTransactionOrSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }><XMarkIcon /></button>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { (event) => {
+				event.stopPropagation()
+				removeTransactionOrSignedMessage()
+			} }><XMarkIcon /></button>
 			: <></>
 		}
 	</header>
 }
 
-export function TransactionHeaderForFailedToSimulate({ website } : { website: Website }) {
-	return <header class = 'card-header'>
+export function TransactionHeaderForFailedToSimulate({ website, onHeaderClick, headerActionLabel, ariaExpanded } : { website: Website, onHeaderClick?: () => void, headerActionLabel?: string, ariaExpanded?: boolean }) {
+	const actionLabel = headerActionLabel ?? 'Open this transaction in the full simulation stack'
+	return <header
+		class = { `card-header stack-card-header${ onHeaderClick === undefined ? '' : ' stack-row-link-header' }` }
+		onClick = { onHeaderClick }
+		onKeyDown = { (event) => {
+			if (onHeaderClick === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+			if (event.target !== event.currentTarget) return
+			event.preventDefault()
+			onHeaderClick()
+		} }
+		role = { onHeaderClick === undefined ? undefined : 'button' }
+		tabIndex = { onHeaderClick === undefined ? undefined : 0 }
+		title = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-label = { onHeaderClick === undefined ? undefined : actionLabel }
+		aria-expanded = { onHeaderClick === undefined ? undefined : ariaExpanded }
+	>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
-		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
-			<WebsiteOriginText website = { website } />
-		</p>
+		<WebsiteOriginText website = { website } class = 'card-header-website' />
 	</header>
 }
 
@@ -703,14 +740,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			? '../img/warning-sign.svg'
 			: '../img/success-icon.svg'
 
-	const exportEthSimulateInput = async () => {
-		const reply = await requestPopupInterceptorSimulationInput()
-		if (reply === undefined) return
-		return reply.ethSimulateV1InputString
-	}
-
 	return (
-		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
+		<div class = 'card simulation-summary-card' style = 'background-color: var(--card-bg-color);'>
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -764,23 +795,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
-					<div class = 'log-cell'>
-						<CopyToClipboard
-							copyFunction = { exportEthSimulateInput }
-							copyMessage = 'Interceptor Simulation input copied!'
-							classNames = { 'btn btn--outline is-small' }
-						>
-							<p class = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block;'>
-								<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-									<ExportIcon/>
-								</span>
-								<span>Export Simulation Stack</span>
-							</p>
-						</CopyToClipboard>
-					</div>
-
-					<div class = 'log-cell' style = 'justify-content: center;'> </div>
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto;'>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { getSimulationDisplayBlockNumber(simulationAndVisualisationResults.blockNumber, simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }
@@ -813,12 +828,17 @@ type GasLimitEditorParams = {
 
 export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
 	const gasLimit = useOptionalSignal<bigint>(initialGasLimit)
+	const { value: forceSetGasLimitState, waitFor: waitForForceSetGasLimit, reset: resetForceSetGasLimit } = useAsyncState<void>()
 
 	async function forceSetGasLimitForTransaction() {
 		const gas = gasLimit.deepPeek()
 		if (gas === undefined || gas === initialGasLimit) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_forceSetGasLimitForTransaction', data: { gasLimit: gas, transactionIdentifier } })
 	}
+	const forceSetGasLimit = createAsyncActionRunner(
+		{ value: forceSetGasLimitState, waitFor: waitForForceSetGasLimit, reset: resetForceSetGasLimit },
+		forceSetGasLimitForTransaction
+	)
 
 	return <>
 		<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
@@ -830,7 +850,14 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 			/>
 		</span>
 		&nbsp;gas&nbsp;
-		<button disabled = { isRawTransaction || gasLimit.deepValue === initialGasLimit } class = 'button is-primary is-small' onClick = { forceSetGasLimitForTransaction }>Change</button>
+		<AsyncActionButton
+			disabled = { isRawTransaction || gasLimit.deepValue === initialGasLimit }
+			class = 'button is-primary is-small'
+			state = { forceSetGasLimitState.value.state }
+			text = 'Change'
+			pendingText = 'Saving...'
+			onClick = { forceSetGasLimit }
+		/>
 	</>
 }
 

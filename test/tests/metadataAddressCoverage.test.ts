@@ -14,6 +14,9 @@ const OPERATOR_ADDRESS = 0x4000000000000000000000000000000000000004n
 const TX_FROM_ADDRESS = 0x5000000000000000000000000000000000000005n
 const TX_TO_ADDRESS = 0x6000000000000000000000000000000000000006n
 const INPUT_ADDRESS = 0x7000000000000000000000000000000000000007n
+const STRUCT_OWNER_ADDRESS = 0x8000000000000000000000000000000000000008n
+const STRUCT_TOKEN_ADDRESS = 0x9000000000000000000000000000000000000009n
+const DELEGATE_ADDRESS = 0xa00000000000000000000000000000000000000an
 
 const toAddressSet = (addresses: readonly bigint[]) => new Set(addresses.map((address) => addressString(address)))
 const ZERO_BLOCK_TIME_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' } satisfies SimulationStateInput[number]['blockTimeManipulation']
@@ -22,7 +25,43 @@ const simulationWebsite = { websiteOrigin: 'https://example.com', icon: undefine
 const simulationCreated = new Date('2024-01-01T00:00:00.000Z')
 const simulationOriginalRequestParameters: SendTransactionParams = { method: 'eth_sendTransaction', params: [{ from: TX_FROM_ADDRESS, to: TX_TO_ADDRESS, value: 0n, input: new Uint8Array() }] }
 
-const getAddressesForEvent = (event: EnrichedEthereumEvents[number]) => {
+function getSignedTransaction(delegateAddress: bigint | undefined): SimulationStateInput[number]['transactions'][number]['signedTransaction'] {
+	if (delegateAddress === undefined) return {
+		type: '1559',
+		from: TX_FROM_ADDRESS,
+		nonce: 0n,
+		maxFeePerGas: 1n,
+		maxPriorityFeePerGas: 1n,
+		gas: 21_000n,
+		to: TX_TO_ADDRESS,
+		value: 0n,
+		input: new Uint8Array(),
+		chainId: 1n,
+		hash: 1n,
+		v: 1n,
+		r: 1n,
+		s: 1n,
+	}
+	return {
+		type: '7702',
+		from: TX_FROM_ADDRESS,
+		nonce: 0n,
+		maxFeePerGas: 1n,
+		maxPriorityFeePerGas: 1n,
+		gas: 21_000n,
+		to: TX_TO_ADDRESS,
+		value: 0n,
+		input: new Uint8Array(),
+		chainId: 1n,
+		authorizationList: [{ chainId: 1n, address: delegateAddress, nonce: 0n, r: 1n, s: 1n, yParity: 'even' }],
+		hash: 1n,
+		yParity: 'even',
+		r: 1n,
+		s: 1n,
+	}
+}
+
+const getAddressesForEvent = (event: EnrichedEthereumEvents[number], delegateAddress?: bigint) => {
 	const inputData: readonly EnrichedEthereumInputData[] = [{
 		type: 'Parsed',
 		input: new Uint8Array(),
@@ -35,22 +74,7 @@ const getAddressesForEvent = (event: EnrichedEthereumEvents[number]) => {
 		blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
 		simulateWithZeroBaseFee: false,
 		transactions: [{
-			signedTransaction: {
-				type: '1559',
-				from: TX_FROM_ADDRESS,
-				nonce: 0n,
-				maxFeePerGas: 1n,
-				maxPriorityFeePerGas: 1n,
-				gas: 21_000n,
-				to: TX_TO_ADDRESS,
-				value: 0n,
-				input: new Uint8Array(),
-				chainId: 1n,
-				hash: 1n,
-				v: 1n,
-				r: 1n,
-				s: 1n,
-			},
+			signedTransaction: getSignedTransaction(delegateAddress),
 			website: simulationWebsite,
 			created: simulationCreated,
 			originalRequestParameters: simulationOriginalRequestParameters,
@@ -69,6 +93,19 @@ function assertCommonAddresses(addresses: readonly bigint[]) {
 }
 
 describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
+	test('covers EIP-7702 delegation targets', () => {
+		const addresses = getAddressesForEvent({
+			type: 'NonParsed',
+			address: TOKEN_ADDRESS,
+			isParsed: 'NonParsed',
+			data: new Uint8Array(),
+			topics: [],
+		}, DELEGATE_ADDRESS)
+
+		assert.equal(toAddressSet(addresses).has(addressString(DELEGATE_ADDRESS)), true)
+		assertCommonAddresses(addresses)
+	})
+
 	test('covers ERC20 Transfer addresses from parsed args and the emitter address', () => {
 		const addresses = getAddressesForEvent({
 			type: 'TokenEvent',
@@ -186,6 +223,46 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 		assert.equal(addressSet.has(addressString(TO_ADDRESS)), true)
 		assert.equal(addressSet.has(addressString(TOKEN_ADDRESS)), true)
 		assert.equal(addressSet.has(addressString(OPERATOR_ADDRESS)), true)
+		assertCommonAddresses(addresses)
+	})
+
+	test('covers addresses nested in tuple parsed args', () => {
+		const addresses = getAddressesForEvent({
+			type: 'Parsed',
+			address: TOKEN_ADDRESS,
+			isParsed: 'Parsed',
+			name: 'OrderFilled',
+			signature: 'OrderFilled((address,uint256),(address,uint256)[])',
+			args: [
+				{
+					paramName: 'order',
+					typeValue: {
+						type: 'tuple',
+						value: [
+							toAddressArg('owner', STRUCT_OWNER_ADDRESS),
+							{ paramName: 'amount', typeValue: { type: 'unsignedInteger', value: 1n } },
+						],
+					},
+				},
+				{
+					paramName: 'fills',
+					typeValue: {
+						type: 'tuple[]',
+						value: [[
+							toAddressArg('token', STRUCT_TOKEN_ADDRESS),
+							{ paramName: 'amount', typeValue: { type: 'unsignedInteger', value: 2n } },
+						]],
+					},
+				},
+			],
+			loggersAddressBookEntry: { type: 'contract', name: 'Exchange', address: TOKEN_ADDRESS, entrySource: 'User' },
+			data: new Uint8Array(),
+			topics: [],
+		})
+		const addressSet = toAddressSet(addresses)
+		assert.equal(addressSet.has(addressString(STRUCT_OWNER_ADDRESS)), true)
+		assert.equal(addressSet.has(addressString(STRUCT_TOKEN_ADDRESS)), true)
+		assert.equal(addressSet.has(addressString(TOKEN_ADDRESS)), true)
 		assertCommonAddresses(addresses)
 	})
 })

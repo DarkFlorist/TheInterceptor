@@ -28,6 +28,7 @@ type TimePickerModeViewsParams = {
 	absoluteTime: Signal<Date | undefined>
 	deltaValue: Signal<bigint | undefined>
 	deltaUnit: Signal<DeltaUnit>
+	disabled?: boolean
 
 	timePickerDeltaOptionsSignal: Signal<readonly DeltaUnit[]>
 
@@ -43,13 +44,13 @@ const formatDateToLocalDateTimeValue = (date: Date | undefined): string => {
 	return localDate.toISOString().slice(0, 16)
 }
 
-const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal, deltaValue, deltaUnit, changeDeltaUnit, absoluteTimeChanged, changeDeltaValue }: TimePickerModeViewsParams) => {
+const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal, deltaValue, deltaUnit, disabled = false, changeDeltaUnit, absoluteTimeChanged, changeDeltaValue }: TimePickerModeViewsParams) => {
 	switch(mode.value) {
 		case 'No Delay': return <></>
-		case 'Until': return <input type = 'datetime-local' class = 'timepicker-datetime-local' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
+		case 'Until': return <input type = 'datetime-local' disabled = { disabled } class = 'timepicker-datetime-local' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
-			<input class = 'input' style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
-			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' }/>
+			<input class = 'input' disabled = { disabled } style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
+			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' } disabled = { disabled }/>
 		</div>
 		default: assertNever(mode.value)
 	}
@@ -63,9 +64,10 @@ type TimePickerParams = {
 	onChangedCallBack: () => void
 	startText: string
 	removeNoDelayOption: boolean
+	disabled?: boolean
 }
 
-export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChangedCallBack, startText, removeNoDelayOption }: TimePickerParams) => {
+export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChangedCallBack, startText, removeNoDelayOption, disabled = false }: TimePickerParams) => {
 	const timePickerModeDownOptionsSignal = useSignal<readonly TimePickerMode[]>(removeNoDelayOption ? timePickerModeDownOptionsWithoutNoDelay : timePickerModeDownOptions)
 	const timePickerDeltaOptionsSignal = useSignal<readonly DeltaUnit[]>(timePickerDeltaOptions)
 
@@ -90,12 +92,15 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 	})
 
 	const changeMode = (newOption: TimePickerMode) => {
+		if (disabled) return
 		temporaryMode.value = newOption
 	}
 	const changeDeltaUnit = (newOption: DeltaUnit) => {
+		if (disabled) return
 		temporaryDeltaUnit.value = newOption
 	}
 	const absoluteTimeChanged = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
+		if (disabled) return
 		if (event.currentTarget.value.length === 0) {
 			temporaryAbsoluteTime.value = undefined
 		} else {
@@ -103,6 +108,7 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 		}
 	}
 	const changeDeltaValue = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
+		if (disabled) return
 		event.preventDefault()
 		const sanitized = event.currentTarget.value.replace(/[^0-9.]/g, '')
 		if (sanitized.length === 0 || Number.isNaN(parseInt(sanitized))) {
@@ -125,6 +131,7 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 	})
 
 	const commitOptions = () => {
+		if (disabled) return
 		batch(() => {
 			mode.value = temporaryMode.value
 			deltaUnit.value = temporaryDeltaUnit.value
@@ -140,10 +147,10 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 		<div style = 'display: flex; justify-content: space-between'>
 			<p class = 'paragraph' style = 'align-content: center;'> { startText } </p>
 			<div style = 'display: grid; grid-template-columns: auto auto auto; column-gap: 10px; padding-left: 5px'>
-				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' }/>
-				<TimePickerModeViews mode = { temporaryMode } absoluteTime = { temporaryAbsoluteTime } deltaValue = { temporaryDeltaValue } deltaUnit = { temporaryDeltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue }/>
+				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' } disabled = { disabled }/>
+				<TimePickerModeViews mode = { temporaryMode } absoluteTime = { temporaryAbsoluteTime } deltaValue = { temporaryDeltaValue } deltaUnit = { temporaryDeltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue } disabled = { disabled }/>
 
-				<button class = 'btn is-small is-primary' onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
+				<button class = 'btn is-small is-primary' disabled = { disabled } onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
 					Commit
 				</button>
 			</div>

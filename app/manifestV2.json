@@ -24,6 +24,7 @@
 	},
 	"permissions": [
 		"activeTab",
+		"tabs",
 		"<all_urls>",
 		"storage",
 		"webNavigation",

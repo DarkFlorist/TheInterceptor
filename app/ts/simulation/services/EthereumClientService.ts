@@ -29,6 +29,70 @@ const parseSignatureHex = (signature: `0x${ string }`) => {
 	}
 }
 
+const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
+	const commonFields = {
+		type: transaction.type,
+		from: transaction.from,
+		nonce: transaction.nonce,
+		gas: transaction.gas,
+		to: transaction.to,
+		value: transaction.value,
+		input: transaction.input,
+	}
+	const signatureFields = {
+		...('yParity' in transaction ? { yParity: transaction.yParity } : {}),
+		...('v' in transaction ? { v: transaction.v } : {}),
+		r: transaction.r,
+		s: transaction.s,
+	}
+	switch (transaction.type) {
+		case 'legacy': return {
+			...commonFields,
+			gasPrice: transaction.gasPrice,
+			...transaction.chainId !== undefined ? { chainId: transaction.chainId } : {},
+			...signatureFields,
+		}
+		case '2930': return {
+			...commonFields,
+			chainId: transaction.chainId,
+			gasPrice: transaction.gasPrice,
+			...transaction.accessList !== undefined ? { accessList: transaction.accessList } : {},
+			...signatureFields,
+		}
+		case '1559': return {
+			...commonFields,
+			chainId: transaction.chainId,
+			maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+			...transaction.maxFeePerGas === 0n ? {} : { maxFeePerGas: transaction.maxFeePerGas },
+			...transaction.accessList !== undefined ? { accessList: transaction.accessList } : {},
+			...signatureFields,
+		}
+		case '4844': return {
+			...commonFields,
+			chainId: transaction.chainId,
+			maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+			maxFeePerGas: transaction.maxFeePerGas,
+			...transaction.accessList !== undefined ? { accessList: transaction.accessList } : {},
+			maxFeePerBlobGas: transaction.maxFeePerBlobGas,
+			blobVersionedHashes: transaction.blobVersionedHashes,
+			...signatureFields,
+		}
+		case '7702': return {
+			...commonFields,
+			chainId: transaction.chainId,
+			maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+			maxFeePerGas: transaction.maxFeePerGas,
+			...transaction.accessList !== undefined ? { accessList: transaction.accessList } : {},
+			authorizationList: transaction.authorizationList,
+			...signatureFields,
+		}
+		default: {
+			const unsupportedTransaction: never = transaction
+			throw new Error(`Unsupported transaction type for eth_simulateV1: ${ String(unsupportedTransaction) }`)
+		}
+	}
+}
+
 export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
 	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
 	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit))
@@ -226,7 +290,7 @@ export class EthereumClientService {
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
 		if (parentBlock === null) throw new Error('The latest block is null')
-		const call = {
+		const call: EthSimulateV1Params = {
 			method: 'eth_simulateV1',
 			params: [{
 				blockStateCalls: blockStateCalls,
@@ -234,8 +298,12 @@ export class EthereumClientService {
 				validation: false,
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
-		] } as const
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(call))
+		] }
+		return await this.ethSimulateV1Request(call, requestAbortController)
+	}
+
+	public readonly ethSimulateV1Request = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
+		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
@@ -302,11 +370,7 @@ export class EthereumClientService {
 		}
 
 		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
-			const transactionsWithRemoveZeroPricedOnes = block.transactions.map((transaction) => {
-				if (transaction.signedTransaction.type !== '1559') return transaction.signedTransaction
-				const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction.signedTransaction
-				return { ...transactionWithoutMaxFee, ...maxFeePerGas === 0n ? {} : { maxFeePerGas } }
-			})
+			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(transaction.signedTransaction))
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
 
@@ -329,7 +393,7 @@ export class EthereumClientService {
 				return acc
 			}, {} as { [key: string]: bigint } )
 			return {
-				calls: transactionsWithRemoveZeroPricedOnes,
+				calls: rpcCalls,
 				blockOverrides,
 				stateOverrides: {
 					...block.signedMessages.length > 0 ? {

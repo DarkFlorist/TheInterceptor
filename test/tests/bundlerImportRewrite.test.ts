@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
-import { findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
+import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
 
 const repositoryRoot = process.cwd()
 
@@ -83,6 +83,13 @@ describe('bundler import rewriting', () => {
 			shouldKeepRuntimeOutputFile(path.join(repositoryRoot, 'app', 'js', 'components', 'App.js.map'), reachableRuntimeFiles),
 			false,
 		)
+	})
+
+	test('requires the polyfill runtime asset to stay reachable from runtime imports', () => {
+		const polyfillPath = path.join(repositoryRoot, 'app', 'vendor', 'webextension-polyfill', 'dist', 'browser-polyfill.js')
+
+		assert.deepEqual(findMissingRequiredImportedRuntimeAssets(new Set()), [polyfillPath])
+		assert.deepEqual(findMissingRequiredImportedRuntimeAssets(new Set([polyfillPath])), [])
 	})
 
 	test('strips source map comments after pruning maps', () => {

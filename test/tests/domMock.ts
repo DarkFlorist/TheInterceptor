@@ -168,34 +168,95 @@ class TestDocument {
 	}
 }
 
+type TestWindow = {
+	document: TestDocument
+	addEventListener(): undefined
+	removeEventListener(): undefined
+}
+
+type DomMockState = {
+	restored: boolean
+	previousDocument: unknown
+	previousWindow: unknown
+	previousSetInterval: unknown
+	previousClearInterval: unknown
+	previousRequestAnimationFrame: unknown
+	previousCancelAnimationFrame: unknown
+}
+
+const fallbackDocument = new TestDocument()
+const fallbackWindow: TestWindow = {
+	document: fallbackDocument,
+	addEventListener() { return undefined },
+	removeEventListener() { return undefined },
+}
+const domMockOwners = new Map<unknown, DomMockState>()
+
+function resolveRestorablePreviousValue(previousValue: unknown, fallbackValue: unknown, getPreviousValue: (state: DomMockState) => unknown): unknown {
+	const owner = domMockOwners.get(previousValue)
+	if (owner?.restored === true) return resolveRestorablePreviousValue(getPreviousValue(owner), fallbackValue, getPreviousValue)
+	return previousValue ?? fallbackValue
+}
+
+function defineGlobalValue(name: string, value: unknown) {
+	Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+}
+
+function restoreOwnedGlobal(name: string, isOwnedByThisMock: boolean, previousValue: unknown, fallbackValue: unknown, getPreviousValue: (state: DomMockState) => unknown) {
+	if (!isOwnedByThisMock) return
+	defineGlobalValue(name, resolveRestorablePreviousValue(previousValue, fallbackValue, getPreviousValue))
+}
+
 export function installDomMock() {
 	const document = new TestDocument()
+	const window: TestWindow = {
+		document,
+		addEventListener() { return undefined },
+		removeEventListener() { return undefined },
+	}
+	const setIntervalMock: typeof globalThis.setInterval = () => 1
+	const clearIntervalMock: typeof globalThis.clearInterval = () => undefined
+	const requestAnimationFrameMock: typeof globalThis.requestAnimationFrame = (callback) => {
+		callback(0)
+		return 1
+	}
+	const cancelAnimationFrameMock: typeof globalThis.cancelAnimationFrame = () => undefined
 	const previousDocument = globalThis.document
 	const previousWindow = globalThis.window
 	const previousSetInterval = globalThis.setInterval
 	const previousClearInterval = globalThis.clearInterval
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
+	const state: DomMockState = {
+		restored: false,
+		previousDocument,
+		previousWindow,
+		previousSetInterval,
+		previousClearInterval,
+		previousRequestAnimationFrame,
+		previousCancelAnimationFrame,
+	}
+	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock]) domMockOwners.set(ownedValue, state)
 
-	Object.defineProperty(globalThis, 'document', { value: document, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'window', { value: { document }, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'setInterval', { value: () => 1, configurable: true, writable: true })
-	globalThis.clearInterval = () => undefined
-	globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-		callback(0)
-		return 1
-	})
-	globalThis.cancelAnimationFrame = () => undefined
+	defineGlobalValue('document', document)
+	defineGlobalValue('window', window)
+	defineGlobalValue('setInterval', setIntervalMock)
+	defineGlobalValue('clearInterval', clearIntervalMock)
+	defineGlobalValue('requestAnimationFrame', requestAnimationFrameMock)
+	defineGlobalValue('cancelAnimationFrame', cancelAnimationFrameMock)
 
 	return {
 		document,
 		restore() {
-			globalThis.document = previousDocument
-			globalThis.window = previousWindow
-			globalThis.setInterval = previousSetInterval
-			globalThis.clearInterval = previousClearInterval
-			globalThis.requestAnimationFrame = previousRequestAnimationFrame
-			globalThis.cancelAnimationFrame = previousCancelAnimationFrame
+			// Bun runs test files concurrently. Do not remove another test's active DOM
+			// or leave Preact cleanup with an undefined global document.
+			state.restored = true
+			restoreOwnedGlobal('document', globalThis.document === document, previousDocument, fallbackDocument, (owner) => owner.previousDocument)
+			restoreOwnedGlobal('window', globalThis.window === window || globalThis.window?.document === document, previousWindow, fallbackWindow, (owner) => owner.previousWindow)
+			restoreOwnedGlobal('setInterval', globalThis.setInterval === setIntervalMock, previousSetInterval, undefined, (owner) => owner.previousSetInterval)
+			restoreOwnedGlobal('clearInterval', globalThis.clearInterval === clearIntervalMock, previousClearInterval, undefined, (owner) => owner.previousClearInterval)
+			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, undefined, (owner) => owner.previousRequestAnimationFrame)
+			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, undefined, (owner) => owner.previousCancelAnimationFrame)
 		},
 	}
 }

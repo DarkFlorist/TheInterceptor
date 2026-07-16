@@ -15,6 +15,8 @@ import type { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
 import { addressEditEntry } from './components/ui-utils.js'
+import { createAsyncActionRunner, useAsyncState } from './utils/preact-utilities.js'
+import { AsyncActionButton } from './components/subcomponents/AsyncAction.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: Signal<ModifyAddressWindowState> }
@@ -47,10 +49,15 @@ type ConfirmaddressBookEntryToBeRemovedParams = {
 }
 
 function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRemovedParams) {
-	const remove = () => {
-		param.removeEntry(param.addressBookEntry)
-		param.close()
-	}
+	const { value: removeAddressState, waitFor: waitForRemoveAddress, reset: resetRemoveAddress } = useAsyncState<void>()
+	const remove = createAsyncActionRunner(
+		{ value: removeAddressState, waitFor: waitForRemoveAddress, reset: resetRemoveAddress },
+		async () => {
+			param.removeEntry(param.addressBookEntry)
+			param.close()
+		}
+	)
+
 	return <>
 		<div class = 'modal-background'> </div>
 		<div class = 'modal-card'>
@@ -78,7 +85,13 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { remove }> { 'Remove' } </button>
+				<AsyncActionButton
+					class = 'button is-success is-primary'
+					state = { removeAddressState.value.state }
+					onClick = { remove }
+					text = 'Remove'
+					pendingText = 'Removing...'
+				/>
 				<button class = 'button is-warning is-danger' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
@@ -103,11 +116,11 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 	}
 
 	return (
-		<div class = 'card' style = { { marginLeft: '1rem', marginRight: '1rem', marginBottom: '1rem' } }>
-			<div class = 'card-content' style = 'width: 500px;'>
-				<div class = 'media' style = { { alignItems: 'stretch' } }>
-					<div class = 'media-content' style = {{ overflowY: 'visible', overflowX: 'unset', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-						<div style = 'padding-bottom: 10px; height: 40px'>
+		<div class = 'card address-book-entry-card'>
+			<div class = 'card-content address-book-entry-content'>
+				<div class = 'media address-book-entry-media'>
+					<div class = 'media-content address-book-entry-main'>
+						<div class = 'address-book-entry-heading'>
 							{ entry.type === 'empty'
 								? <></>
 								: <BigAddress
@@ -120,14 +133,14 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 
 						{ entry.category === 'ERC20 Tokens'
 							? <div>
-								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING' }` }</p>
+								<p class = 'paragraph address-book-entry-meta'>{ `Decimals: ${ 'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING' }` }</p>
 							</div>
 							: <></>
 						}
 
 						{ entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts'
 							? <div>
-								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>
+								<p class = 'paragraph address-book-entry-meta'>
 									{ `Protocol: ${ 'protocol' in entry ? entry.protocol : '' } ` }
 								</p>
 							</div>
@@ -141,20 +154,20 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 							</label>
 							:
 							<div>
-								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top; width: 420px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;'>
+								<p class = 'paragraph address-book-entry-meta address-book-entry-abi'>
 									{ `ABI: ${ 'abi' in entry && entry.abi !== undefined ? entry.abi : 'No ABI available' } ` }
 								</p>
 							</div>
 						}
 						<div>
-							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; color: var(--subtitle-text-color);'>
+							<p class = 'paragraph address-book-entry-meta address-book-entry-source'>
 								{ `Source: ${ 'entrySource' in entry ? entry.entrySource : '' }` }
 							</p>
 						</div>
 					</div>
 
-					<div class = 'content' style = 'color: var(--text-color); display: flex; flex-direction: column; justify-content: space-between;'>
-						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { conditionallyRemoveEntry }>
+					<div class = 'content address-book-entry-actions'>
+						<button class = 'card-header-icon address-book-entry-remove' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { conditionallyRemoveEntry }>
 							<XMarkIcon />
 						</button>
 						<button class = 'button is-primary is-small' onClick = { conditionallyEditEntry }>Edit</button>
@@ -258,7 +271,7 @@ export function AddressBook() {
 		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
 			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
 			: `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
-		return <div style = { { width: 500, padding: '0 1rem', margin: '0 1rem' } }>{ errorMessage }</div>
+		return <div class = 'address-book-empty-state'>{ errorMessage }</div>
 	}
 
 	function openNewAddress(filter: FilterKey) {
@@ -311,11 +324,11 @@ export function AddressBook() {
 		})
 	}
 	return (
-		<main>
+		<main class = 'address-book-page'>
 			<Hint>
-				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
-					<div style = { { padding: '1rem 0'} }>
-						<div style = 'padding: 10px;'>
+				<div class = 'address-book-layout'>
+					<div class = 'address-book-sidebar'>
+						<div class = 'address-book-chain-selector'>
 							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain } buttonClassses = 'button is-primary chainSelector'/>
 						</div>
 						<aside class = 'menu'>
@@ -337,14 +350,14 @@ export function AddressBook() {
 							</ul>
 						</aside>
 					</div>
-					<div style = { { display: 'grid', gridTemplateRows: 'min-content 1fr', rowGap: '1rem', height: '100vh', paddingTop: '1rem' } }>
-						<div style = { { display: 'grid', gridTemplateColumns: '1fr max-content', columnGap: '1rem', padding: '0 1rem', alignItems: 'center' } }>
+					<div class = 'address-book-content'>
+						<div class = 'address-book-toolbar'>
 							<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { viewFilter.value.searchString } onInput = { e => search(e.currentTarget.value) } />
 							<button class = 'button is-primary' onClick = { () => openNewAddress(viewFilter.value.activeFilter) }>
 								{ `Add New ${ filterDefs[viewFilter.value.activeFilter] }` }
 							</button>
 						</div>
-						<div style = { { minHeight: 0 } }>
+						<div class = 'address-book-list'>
 							{ addressBookEntriesWithFilter.value.addressBookEntries.length
 								? <DynamicScroller
 									items = { addressBookEntries }

@@ -54,7 +54,8 @@ export type HomeParams = {
 	interceptorDisabled: Signal<boolean>
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
-	openImportSimulation: () => void
+	numberOfAddressesMadeRich: Signal<number>
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
 export type ChangeActiveAddressParam = {
@@ -82,6 +83,7 @@ export type FirstCardParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcEntries: Signal<RpcEntries>,
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
 export type SimulationStateParam = {
@@ -91,13 +93,14 @@ export type SimulationStateParam = {
 	activeSimulationAddress: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
-	disableReset: Signal<boolean>
-	resetSimulation: () => void
+	disableReset: ReadonlySignal<boolean>
+	resetSimulation: () => Promise<void>
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	simulationUpdatingState: Signal<SimulationUpdatingState | undefined>
 	simulationResultState: Signal<SimulationResultState | undefined>
-	openImportSimulation: () => void
+	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
+	numberOfAddressesMadeRich: Signal<number>
 }
 
 export type LogAnalysisParams = {
@@ -166,14 +169,25 @@ export const TabState = funtypes.ReadonlyObject({
 	activeSigningAddress: OptionalEthereumAddress,
 })
 
+export type RpcSlowRequest = funtypes.Static<typeof RpcSlowRequest>
+export const RpcSlowRequest = funtypes.ReadonlyObject({
+	method: funtypes.String,
+	startedAt: EthereumTimestamp,
+})
+
 export type RpcConnectionStatus = funtypes.Static<typeof RpcConnectionStatus>
-export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
-	isConnected: funtypes.Boolean,
-	lastConnnectionAttempt: EthereumTimestamp,
-	rpcNetwork: RpcNetwork,
-	latestBlock: funtypes.Union(funtypes.Undefined, EthereumBlockHeader),
-	retrying: funtypes.Boolean,
-}))
+export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		isConnected: funtypes.Boolean,
+		lastConnnectionAttempt: EthereumTimestamp,
+		rpcNetwork: RpcNetwork,
+		latestBlock: funtypes.Union(funtypes.Undefined, EthereumBlockHeader),
+		retrying: funtypes.Boolean,
+	}),
+	funtypes.ReadonlyPartial({
+		slowRequest: RpcSlowRequest,
+	}),
+))
 
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
 export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({

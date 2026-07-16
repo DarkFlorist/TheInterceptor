@@ -14,6 +14,8 @@ import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -88,7 +90,8 @@ function ImportExport() {
 			throw new Error('error on importing settings')
 		}
 	}
-	const exportSettings = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_get_export_settings' })
+	const { value: exportSettingsState, waitFor: waitForExportSettings } = useAsyncState<void>()
+	const exportSettings = () => void waitForExportSettings(async () => { await sendPopupMessageToBackgroundPage({ method: 'popup_get_export_settings' }) })
 
 	return <>
 		{ settingsReply.value !== undefined && settingsReply.value.data.success === false ?
@@ -101,14 +104,18 @@ function ImportExport() {
 			/>
 			: <></> }
 		<div class = 'popup-button-row'>
-			<div style = 'display: flex; flex-direction: row;'>
-				<label class = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
+			<div class = 'settings-import-export-actions'>
+				<label class = 'button is-primary is-danger settings-import-export-button'>
 					Import settings
 					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>
-				<button class = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
-					Export settings
-				</button>
+				<AsyncActionButton
+					class = 'button is-primary settings-import-export-button'
+					state = { exportSettingsState.value.state }
+					text = 'Export settings'
+					pendingText = 'Exporting settings...'
+					onClick = { exportSettings }
+				/>
 			</div>
 		</div>
 	</>
@@ -201,15 +208,22 @@ export function SettingsView() {
 const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
 	const latestEntry = useComputed(() => rpcEntries.value[0])
-
-	const loadDefaultRpcs = () => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs })
+	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
+	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs }))
 
 	if (rpcEntries.value.length < 2 && latestEntry.value !== undefined) {
 		return (
 			<>
 				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
 					<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
-					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load the default RPC list</button>
+				<AsyncActionButton
+					class = 'btn btn--outline'
+					style = 'font-weight: 600'
+					state = { resetRpcListState.value.state }
+					text = 'Yes, load the default RPC list'
+					pendingText = 'Loading default RPC list'
+					onClick = { loadDefaultRpcs }
+						/>
 				</aside>
 				<ul class = 'grid' style = '--gap-y: 0.5rem'>
 						<RpcSummary info = { latestEntry } />
@@ -235,10 +249,10 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 
 	return (
 		<li class = 'grid brief'>
-			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>
-				<div style = '--area: 1 / 1'><strong>{ currentInfo.name }</strong></div>
-				<div style = '--area: span 2 / 2'>{ networkName }</div>
-				<div>{ currentInfo.httpsRpc }</div>
+			<div class = 'grid rpc-summary-details'>
+				<div class = 'truncate' title = { currentInfo.name }><strong>{ currentInfo.name }</strong></div>
+				<div class = 'truncate' title = { networkName }>{ networkName }</div>
+				<div class = 'truncate' title = { currentInfo.httpsRpc }>{ currentInfo.httpsRpc }</div>
 			</div>
 			<div class = 'actions'>
 				<ConfigureRpcConnection key = { infoKey } rpcInfo = { currentInfo } />

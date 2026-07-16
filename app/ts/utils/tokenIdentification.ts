@@ -1,9 +1,11 @@
+import type { Abi } from './ethereumPrimitives.js'
 import { Erc20ABI, Erc721ABI } from './abi.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
-import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
+import { decodeFunctionOutputSafely, encodeFunctionCall } from './abiRuntime.js'
+import { isBigint, isBoolean, isNumberOrBigint, isString } from './typescript.js'
 
 type EOA = {
 	type: 'EOA'
@@ -32,6 +34,16 @@ async function tryAggregateMulticall(ethereumClientService: IEthereumClientServi
 	}))
 }
 
+type MulticallResult = {
+	success: boolean
+	returnData: Uint8Array
+}
+
+const decodeMulticallFunctionOutputSafely = <T>(abi: Abi, functionName: string, result: MulticallResult, isExpectedType: (value: unknown) => value is T): T | undefined => {
+	if (!result.success || result.returnData.length === 0) return undefined
+	return decodeFunctionOutputSafely(abi, functionName, result.returnData, isExpectedType)
+}
+
 export async function itentifyAddressViaOnChainInformation(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, address: EthereumAddress): Promise<IdentifiedAddress> {
 	const contractCode = await ethereumClientService.getCode(address, 'latest', requestAbortController)
 	if (contractCode.length === 0) return { type: 'EOA', address }
@@ -47,43 +59,44 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 		{ targetAddress, callData: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'totalSupply', [])) }
 	]
 
-	try {
-		const [isErc721, hasMetadata, isErc1155, name, symbol, decimals, totalSupply] = await tryAggregateMulticall(ethereumClientService, requestAbortController, calls)
-		if (isErc721 === undefined || hasMetadata === undefined || isErc1155 === undefined || name === undefined || symbol === undefined || decimals === undefined || totalSupply === undefined) throw new Error('Multicall result is too short')
-		if (isErc721.success && decodeFunctionOutput(Erc721ABI, 'supportsInterface', isErc721.returnData) === true) {
-			const supportsMetadata = hasMetadata.success && decodeFunctionOutput(Erc721ABI, 'supportsInterface', hasMetadata.returnData)
-			return {
-				type: 'ERC721',
-				address,
-				name: supportsMetadata ? decodeFunctionOutput(Erc721ABI, 'name', name.returnData) : checksummedAddress(address),
-				symbol: supportsMetadata ? decodeFunctionOutput(Erc721ABI, 'symbol', symbol.returnData) : '???',
-				entrySource: 'OnChain'
-			}
+	const [isErc721, hasMetadata, isErc1155, name, symbol, decimals, totalSupply] = await tryAggregateMulticall(ethereumClientService, requestAbortController, calls)
+	if (isErc721 === undefined || hasMetadata === undefined || isErc1155 === undefined || name === undefined || symbol === undefined || decimals === undefined || totalSupply === undefined) throw new Error('Multicall result is too short')
+	const supportsErc721 = decodeMulticallFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc721, isBoolean)
+	const supportsMetadata = decodeMulticallFunctionOutputSafely(Erc721ABI, 'supportsInterface', hasMetadata, isBoolean)
+	const supportsErc1155 = decodeMulticallFunctionOutputSafely(Erc721ABI, 'supportsInterface', isErc1155, isBoolean)
+	const tokenName = decodeMulticallFunctionOutputSafely(Erc20ABI, 'name', name, isString)
+	const tokenSymbol = decodeMulticallFunctionOutputSafely(Erc20ABI, 'symbol', symbol, isString)
+	const tokenDecimals = decodeMulticallFunctionOutputSafely(Erc20ABI, 'decimals', decimals, isNumberOrBigint)
+	const tokenSupply = decodeMulticallFunctionOutputSafely(Erc20ABI, 'totalSupply', totalSupply, isBigint)
+
+	if (supportsErc721 === true) {
+		return {
+			type: 'ERC721',
+			address,
+			name: supportsMetadata === true ? decodeMulticallFunctionOutputSafely(Erc721ABI, 'name', name, isString) ?? checksummedAddress(address) : checksummedAddress(address),
+			symbol: supportsMetadata === true ? decodeMulticallFunctionOutputSafely(Erc721ABI, 'symbol', symbol, isString) ?? '???' : '???',
+			entrySource: 'OnChain'
 		}
-		if (isErc1155.success && decodeFunctionOutput(Erc721ABI, 'supportsInterface', isErc1155.returnData) === true) {
-			return {
-				type: 'ERC1155',
-				address,
-				entrySource: 'OnChain',
-				name: checksummedAddress(address),
-				symbol: '???',
-				decimals: undefined
-			}
+	}
+	if (supportsErc1155 === true) {
+		return {
+			type: 'ERC1155',
+			address,
+			entrySource: 'OnChain',
+			name: checksummedAddress(address),
+			symbol: '???',
+			decimals: undefined
 		}
-		if (name.success && decimals.success && symbol.success && totalSupply.success) {
-			return {
-				type: 'ERC20',
-				address,
-				name: decodeFunctionOutput(Erc20ABI, 'name', name.returnData),
-				symbol: decodeFunctionOutput(Erc20ABI, 'symbol', symbol.returnData),
-				decimals: BigInt(decodeFunctionOutput(Erc20ABI, 'decimals', decimals.returnData)),
-				entrySource: 'OnChain'
-			}
+	}
+	if (tokenName !== undefined && tokenSymbol !== undefined && tokenDecimals !== undefined && tokenSupply !== undefined) {
+		return {
+			type: 'ERC20',
+			address,
+			name: tokenName,
+			symbol: tokenSymbol,
+			decimals: BigInt(tokenDecimals),
+			entrySource: 'OnChain'
 		}
-	} catch (error) {
-		// For any reason decoding txing fails catch and return as unknown contract
-		console.warn(error)
-		return { type: 'contract', address }
 	}
 
 	// If doesn't pass checks being an ERC20, ERC721 or ERC1155, then we only know its a contract

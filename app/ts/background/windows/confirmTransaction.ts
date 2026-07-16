@@ -8,9 +8,10 @@ import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreate
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
+import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import {
 	stringToBytes,
 	keccak256,
@@ -36,6 +37,8 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
+const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const NO_RESPONSE_RETRY_DELAY_MS = 50
 
 type TimestampedPopupVisualisation = {
 	statusCode: 'success' | 'failed'
@@ -173,25 +176,57 @@ export const setGasLimitForTransaction = async (transactionIdentifier: BigInt, g
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
-	const reply = (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
+	const removePendingRequestAndUpdateView = async () => {
+		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
+		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
+		if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
+	}
+	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				return replyToInterceptedRequest(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+				await queueTerminalReply(terminalReply)
+				await removePendingRequestAndUpdateView()
+				return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 			}
-			return replyToInterceptedRequest(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+			await queueTerminalReply(terminalReply)
+			await removePendingRequestAndUpdateView()
+			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 		}
-		return replyToInterceptedRequest(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		if (message.type === 'result') {
+			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+			await queueTerminalReply(terminalReply)
+			await removePendingRequestAndUpdateView()
+			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+		}
+		await removePendingRequestAndUpdateView()
+		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		return replyToInterceptedRequest(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		if (requestWasForwarded) return true
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
+			approvalStatus: {
+				status: 'SignerError',
+				code: METAMASK_ERROR_BLANKET_ERROR,
+				message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+			}
+		}))
+		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		return false
 	}
-	await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-	if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-	if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
-
-	if (confirmation.data.action === 'noResponse') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
+	if (confirmation.data.action === 'noResponse') {
+		const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
+			...pendingTransactionOrMessage.originalRequestParameters,
+			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
+			uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier,
+		})
+		await removePendingRequestAndUpdateView()
+		return noResponseDelivery
+	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
 	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
@@ -231,15 +266,48 @@ export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: Et
 	await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, ethereum, tokenPriceService, websiteTabConnections)
 }
 
+export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
+	const pendingTransactions = await getPendingTransactionsAndMessages()
+	const missingConfirmationWindows = new Map<string, boolean>()
+	const orphanedTransactions: PendingTransactionOrSignableMessage[] = []
+	for (const transaction of pendingTransactions) {
+		const windowIdentifier = `${ transaction.popupOrTabId.type }:${ transaction.popupOrTabId.id }`
+		let confirmationWindowIsMissing = missingConfirmationWindows.get(windowIdentifier)
+		if (confirmationWindowIsMissing === undefined) {
+			confirmationWindowIsMissing = await getPopupOrTabById(transaction.popupOrTabId) === undefined
+			missingConfirmationWindows.set(windowIdentifier, confirmationWindowIsMissing)
+		}
+		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
+	}
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, ethereum, tokenPriceService, websiteTabConnections)
+}
+
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
 	for (const transaction of transactions) {
 		try {
 			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
+			schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
 		}
 	}
-	await clearPendingTransactions()
+}
+
+function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
+	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
+	if (pendingNoResponseRetryTimers.has(identifier)) return
+	const retryTimer = setTimeout(() => {
+		pendingNoResponseRetryTimers.delete(identifier)
+		void (async () => {
+			try {
+				await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+			} catch (error) {
+				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
+				schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
+			}
+		})()
+	}, NO_RESPONSE_RETRY_DELAY_MS)
+	pendingNoResponseRetryTimers.set(identifier, retryTimer)
 }
 
 const formRejectMessage = (code: number, errorString: string) => {
@@ -513,7 +581,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }
 		} catch(e: unknown) {
-			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.' })
+			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.', details: e instanceof Error ? e.stack : undefined })
 			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 		}
 	})

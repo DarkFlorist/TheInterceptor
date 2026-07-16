@@ -1,8 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
-import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
@@ -15,6 +14,9 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
+import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
+import { EthSimulateV1Result } from './ethSimulate-types.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -42,7 +44,7 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean, activeAddress: funtypes.String }) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
@@ -78,6 +80,11 @@ export const GetSimulationStackReply = funtypes.Union(
 )
 
 type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>
+const WalletPermission = funtypes.ReadonlyObject({
+	parentCapability: funtypes.Literal('eth_accounts'),
+	caveats: funtypes.ReadonlyArray(funtypes.Unknown),
+	invoker: funtypes.String,
+})
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByHash'), result: GetBlockReturn }),
@@ -95,7 +102,9 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getCode'), result: EthereumData }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({}) })) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_requestPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: GetSimulationStackReply }),
@@ -106,6 +115,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData_v1'), funtypes.Literal('eth_signTypedData_v2'), funtypes.Literal('eth_signTypedData_v3'), funtypes.Literal('eth_signTypedData_v4'), funtypes.Literal('eth_signTypedData')), result: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('web3_clientVersion'), result: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_feeHistory'), result: EthGetFeeHistoryResponse }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
 )
@@ -154,6 +164,7 @@ export const RPCReply = funtypes.Union(
 export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
 export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
+	funtypes.ReadonlyPartial({ requestId: funtypes.Number }),
 	funtypes.Union(
 		InpageScriptCallBack,
 		funtypes.Intersect(
@@ -169,6 +180,7 @@ export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>
 const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
+	funtypes.ReadonlyPartial({ bridgeRequestSettled: funtypes.Literal(true) }),
 	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
@@ -314,6 +326,12 @@ export const RemoveTransaction = funtypes.ReadonlyObject({
 	data: TransactionOrMessageIdentifier
 }).asReadonly()
 
+export type OpenSimulationStack = funtypes.Static<typeof OpenSimulationStack>
+export const OpenSimulationStack = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack'), data: TransactionOrMessageIdentifier }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack') }),
+)
+
 type ResetSimulation = funtypes.Static<typeof ResetSimulation>
 const ResetSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_resetSimulation')
@@ -444,9 +462,13 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 const PopupRefreshGeneration = funtypes.Number
 type PopupRefreshGeneration = funtypes.Static<typeof PopupRefreshGeneration>
 
-type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
-const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_new_block_arrived'), funtypes.Literal('popup_failed_to_get_block')),
+type RpcConnectionStatusUpdate = funtypes.Static<typeof RpcConnectionStatusUpdate>
+const RpcConnectionStatusUpdate = funtypes.ReadonlyObject({
+	method: funtypes.Union(
+		funtypes.Literal('popup_new_block_arrived'),
+		funtypes.Literal('popup_failed_to_get_block'),
+		funtypes.Literal('popup_rpc_connection_status_changed'),
+	),
 	data: funtypes.ReadonlyObject({ rpcConnectionStatus: RpcConnectionStatus }),
 }).asReadonly()
 
@@ -702,53 +724,17 @@ export const GovernanceVoteInputParameters = funtypes.ReadonlyObject({
 	voter: funtypes.Union(funtypes.Undefined, EthereumAddress),
 })
 
-export type SimulateExecutionReplyData = funtypes.Static<typeof SimulateExecutionReplyData>
-export const SimulateExecutionReplyData = funtypes.Union(
-	funtypes.ReadonlyObject({
-		success: funtypes.Literal(false),
-		errorType: funtypes.Literal('Other'),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		errorMessage: funtypes.String,
-	}),
-	funtypes.ReadonlyObject({
-		success: funtypes.Literal(false),
-		errorType: funtypes.Literal('MissingAbi'),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		errorMessage: funtypes.String,
-		errorAddressBookEntry: AddressBookEntry,
-	}),
-	funtypes.ReadonlyObject({
-		success: funtypes.Literal(true),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		result: funtypes.ReadonlyObject({
-			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-			visualizedSimulationState: VisualizedSimulationState,
-			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
-			simulationState: funtypes.Union(SimulationState),
-		})
-	})
-)
+export type SimulateExecutionReplyData = funtypes.Static<typeof SharedSimulateExecutionReplyData>
+export const SimulateExecutionReplyData = SharedSimulateExecutionReplyData
 
-export type SimulateExecutionReply = funtypes.Static<typeof SimulateExecutionReply>
-export const SimulateExecutionReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateExecutionReply'),
-	data: SimulateExecutionReplyData
-}).asReadonly()
+export type SimulateExecutionReply = funtypes.Static<typeof SharedSimulateExecutionReply>
+export const SimulateExecutionReply = SharedSimulateExecutionReply
 
-export type SimulateGovernanceContractExecution = funtypes.Static<typeof SimulateGovernanceContractExecution>
-export const SimulateGovernanceContractExecution = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateGovernanceContractExecution'),
-	data: funtypes.ReadonlyObject({ transactionIdentifier: EthereumQuantity })
-})
+export type SimulateGovernanceContractExecution = funtypes.Static<typeof SharedSimulateGovernanceContractExecution>
+export const SimulateGovernanceContractExecution = SharedSimulateGovernanceContractExecution
 
-type SimulateGnosisSafeTransaction = funtypes.Static<typeof SimulateGnosisSafeTransaction>
-const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateGnosisSafeTransaction'),
-	data: funtypes.ReadonlyObject({
-		gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx,
-	})
-})
+export type SimulateGnosisSafeTransaction = funtypes.Static<typeof SharedSimulateGnosisSafeTransaction>
+export const SimulateGnosisSafeTransaction = SharedSimulateGnosisSafeTransaction
 
 type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
 const SettingsOpenedReply = funtypes.ReadonlyObject({
@@ -899,7 +885,7 @@ const messageToPopupPayloadCodecs: [
 	typeof GetAddressBookDataReply,
 	typeof ChangeChainRequest,
 	typeof InterceptorAccessDialog,
-	typeof NewBlockArrivedOrFailedToArrive,
+	typeof RpcConnectionStatusUpdate,
 	typeof SettingsUpdated,
 	typeof UpdateConfirmTransactionDialogPartial,
 	typeof UpdateConfirmTransactionDialogPendingTransactionsPartial,
@@ -923,7 +909,7 @@ const messageToPopupPayloadCodecs: [
 	GetAddressBookDataReply,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
-	NewBlockArrivedOrFailedToArrive,
+	RpcConnectionStatusUpdate,
 	SettingsUpdated,
 	UpdateConfirmTransactionDialogPartial,
 	UpdateConfirmTransactionDialogPendingTransactionsPartial,
@@ -973,7 +959,13 @@ const PopupMessageRuntype = funtypes.Union(
 	RemoveAddressBookEntry,
 	OpenAddressBook,
 	PopupReadyAndListening,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestNewHomeData'),
+		data: funtypes.ReadonlyObject({
+			refreshSignerAccounts: funtypes.Boolean,
+			includeWebsiteAccessAddressMetadata: funtypes.Boolean,
+		}),
+	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
@@ -989,6 +981,7 @@ const PopupMessageRuntype = funtypes.Union(
 	DisableInterceptor,
 	SetEnsNameForHash,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
+	OpenSimulationStack,
 	RetrieveWebsiteAccess,
 	BlockOrAllowExternalRequests,
 	AllowOrPreventAddressAccessForWebsite,

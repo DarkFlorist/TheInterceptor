@@ -2,17 +2,17 @@ import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCa
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
+import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { BroomIcon, ChevronIcon, ImportIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
@@ -22,6 +22,9 @@ import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
+import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -59,9 +62,20 @@ function SignerExplanation(param: SignerExplanationParams) {
 function FirstCardHeader(param: FirstCardParams) {
 	const tabIconReason = useComputed(() => param.tabIconDetails.value.iconReason)
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
+	const { value: setSimulatingState, waitFor: waitForSetSimulating } = useAsyncState<void>()
+	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
+	const simulatingPending = setSimulatingState.value.state === 'pending'
+	const signingPending = setSigningState.value.state === 'pending'
 
-	function enableSimulationMode(enabled: boolean ) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+	async function enableSimulationMode(enabled: boolean ) {
+		if (!param.isInitialHomeDataLoaded.value) return
+		await sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+	}
+	const enableSimulating = () => {
+		void waitForSetSimulating(() => enableSimulationMode(true))
+	}
+	const enableSigning = () => {
+		void waitForSetSigning(() => enableSimulationMode(false))
 	}
 
 	return <>
@@ -73,43 +87,61 @@ function FirstCardHeader(param: FirstCardParams) {
 			</div>
 			<div>
 				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
-					<button
+					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
-						disabled = { param.simulationMode.value }
-						onClick = { () => enableSimulationMode(true) }>
-						Simulating
-					</button>
-					<button
+						state = { setSimulatingState.value.state }
+						disabled = { param.simulationMode.value || signingPending || !param.isInitialHomeDataLoaded.value }
+						keepTextWhilePending = { true }
+						pendingText = 'Switching to simulating mode...'
+						text = 'Simulating'
+						onClick = { enableSimulating }
+					/>
+					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
-						disabled = { !param.simulationMode.value }
-						onClick = { () => enableSimulationMode(false) }>
-						<SignerLogoText signerName = { signerName } text = { 'Signing' } />
-					</button>
+						state = { setSigningState.value.state }
+						disabled = { !param.simulationMode.value || simulatingPending || !param.isInitialHomeDataLoaded.value }
+						keepTextWhilePending = { true }
+						text = { <SignerLogoText signerName = { signerName } text = 'Signing' reserveLogoSpace = { true } /> }
+						pendingText = 'Switching to signing mode...'
+						onClick = { enableSigning }
+					/>
 				</div>
 			</div>
-			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc }/>
+			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
 		</header>
 	</>
 }
 
 type InterceptorDisabledButtonParams = {
-	disableInterceptorToggle: (disabled: boolean) => void,
+	disableInterceptorToggle: (disabled: boolean) => Promise<void>,
 	interceptorDisabled: Signal<boolean>,
 	website: ReadonlySignal<Website | undefined>
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
-	return <button disabled = { website.value === undefined } class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled.value) } >
-		{ interceptorDisabled.value ? <>
+function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website, isInitialHomeDataLoaded }: InterceptorDisabledButtonParams) {
+	const { value: disableButtonState, waitFor: waitForDisableInterceptor } = useAsyncState<void>()
+	const toggleInterceptor = () => {
+		if (!isInitialHomeDataLoaded.value) return
+		void waitForDisableInterceptor(() => disableInterceptorToggle(!interceptorDisabled.value))
+	}
+
+	return <AsyncActionButton
+		disabled = { website.value === undefined || !isInitialHomeDataLoaded.value }
+		state = { disableButtonState.value.state }
+		class = { `button is-small ${ interceptorDisabled.value ? 'is-success' : 'is-primary' }` }
+		text = { interceptorDisabled.value ? <>
 			<span class = 'icon'> <img src = { ICON_ACTIVE } width = '24' height = '24'/> </span>
 			<span> Enable</span>
 		</> : <>
 			<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED } width = '24' height = '24'/> </span>
 			<span> Disable</span>
 		</> }
-	</button>
+		pendingText = { interceptorDisabled.value ? 'Enabling interceptor...' : 'Disabling interceptor...' }
+		onClick = { toggleInterceptor }
+	/>
 }
 
 type RichListParams = {
@@ -117,14 +149,17 @@ type RichListParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
 	richList: Signal<readonly EnrichedRichListElement[]>
 	renameAddressCallBack: RenameAddressCallBack
+	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack }: RichListParams) {
+function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
 	async function enableMakeCurrentAddressRich(enabled: boolean) {
+		if (!isInitialHomeDataLoaded.value) return
 		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
 		makeCurrentAddressRich.value = enabled
 	}
 	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
+		if (!isInitialHomeDataLoaded.value) return
 		richList.value = [
 			...richList.value.filter((x) => x.addressBookEntry.address !== addressBookEntry.address),
 			...makeRich ? [{ addressBookEntry: addressBookEntry, makingRich: true, type: 'UserAdded' as const, }] : []
@@ -150,7 +185,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
+					<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
@@ -163,8 +198,8 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
 				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
-						<input type = 'checkbox' checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
-						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } />
+						<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
+						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value } />
 					</label>
 				</div>
 			</> } </>
@@ -173,8 +208,8 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
 						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
-							<input type = 'checkbox' checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
-							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>
+							<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
+							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
 					) }
 				</div>
@@ -188,9 +223,16 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
+	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
 	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
 
+	const connectToSigner = () => {
+		if (!param.isInitialHomeDataLoaded.value) return
+		void waitForConnectToSigner(() => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }))
+	}
+
 	const timeSelectorOnChange = () => {
+		if (!param.isInitialHomeDataLoaded.value) return
 		const blockTimeManipulation = getTimeManipulatorFromSignals(timeSelectorMode.value, timeSelectorAbsoluteTime.value, timeSelectorDeltaValue.value, timeSelectorDeltaUnit.value)
 		if (blockTimeManipulation.type === 'No Delay') return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION } })
 		return sendPopupMessageToBackgroundPage({ method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation } })
@@ -241,24 +283,31 @@ function FirstCard(param: FirstCardParams) {
 				<ActiveAddressComponent
 					activeAddress = { param.activeAddress }
 					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode.value }
+					disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
+					noCopying = { !param.isInitialHomeDataLoaded.value }
+					noEditAddress = { !param.isInitialHomeDataLoaded.value }
 					changeActiveAddress = { param.changeActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 				{ !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
-							<button class = 'button is-primary' onClick = { () => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }) } >
-								<SignerLogoText
+							<AsyncActionButton
+								class = 'button is-primary'
+								disabled = { !param.isInitialHomeDataLoaded.value }
+								state = { connectToSignerButtonState.value.state }
+								text = { <SignerLogoText
 									signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }
 									text = { `Connect to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
-								/>
-							</button>
+								/> }
+								pendingText = { `Connecting to ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` }
+								onClick = { connectToSigner }
+							/>
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
-					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList }/>
+					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -268,6 +317,7 @@ function FirstCard(param: FirstCardParams) {
 						deltaUnit = { timeSelectorDeltaUnit }
 						onChangedCallBack = { timeSelectorOnChange }
 						removeNoDelayOption = { true }
+						disabled = { !param.isInitialHomeDataLoaded.value }
 					/>
 				</div> }
 			</div>
@@ -284,45 +334,95 @@ export const isEmptySimulation = (simulationAndVisualisationResults: SimulationA
 }
 
 type SimulationResultsHeaderParams = {
-	openImportSimulation: () => void
+	openSimulationStack?: () => void
 	disableReset?: ReadonlySignal<boolean>
-	resetSimulation?: () => void
+	resetSimulation?: () => Promise<void>
 }
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
-	return <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
-		<div class = 'log-cell' style = 'justify-content: left;'>
-			<p class = 'h1'> Simulation Results </p>
+	const { value: clearSimulationState, waitFor: waitForClearSimulation } = useAsyncState<void>()
+	const openStack = () => { param.openSimulationStack?.() }
+	const resetSimulation = param.resetSimulation
+	const clearSimulation = () => {
+		if (resetSimulation === undefined) return
+		void waitForClearSimulation(resetSimulation)
+	}
+
+	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
+		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
+			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
 		</div>
-		<div class = 'log-cell' style = 'justify-content: right; gap: 10px;'>
-			<button class = 'btn btn--outline is-small' onClick = { param.openImportSimulation }>
-				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-					<ImportIcon/>
-				</span>
-				<span>Import Simulation Stack</span>
-			</button>
-			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
-				<button class = 'btn is-small is-danger' disabled = { param.disableReset.value } onClick = { param.resetSimulation } >
+		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
+			{ param.openSimulationStack === undefined ? <></> :
+				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
 					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<BroomIcon />
+						<OpenInNewIcon/>
 					</span>
-					<span>Clear</span>
+					<span>View stack details</span>
 				</button>
+			}
+			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
+				<AsyncActionButton
+					class = 'btn is-small is-danger'
+					state = { clearSimulationState.value.state }
+					disabled = { param.disableReset.value }
+					onClick = { clearSimulation }
+					text = { <>
+						<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+							<BroomIcon />
+						</span>
+						<span>Clear</span>
+					</> }
+					pendingText = 'Clearing...'
+				/>
 			}
 		</div>
 	</div>
 }
 
+function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack }: { numberOfAddressesMadeRich: number, openSimulationStack?: () => void }) {
+	if (numberOfAddressesMadeRich === 0) return <></>
+	const actionLabel = 'Open rich address state in the full simulation stack'
+	const openStack = () => { openSimulationStack?.() }
+	return <section class = 'card' style = 'margin: 10px;'>
+		<header
+			class = { `card-header stack-card-header${ openSimulationStack === undefined ? '' : ' stack-row-link-header' }` }
+			onClick = { openStack }
+			onKeyDown = { (event) => {
+				if (openSimulationStack === undefined || (event.key !== 'Enter' && event.key !== ' ')) return
+				if (event.target !== event.currentTarget) return
+				event.preventDefault()
+				openStack()
+			} }
+			role = { openSimulationStack === undefined ? undefined : 'button' }
+			tabIndex = { openSimulationStack === undefined ? undefined : 0 }
+			title = { openSimulationStack === undefined ? undefined : actionLabel }
+			aria-label = { openSimulationStack === undefined ? undefined : actionLabel }
+		>
+			<div class = 'card-header-icon unset-cursor'>
+				<span class = 'icon'>
+					<img src = '../img/success-icon.svg' width = '24' height = '24' />
+				</span>
+			</div>
+			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
+			</p>
+		</header>
+	</section>
+}
+
 function PopupVisualisation(param: SimulationStateParam) {
 	const isEmpty = useComputed(() => {
+		if (param.numberOfAddressesMadeRich.value > 0) return false
 		if (param.simulationAndVisualisationResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(param.simulationAndVisualisationResults.value.value)
 	})
 
 	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
+	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
-	if (isEmpty.value && (param.simulationUpdatingState.value === 'updating' || param.simulationUpdatingState.value === undefined)) {
+	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
@@ -330,39 +430,47 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	if (currentResults.kind === 'passthrough') {
 		return <div>
-			<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } />
-			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
+			{ isEmpty.value ?
+				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
+			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } /> }
 		</div>
 	}
 
 	const resolvedResults = currentResults.value
 
 	return <div>
-		<SimulationResultsHeader openImportSimulation = { param.openImportSimulation } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
+		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
-		{ resolvedResults.visualizedSimulationState.success === false ? <>
-			<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+			{ resolvedResults.visualizedSimulationState.success === false ? <>
+				<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
+				<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } />
 				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-					activeAddress = { param.activeSimulationAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-					addressMetaData = { computedAddressBookEntries }
-				/>
+				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+				activeAddress = { param.activeSimulationAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+				addressMetaData = { computedAddressBookEntries }
+				displayMode = 'titleOnly'
+				openSimulationStackAt = { param.openSimulationStack }
+			/>
 		</> : <>
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
-						<TransactionsAndSignedMessages
-							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-							removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-							activeAddress = { param.activeSimulationAddress }
-							renameAddressCallBack = { param.renameAddressCallBack }
-							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-							addressMetaData = { computedAddressBookEntries }
-						/>
+					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } />
+					<TransactionsAndSignedMessages
+						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+						activeAddress = { param.activeSimulationAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
+						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+						addressMetaData = { computedAddressBookEntries }
+						displayMode = 'titleOnly'
+						openSimulationStackAt = { param.openSimulationStack }
+					/>
 					{ param.removedTransactionOrSignedMessages.length > 0
 						? <></>
 						: <SimulationSummary
@@ -381,10 +489,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 }
 
 export function Home(param: HomeParams) {
-	const disableReset = useSignal<boolean>(false)
+	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
+	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const activeSimulationAddress = useComputed(() =>
 		param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
@@ -407,24 +516,34 @@ export function Home(param: HomeParams) {
 
 	useSignalEffect(() => {
 		param.simVisResults.value
-		disableReset.value = false
+		markSimulationDataReceived()
 		removedTransactionOrSignedMessages.value = []
 	})
 
-	function resetSimulation() {
-		disableReset.value = true
-		sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
-	}
-
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
+		if (!param.isInitialHomeDataLoaded.value) return
 		removedTransactionOrSignedMessages.value = [...removedTransactionOrSignedMessages.value, transactionOrMessageIdentifier]
 		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 	}
 
 	async function disableInterceptorToggle() {
+		if (!param.isInitialHomeDataLoaded.value) return
 		if (param.tabState.value?.website === undefined) return
 		const newValue = !param.interceptorDisabled.value
-		sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: param.tabState.value.website } })
+	}
+
+	async function resetSimulationAfterHomeDataLoaded() {
+		if (!param.isInitialHomeDataLoaded.value) return
+		await resetSimulation()
+	}
+
+	async function openSimulationStack(target?: TransactionOrMessageIdentifier) {
+		await sendPopupMessageToBackgroundPage(target === undefined
+			? { method: 'popup_openSimulationStack' }
+			: { method: 'popup_openSimulationStack', data: target }
+		)
+		globalThis.close()
 	}
 
 	if (param.rpcNetwork.value === undefined) return <></>
@@ -449,6 +568,7 @@ export function Home(param: HomeParams) {
 			tabIconDetails = { param.tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
+			isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }
 		/>
 
 		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
@@ -456,8 +576,8 @@ export function Home(param: HomeParams) {
 				? <PopupVisualisation
 					simulationAndVisualisationResults = { param.simVisResults }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-					disableReset = { disableReset }
-					resetSimulation = { resetSimulation }
+					disableReset = { disableResetUntilHomeDataLoaded }
+					resetSimulation = { resetSimulationAfterHomeDataLoaded }
 					currentBlockNumber = { param.currentBlockNumber }
 					activeSimulationAddress = { param.activeSimulationAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -466,7 +586,8 @@ export function Home(param: HomeParams) {
 					rpcConnectionStatus = { param.rpcConnectionStatus }
 					simulationUpdatingState = { param.simulationUpdatingState }
 					simulationResultState = { param.simulationResultState }
-					openImportSimulation = { param.openImportSimulation }
+					openSimulationStack = { openSimulationStack }
+					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
 				: <section class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
 					<Spinner height = '3em'/>
@@ -480,7 +601,7 @@ export function Home(param: HomeParams) {
 						<WebsiteOriginText website = { tabWebsite } />
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right; padding-left: 20px'>
-						<InterceptorDisabledButton website = { tabWebsite } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }/>
+						<InterceptorDisabledButton website = { tabWebsite } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					</div>
 				</div>
 			</div>
