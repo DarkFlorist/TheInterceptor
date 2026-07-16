@@ -192,6 +192,10 @@ describe('GnosisSafeVisualizer outcome simulation', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Outcome if approved'), true)
+		const outcomePanel = findFirstByClass(dom.document.body, 'safe-outcome-panel')
+		assert.equal(outcomePanel?.textContent?.includes('Simulate outcome'), true)
+		assert.equal(outcomePanel?.textContent?.includes('Preview the transaction'), false)
+		assert.equal(outcomePanel?.textContent?.includes('See what the Safe transaction would do'), false)
 		const initialButton = getButtonByText(dom.document.body, 'Simulate outcome')
 
 		await act(async () => {
@@ -199,8 +203,11 @@ describe('GnosisSafeVisualizer outcome simulation', () => {
 		})
 
 		const outcomeContent = findFirstByClass(dom.document.body, 'safe-outcome-panel__content')
+		const loadingState = findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')
 		assert.equal(String(outcomeContent?.getAttribute?.('aria-busy')), 'true')
-		assert.equal(dom.document.body.textContent?.includes('Simulating approved outcome…'), true)
+		assert.equal(loadingState?.getAttribute?.('role'), 'status')
+		assert.equal(loadingState?.getAttribute?.('aria-label'), 'Simulating outcome')
+		assert.equal(loadingState?.textContent?.trim(), '')
 		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
 		assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulate outcome')), false)
 		assert.equal(browserMock.sentMessages.filter((message) => message.method === 'popup_simulateGnosisSafeTransaction').length, 1)
@@ -231,7 +238,8 @@ describe('GnosisSafeVisualizer outcome simulation', () => {
 		await act(async () => {
 			await clickElement(getButtonByText(dom.document.body, 'Refresh simulation'))
 		})
-		assert.equal(dom.document.body.textContent?.includes('Simulating approved outcome…'), true)
+		assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')?.textContent?.trim(), '')
+		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
 		assert.equal(browserMock.sentMessages.filter((message) => message.method === 'popup_simulateGnosisSafeTransaction').length, 2)
 
 		dom.restore()

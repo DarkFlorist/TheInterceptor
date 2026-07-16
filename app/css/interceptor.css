@@ -1554,14 +1554,6 @@ svg.spinner > circle {
 	line-height: 1.25;
 }
 
-.safe-outcome-panel__description {
-	max-width: 34rem;
-	margin: 3px 0 0;
-	color: var(--subtitle-text-color);
-	font-size: 0.8rem;
-	line-height: 1.4;
-}
-
 .safe-outcome-panel__refresh {
 	flex: 0 0 auto;
 	min-height: 2em;
@@ -1576,27 +1568,9 @@ svg.spinner > circle {
 .safe-outcome-panel__empty,
 .safe-outcome-panel__loading {
 	display: grid;
-	justify-items: center;
-	gap: 10px;
 	min-height: 90px;
 	padding: 10px;
-	text-align: center;
-	place-content: center;
-}
-
-.safe-outcome-panel__status {
-	margin: 0;
-	color: var(--text-color);
-	font-size: 0.9rem;
-	font-weight: 600;
-}
-
-.safe-outcome-panel__helper {
-	max-width: 30rem;
-	margin: 0;
-	color: var(--subtitle-text-color);
-	font-size: 0.8rem;
-	line-height: 1.45;
+	place-items: center;
 }
 
 .popup-footer {

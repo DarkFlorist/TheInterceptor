@@ -54,15 +54,12 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simulationInProgress, re
 
 	if (simulateExecutionReply.value === undefined) {
 		if (simulationInProgress.value) {
-			return <div class = 'safe-outcome-panel__loading' role = 'status'>
+			return <div class = 'safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating outcome'>
 				<Spinner height = '2.5rem'/>
-				<p class = 'safe-outcome-panel__status'>Simulating approved outcome…</p>
-				<p class = 'safe-outcome-panel__helper'>This may take a moment while the transaction is evaluated against the latest chain state.</p>
 			</div>
 		}
 
 		return <div class = 'safe-outcome-panel__empty'>
-			<p class = 'safe-outcome-panel__helper'>Preview the transaction that can execute if the Safe reaches its approval threshold.</p>
 			<button class = 'btn btn--primary' type = 'button' onClick = { requestSimulation }>
 				Simulate outcome
 			</button>
@@ -154,10 +151,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		</div>
 		<section class = 'safe-outcome-panel' aria-labelledby = { outcomeTitleId }>
 			<header class = 'safe-outcome-panel__header'>
-				<div>
-					<h3 class = 'safe-outcome-panel__title' id = { outcomeTitleId }>Outcome if approved</h3>
-					<p class = 'safe-outcome-panel__description'>See what the Safe transaction would do if the multisig reaches its approval threshold.</p>
-				</div>
+				<h3 class = 'safe-outcome-panel__title' id = { outcomeTitleId }>Outcome if approved</h3>
 				{ simulateExecutionReply.value === undefined || simulationInProgress.value
 					? <></>
 					: <button class = 'btn btn--outline safe-outcome-panel__refresh' type = 'button' onClick = { requestSimulation }>Refresh simulation</button>
