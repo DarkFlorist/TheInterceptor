@@ -1558,6 +1558,55 @@ svg.spinner > circle {
 	border-color: white;
 }
 
+.safe-outcome-panel {
+	overflow: hidden;
+	margin-top: 12px;
+	border: 1px solid var(--alpha-015);
+	border-radius: 12px;
+	background: linear-gradient(145deg, var(--alpha-005), transparent 60%);
+}
+
+.safe-outcome-panel__header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 14px;
+	border-bottom: 1px solid var(--alpha-015);
+	background-color: var(--alpha-005);
+}
+
+.safe-outcome-panel__title {
+	margin: 0;
+	color: var(--text-color);
+	font-size: 1rem;
+	font-weight: 650;
+	line-height: 1.25;
+}
+
+.safe-outcome-panel__refresh {
+	flex: 0 0 auto;
+	min-height: 2em;
+	font-size: 0.75rem;
+}
+
+.safe-outcome-panel__content {
+	min-width: 0;
+	padding: 14px;
+}
+
+.safe-outcome-panel__empty,
+.safe-outcome-panel__loading {
+	display: grid;
+	min-height: 90px;
+	padding: 10px;
+	place-items: center;
+}
+
+.safe-outcome-panel__loading {
+	color: var(--primary-color);
+}
+
 .popup-footer {
 	position: fixed;
 	left: 20px;
