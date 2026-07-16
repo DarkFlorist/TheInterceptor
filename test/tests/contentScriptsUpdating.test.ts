@@ -155,6 +155,18 @@ describe('content script injection strategy errors', () => {
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
+	test('keeps invalid-tab manifest v2 injection failures ignored', async () => {
+		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('Invalid tab ID: 42') })
+		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await withSilencedConsole(async () => {
+			await getCommittedListener()(committedDetails)
+		})
+
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
 	test('skips manifest v2 injection after navigation reaches another extension page', async () => {
 		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
 			tabUrl: 'chrome-extension://another-extension-id/home.html',

@@ -1,8 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
-import { VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
@@ -15,6 +14,8 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
+import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { EthSimulateV1Result } from './ethSimulate-types.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
@@ -722,53 +723,17 @@ export const GovernanceVoteInputParameters = funtypes.ReadonlyObject({
 	voter: funtypes.Union(funtypes.Undefined, EthereumAddress),
 })
 
-export type SimulateExecutionReplyData = funtypes.Static<typeof SimulateExecutionReplyData>
-export const SimulateExecutionReplyData = funtypes.Union(
-	funtypes.ReadonlyObject({
-		success: funtypes.Literal(false),
-		errorType: funtypes.Literal('Other'),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		errorMessage: funtypes.String,
-	}),
-	funtypes.ReadonlyObject({
-		success: funtypes.Literal(false),
-		errorType: funtypes.Literal('MissingAbi'),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		errorMessage: funtypes.String,
-		errorAddressBookEntry: AddressBookEntry,
-	}),
-	funtypes.ReadonlyObject({
-		success: funtypes.Literal(true),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		result: funtypes.ReadonlyObject({
-			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-			visualizedSimulationState: VisualizedSimulationState,
-			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
-			simulationState: funtypes.Union(SimulationState),
-		})
-	})
-)
+export type SimulateExecutionReplyData = funtypes.Static<typeof SharedSimulateExecutionReplyData>
+export const SimulateExecutionReplyData = SharedSimulateExecutionReplyData
 
-export type SimulateExecutionReply = funtypes.Static<typeof SimulateExecutionReply>
-export const SimulateExecutionReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateExecutionReply'),
-	data: SimulateExecutionReplyData
-}).asReadonly()
+export type SimulateExecutionReply = funtypes.Static<typeof SharedSimulateExecutionReply>
+export const SimulateExecutionReply = SharedSimulateExecutionReply
 
-export type SimulateGovernanceContractExecution = funtypes.Static<typeof SimulateGovernanceContractExecution>
-export const SimulateGovernanceContractExecution = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateGovernanceContractExecution'),
-	data: funtypes.ReadonlyObject({ transactionIdentifier: EthereumQuantity })
-})
+export type SimulateGovernanceContractExecution = funtypes.Static<typeof SharedSimulateGovernanceContractExecution>
+export const SimulateGovernanceContractExecution = SharedSimulateGovernanceContractExecution
 
-type SimulateGnosisSafeTransaction = funtypes.Static<typeof SimulateGnosisSafeTransaction>
-const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateGnosisSafeTransaction'),
-	data: funtypes.ReadonlyObject({
-		gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx,
-	})
-})
+export type SimulateGnosisSafeTransaction = funtypes.Static<typeof SharedSimulateGnosisSafeTransaction>
+export const SimulateGnosisSafeTransaction = SharedSimulateGnosisSafeTransaction
 
 type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
 const SettingsOpenedReply = funtypes.ReadonlyObject({

@@ -9,7 +9,7 @@ type ResetHookApi = ReturnType<typeof useResetSimulation>
 
 let hookApi: ResetHookApi | undefined
 
-function installBrowserMock() {
+function installBrowserMock(sendMessageReply: () => Promise<unknown> = async () => undefined) {
 	const previousBrowser = globalThis.browser
 	const sentMessages: unknown[] = []
 	Object.defineProperty(globalThis, 'browser', {
@@ -18,9 +18,9 @@ function installBrowserMock() {
 		value: {
 			runtime: {
 				lastError: null,
-				async sendMessage(message: unknown) {
-					sentMessages.push(message)
-					return undefined
+			async sendMessage(message: unknown) {
+				sentMessages.push(message)
+				return await sendMessageReply()
 				},
 			},
 		},
@@ -31,6 +31,12 @@ function installBrowserMock() {
 			globalThis.browser = previousBrowser
 		},
 	}
+}
+
+function createDeferred<T>() {
+	let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined
+	const promise = new Promise<T>((resolve) => { resolvePromise = resolve })
+	return { promise, resolve: resolvePromise }
 }
 
 function ResetHookProbe({ recoveryDelayMs }: { recoveryDelayMs: number }) {
@@ -48,6 +54,35 @@ async function wait(milliseconds: number) {
 }
 
 describe('useResetSimulation', () => {
+	test('waits for the reset message before settling the reset action', async () => {
+		const dom = installDomMock()
+		const deferredReply = createDeferred<undefined>()
+		const browserMock = installBrowserMock(async () => await deferredReply.promise)
+		hookApi = undefined
+		try {
+			await act(() => {
+				render(h(ResetHookProbe, { recoveryDelayMs: 1000 }), dom.document.body)
+			})
+
+			const resetPromise = getHookApi().resetSimulation()
+			let settled = false
+			void resetPromise.then(() => { settled = true })
+			await Promise.resolve()
+
+			assert.equal(browserMock.sentMessages.length, 1)
+			assert.equal(settled, false)
+
+			deferredReply.resolve(undefined)
+			await resetPromise
+			assert.equal(settled, true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+			hookApi = undefined
+		}
+	})
+
 	test('re-enables reset when no simulation update arrives', async () => {
 		const dom = installDomMock()
 		const browserMock = installBrowserMock()
