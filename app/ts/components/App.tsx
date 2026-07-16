@@ -139,6 +139,7 @@ export function App() {
 	const boundaryResetKey = useSignal(0)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+		if (!isSettingsLoaded.value) return
 		useSignersAddressAsActiveAddress.value = address === 'signer'
 		if (address === 'signer') {
 			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode.value } })
@@ -166,16 +167,18 @@ export function App() {
 	}
 
 	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
+		if (!isSettingsLoaded.value) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
 		if(!isSignerConnected()) {
 			rpcNetwork.value = entry
 		}
 	}
 	useEffect(() => {
+		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
+	}, [])
+
+	useEffect(() => {
 		if (popupRefreshAppliedGeneration.value === 0) return
-		if (popupRefreshAppliedGeneration.value === 1) {
-			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
-		}
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.refreshRendered)
 	}, [popupRefreshAppliedGeneration.value])
 
@@ -192,6 +195,7 @@ export function App() {
 	}
 
 	async function addressPaste(address: string) {
+		if (!isSettingsLoaded.value) return
 		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
@@ -296,7 +300,7 @@ export function App() {
 	return (
 		<main>
 			<Hint>
-				<PasteCatcher enabled = { appPage.value.page === 'Unknown' || appPage.value.page === 'Home' } onPaste = { addressPaste } />
+				<PasteCatcher enabled = { isSettingsLoaded.value && (appPage.value.page === 'Unknown' || appPage.value.page === 'Home') } onPaste = { addressPaste } />
 				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
 					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 						<div class = 'navbar-brand'>
@@ -317,34 +321,32 @@ export function App() {
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
-					{ !isSettingsLoaded.value ? <CenterToPageTextSpinner/> : <>
-						<Home
-							setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
-							rpcNetwork = { rpcNetwork }
-							simVisResults = { simVisResults }
-							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
-							activeSigningAddress = { activeSigningAddress }
-							activeSimulationAddress = { activeSimulationAddress }
-							changeActiveAddress = { changeActiveAddress }
-							makeCurrentAddressRich = { makeCurrentAddressRich }
-							activeAddresses = { activeAddresses }
-							simulationMode = { simulationMode }
-							tabIconDetails = { tabIconDetails }
-							currentBlockNumber = { currentBlockNumber }
-							tabState = { tabState }
-							renameAddressCallBack = { renameAddressCallBack }
-							editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-							rpcConnectionStatus = { rpcConnectionStatus }
-							rpcEntries = { rpcEntries }
-							simulationUpdatingState = { simulationUpdatingState }
-							simulationResultState = { simulationResultState }
-							interceptorDisabled = { interceptorDisabled }
-							preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
-							fixedAddressRichList = { fixedAddressRichList }
-							numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
-						/>
-
-					</> }
+					<Home
+						setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
+						rpcNetwork = { rpcNetwork }
+						simVisResults = { simVisResults }
+						useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
+						activeSigningAddress = { activeSigningAddress }
+						activeSimulationAddress = { activeSimulationAddress }
+						changeActiveAddress = { changeActiveAddress }
+						makeCurrentAddressRich = { makeCurrentAddressRich }
+						activeAddresses = { activeAddresses }
+						simulationMode = { simulationMode }
+						tabIconDetails = { tabIconDetails }
+						currentBlockNumber = { currentBlockNumber }
+						tabState = { tabState }
+						renameAddressCallBack = { renameAddressCallBack }
+						editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+						rpcConnectionStatus = { rpcConnectionStatus }
+						rpcEntries = { rpcEntries }
+						simulationUpdatingState = { simulationUpdatingState }
+						simulationResultState = { simulationResultState }
+						interceptorDisabled = { interceptorDisabled }
+						preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
+						fixedAddressRichList = { fixedAddressRichList }
+						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
+						isInitialHomeDataLoaded = { isSettingsLoaded }
+					/>
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
 						{ appPage.value.page === 'EditEnsNamedHash' ?

@@ -1,4 +1,4 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
@@ -85,9 +85,9 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, ignoreConnectionApproval = false) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection?.approved) return 'hasAccess'
+	if (connection?.approved && !ignoreConnectionApproval) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -250,6 +250,9 @@ function disconnectFromPort(
 	socket: WebsiteSocket,
 ): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
+	// Account access can be revoked without the provider losing chain connectivity.
+	// Notify account listeners before the legacy disconnect event so dapps clear stale account state.
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
@@ -300,7 +303,7 @@ async function updateTabConnections(
 
 		if (access === 'askAccess' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
 			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
 	return iconRefreshTargets
@@ -438,4 +441,28 @@ export async function updateWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 	return popupRefreshGeneration
+}
+
+export async function persistWebsiteAccessChange(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	website: Website,
+	access: boolean,
+	address: bigint | undefined,
+	promptForAccessesIfNeeded: boolean,
+): Promise<Settings> {
+	await setAccess(website, access, address)
+	const refreshedSettings = await getSettings()
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		refreshedSettings,
+		promptForAccessesIfNeeded,
+	)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return refreshedSettings
 }

@@ -237,12 +237,36 @@ async function waitForTransactionPagePhase(connection: CdpConnection, phase: Tra
 }
 
 async function waitForButtonEnabled(connection: CdpConnection, selector: string, timeoutMs: number) {
-	await waitForCondition(async () => {
-		return Boolean(await connection.evaluate<boolean>(`(() => {
+	const start = Date.now()
+	let latestSnapshot = 'No button snapshot captured.'
+	while (true) {
+		const result = await connection.evaluate<{ enabled: boolean, snapshot: string }>(`(() => {
+			const buttons = Array.from(document.querySelectorAll('button')).map((button) => ({
+				text: button.textContent?.replace(/\\s+/g, ' ').trim() ?? '',
+				className: button.className,
+				disabled: button.disabled,
+			}))
 			const element = document.querySelector(${ JSON.stringify(selector) })
-			return element instanceof HTMLButtonElement && element.disabled === false
-		})()`).catch(() => false))
-	}, timeoutMs, `button ${ selector } to be enabled`)
+			return {
+				enabled: element instanceof HTMLButtonElement && element.disabled === false,
+				snapshot: JSON.stringify({
+					targetFound: element instanceof HTMLButtonElement,
+					buttons,
+					bodyText: document.body.textContent?.replace(/\\s+/g, ' ').trim().slice(0, 2000) ?? '',
+					performanceMarks: performance.getEntriesByType('mark').map((mark) => mark.name),
+				}, undefined, 2),
+			}
+		})()`).catch((error) => ({
+			enabled: false,
+			snapshot: `Failed to inspect buttons: ${ error instanceof Error ? error.message : String(error) }`,
+		}))
+		if (result.enabled) return
+		latestSnapshot = result.snapshot
+		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for button ${ selector } to be enabled after ${ timeoutMs }ms\n${ latestSnapshot }`)
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, 50)
+		})
+	}
 }
 
 async function clickButton(connection: CdpConnection, selector: string) {
@@ -397,9 +421,19 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 		await waitForTargetGone(context.chrome.browserDebugPort, (target) => target.id === accessTargetId, 30_000, 'interceptor access popup to close')
 		const confirmConnection = await connectTarget(context.chrome.browserDebugPort, confirmTarget.id)
 		try {
-			await waitForButtonEnabled(confirmConnection, 'button.button.is-primary.button-overflow.dialog-button-right', 120_000)
+			try {
+				await waitForButtonEnabled(confirmConnection, 'button.button.is-primary.button-overflow.dialog-action-button:not(.is-danger)', 120_000)
+			} catch (error) {
+				const pageState = await getTransactionPageState(pageConnection)
+				const workerSnapshot = await getPerformanceSnapshot(workerConnection).catch(() => undefined)
+				const rpcRequests = await workerConnection.evaluate<readonly BenchmarkRpcRequestSample[] | undefined>(rpcRequestCollectorExpression()).catch(() => undefined)
+				const popupVisualisationState = await readExtensionLargeStateValue<unknown>(workerConnection, 'popupVisualisation').catch(() => undefined)
+				const pendingTransactionStorage = await workerConnection.evaluate<unknown>(`(async () => (await browser.storage.local.get('pendingTransactionsAndMessages')).pendingTransactionsAndMessages)()`).catch(() => undefined)
+				const diagnostics = await workerConnection.evaluate<unknown>(`(async () => (await browser.storage.local.get('interceptorErrorDiagnostics')).interceptorErrorDiagnostics)()`).catch(() => undefined)
+				throw new Error(`${ error instanceof Error ? error.message : String(error) }\ntransaction page state: ${ JSON.stringify(pageState) }\nworker performance marks: ${ JSON.stringify(workerSnapshot?.marks ?? []) }\nrpc requests: ${ JSON.stringify(rpcRequests ?? []) }\npopup visualisation state: ${ JSON.stringify(popupVisualisationState) }\npending transaction storage: ${ JSON.stringify(pendingTransactionStorage) }\nerror diagnostics: ${ JSON.stringify(diagnostics) }`)
+			}
 			const confirmPopupSnapshot = await getPerformanceSnapshot(confirmConnection)
-			await clickButton(confirmConnection, 'button.button.is-primary.button-overflow.dialog-button-right')
+			await clickButton(confirmConnection, 'button.button.is-primary.button-overflow.dialog-action-button:not(.is-danger)')
 			await waitForTransactionPagePhase(pageConnection, 'balance-fetched', 60_000)
 			const pageSnapshot = await getPerformanceSnapshot(pageConnection)
 			const workerSnapshot = await getPerformanceSnapshot(workerConnection)

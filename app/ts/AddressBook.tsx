@@ -15,6 +15,8 @@ import type { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
 import { addressEditEntry } from './components/ui-utils.js'
+import { createAsyncActionRunner, useAsyncState } from './utils/preact-utilities.js'
+import { AsyncActionButton } from './components/subcomponents/AsyncAction.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: Signal<ModifyAddressWindowState> }
@@ -47,10 +49,15 @@ type ConfirmaddressBookEntryToBeRemovedParams = {
 }
 
 function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRemovedParams) {
-	const remove = () => {
-		param.removeEntry(param.addressBookEntry)
-		param.close()
-	}
+	const { value: removeAddressState, waitFor: waitForRemoveAddress, reset: resetRemoveAddress } = useAsyncState<void>()
+	const remove = createAsyncActionRunner(
+		{ value: removeAddressState, waitFor: waitForRemoveAddress, reset: resetRemoveAddress },
+		async () => {
+			param.removeEntry(param.addressBookEntry)
+			param.close()
+		}
+	)
+
 	return <>
 		<div class = 'modal-background'> </div>
 		<div class = 'modal-card'>
@@ -78,7 +85,13 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { remove }> { 'Remove' } </button>
+				<AsyncActionButton
+					class = 'button is-success is-primary'
+					state = { removeAddressState.value.state }
+					onClick = { remove }
+					text = 'Remove'
+					pendingText = 'Removing...'
+				/>
 				<button class = 'button is-warning is-danger' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

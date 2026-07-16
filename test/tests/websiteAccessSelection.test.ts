@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
+import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
@@ -188,6 +189,22 @@ const deniedWebsiteAccessEntry: WebsiteAccess = {
 	access: false,
 }
 
+const serializedAddressAccessEntry = {
+	website: { websiteOrigin: 'app.sablier.com', icon: 'sablier.png', title: 'Sablier' },
+	addressAccess: [{ address: '0x1111111111111111111111111111111111111111', access: true }],
+	access: true,
+}
+
+const serializedAddressAccessMetadata = [{
+	type: 'contact' as const,
+	name: 'Primary',
+	address: '0x1111111111111111111111111111111111111111',
+	entrySource: 'User' as const,
+	askForAddressAccess: true,
+	useAsActiveAddress: true,
+	chainId: '0x1',
+}]
+
 const browserMock = createBrowserMock()
 const modulesPromise = import('../../app/ts/components/pages/WebsiteAccess.js')
 
@@ -263,5 +280,40 @@ describe('WebsiteAccessView selection', () => {
 
 		assert.equal(dom.document.body.textContent.includes('This website was denied access to The Interceptor.'), true)
 		dom.restore()
+	})
+
+	test('auto-selects the only matching website so its approved address is visible', async () => {
+		const dom = installWindowHashMock('')
+		const { WebsiteAccessView } = await modulesPromise
+
+		await act(() => {
+			render(h(WebsiteAccessView, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browserMock.dispatch({
+				role: 'all',
+					method: 'popup_retrieveWebsiteAccessReply',
+					data: {
+						websiteAccess: [serializedAddressAccessEntry],
+						addressAccessMetadata: serializedAddressAccessMetadata,
+					},
+				})
+		})
+
+		assert.equal(dom.document.body.textContent.includes('app.sablier.com'), true)
+		assert.equal(dom.document.body.textContent.includes('Primary'), true)
+		dom.restore()
+	})
+
+	test('clears the selected website even when the URL hash is already empty', async () => {
+		const { clearSelectedWebsite } = await modulesPromise
+		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
+		const location = { hash: '' }
+
+		clearSelectedWebsite({ location }, selectedDomain)
+
+		assert.equal(selectedDomain.value, undefined)
+		assert.equal(location.hash, '')
 	})
 })

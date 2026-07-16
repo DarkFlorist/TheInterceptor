@@ -1,8 +1,10 @@
 import * as assert from 'assert'
+import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { SignatureHeader } from '../../app/ts/components/pages/PersonalSign.js'
+import { CheckBoxes } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { TransactionHeader } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { PendingStackHeader } from '../../app/ts/components/simulationExplaining/Transactions.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -10,6 +12,7 @@ import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { PopupPendingSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -152,6 +155,34 @@ describe('popup header markup', () => {
 		assert.notEqual(titleText?.textContent?.length, 0)
 		assertClasses(findFirstByClass(dom.document.body, 'card-header-website'), ['card-header-website', 'card-header-website--flush'])
 
+		dom.restore()
+	})
+
+	test('signable message signer errors render the wallet delivery failure', async () => {
+		const dom = installDomMock()
+		const message = 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.'
+		const pendingMessage: PopupPendingSignableMessage = {
+			type: 'SignableMessage',
+			popupOrTabId: { type: 'popup', id: 1 },
+			originalRequestParameters: { method: 'personal_sign', params: ['hello', fromEntry.address] },
+			simulationMode: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+			created: personalSignRequest.created,
+			website,
+			activeAddress: fromEntry.address,
+			approvalStatus: { status: 'SignerError', code: -32603, message },
+			transactionOrMessageCreationStatus: 'Simulated',
+			visualizedPersonalSignRequest: personalSignRequest,
+		}
+
+		await act(() => {
+			render(h(CheckBoxes, {
+				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
+				forceSend: new Signal(false),
+			}), dom.document.body)
+		})
+
+		assert.match(dom.document.body.textContent ?? '', /request reached your wallet/)
 		dom.restore()
 	})
 
