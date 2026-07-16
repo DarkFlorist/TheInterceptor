@@ -314,17 +314,28 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
-	test('shows the empty simulation state while initial simulation status is unknown', async () => {
+	test('shows a spinner until initial simulation status is known', async () => {
 		const dom = installDomMock()
+		const simulationUpdatingState = new Signal<'done' | 'updating' | 'failed' | undefined>(undefined)
+		const simulationResultState = new Signal<'done' | 'invalid' | 'corrupted' | undefined>(undefined)
 		try {
 			await act(() => {
 				render(h(Home, createHomeParams({
 					simVisResults: new Signal(PASSTHROUGH_STATE),
-					simulationUpdatingState: new Signal(undefined),
-					simulationResultState: new Signal(undefined),
+					simulationUpdatingState,
+					simulationResultState,
 				})), dom.document.body)
 			})
 
+			assert.notEqual(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+
+			await act(() => {
+				simulationUpdatingState.value = 'done'
+				simulationResultState.value = 'done'
+			})
+
+			assert.equal(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
 		} finally {
 			dom.restore()

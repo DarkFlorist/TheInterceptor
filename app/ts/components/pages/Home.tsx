@@ -364,8 +364,9 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
+	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
-	if (isEmpty.value && param.simulationUpdatingState.value === 'updating') {
+	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
 		return <div style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
