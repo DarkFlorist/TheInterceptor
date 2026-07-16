@@ -1382,7 +1382,8 @@ svg.spinner > circle {
 }
 
 .dialog-action-button {
-	flex-grow: 1;
+	flex: 1 1 0;
+	min-width: 0px;
 	margin-left: 5px;
 	margin-right: 5px;
 	margin-top: 0px;
