@@ -1019,13 +1019,15 @@ describe('inpage signer bridge', () => {
 				return true
 			},
 		})
-		const { fakeWindow, signerRequests } = createdWindow
+		const { fakeWindow, signerRequests, sendBackgroundMessage } = createdWindow
 		exposedWindow = fakeWindow
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?selected-address-mutation-mask', async () => {
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
 				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { readonly result: unknown }
+				on: (eventName: string, callback: (value: unknown) => void) => void
+				isConnected: () => boolean
 				selectedAddress?: string
 			}
 			await waitFor(() => signerRequests.includes('eth_chainId'))
@@ -1074,6 +1076,25 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => provider.selectedAddress === signerAccount)
 			assert.deepEqual(provider.send({ id: 3, method: 'eth_accounts', params: [] }).result, [signerAccount])
 			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [signerAccount])
+
+			const accountEvents: unknown[] = []
+			provider.on('accountsChanged', (accounts) => accountEvents.push(accounts))
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [],
+			})
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'disconnect',
+				result: [],
+			})
+			await waitFor(() => provider.selectedAddress === undefined && !provider.isConnected())
+			assert.deepEqual(accountEvents, [[]])
+			assert.deepEqual(provider.send({ id: 4, method: 'eth_accounts', params: [] }).result, [])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
 		})
 	})
 

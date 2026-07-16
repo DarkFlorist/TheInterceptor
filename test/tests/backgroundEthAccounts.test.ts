@@ -43,7 +43,7 @@ function installBrowserMock() {
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
-			async get(tabId: number) { return { id: tabId, active: true } },
+			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
 			async update() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -1714,6 +1714,97 @@ describe('background eth_accounts', () => {
 		}])
 	})
 
+	test('delivers accountsChanged before an approved active-address switch resolves', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
+		const websiteOrigin = 'https://app.safe.global'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const previousAccount = 0x1111111111111111111111111111111111111111n
+		const nextAccount = 0x2222222222222222222222222222222222222222n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: previousAccount, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{
+			website,
+			access: true,
+			addressAccess: [{ address: previousAccount, access: true }, { address: nextAccount, access: true }],
+		}])
+
+		const socket = { tabId: 171, connectionName: 171n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: true,
+			activeAddress: nextAccount,
+		})
+
+		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged'])
+		assert.deepEqual(messages[0]?.result, ['0x2222222222222222222222222222222222222222'])
+	})
+
+	test('clears dapp accounts and finishes opening access approval when the active address is unapproved', async () => {
+		installBrowserMock()
+		const {
+			changeActiveAddressAndChain,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			getPendingAccessRequests,
+			clearPendingAccessRequests,
+			resolveInterceptorAccess,
+		} = await loadModules()
+		const websiteOrigin = 'https://app.safe.global'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const previousAccount = 0x3333333333333333333333333333333333333333n
+		const nextAccount = 0x4444444444444444444444444444444444444444n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: previousAccount, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{
+			website,
+			access: true,
+			addressAccess: [{ address: previousAccount, access: true }],
+		}])
+
+		const socket = { tabId: 172, connectionName: 172n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: true,
+			activeAddress: nextAccount,
+		})
+
+		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'disconnect'])
+		assert.deepEqual(messages[0]?.result, [])
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
+		const pendingRequest = (await getPendingAccessRequests()).find((request) => request.requestAccessToAddress?.address === nextAccount)
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, nextAccount)
+		await resolveInterceptorAccess(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			{
+				userReply: 'Rejected',
+				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
+				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
+				accessRequestId: pendingRequest.accessRequestId,
+			},
+			noopPublishRpcConnectionStatus,
+		)
+		await clearPendingAccessRequests()
+	})
+
 	test('wallet_revokePermissions clears website account access and keeps the website entry', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
@@ -1740,7 +1831,9 @@ describe('background eth_accounts', () => {
 			params: [{ eth_accounts: {} }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		assert.equal(messages.some((message) => message.method === 'disconnect'), true)
+		const accessLossEvents = messages.filter((message) => message.method === 'accountsChanged' || message.method === 'disconnect')
+		assert.deepEqual(accessLossEvents.map((message) => message.method), ['accountsChanged', 'disconnect'])
+		assert.deepEqual(accessLossEvents[0]?.result, [])
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 10)
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
