@@ -5,7 +5,7 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../a
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
-function installBrowserMock(options: { onRuntimeSendMessage?: () => void } = {}) {
+function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStorageSet?: (items: Record<string, unknown>) => void } = {}) {
 	const storageState: Record<string, unknown> = {}
 	defineGlobal('browser', {
 		runtime: {
@@ -27,6 +27,7 @@ function installBrowserMock(options: { onRuntimeSendMessage?: () => void } = {})
 					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
+					options.onStorageSet?.(items)
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
@@ -90,6 +91,45 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 }
 
 describe('requestMakeMeRichList resilience', () => {
+	test('writes fixed rich-list storage only when content or ordering changes', async () => {
+		let fixedRichListWriteCount = 0
+		installBrowserMock({ onStorageSet: (items) => {
+			if ('fixedAddressRichList' in items) fixedRichListWriteCount += 1
+		} })
+		const { setFixedMakeMeRichList, updateFixedMakeMeRichList } = await loadModules()
+		const address = 0x1000000000000000000000000000000000000001n
+		const otherAddress = 0x2000000000000000000000000000000000000002n
+		const initialList = [
+			{ address, makingRich: true, type: 'UserAdded' as const },
+			{ address: otherAddress, makingRich: false, type: 'PreviousActiveAddress' as const },
+		]
+
+		await setFixedMakeMeRichList(initialList)
+		fixedRichListWriteCount = 0
+		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element) => ({ ...element }))), false)
+		assert.equal(fixedRichListWriteCount, 0)
+
+		await setFixedMakeMeRichList(initialList)
+		fixedRichListWriteCount = 0
+		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, address: otherAddress } : element)), true)
+		assert.equal(fixedRichListWriteCount, 1)
+
+		await setFixedMakeMeRichList(initialList)
+		fixedRichListWriteCount = 0
+		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, makingRich: false } : element)), true)
+		assert.equal(fixedRichListWriteCount, 1)
+
+		await setFixedMakeMeRichList(initialList)
+		fixedRichListWriteCount = 0
+		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, type: 'PreviousActiveAddress' as const } : element)), true)
+		assert.equal(fixedRichListWriteCount, 1)
+
+		await setFixedMakeMeRichList(initialList)
+		fixedRichListWriteCount = 0
+		assert.equal(await updateFixedMakeMeRichList((currentList) => [...currentList].reverse()), true)
+		assert.equal(fixedRichListWriteCount, 1)
+	})
+
 	test('serializes rapid rich-list changes without duplicating addresses', async () => {
 		const storageState = installBrowserMock()
 		const { modifyMakeMeRich, setFixedMakeMeRichList, getFixedAddressRichList } = await loadModules()

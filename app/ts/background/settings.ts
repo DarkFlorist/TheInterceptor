@@ -167,11 +167,7 @@ export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRi
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
 export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
 
-type ComparableRichListElement = {
-	[Key in keyof RichListElement]: RichListElement[Key]
-}
-
-function comparableRichListElement(element: RichListElement): ComparableRichListElement {
+function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {
 		address: element.address,
 		makingRich: element.makingRich,
@@ -180,8 +176,8 @@ function comparableRichListElement(element: RichListElement): ComparableRichList
 }
 
 function richListElementsEqual(first: RichListElement, second: RichListElement) {
-	const firstValues = Object.values(comparableRichListElement(first))
-	const secondValues = Object.values(comparableRichListElement(second))
+	const firstValues = Object.values(toComparableRichListElement(first))
+	const secondValues = Object.values(toComparableRichListElement(second))
 	return firstValues.length === secondValues.length && firstValues.every((value, index) => value === secondValues[index])
 }
 
