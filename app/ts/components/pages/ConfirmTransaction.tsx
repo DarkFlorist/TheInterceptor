@@ -564,7 +564,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectBut
 
 	return <div style = 'display: flex; flex-direction: row;'>
 		<AsyncActionButton
-			class = 'button is-primary is-danger button-overflow dialog-button-left'
+			class = 'button is-primary is-danger button-overflow dialog-action-button'
 			state = { rejectButtonState }
 			disabled = { approveButtonState === 'pending' }
 			text = { identified.rejectAction }
@@ -572,7 +572,7 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectBut
 			onClick = { reject }
 		/>
 		<AsyncActionButton
-			class = 'button is-primary button-overflow dialog-button-right'
+			class = 'button is-primary button-overflow dialog-action-button'
 			state = { approveButtonState }
 			text = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner'
 				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>

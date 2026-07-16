@@ -111,8 +111,7 @@ export function ChangeChain() {
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<AsyncActionButton
-							class = { 'button is-danger' }
-							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
+							class = { 'button is-danger dialog-action-button' }
 							state = { rejectChainChangeState.value.state }
 							disabled = { approvePending }
 							text = { `Don't change` }
@@ -120,9 +119,8 @@ export function ChangeChain() {
 							onClick = { reject } >
 						</AsyncActionButton>
 						<AsyncActionButton
-							class = { 'button is-primary' }
+							class = { 'button is-primary dialog-action-button' }
 							disabled = { actionState.approveDisabled || rejectPending }
-							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							state = { approveChainChangeState.value.state }
 							text = { actionState.approveButtonText }
 							pendingText = 'Changing chain...'

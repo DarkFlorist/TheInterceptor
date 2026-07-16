@@ -1381,6 +1381,14 @@ svg.spinner > circle {
 	margin-bottom: 0px;
 }
 
+.dialog-action-button {
+	flex-grow: 1;
+	margin-left: 5px;
+	margin-right: 5px;
+	margin-top: 0px;
+	margin-bottom: 0px;
+}
+
 .eip-712-table {
 	display: grid;
 	grid-template-columns: max-content auto auto auto auto;
