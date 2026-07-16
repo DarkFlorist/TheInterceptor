@@ -149,6 +149,10 @@ export async function requestPopupSimulationMetadata() {
 	return reply?.method === 'popup_requestSimulationMetadata' ? reply : undefined
 }
 
+export function getMissingPopupReplyErrorMessage(actionDescription: string) {
+	return `${ actionDescription } failed because the background page did not return a reply.`
+}
+
 export async function requestPopupAbiAndNameFromBlockExplorer(data: PopupRequestByMethod<'popup_requestAbiAndNameFromBlockExplorer'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestAbiAndNameFromBlockExplorer', data })
 	return reply?.method === 'popup_requestAbiAndNameFromBlockExplorer' ? reply : undefined
@@ -157,6 +161,16 @@ export async function requestPopupAbiAndNameFromBlockExplorer(data: PopupRequest
 export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'popup_requestIdentifyAddress'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestIdentifyAddress', data })
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
+}
+
+export async function requestPopupSimulateGovernanceContractExecution(data: PopupRequestByMethod<'popup_simulateGovernanceContractExecution'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_simulateGovernanceContractExecution', data })
+	return reply?.method === 'popup_simulateExecutionReply' ? reply : undefined
+}
+
+export async function requestPopupSimulateGnosisSafeTransaction(data: PopupRequestByMethod<'popup_simulateGnosisSafeTransaction'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_simulateGnosisSafeTransaction', data })
+	return reply?.method === 'popup_simulateExecutionReply' ? reply : undefined
 }
 
 export async function requestIsMainPopupWindowOpen() {

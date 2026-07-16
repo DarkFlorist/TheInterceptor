@@ -3,7 +3,7 @@ import { startChromeCommunicationPageServer } from './chromeCommunicationPageSer
 import type { CdpConnection } from './chromeHarness.js'
 
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
-const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-button-right'
+const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const FAKE_SIGNER_ADDRESS = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
 const FAKE_SIGNED_TRANSACTION_HASH = '0x1111111111111111111111111111111111111111111111111111111111111111'
 

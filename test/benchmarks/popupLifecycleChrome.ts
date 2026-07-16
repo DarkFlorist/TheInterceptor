@@ -397,9 +397,9 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 		await waitForTargetGone(context.chrome.browserDebugPort, (target) => target.id === accessTargetId, 30_000, 'interceptor access popup to close')
 		const confirmConnection = await connectTarget(context.chrome.browserDebugPort, confirmTarget.id)
 		try {
-			await waitForButtonEnabled(confirmConnection, 'button.button.is-primary.button-overflow.dialog-button-right', 120_000)
+			await waitForButtonEnabled(confirmConnection, 'button.button.is-primary.button-overflow.dialog-action-button:not(.is-danger)', 120_000)
 			const confirmPopupSnapshot = await getPerformanceSnapshot(confirmConnection)
-			await clickButton(confirmConnection, 'button.button.is-primary.button-overflow.dialog-button-right')
+			await clickButton(confirmConnection, 'button.button.is-primary.button-overflow.dialog-action-button:not(.is-danger)')
 			await waitForTransactionPagePhase(pageConnection, 'balance-fetched', 60_000)
 			const pageSnapshot = await getPerformanceSnapshot(pageConnection)
 			const workerSnapshot = await getPerformanceSnapshot(workerConnection)
