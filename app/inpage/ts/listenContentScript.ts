@@ -125,16 +125,33 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		|| error.message.includes('Extension context invalidated')
 	const isMissingContentScriptPortReceiverError = (error: Error) => error.message.includes('Could not establish connection. Receiving end does not exist')
 	const isTerminalContentScriptPortError = (error: Error) => error.message.includes('Extension context invalidated')
+	const pendingBridgeMessages: ForwardedBridgeMessage[] = []
+	// An MV3 worker can be suspended while the signer approval is open. Retain the original dapp request until its terminal reply.
+	const unsettledAccountConnectionRequests = new Map<number, ForwardedBridgeMessage>()
+	const getSettledAccountConnectionRequestId = (message: unknown) => {
+		if (typeof message !== 'object' || message === null) return undefined
+		if (!('type' in message) || message.type !== 'result') return undefined
+		if (!('requestId' in message) || typeof message.requestId !== 'number') return undefined
+		if (!('method' in message) || (message.method !== 'eth_accounts' && message.method !== 'eth_requestAccounts')) return undefined
+		return message.requestId
+	}
 	let inFlightBridgeMessage: ForwardedBridgeMessage | undefined
+	const queueUnsettledAccountConnectionRequestsForReplay = () => {
+		const queuedRequestIds = new Set(pendingBridgeMessages.map((message) => message.data.requestId))
+		for (const [requestId, message] of unsettledAccountConnectionRequests) {
+			if (queuedRequestIds.has(requestId)) continue
+			pendingBridgeMessages.push(message)
+		}
+	}
 	const markExtensionPortDisconnected = (port: browser.runtime.Port) => {
 		if (extensionPort !== port) return
 		extensionPort = undefined
 		inFlightBridgeMessage = undefined
+		queueUnsettledAccountConnectionRequestsForReplay()
 		pageHidden = true
 	}
 	let connect: () => browser.runtime.Port
 	let reconnectTimer: ReturnType<typeof setTimeout> | undefined
-	const pendingBridgeMessages: ForwardedBridgeMessage[] = []
 	const scheduleReconnect = () => {
 		if (reconnectTimer !== undefined) return
 		reconnectTimer = setTimeout(() => {
@@ -185,7 +202,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 					return
 				}
 				if (error instanceof Error && error.message.includes('User denied')) {
-					pendingBridgeMessages.shift()
+					const discardedMessage = pendingBridgeMessages.shift()
+					if (discardedMessage !== undefined) unsettledAccountConnectionRequests.delete(discardedMessage.data.requestId)
 					inFlightBridgeMessage = undefined
 					continue
 				}
@@ -217,6 +235,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			requestId: data.requestId,
 			...(data.internal === true ? { interceptorInternalRequest: true as const } : {}),
 		} }
+		if (data.method === 'eth_requestAccounts' && data.internal !== true) {
+			unsettledAccountConnectionRequests.set(data.requestId, message)
+		}
 		pendingBridgeMessages.push(message)
 		const currentExtensionPort = extensionPort
 		if (currentExtensionPort === undefined) {
@@ -296,6 +317,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 				}
 				inpagePort.postMessage(messageEvent)
 				checkAndThrowRuntimeLastError()
+				const settledAccountConnectionRequestId = getSettledAccountConnectionRequestId(messageEvent)
+				if (settledAccountConnectionRequestId !== undefined) unsettledAccountConnectionRequests.delete(settledAccountConnectionRequestId)
 			} catch (error) {
 				console.error(error)
 			}

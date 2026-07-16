@@ -9,7 +9,7 @@ import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, send
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
-import type { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
@@ -218,15 +218,21 @@ export async function requestAccessFromUser(
 			if (previousRequests.length !== 0) {
 				const previousRequest = previousRequests[0]
 				if (previousRequest === undefined) throw new Error('missing previous request')
-				if (await getPopupOrTabById(previousRequest.popupOrTabId) !== undefined) {
-					return true
+				const existingPopupOrTab = await getPopupOrTabById(previousRequest.popupOrTabId)
+				if (existingPopupOrTab !== undefined) {
+					if (openedDialog === undefined) {
+						addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
+						openedDialog = { popupOrTab: existingPopupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback }
+					}
+					return previousRequests
 				}
 				await clearPendingAccessRequests()
 			}
-			return false
+			return []
 		}
 
-		const justAddToPending = await verifyPendingRequests()
+		const previousPendingRequests = await verifyPendingRequests()
+		const justAddToPending = previousPendingRequests.length !== 0
 		const hasAccess = verifyAccessForCurrentRequest(await getSettings())
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
@@ -236,6 +242,13 @@ export async function requestAccessFromUser(
 			return undefined
 		}
 		if (hasAccess !== 'askAccess') return undefined
+		const replayedPendingRequest = request === undefined ? undefined : previousPendingRequests.find((pendingRequest) => {
+			return pendingRequest.request !== undefined && doesUniqueRequestIdentifiersMatch(pendingRequest.request.uniqueRequestIdentifier, request.uniqueRequestIdentifier)
+		})
+		if (replayedPendingRequest !== undefined) {
+			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
+			return undefined
+		}
 		if (!justAddToPending) {
 			addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
 			const popupOrTab = await openPopupOrTab({

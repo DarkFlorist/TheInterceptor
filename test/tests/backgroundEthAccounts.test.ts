@@ -1011,6 +1011,91 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 11).at(-1)?.result, ['0x6666666666666666666666666666666666666666'])
 	})
 
+	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
+		installBrowserMock()
+		const {
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			getPendingAccessRequests,
+			getSettings,
+		} = await loadModules()
+		const { getActiveAddressEntry } = await import('../../app/ts/background/metadataUtils.js')
+		const firstWorkerAccess = await import('../../app/ts/background/windows/interceptorAccess.js?access-dialog-worker-before-restart')
+		const restartedWorkerAccess = await import('../../app/ts/background/windows/interceptorAccess.js?access-dialog-worker-after-restart')
+		const websiteOrigin = 'https://app.safe.global'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6677667766776677667766776677667766776677n
+		const accountString = '0x6677667766776677667766776677667766776677'
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 111, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		} as const
+		const requestAccessToAddress = await getActiveAddressEntry(account)
+		const settings = await getSettings()
+
+		await firstWorkerAccess.requestAccessFromUser(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			socket,
+			website,
+			request,
+			requestAccessToAddress,
+			settings,
+			account,
+			noopPublishRpcConnectionStatus,
+		)
+		await restartedWorkerAccess.requestAccessFromUser(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			socket,
+			website,
+			request,
+			requestAccessToAddress,
+			settings,
+			account,
+			noopPublishRpcConnectionStatus,
+		)
+
+		assert.equal((await getPendingAccessRequests()).length, 1)
+		assert.equal(messages.some((message) => message.requestId === 111), false)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing pending request after worker restart')
+		await restartedWorkerAccess.resolveInterceptorAccess(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			{
+				userReply: 'Approved',
+				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
+				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
+				accessRequestId: pendingRequest.accessRequestId,
+			},
+			noopPublishRpcConnectionStatus,
+		)
+
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 111).map((message) => message.result), [[accountString]])
+	})
+
 	test('uses refreshed website access after signer account discovery', async () => {
 		installBrowserMock()
 		const {

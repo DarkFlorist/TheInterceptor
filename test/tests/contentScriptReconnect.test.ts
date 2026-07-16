@@ -105,12 +105,12 @@ function dispatchWindowMessage(eventListeners: Map<string, EventListenerOrEventL
 	}
 }
 
-async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>) {
+async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, method = 'eth_sendTransaction') {
 	const channel = new MessageChannel()
 	dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 	channel.port1.postMessage({
 		type: 'interceptor_bridge_request',
-		method: 'eth_sendTransaction',
+		method,
 		params: [],
 		usingInterceptorWithoutSigner: false,
 		requestId: 1,
@@ -219,6 +219,35 @@ async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: Conten
 	})
 }
 
+async function verifyAcknowledgedAccountRequestReplayedUntilTerminalReply(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		await dispatchBridgeRequest(eventListeners, 'eth_requestAccounts')
+		assert.equal(postedMessages.length, 1)
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		backgroundMessageListeners[0]?.({ interceptorApproved: true, type: 'result', method: 'connect', requestId: 1, result: ['0x1'] })
+		backgroundMessageListeners[0]?.({ interceptorApproved: true, type: 'result', method: 'accountsChanged', requestId: 1, result: ['0x1111111111111111111111111111111111111111'] })
+
+		disconnectListeners[0]?.()
+
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 2)
+		assert.deepEqual(postedMessages[1], postedMessages[0])
+		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		backgroundMessageListeners[1]?.({
+			interceptorApproved: true,
+			type: 'result',
+			method: 'eth_accounts',
+			requestId: 1,
+			result: ['0x1111111111111111111111111111111111111111'],
+		})
+
+		disconnectListeners[1]?.()
+
+		assert.equal(getConnectionCount(), 3)
+		assert.equal(postedMessages.length, 2)
+	})
+}
+
 async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
 	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		const channel = new MessageChannel()
@@ -305,6 +334,14 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start replays an unacknowledged request after disconnect', async () => {
 		await verifyUnacknowledgedRequestReplayedAfterDisconnect('manifest-v2-document-start')
+	})
+
+	test('standalone content script replays an acknowledged account request until its terminal reply', async () => {
+		await verifyAcknowledgedAccountRequestReplayedUntilTerminalReply('standalone-listener')
+	})
+
+	test('manifest v2 document-start replays an acknowledged account request until its terminal reply', async () => {
+		await verifyAcknowledgedAccountRequestReplayedUntilTerminalReply('manifest-v2-document-start')
 	})
 
 	test('standalone content script advances queued requests only after the matching acknowledgement', async () => {
