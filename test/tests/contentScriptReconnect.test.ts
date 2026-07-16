@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
@@ -105,19 +105,33 @@ function dispatchWindowMessage(eventListeners: Map<string, EventListenerOrEventL
 	}
 }
 
-async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>) {
+function getPostedBridgeRequestId(value: unknown) {
+	if (typeof value !== 'object' || value === null || !('data' in value)) return undefined
+	const data = value.data
+	if (typeof data !== 'object' || data === null || !('requestId' in data) || typeof data.requestId !== 'number') return undefined
+	return data.requestId
+}
+
+async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, method = 'eth_sendTransaction', replayOnDisconnect = false, keepBridgeOpen = false) {
 	const channel = new MessageChannel()
+	const receivedMessages: unknown[] = []
+	channel.port1.onmessage = (event: MessageEvent<unknown>) => receivedMessages.push(event.data)
 	dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 	channel.port1.postMessage({
 		type: 'interceptor_bridge_request',
-		method: 'eth_sendTransaction',
+		method,
 		params: [],
 		usingInterceptorWithoutSigner: false,
 		requestId: 1,
+		...(replayOnDisconnect ? { replayOnDisconnect: true } : {}),
 	})
 	await new Promise((resolve) => setTimeout(resolve, 0))
-	channel.port1.close()
-	channel.port2.close()
+	const close = () => {
+		channel.port1.close()
+		channel.port2.close()
+	}
+	if (!keepBridgeOpen) close()
+	return { receivedMessages, close }
 }
 
 async function verifyContentScriptReconnect(source: ContentScriptSource) {
@@ -219,6 +233,129 @@ async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: Conten
 	})
 }
 
+async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		const inpageBridge = await dispatchBridgeRequest(eventListeners, 'example_replayableMethod', true, true)
+		assert.equal(postedMessages.length, 1)
+		assert.deepEqual(postedMessages[0], { data: {
+			interceptorRequest: true,
+			method: 'example_replayableMethod',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 1,
+		} })
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		backgroundMessageListeners[0]?.({ interceptorApproved: true, type: 'result', method: 'example_intermediateEvent', requestId: 1, result: [] })
+
+		disconnectListeners[0]?.()
+
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 2)
+		assert.deepEqual(postedMessages[1], postedMessages[0])
+		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		backgroundMessageListeners[1]?.({
+			interceptorApproved: true,
+			type: 'result',
+			method: 'example_terminalReply',
+			requestId: 1,
+			result: [],
+			bridgeRequestSettled: true,
+		})
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(inpageBridge.receivedMessages.at(-1), {
+			interceptorApproved: true,
+			type: 'result',
+			method: 'example_terminalReply',
+			requestId: 1,
+			result: [],
+		})
+
+		disconnectListeners[1]?.()
+
+		assert.equal(getConnectionCount(), 3)
+		assert.equal(postedMessages.length, 2)
+		inpageBridge.close()
+	})
+}
+
+async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		await dispatchBridgeRequest(eventListeners, 'eth_requestAccounts')
+		assert.equal(postedMessages.length, 1)
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+
+		disconnectListeners[0]?.()
+
+		assert.equal(getConnectionCount(), 2)
+		assert.equal(postedMessages.length, 1)
+	})
+}
+
+async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages }) => {
+		const channel = new MessageChannel()
+		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+		channel.port1.postMessage({
+			type: 'interceptor_bridge_request',
+			method: 'example_replayableMethod',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 1,
+			replayOnDisconnect: true,
+		})
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		channel.port1.postMessage({
+			type: 'interceptor_bridge_request',
+			method: 'example_pendingMethod',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 2,
+		})
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(postedMessages.map(getPostedBridgeRequestId), [1, 2])
+
+		disconnectListeners[0]?.()
+
+		assert.deepEqual(postedMessages.map(getPostedBridgeRequestId), [1, 2, 1])
+		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		assert.deepEqual(postedMessages.map(getPostedBridgeRequestId), [1, 2, 1, 2])
+
+		const latestReceivedRequestIds = new Map<string, number>()
+		const replayHandling = postedMessages.slice(2).map((message) => {
+			const requestId = getPostedBridgeRequestId(message)
+			if (requestId === undefined) throw new Error('Missing replayed bridge request ID')
+			return acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'replacement-socket', requestId, () => undefined)
+		})
+		assert.deepEqual(replayHandling, [true, true])
+		channel.port1.close()
+		channel.port2.close()
+	})
+}
+
+async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource, settleFromStalePort: boolean) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+		await dispatchBridgeRequest(eventListeners, 'example_replayableMethod', true)
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		disconnectListeners[0]?.()
+		assert.equal(postedMessages.length, 2)
+
+		const settlementPortIndex = settleFromStalePort ? 0 : 1
+		backgroundMessageListeners[settlementPortIndex]?.({
+			interceptorApproved: true,
+			type: 'result',
+			method: 'example_terminalReply',
+			requestId: 1,
+			result: [],
+			bridgeRequestSettled: true,
+		})
+		disconnectListeners[1]?.()
+
+		assert.equal(getConnectionCount(), 3)
+		assert.equal(postedMessages.length, 2)
+	})
+}
+
 async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
 	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		const channel = new MessageChannel()
@@ -305,6 +442,46 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start replays an unacknowledged request after disconnect', async () => {
 		await verifyUnacknowledgedRequestReplayedAfterDisconnect('manifest-v2-document-start')
+	})
+
+	test('standalone content script replays an acknowledged flagged request until a marked terminal reply', async () => {
+		await verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled('standalone-listener')
+	})
+
+	test('manifest v2 document-start replays an acknowledged flagged request until a marked terminal reply', async () => {
+		await verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled('manifest-v2-document-start')
+	})
+
+	test('standalone content script does not infer replay policy from the RPC method', async () => {
+		await verifyRpcMethodDoesNotImplicitlyEnableReplay('standalone-listener')
+	})
+
+	test('manifest v2 document-start does not infer replay policy from the RPC method', async () => {
+		await verifyRpcMethodDoesNotImplicitlyEnableReplay('manifest-v2-document-start')
+	})
+
+	test('standalone content script replays retained requests before newer pending requests', async () => {
+		await verifyRetainedRequestsReplayBeforeNewerPendingRequests('standalone-listener')
+	})
+
+	test('manifest v2 document-start replays retained requests before newer pending requests', async () => {
+		await verifyRetainedRequestsReplayBeforeNewerPendingRequests('manifest-v2-document-start')
+	})
+
+	test('standalone content script removes an in-flight replay when its terminal reply arrives before acknowledgement', async () => {
+		await verifySettlementRemovesInFlightReplay('standalone-listener', false)
+	})
+
+	test('manifest v2 document-start removes an in-flight replay when its terminal reply arrives before acknowledgement', async () => {
+		await verifySettlementRemovesInFlightReplay('manifest-v2-document-start', false)
+	})
+
+	test('standalone content script accepts settlement from a stale port while the replay is in flight', async () => {
+		await verifySettlementRemovesInFlightReplay('standalone-listener', true)
+	})
+
+	test('manifest v2 document-start accepts settlement from a stale port while the replay is in flight', async () => {
+		await verifySettlementRemovesInFlightReplay('manifest-v2-document-start', true)
 	})
 
 	test('standalone content script advances queued requests only after the matching acknowledgement', async () => {

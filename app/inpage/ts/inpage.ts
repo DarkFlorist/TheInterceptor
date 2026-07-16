@@ -126,6 +126,7 @@ type BridgeRequest = {
 	readonly usingInterceptorWithoutSigner: boolean
 	readonly requestId: number
 	readonly internal?: true
+	readonly replayOnDisconnect?: true
 }
 
 const isMessageCandidate = (value: unknown): value is InterceptorApprovedMessageCandidate => typeof value === 'object' && value !== null
@@ -586,6 +587,7 @@ class InterceptorMessageListener {
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
 		this.requestId++
 		const pendingRequestId = this.requestId
+		const replayOnDisconnect = messageMethodAndParams.internal !== true && messageMethodAndParams.method === 'eth_requestAccounts'
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, {
 			future,
@@ -601,6 +603,7 @@ class InterceptorMessageListener {
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
 				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
+				...(replayOnDisconnect ? { replayOnDisconnect: true as const } : {}),
 			}
 			this.extensionMessagePort.postMessage(message)
 			return await future

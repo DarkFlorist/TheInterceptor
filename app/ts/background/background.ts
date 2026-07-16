@@ -344,7 +344,7 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
 
