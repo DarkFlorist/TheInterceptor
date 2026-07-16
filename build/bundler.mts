@@ -32,10 +32,6 @@ type MissingRuntimeImportIssue = {
 	specifier: string
 }
 
-type ForbiddenRuntimeModuleIssue = {
-	filePath: string
-}
-
 type PackageJson = {
 	exports?: unknown
 	module?: string
@@ -57,7 +53,6 @@ const isInsideDirectory = (candidatePath: string, directoryPath: string) => {
 	const relativePath = path.relative(directoryPath, candidatePath)
 	return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
-const forbiddenRuntimeModules = new Set<string>()
 const requiredRuntimeAssetPaths = new Set([
 	path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
 ])
@@ -486,22 +481,6 @@ export function findMissingRuntimeImportsInRuntimeFiles() {
 	return collectRuntimeDependencyGraph().missingRuntimeImportIssues
 }
 
-export function isBrowserIncompatibleRuntimeModule(filePath: string) {
-	return forbiddenRuntimeModules.has(filePath)
-}
-
-function formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues: readonly ForbiddenRuntimeModuleIssue[]) {
-	return forbiddenRuntimeModuleIssues
-		.map(({ filePath }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: do not import browser-incompatible runtime modules in MV3 runtime code`)
-		.join('\n')
-}
-
-export function findForbiddenRuntimeModulesInRuntimeFiles() {
-	return collectRuntimeDependencyGraph().files
-		.filter(isBrowserIncompatibleRuntimeModule)
-		.map((filePath) => ({ filePath }))
-}
-
 export function shouldKeepRuntimeOutputFile(filePath: string, reachableRuntimeFiles: ReadonlySet<string>) {
 	return reachableRuntimeFiles.has(filePath)
 		|| requiredRuntimeAssetPaths.has(filePath)
@@ -562,9 +541,6 @@ export async function replaceImportsInJSFiles() {
 	const runtimeDependencyGraph = collectRuntimeDependencyGraph()
 	const missingRuntimeImportIssues = runtimeDependencyGraph.missingRuntimeImportIssues
 	const bareImportIssues = runtimeDependencyGraph.files.flatMap((filePath) => getBareImportIssues(filePath, fs.readFileSync(filePath, 'utf8')))
-	const forbiddenRuntimeModuleIssues = runtimeDependencyGraph.files
-		.filter(isBrowserIncompatibleRuntimeModule)
-		.map((filePath) => ({ filePath }))
 	const reachableRuntimeFiles = new Set(runtimeDependencyGraph.files)
 	const missingRequiredImportedRuntimeAssets = findMissingRequiredImportedRuntimeAssets(reachableRuntimeFiles)
 	if (missingRuntimeImportIssues.length > 0) {
@@ -572,9 +548,6 @@ export async function replaceImportsInJSFiles() {
 	}
 	if (bareImportIssues.length > 0) {
 		throw new Error(`Unresolved bare module specifiers remain after bundling:\n${ formatBareImportIssues(bareImportIssues) }`)
-	}
-	if (forbiddenRuntimeModuleIssues.length > 0) {
-		throw new Error(`Browser-incompatible runtime modules remain after bundling:\n${ formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues) }`)
 	}
 	if (missingRequiredImportedRuntimeAssets.length > 0) {
 		throw new Error(`Required runtime assets were bundled inline or left unreachable after bundling:\n${ missingRequiredImportedRuntimeAssets.join('\n') }\nEnsure vendored runtime-only modules remain listed in Bun.build external.`)

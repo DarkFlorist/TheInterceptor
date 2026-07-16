@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
-import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
+import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
 
 const repositoryRoot = process.cwd()
 
@@ -53,13 +53,6 @@ describe('bundler import rewriting', () => {
 		const rewritten = replaceImport(filePath, source)
 
 		assert.equal(rewritten, source)
-	})
-
-	test('does not flag micro-eth-signer entrypoints as browser-incompatible runtime modules', () => {
-		assert.equal(
-			isBrowserIncompatibleRuntimeModule(path.join(repositoryRoot, 'app', 'vendor', 'micro-eth-signer', 'index.js')),
-			false,
-		)
 	})
 
 	test('keeps only reachable runtime modules and required public assets', () => {
