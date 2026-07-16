@@ -4,6 +4,7 @@
 	"version": "0.0.0",
 	"manifest_version": 3,
 	"action": {
+		"default_popup": "html3/popupV3.html",
 		"default_icon": {
 			"128": "img/head-not-active.png"
 		},

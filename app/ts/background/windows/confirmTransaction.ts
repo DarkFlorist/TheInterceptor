@@ -581,7 +581,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }
 		} catch(e: unknown) {
-			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.' })
+			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.', details: e instanceof Error ? e.stack : undefined })
 			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 		}
 	})

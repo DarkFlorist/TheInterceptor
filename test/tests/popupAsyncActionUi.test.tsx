@@ -87,6 +87,7 @@ async function loadModules() {
 const modulesPromise = loadModules()
 
 type TestDomNode = {
+	readonly nodeType?: number
 	readonly tagName?: string
 	readonly childNodes?: readonly TestDomNode[]
 	readonly textContent?: string | null
@@ -98,6 +99,25 @@ type TestDomNode = {
 function collectElements(node: TestDomNode | null | undefined, tagName: string, results: TestDomNode[] = []) {
 	if (node?.tagName === tagName.toUpperCase()) results.push(node)
 	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
+	return results
+}
+
+function findFirstByClass(node: TestDomNode | null | undefined, className: string): TestDomNode | undefined {
+	if (node?.attributes?.class?.split(/\s+/).includes(className)) return node
+	for (const child of node?.childNodes ?? []) {
+		const match = findFirstByClass(child, className)
+		if (match !== undefined) return match
+	}
+	return undefined
+}
+
+function collectTextSegments(node: TestDomNode | null | undefined, results: string[] = []) {
+	if (node?.nodeType === 3) {
+		const text = node.textContent?.replace(/\s+/g, ' ').trim()
+		if (text !== undefined && text !== '') results.push(text)
+		return results
+	}
+	for (const child of node?.childNodes ?? []) collectTextSegments(child, results)
 	return results
 }
 
@@ -749,7 +769,11 @@ describe('popup async action UI', () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const deferredReply = createDeferred<unknown>()
-		runtimeSendMessage = async () => deferredReply.promise
+		let simulationRequestCount = 0
+		runtimeSendMessage = async () => {
+			simulationRequestCount += 1
+			return deferredReply.promise
+		}
 
 		await act(() => {
 			render(h(modules.GnosisSafeVisualizer, {
@@ -761,15 +785,25 @@ describe('popup async action UI', () => {
 		})
 
 		const buttons = collectElements(dom.document.body, 'button')
-		const simulateButton = buttons.find((button) => button.textContent?.includes('Simulate execution'))
+		const simulateButton = buttons.find((button) => button.textContent?.includes('Simulate outcome'))
 		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
+		const outcomePanel = findFirstByClass(dom.document.body, 'safe-outcome-panel')
+		assert.equal(collectTextSegments(outcomePanel).join(' '), 'Outcome if approved Simulate outcome')
 
 		await act(async () => {
 			await clickElement(simulateButton)
 		})
 
-		assert.match(simulateButton.textContent ?? '', /Simulating\.\.\./)
-		assert.equal(isDisabled(simulateButton), true)
+		const loadingState = findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')
+		assert.equal(loadingState?.attributes?.role, 'status')
+		assert.equal(loadingState?.attributes?.['aria-label'], 'Simulating outcome')
+		assert.equal(loadingState?.textContent?.trim(), '')
+		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
+
+		await act(async () => {
+			await clickElement(simulateButton)
+		})
+		assert.equal(simulationRequestCount, 1)
 
 		await act(async () => {
 			deferredReply.resolve(undefined)
@@ -778,6 +812,56 @@ describe('popup async action UI', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Simulating Gnosis Safe execution failed because the background page did not return a reply.'), true)
+		dom.restore()
+	})
+
+	test('replaces a completed Gnosis outcome with only a spinner while refreshing', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const initialReply = createSimulationFailureReply(7n, 'Initial Gnosis result')
+		const initialDeferredReply = createDeferred<typeof initialReply>()
+		const refreshDeferredReply = createDeferred<unknown>()
+		let simulationRequestCount = 0
+		runtimeSendMessage = async () => {
+			simulationRequestCount += 1
+			return simulationRequestCount === 1 ? initialDeferredReply.promise : refreshDeferredReply.promise
+		}
+
+		await act(() => {
+			render(h(modules.GnosisSafeVisualizer, {
+				gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+				activeAddress: gnosisSignerAddress.address,
+				renameAddressCallBack: () => undefined,
+				editEnsNamedHashCallBack: () => undefined,
+			}), dom.document.body)
+		})
+
+		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
+		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
+
+		await act(async () => {
+			await clickElement(simulateButton)
+			initialDeferredReply.resolve(initialReply)
+			await initialDeferredReply.promise
+			await settleAsyncUpdates()
+		})
+
+		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh simulation'))
+		if (refreshButton === undefined) throw new Error('Expected Gnosis refresh button to render')
+
+		await act(async () => {
+			await clickElement(refreshButton)
+		})
+
+		assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')?.textContent?.trim(), '')
+		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
+		assert.equal(dom.document.body.textContent?.includes('Initial Gnosis result'), false)
+
+		await act(async () => {
+			refreshDeferredReply.resolve(undefined)
+			await refreshDeferredReply.promise
+			await settleAsyncUpdates()
+		})
 		dom.restore()
 	})
 
@@ -799,7 +883,7 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
-		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution'))
+		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
 		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
 
 		await act(async () => {
@@ -828,9 +912,14 @@ describe('popup async action UI', () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const staleRequestReply = createSimulationFailureReply(7n, 'stale Gnosis request reply')
-		const deferredReply = createDeferred<typeof staleRequestReply>()
+		const staleDeferredReply = createDeferred<typeof staleRequestReply>()
+		const currentDeferredReply = createDeferred<unknown>()
+		let simulationRequestCount = 0
 		runtimeSendMessage = async (message) => {
-			if (getRuntimeMethod(message) === 'popup_simulateGnosisSafeTransaction') return deferredReply.promise
+			if (getRuntimeMethod(message) === 'popup_simulateGnosisSafeTransaction') {
+				simulationRequestCount += 1
+				return simulationRequestCount === 1 ? staleDeferredReply.promise : currentDeferredReply.promise
+			}
 			return undefined
 		}
 
@@ -843,7 +932,7 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
-		const originalSimulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution'))
+		const originalSimulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
 		if (originalSimulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
 
 		await act(async () => {
@@ -859,6 +948,12 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
+		const currentSimulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
+		if (currentSimulateButton === undefined) throw new Error('Expected current Gnosis simulation button to render')
+		await act(async () => {
+			await clickElement(currentSimulateButton)
+		})
+
 		await act(async () => {
 			await emitRuntimeMessage(createSimulationFailureBroadcast(7n, 'stale Gnosis broadcast reply'))
 			await settleAsyncUpdates()
@@ -866,15 +961,17 @@ describe('popup async action UI', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('stale Gnosis broadcast reply'), false)
 		assert.equal(dom.document.body.textContent?.includes('Refresh simulation'), false)
+		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
 
 		await act(async () => {
-			deferredReply.resolve(staleRequestReply)
-			await deferredReply.promise
+			staleDeferredReply.resolve(staleRequestReply)
+			await staleDeferredReply.promise
 			await settleAsyncUpdates()
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('stale Gnosis request reply'), false)
 		assert.equal(dom.document.body.textContent?.includes('Refresh simulation'), false)
+		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
 
 		await act(async () => {
 			await emitRuntimeMessage(createSimulationFailureBroadcast(8n, 'current Gnosis broadcast reply'))
@@ -882,6 +979,12 @@ describe('popup async action UI', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('current Gnosis broadcast reply'), true)
+
+		await act(async () => {
+			currentDeferredReply.resolve(undefined)
+			await currentDeferredReply.promise
+			await settleAsyncUpdates()
+		})
 		dom.restore()
 	})
 })

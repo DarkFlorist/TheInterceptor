@@ -98,6 +98,8 @@ export function BigAddress(params: BigAddressParams) {
 type ActiveAddressParams = {
 	readonly activeAddress: SignalOrValue<AddressBookEntry | undefined>
 	readonly disableButton: boolean
+	readonly noCopying?: boolean
+	readonly noEditAddress?: boolean
 	readonly changeActiveAddress: () => void
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly buttonText: string
@@ -109,6 +111,8 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 			<BigAddress
 				addressBookEntry = { params.activeAddress }
 				renameAddressCallBack = { params.renameAddressCallBack }
+				noCopying = { params.noCopying }
+				noEditAddress = { params.noEditAddress }
 			/>
 		</div>
 		<div class = 'log-cell'>
@@ -125,10 +129,12 @@ type SmallAddressParams = {
 	readonly addressBookEntry: SignalOrValue<AddressBookEntry | undefined>
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly noCopying?: boolean
+	readonly noEditAddress?: boolean
 	readonly style?: JSX.CSSProperties
 }
 
-export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }: SmallAddressParams) {
+export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopying, noEditAddress, style }: SmallAddressParams) {
 	const currentAddressBookEntry = resolveSignal(addressBookEntry)
 	if (currentAddressBookEntry === undefined) return <></>
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
@@ -138,7 +144,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, style }:
 		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
-	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } onEditClicked = { () => renameAddressCallBack(currentAddressBookEntry) } style = { style } />
+	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } style = { style } />
 }
 
 export function WebsiteOriginText({ website, class: cssClass, style }: {
