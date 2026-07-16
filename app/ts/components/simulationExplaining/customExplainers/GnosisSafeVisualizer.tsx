@@ -1,26 +1,28 @@
-import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
+import { batch, type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
 import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
+import { Spinner } from '../../subcomponents/Spinner.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { Transaction } from '../Transactions.js'
 import { useEffect } from 'preact/hooks'
 
 type ShowSuccessOrFailureParams = {
-	gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx
 	activeAddress: ReadonlySignal<bigint | undefined>
 	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
+	simulationInProgress: ReadonlySignal<boolean>
+	requestSimulation: () => void
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGnosisSafeTransaction', data: { gnosisSafeMessage } })
 
-const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
+const ShowSuccessOrFailure = ({ simulateExecutionReply, simulationInProgress, requestSimulation, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack }: ShowSuccessOrFailureParams) => {
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
 	const simTx = useComputed(() => {
@@ -51,13 +53,18 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	})
 
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: flex; justify-content: center;'>
-			<button
-				class = { 'button is-primary' }
-				onClick = { () => requestToSimulate(gnosisSafeMessage) }
-				disabled = { false }
-			>
-				Simulate execution
+		if (simulationInProgress.value) {
+			return <div class = 'safe-outcome-panel__loading' role = 'status'>
+				<Spinner height = '2.5rem'/>
+				<p class = 'safe-outcome-panel__status'>Simulating approved outcome…</p>
+				<p class = 'safe-outcome-panel__helper'>This may take a moment while the transaction is evaluated against the latest chain state.</p>
+			</div>
+		}
+
+		return <div class = 'safe-outcome-panel__empty'>
+			<p class = 'safe-outcome-panel__helper'>Preview the transaction that can execute if the Safe reaches its approval threshold.</p>
+			<button class = 'btn btn--primary' type = 'button' onClick = { requestSimulation }>
+				Simulate outcome
 			</button>
 		</div>
 	}
@@ -96,7 +103,17 @@ type GnosisSafeVisualizerParams = {
 
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
+	const simulationInProgress = useSignal(false)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
+	const outcomeTitleId = `safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
+	const requestSimulation = () => {
+		if (simulationInProgress.value) return
+		batch(() => {
+			simulateExecutionReply.value = undefined
+			simulationInProgress.value = true
+		})
+		void requestToSimulate(param.gnosisSafeMessage)
+	}
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -108,16 +125,22 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
 			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return false
-			simulateExecutionReply.value = reply
+			batch(() => {
+				simulateExecutionReply.value = reply
+				simulationInProgress.value = false
+			})
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	}, [param.gnosisSafeMessage.messageIdentifier])
 
 	useEffect(() => {
-		activeAddress.value = param.activeAddress
-		simulateExecutionReply.value = undefined
+		batch(() => {
+			activeAddress.value = param.activeAddress
+			simulateExecutionReply.value = undefined
+			simulationInProgress.value = false
+		})
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
 	if (activeAddress.value === undefined) return <></>
@@ -129,20 +152,27 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>
 			</span>
 		</div>
-		<div class = 'notification dashed-notification'>
-			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
-			<ShowSuccessOrFailure
-				gnosisSafeMessage = { param.gnosisSafeMessage }
-				simulateExecutionReply = { simulateExecutionReply }
-				renameAddressCallBack = { param.renameAddressCallBack }
-				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
-				activeAddress = { activeAddress }
-			/>
-		</div>
-		{ simulateExecutionReply.value === undefined ? <></> :
-			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
-				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
+		<section class = 'safe-outcome-panel' aria-labelledby = { outcomeTitleId }>
+			<header class = 'safe-outcome-panel__header'>
+				<div>
+					<h3 class = 'safe-outcome-panel__title' id = { outcomeTitleId }>Outcome if approved</h3>
+					<p class = 'safe-outcome-panel__description'>See what the Safe transaction would do if the multisig reaches its approval threshold.</p>
+				</div>
+				{ simulateExecutionReply.value === undefined || simulationInProgress.value
+					? <></>
+					: <button class = 'btn btn--outline safe-outcome-panel__refresh' type = 'button' onClick = { requestSimulation }>Refresh simulation</button>
+				}
+			</header>
+			<div class = 'safe-outcome-panel__content' aria-live = 'polite' aria-busy = { simulationInProgress.value }>
+				<ShowSuccessOrFailure
+					simulateExecutionReply = { simulateExecutionReply }
+					simulationInProgress = { simulationInProgress }
+					requestSimulation = { requestSimulation }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					activeAddress = { activeAddress }
+				/>
 			</div>
-		}
+		</section>
 	</>
 }
