@@ -92,6 +92,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						state = { setSimulatingState.value.state }
 						disabled = { param.simulationMode.value || signingPending }
 						keepTextWhilePending = { true }
+						pendingIndicatorPlacement = 'overlay'
 						pendingText = 'Switching to simulating mode...'
 						text = 'Simulating'
 						onClick = { enableSimulating }
@@ -102,6 +103,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						state = { setSigningState.value.state }
 						disabled = { !param.simulationMode.value || simulatingPending }
 						keepTextWhilePending = { true }
+						pendingIndicatorPlacement = 'overlay'
 						text = { <SignerLogoText signerName = { signerName } text = 'Signing' /> }
 						pendingText = 'Switching to signing mode...'
 						onClick = { enableSigning }

@@ -38,6 +38,7 @@ describe('AsyncActionButton', () => {
 					text: 'Simulating',
 					pendingText: 'Switching to simulating mode...',
 					keepTextWhilePending: true,
+					pendingIndicatorPlacement: 'overlay',
 					onClick: () => undefined,
 				}), dom.document.body)
 			})
@@ -59,6 +60,7 @@ describe('AsyncActionButton', () => {
 					text: 'Simulating',
 					pendingText: 'Switching to simulating mode...',
 					keepTextWhilePending: true,
+					pendingIndicatorPlacement: 'overlay',
 					onClick: () => undefined,
 				}), dom.document.body)
 			})
@@ -71,6 +73,42 @@ describe('AsyncActionButton', () => {
 			assert.equal(pendingSlot?.style?.visibility, 'visible')
 			assert.equal(collectElements(pendingSlot, 'svg').length, 1)
 			assert.equal(pendingContent?.textContent, 'Simulating')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('selects pending text independently from indicator placement', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(AsyncActionButton, {
+					state: 'pending',
+					text: 'Import',
+					pendingText: 'Importing...',
+					pendingIndicatorPlacement: 'overlay',
+					onClick: () => undefined,
+				}), dom.document.body)
+			})
+
+			const overlayContent = findByClass(dom.document.body, 'async-action-button__stable-content')
+			assert.equal(overlayContent?.textContent, 'Importing...')
+			assert.equal(findByClass(dom.document.body, 'async-action-button__status-slot')?.style?.position, 'absolute')
+
+			await act(() => {
+				render(h(AsyncActionButton, {
+					state: 'pending',
+					text: 'Simulating',
+					pendingText: 'Switching to simulating mode...',
+					keepTextWhilePending: true,
+					onClick: () => undefined,
+				}), dom.document.body)
+			})
+
+			const inlineContent = findByClass(dom.document.body, 'async-action-button__inline-content')
+			assert.equal(inlineContent?.textContent, 'Simulating')
+			assert.equal(findByClass(dom.document.body, 'async-action-button__status-slot'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
