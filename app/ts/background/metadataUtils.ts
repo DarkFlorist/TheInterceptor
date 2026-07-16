@@ -222,6 +222,7 @@ export function getAddressesToIdentifyForVisualiserFromTransactions(events: Enri
 	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
+		if (tx.signedTransaction.type === '7702') addressesToFetchMetadata.push(...tx.signedTransaction.authorizationList.map((authorization) => authorization.address))
 	}
 
 	return Array.from(new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS]).values())
