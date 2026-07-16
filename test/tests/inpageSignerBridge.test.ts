@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[] }
 type Listener = (event: WindowEvent) => void
-type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true }
+type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
@@ -21,11 +21,13 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	if (typeof value.requestId !== 'number') return undefined
 	if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return undefined
 	if (value.internal !== undefined && value.internal !== true) return undefined
+	if (value.replayOnDisconnect !== undefined && value.replayOnDisconnect !== true) return undefined
 	return {
 		method: value.method,
 		requestId: value.requestId,
 		...(Array.isArray(value.params) ? { params: value.params } : {}),
 		...(value.internal === true ? { internal: true as const } : {}),
+		...(value.replayOnDisconnect === true ? { replayOnDisconnect: true as const } : {}),
 	}
 }
 
@@ -283,6 +285,50 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('annotates only public eth_requestAccounts requests for replay after disconnect', async () => {
+		const bridgeRequests: InpageRequest[] = []
+		const account = '0x1111111111111111111111111111111111111111'
+		const transactionHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				bridgeRequests.push(request)
+				if (request.method === 'eth_requestAccounts') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'eth_accounts',
+						result: [account],
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: transactionHash,
+					})
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?bridge-replay-annotation', async () => {
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown> }
+			assert.deepEqual(await provider.request({ method: 'eth_requestAccounts' }), [account])
+			assert.equal(await provider.request({ method: 'eth_sendTransaction', params: [{ from: account }] }), transactionHash)
+		})
+
+		const accountRequest = bridgeRequests.find((request) => request.method === 'eth_requestAccounts')
+		const transactionRequest = bridgeRequests.find((request) => request.method === 'eth_sendTransaction')
+		assert.equal(accountRequest?.replayOnDisconnect, true)
+		assert.equal(transactionRequest?.replayOnDisconnect, undefined)
+		assert.equal(bridgeRequests.filter((request) => request.internal === true).every((request) => request.replayOnDisconnect === undefined), true)
+	})
+
 	test('ignores replayed terminal replies after the original request settles', async () => {
 		let capturedRequest: InpageRequest | undefined
 		const { fakeWindow, interceptorErrorPayloads, sendBackgroundMessage } = createFakeWindow({
@@ -1019,13 +1065,15 @@ describe('inpage signer bridge', () => {
 				return true
 			},
 		})
-		const { fakeWindow, signerRequests } = createdWindow
+		const { fakeWindow, signerRequests, sendBackgroundMessage } = createdWindow
 		exposedWindow = fakeWindow
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?selected-address-mutation-mask', async () => {
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
 				send: (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback?: undefined) => { readonly result: unknown }
+				on: (eventName: string, callback: (value: unknown) => void) => void
+				isConnected: () => boolean
 				selectedAddress?: string
 			}
 			await waitFor(() => signerRequests.includes('eth_chainId'))
@@ -1074,6 +1122,25 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => provider.selectedAddress === signerAccount)
 			assert.deepEqual(provider.send({ id: 3, method: 'eth_accounts', params: [] }).result, [signerAccount])
 			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [signerAccount])
+
+			const accountEvents: unknown[] = []
+			provider.on('accountsChanged', (accounts) => accountEvents.push(accounts))
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'accountsChanged',
+				result: [],
+			})
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'disconnect',
+				result: [],
+			})
+			await waitFor(() => provider.selectedAddress === undefined && !provider.isConnected())
+			assert.deepEqual(accountEvents, [[]])
+			assert.deepEqual(provider.send({ id: 4, method: 'eth_accounts', params: [] }).result, [])
+			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
 		})
 	})
 
