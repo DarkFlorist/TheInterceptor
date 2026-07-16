@@ -94,6 +94,8 @@ type TestDomNode = {
 	readonly childNodes?: readonly TestDomNode[]
 	readonly textContent?: string | null
 	readonly disabled?: boolean
+	readonly l?: Record<string, (event: unknown) => unknown>
+	readonly blur?: () => void
 	readonly getAttribute?: (name: string) => string | null
 }
 
@@ -119,6 +121,46 @@ function isHomeDataRequest(message: unknown, refreshSignerAccounts: boolean, inc
 
 function isButtonDisabled(button: TestDomNode | undefined) {
 	return button?.disabled === true || button?.getAttribute?.('disabled') !== null
+}
+
+async function clickElement(element: TestDomNode) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({
+		currentTarget: {
+			blur: () => element.blur?.(),
+			value: element.getAttribute?.('value') ?? undefined,
+		},
+		clientX: 0,
+		clientY: 0,
+		stopPropagation() { return undefined },
+	})
+}
+
+function installClipboardMock() {
+	const previousNavigator = globalThis.navigator
+	const copiedText: string[] = []
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		writable: true,
+		value: {
+			clipboard: {
+				async writeText(text: string) {
+					copiedText.push(text)
+				},
+			},
+		},
+	})
+	return {
+		copiedText,
+		restore() {
+			Object.defineProperty(globalThis, 'navigator', {
+				configurable: true,
+				writable: true,
+				value: previousNavigator,
+			})
+		},
+	}
 }
 
 class TestClipboardEvent extends Event {
@@ -220,6 +262,7 @@ describe('popup icon sync', () => {
 
 	test('keeps mutation controls disabled until initial home data arrives', async () => {
 		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
 		const { messageListener } = installBrowserMock()
 		try {
 			Object.defineProperty(globalThis, 'window', {
@@ -236,12 +279,19 @@ describe('popup icon sync', () => {
 				render(h(App, {}), dom.document.body)
 			})
 
+			const richListHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Make current account rich'))
+			if (richListHeader === undefined) throw new Error('Expected rich-list header before home data loads')
+			await act(async () => {
+				await clickElement(richListHeader)
+			})
+
 			const buttonsBeforeHomeData = collectElements(dom.document.body, 'button')
 			const signingButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Signing'))
 			const rpcButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Ethereum Mainnet'))
 			const timePickerModeButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('For'))
 			const timePickerDeltaButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Seconds'))
 			const editButtonsBeforeHomeData = buttonsBeforeHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
+			const copyButtonsBeforeHomeData = buttonsBeforeHomeData.filter((button) => button.textContent?.toLowerCase().includes('copy'))
 			const richCheckboxBeforeHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'checkbox')
 			const timePickerDeltaInputBeforeHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')
 			assert.equal(isButtonDisabled(signingButtonBeforeHomeData), true)
@@ -249,6 +299,8 @@ describe('popup icon sync', () => {
 			assert.equal(isButtonDisabled(timePickerModeButtonBeforeHomeData), true)
 			assert.equal(isButtonDisabled(timePickerDeltaButtonBeforeHomeData), true)
 			assert.equal(editButtonsBeforeHomeData.length, 0)
+			assert.equal(copyButtonsBeforeHomeData.length, 0)
+			assert.deepEqual(clipboardMock.copiedText, [])
 			assert.equal(isButtonDisabled(richCheckboxBeforeHomeData), true)
 			assert.equal(isButtonDisabled(timePickerDeltaInputBeforeHomeData), true)
 
@@ -269,13 +321,21 @@ describe('popup icon sync', () => {
 			const timePickerModeButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('For'))
 			const timePickerDeltaButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('Seconds'))
 			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
+			const copyButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.toLowerCase().includes('copy'))
 			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')
 			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
 			assert.equal(isButtonDisabled(timePickerModeButtonAfterHomeData), false)
 			assert.equal(isButtonDisabled(timePickerDeltaButtonAfterHomeData), false)
 			assert.equal(editButtonsAfterHomeData.length > 0, true)
+			assert.notEqual(copyButtonAfterHomeData, undefined)
+			if (copyButtonAfterHomeData === undefined) throw new Error('Expected active address copy action after home data loads')
+			await act(async () => {
+				await clickElement(copyButtonAfterHomeData)
+			})
+			assert.deepEqual(clipboardMock.copiedText, [loadedAddress])
 			assert.equal(isButtonDisabled(timePickerDeltaInputAfterHomeData), false)
 		} finally {
+			clipboardMock.restore()
 			dom.restore()
 		}
 	})

@@ -63,6 +63,8 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 				case 'popup_retrieveWebsiteAccessReply':
 					websiteAccessList.value = parsed.data.websiteAccess
 					addressAccessMetadata.value = parsed.data.addressAccessMetadata
+					if (selectedDomain.value !== undefined && parsed.data.websiteAccess.some((access) => access.website.websiteOrigin === selectedDomain.value)) break
+					selectedDomain.value = parsed.data.websiteAccess.length === 1 ? parsed.data.websiteAccess[0]?.website.websiteOrigin : undefined
 					break
 			}
 			return false
@@ -97,6 +99,11 @@ export function useWebsiteAccess() {
 	const context = useContext(WebsiteAccessContext)
 	if (!context) throw new Error('useWebsiteAccess can only be used within children components of WebsiteAccessProvider')
 	return context
+}
+
+export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>) {
+	selectedDomain.value = undefined
+	windowObject.location.hash = ''
 }
 
 export const WebsiteAccessView = () => {
@@ -258,7 +265,7 @@ const WebsiteSettingsDetail = () => {
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
-	const closeDetails = () => { window.location.hash = '' }
+	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
@@ -333,8 +340,8 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websi
 	const { selectedDomain } = useWebsiteAccess()
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
-	// If the website has been granted access, don't show this message
-	if (websiteAccess.deepValue === undefined || websiteAccess.deepValue.access === true) return <></>
+	// Only show the denied message for an explicit deny preference.
+	if (websiteAccess.deepValue === undefined || websiteAccess.deepValue.access !== false) return <></>
 
 	const confirmOrRejectRemoval = async (returnValue: string) => {
 		if (returnValue !== 'confirm' || !websiteAccess.deepValue) return

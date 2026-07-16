@@ -17,6 +17,7 @@ import { openFetchSimulationStackDialogOrGetCachedResult } from './windows/fetch
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { addressString } from '../utils/bigint.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHashFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
@@ -103,6 +104,22 @@ export async function getAccounts(activeAddress: bigint | undefined) {
 	return { type: 'result' as const, method: 'eth_accounts' as const, result: [activeAddress] }
 }
 
+function accountPermission(website: Website, activeAddress: bigint) {
+	return {
+		parentCapability: 'eth_accounts',
+		caveats: [{
+			type: 'restrictReturnedAccounts',
+			value: [addressString(activeAddress)],
+		}],
+		invoker: website.websiteOrigin,
+	} as const
+}
+
+export async function requestPermissions(activeAddress: bigint | undefined, website: Website) {
+	if (activeAddress === undefined) return { type: 'result' as const, method: 'wallet_requestPermissions' as const, result: [] }
+	return { type: 'result' as const, method: 'wallet_requestPermissions' as const, result: [accountPermission(website, activeAddress)] }
+}
+
 export async function chainId(ethereumClientService: EthereumClientService) {
 	return { type: 'result' as const, method: 'eth_chainId' as const, result: ethereumClientService.getChainId() }
 }
@@ -145,8 +162,9 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 	return { type: 'result' as const, method: request.method, result: code.getCodeReturn }
 }
 
-export async function getPermissions() {
-	return { type: 'result' as const, method: 'wallet_getPermissions', params: [], result: [ { eth_accounts: {} } ] } as const
+export async function getPermissions(activeAddress: bigint | undefined, website: Website) {
+	if (activeAddress === undefined) return { type: 'result' as const, method: 'wallet_getPermissions' as const, params: [], result: [] }
+	return { type: 'result' as const, method: 'wallet_getPermissions' as const, params: [], result: [accountPermission(website, activeAddress)] }
 }
 
 export async function getTransactionCount(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: GetTransactionCount) {

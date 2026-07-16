@@ -437,7 +437,7 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			createDelegatedSelfCallTransaction({
 				events: [createNativeTransferEvent()],
 			}),
-			[senderEntry, delegateEntry, recipientEntry, nativeTokenEntry],
+			[senderEntry, recipientEntry, nativeTokenEntry],
 		)
 
 		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)

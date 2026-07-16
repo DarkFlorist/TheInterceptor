@@ -262,6 +262,61 @@ describe('refreshHomeData', () => {
 		assert.equal(updatedState.signerAccounts?.[0], signerAccount)
 	})
 
+	test('home data falls back to signer accounts for active address when activeSigningAddress is unset', async () => {
+		const browserMock = installBrowserMock()
+		const modules: TestModules = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService } = modules
+
+		const [defaultAddress] = defaultActiveAddresses
+		if (defaultAddress === undefined) throw new Error('missing default address')
+		const rpcNetwork = defaultRpcs[0]
+		if (rpcNetwork === undefined) throw new Error('missing default rpc')
+		await browserStorageLocalSet({
+			activeSimulationAddress: defaultAddress.address,
+			openedPageV2: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: false,
+			makeCurrentAddressRich: false,
+			fixedAddressRichList: [],
+		})
+		await setRpcConnectionStatus({
+			isConnected: false,
+			lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
+			latestBlock: undefined,
+			rpcNetwork,
+			retrying: false,
+		})
+		await saveCurrentTabId(1)
+		const signerAddress = 0x4444444444444444444444444444444444444444n
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+			signerName: 'MetaMask',
+			signerAccounts: [signerAddress],
+			activeSigningAddress: undefined,
+		}))
+
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcNetwork.httpsRpc,
+			clearCache() { /* noop test stub */ },
+			async jsonRpcRequest() {
+				return await new Promise<never>(() => undefined)
+			},
+		}, async () => undefined, async () => undefined, rpcNetwork)
+
+		try {
+			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 1)
+		} finally {
+			ethereum.cleanup()
+		}
+
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { activeSigningAddressInThisTab?: bigint, tabState?: { signerAccounts?: readonly string[] } } } | undefined
+		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signerAddress)
+		assert.equal(homeUpdate?.data?.tabState?.signerAccounts?.[0], '0x4444444444444444444444444444444444444444')
+	})
+
 	test('cached home snapshot refreshes signer accounts only when requested', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()

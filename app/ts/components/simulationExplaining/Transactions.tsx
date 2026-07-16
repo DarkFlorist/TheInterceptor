@@ -97,10 +97,9 @@ function CompactDelegationAddress({ addressBookEntry }: { addressBookEntry: Addr
 	</div>
 }
 
-function DelegationNotice({ signer, authorizationList, addressMetadata, renameAddressCallBack }: {
+function DelegationNotice({ signer, delegates, renameAddressCallBack }: {
 	signer: AddressBookEntry
-	authorizationList: readonly { address: bigint }[]
-	addressMetadata: ReadonlySignal<readonly AddressBookEntry[]>
+	delegates: readonly AddressBookEntry[]
 	renameAddressCallBack: RenameAddressCallBack
 }) {
 	return <div class = 'delegation-flow-banner'>
@@ -124,10 +123,9 @@ function DelegationNotice({ signer, authorizationList, addressMetadata, renameAd
 				<DelegationFlowArrow />
 			</div>
 			<div class = 'delegation-flow-targets'>
-				{ authorizationList.map((authorization, index) => {
-					const entry = getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)
-					return <button type = 'button' class = 'delegation-flow-address-button' key = { `${ authorization.address.toString() }-${ index }` } onClick = { () => renameAddressCallBack(entry) }>
-						<CompactDelegationAddress addressBookEntry = { entry } />
+				{ delegates.map((delegate, index) => {
+					return <button type = 'button' class = 'delegation-flow-address-button' key = { `${ delegate.address.toString() }-${ index }` } onClick = { () => renameAddressCallBack(delegate) }>
+						<CompactDelegationAddress addressBookEntry = { delegate } />
 					</button>
 				}) }
 			</div>
@@ -142,15 +140,13 @@ function getDelegationNotice(
 ) {
 	if (transaction.type === '7702' && transaction.authorizationList.length > 0) return <DelegationNotice
 		signer = { transaction.from }
-		authorizationList = { transaction.authorizationList }
-		addressMetadata = { addressMetadata }
+		delegates = { transaction.authorizationList.map((authorization) => getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)) }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 	if (transaction.delegationAddress === undefined) return undefined
 	return <DelegationNotice
 		signer = { transaction.from }
-		authorizationList = { [{ address: transaction.delegationAddress.address }] }
-		addressMetadata = { addressMetadata }
+		delegates = { [transaction.delegationAddress] }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 }
