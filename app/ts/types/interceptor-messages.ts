@@ -959,7 +959,13 @@ const PopupMessageRuntype = funtypes.Union(
 	RemoveAddressBookEntry,
 	OpenAddressBook,
 	PopupReadyAndListening,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestNewHomeData'),
+		data: funtypes.ReadonlyObject({
+			refreshSignerAccounts: funtypes.Boolean,
+			includeWebsiteAccessAddressMetadata: funtypes.Boolean,
+		}),
+	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),

@@ -11,7 +11,7 @@ import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-rep
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
-import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
+import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SignedMessageTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
@@ -194,6 +194,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
 		fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 		numberOfAddressesMadeRich: new Signal(0),
+		isInitialHomeDataLoaded: new Signal(true),
 		...overrides,
 	}
 }
@@ -313,6 +314,34 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
+	test('shows a spinner until initial simulation status is known', async () => {
+		const dom = installDomMock()
+		const simulationUpdatingState = new Signal<'done' | 'updating' | 'failed' | undefined>(undefined)
+		const simulationResultState = new Signal<'done' | 'invalid' | 'corrupted' | undefined>(undefined)
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					simVisResults: new Signal(PASSTHROUGH_STATE),
+					simulationUpdatingState,
+					simulationResultState,
+				})), dom.document.body)
+			})
+
+			assert.notEqual(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+
+			await act(() => {
+				simulationUpdatingState.value = 'done'
+				simulationResultState.value = 'done'
+			})
+
+			assert.equal(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('rerenders to the empty-state dino when simulation results are cleared', async () => {
 		const dom = installDomMock()
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults()))

@@ -5,9 +5,9 @@ import { keccak256 } from 'viem/utils'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
-import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
+import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
 import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { EthTransactionReceiptResponse, JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
@@ -268,6 +268,16 @@ describe('SimulationModeEthereumClientService', () => {
 		method: 'eth_simulateV1',
 		params: blockTag === undefined ? [createDappEthSimulateV1Payload(validation)] : [createDappEthSimulateV1Payload(validation), blockTag],
 	})
+
+		test('prepareEthSimulateV1Input strips the local transaction hash from RPC calls', async () => {
+			const prepared = await ethereum.prepareEthSimulateV1Input(createSimulationStateInput(), blockNumber, undefined)
+			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
+			if (call === undefined) throw new Error('missing prepared eth_simulateV1 call')
+			assert.equal('hash' in call, false)
+
+			const serialized = serialize(EthereumJsonRpcRequest, prepared.request)
+			assert.doesNotThrow(() => JSON.stringify(serialized))
+		})
 
 		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)

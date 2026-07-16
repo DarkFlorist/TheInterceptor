@@ -800,6 +800,35 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 	cursor: unset
 }
 
+.signer-logo-text {
+	align-items: center;
+	display: inline-flex;
+	gap: 6px;
+	line-height: 24px;
+	margin: 0;
+}
+
+.signer-logo-slot {
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 24px;
+	height: 24px;
+	justify-content: center;
+	width: 24px;
+}
+
+.signer-logo-slot img {
+	display: block;
+	height: 24px;
+	width: 24px;
+}
+
+.signer-logo-placeholder {
+	height: 18px;
+	opacity: 0.45;
+	width: 18px;
+}
+
 svg.spinner {
 	animation: 2s linear infinite svg-animation;
 	max-width: 100px;

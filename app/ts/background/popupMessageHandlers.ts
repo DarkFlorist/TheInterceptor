@@ -537,6 +537,7 @@ export async function requestNewHomeData(
 	ethereum: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
+	includeWebsiteAccessAddressMetadata: boolean,
 	requestAbortController: AbortController | undefined,
 	popupRefreshGeneration: number,
 ) {
@@ -545,6 +546,7 @@ export async function requestNewHomeData(
 		requestAbortController,
 		richDataSource: 'cached',
 		shouldRefreshSignerAccounts,
+		includeWebsiteAccessAddressMetadata,
 		popupRefreshGeneration: newPopupRefreshGeneration,
 	})
 	await sendPopupMessageToOpenWindows(updatedPage)
@@ -572,6 +574,7 @@ export async function refreshHomeData(
 			requestAbortController,
 			richDataSource: 'fresh',
 			shouldRefreshSignerAccounts,
+			includeWebsiteAccessAddressMetadata: true,
 			popupRefreshGeneration: newPopupRefreshGeneration,
 		})
 		await sendPopupMessageToOpenWindows(updatedPage)
@@ -604,7 +607,7 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await requestNewHomeData(ethereum, new Map(), false, requestAbortController, bumpPopupRefreshGeneration())
+	return await requestNewHomeData(ethereum, new Map(), false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
 export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
@@ -974,11 +977,13 @@ async function buildHomePageUpdate(
 		requestAbortController,
 		richDataSource,
 		shouldRefreshSignerAccounts,
+		includeWebsiteAccessAddressMetadata,
 		popupRefreshGeneration,
 	}: {
 		requestAbortController?: AbortController
 		richDataSource: 'cached' | 'fresh'
 		shouldRefreshSignerAccounts: boolean
+		includeWebsiteAccessAddressMetadata: boolean
 		popupRefreshGeneration: number
 	}
 ): Promise<UpdateHomePage> {
@@ -1003,6 +1008,7 @@ async function buildHomePageUpdate(
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const richData = await richDataPromise
+	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
 	return {
 		method: 'popup_UpdateHomePage' as const,
 		popupRefreshGeneration: popupRefreshGeneration,
@@ -1012,7 +1018,7 @@ async function buildHomePageUpdate(
 			richList: richData.richList,
 			makeCurrentAddressRich: richData.makeCurrentAddressRich,
 			latestUnexpectedError: await latestUnexpectedErrorPromise,
-			websiteAccessAddressMetadata: await getAddressMetadataForAccess(settings.websiteAccess),
+			websiteAccessAddressMetadata,
 			tabState,
 			activeSigningAddressInThisTab: activeSigningAddress,
 			currentBlockNumber: ethereum.getCachedBlock()?.number,
