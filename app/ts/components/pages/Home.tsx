@@ -88,7 +88,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
 					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
-						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'opacity: 1;' : 'border-style: none;' }` }
+						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
 						state = { setSimulatingState.value.state }
 						disabled = { param.simulationMode.value || signingPending }
 						keepTextWhilePending = { true }
@@ -98,7 +98,7 @@ function FirstCardHeader(param: FirstCardParams) {
 					/>
 					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
-						style = { `margin-bottom: 0px; ${ param.simulationMode.value ? 'border-style: none;' : 'opacity: 1;' }` }
+						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? '' : 'opacity: 1;' }` }
 						state = { setSigningState.value.state }
 						disabled = { !param.simulationMode.value || simulatingPending }
 						keepTextWhilePending = { true }
