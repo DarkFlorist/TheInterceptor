@@ -115,6 +115,8 @@ type TestDomNode = {
 	readonly childNodes?: readonly TestDomNode[]
 	readonly textContent?: string | null
 	readonly l?: Record<string, (event: unknown) => unknown>
+	readonly attributes?: Record<string, string | undefined>
+	disabled?: boolean
 }
 
 function collectElements(node: TestDomNode | null | undefined, tagName: string, results: TestDomNode[] = []) {
@@ -127,6 +129,26 @@ async function clickElement(element: { l?: Record<string, (event: unknown) => un
 	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
 	if (clickHandler === undefined) throw new Error('Expected click handler')
 	await clickHandler({ currentTarget: element })
+}
+
+function isDisabled(element: TestDomNode | undefined) {
+	if (element === undefined) return false
+	return 'disabled' in element || element.attributes?.disabled !== undefined
+}
+
+function createDeferred<T>() {
+	let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined
+	const promise = new Promise<T>((resolve) => {
+		resolvePromise = resolve
+	})
+	return { promise, resolve: resolvePromise }
+}
+
+async function settleAsyncUpdates() {
+	await Promise.resolve()
+	await Promise.resolve()
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	await Promise.resolve()
 }
 
 describe('import simulation stack', () => {
@@ -166,10 +188,82 @@ describe('import simulation stack', () => {
 
 		await act(async () => {
 			await clickElement(importButton)
+			await settleAsyncUpdates()
 		})
 
 		assert.equal(closeCount, 0)
 		assert.match(dom.document.body.textContent, /Quota exceeded while saving the imported stack\./)
+		dom.restore()
+	})
+
+	test('shows import progress and disables modal controls while waiting for the reply', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const dom = installDomMock()
+		const deferredReply = createDeferred<unknown>()
+		let closeCount = 0
+		runtimeSendMessage = async () => deferredReply.promise
+
+		await act(() => {
+			render(h(modules.ImportSimulationStack, {
+				close: () => { closeCount += 1 },
+				simulationInput: signal(exportString),
+			}), dom.document.body)
+		})
+
+		const buttons = collectElements(dom.document.body, 'button')
+		const closeButton = buttons.find((button) => button.textContent?.includes('Import') !== true)
+		const importButton = buttons.find((button) => button.textContent?.includes('Import'))
+		const textareas = collectElements(dom.document.body, 'textarea')
+		const textarea = textareas[0]
+		assert.ok(importButton)
+		assert.ok(closeButton)
+		assert.ok(textarea)
+
+		await act(async () => {
+			await clickElement(importButton)
+			await settleAsyncUpdates()
+		})
+
+		assert.match(importButton.textContent ?? '', /Importing\.\.\./)
+		assert.equal(isDisabled(importButton), true)
+		assert.equal(isDisabled(closeButton), true)
+		assert.equal(isDisabled(textarea), true)
+		assert.equal(closeCount, 0)
+
+		await act(async () => {
+			deferredReply.resolve({ type: 'ImportSimulationStackReply', ok: true })
+			await deferredReply.promise
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(closeCount, 1)
+		dom.restore()
+	})
+
+	test('shows a missing-reply import error', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const dom = installDomMock()
+		runtimeSendMessage = async () => undefined
+
+		await act(() => {
+			render(h(modules.ImportSimulationStack, {
+				close: () => undefined,
+				simulationInput: signal(exportString),
+			}), dom.document.body)
+		})
+
+		const buttons = collectElements(dom.document.body, 'button')
+		const importButton = buttons.find((button) => button.textContent?.includes('Import'))
+		assert.ok(importButton)
+
+		await act(async () => {
+			await clickElement(importButton)
+			await settleAsyncUpdates()
+		})
+
+		assert.match(dom.document.body.textContent, /Importing the simulation stack failed because the background page did not return a reply\./)
 		dom.restore()
 	})
 
@@ -193,6 +287,7 @@ describe('import simulation stack', () => {
 
 		await act(async () => {
 			await clickElement(importButton)
+			await settleAsyncUpdates()
 		})
 
 		assert.equal(closeCount, 1)

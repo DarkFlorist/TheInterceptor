@@ -422,7 +422,7 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 		const confirmConnection = await connectTarget(context.chrome.browserDebugPort, confirmTarget.id)
 		try {
 			try {
-				await waitForButtonEnabled(confirmConnection, 'button.button.is-primary.button-overflow.dialog-button-right', 120_000)
+				await waitForButtonEnabled(confirmConnection, 'button.button.is-primary.button-overflow.dialog-action-button:not(.is-danger)', 120_000)
 			} catch (error) {
 				const pageState = await getTransactionPageState(pageConnection)
 				const workerSnapshot = await getPerformanceSnapshot(workerConnection).catch(() => undefined)
@@ -433,7 +433,7 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 				throw new Error(`${ error instanceof Error ? error.message : String(error) }\ntransaction page state: ${ JSON.stringify(pageState) }\nworker performance marks: ${ JSON.stringify(workerSnapshot?.marks ?? []) }\nrpc requests: ${ JSON.stringify(rpcRequests ?? []) }\npopup visualisation state: ${ JSON.stringify(popupVisualisationState) }\npending transaction storage: ${ JSON.stringify(pendingTransactionStorage) }\nerror diagnostics: ${ JSON.stringify(diagnostics) }`)
 			}
 			const confirmPopupSnapshot = await getPerformanceSnapshot(confirmConnection)
-			await clickButton(confirmConnection, 'button.button.is-primary.button-overflow.dialog-button-right')
+			await clickButton(confirmConnection, 'button.button.is-primary.button-overflow.dialog-action-button:not(.is-danger)')
 			await waitForTransactionPagePhase(pageConnection, 'balance-fetched', 60_000)
 			const pageSnapshot = await getPerformanceSnapshot(pageConnection)
 			const workerSnapshot = await getPerformanceSnapshot(workerConnection)
