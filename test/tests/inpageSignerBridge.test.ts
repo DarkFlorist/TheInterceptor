@@ -611,8 +611,10 @@ describe('inpage signer bridge', () => {
 			on: () => throwingConnectedMetaMaskProvider,
 		}
 		const conflictingMetaMaskProviders = [
+			{ ...concreteMetaMaskProvider, isAmbire: true },
 			{ ...concreteMetaMaskProvider, isBraveWallet: true },
 			{ ...concreteMetaMaskProvider, isCoinbaseWallet: true },
+			{ ...concreteMetaMaskProvider, isRabby: true },
 			{ ...concreteMetaMaskProvider, isInterceptor: true },
 		]
 		let statefulMetaMaskMarkerReads = 0
@@ -947,10 +949,12 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
 	})
 
-	test('does not replace Coinbase or unrecognized signers from MetaMask announcements', async () => {
+	test('recognizes supported MetaMask-compatible wallets and does not replace selected non-MetaMask signers from announcements', async () => {
 		const signerCases = [
+			{ name: 'Ambire', marker: { isAmbire: true, isMetaMask: true } },
 			{ name: 'CoinbaseWallet', marker: { isCoinbaseWallet: true } },
 			{ name: 'NotRecognizedSigner', marker: {} },
+			{ name: 'Rabby', marker: { isMetaMask: true, isRabby: true } },
 		] as const
 
 		for (const signerCase of signerCases) {
