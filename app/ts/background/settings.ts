@@ -152,8 +152,57 @@ export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
 
-export const setFixedMakeMeRichList = async (fixedAdressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList: fixedAdressRichList })
+const makeMeRichSettingsSemaphore = new Semaphore(1)
+
+export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRich: boolean) => boolean) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getMakeCurrentAddressRich()
+		const next = update(previous)
+		if (next === previous) return false
+		await setMakeCurrentAddressRich(next)
+		return true
+	})
+}
+
+export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
 export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
+
+function toComparableRichListElement(element: RichListElement): RichListElement {
+	return {
+		address: element.address,
+		makingRich: element.makingRich,
+		type: element.type,
+	}
+}
+
+function richListElementsEqual(first: RichListElement, second: RichListElement) {
+	const firstValues = Object.values(toComparableRichListElement(first))
+	const secondValues = Object.values(toComparableRichListElement(second))
+	return firstValues.length === secondValues.length && firstValues.every((value, index) => value === secondValues[index])
+}
+
+export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: readonly RichListElement[]) => readonly RichListElement[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getFixedAddressRichList()
+		const next = update(previous)
+		if (previous.length === next.length && previous.every((element, index) => {
+			const nextElement = next[index]
+			return nextElement !== undefined && richListElementsEqual(element, nextElement)
+		})) return false
+		await setFixedMakeMeRichList(next)
+		return true
+	})
+}
+
+export async function trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress: EthereumAddress | undefined) {
+	return await updateFixedMakeMeRichList((currentList) => {
+		const richList = currentList
+			.filter((element) => !(element.type === 'PreviousActiveAddress' && !element.makingRich))
+			.map((element) => ({ ...element, type: 'UserAdded' as const }))
+		if (previousActiveAddress === undefined || richList.some((element) => element.address === previousActiveAddress)) return richList
+		return [...richList, { address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' as const }]
+	})
+}
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
 	return await browserStorageLocalSet({

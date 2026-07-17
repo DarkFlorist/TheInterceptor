@@ -23,6 +23,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/Simulation
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
@@ -162,10 +163,13 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 	}
 	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
 		if (!isInitialHomeDataLoaded.value) return
-		richList.value = [
-			...richList.value.filter((x) => x.addressBookEntry.address !== addressBookEntry.address),
-			...makeRich ? [{ addressBookEntry: addressBookEntry, makingRich: true, type: 'UserAdded' as const, }] : []
-		]
+		richList.value = updateRichListAddress(
+			richList.value,
+			addressBookEntry.address,
+			makeRich,
+			(element) => element.addressBookEntry.address,
+			() => ({ addressBookEntry, makingRich: true, type: 'UserAdded' as const }),
+		)
 		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: makeRich, address: addressBookEntry.address } } )
 	}
 
@@ -210,7 +214,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
 						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
-							<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { richListElement.makingRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
+							<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
 							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
 					) }
