@@ -7,7 +7,7 @@ import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSign
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -515,12 +515,21 @@ async function discoverAccountRequestAddressContext(
 }
 
 const isSignerProviderDisconnectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_PROVIDER_DISCONNECTED
+const isSignerAccountAccessRejectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_USER_REJECTED_REQUEST
+const isTerminalSignerAccountConnectionError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => {
+	return isSignerProviderDisconnectedError(error) || isSignerAccountAccessRejectedError(error)
+}
 
 function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, error: ErrorWithCodeAndOptionalData) {
+	// Injected-wallet connection UIs commonly treat 4001 as the only terminal account-access failure.
+	// Keep the more precise 4900 internally, but expose unavailable page-level wallet access as a rejected interactive connection.
+	const publicError = isAccountConnectionMethod(request.method) && isSignerProviderDisconnectedError(error)
+		? { ...error, code: METAMASK_ERROR_USER_REJECTED_REQUEST }
+		: error
 	return replyToInterceptedRequest(websiteTabConnections, {
 		type: 'result',
 		...getRequestWithDefinedParams(request),
-		error,
+		error: publicError,
 	})
 }
 
@@ -550,7 +559,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
 	const { settings, activeAddress, requestedSignerAccountsForSiteAccess, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
-	if (isSignerProviderDisconnectedError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
+	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForSiteAccess && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
@@ -572,7 +581,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		// user has granted access to the site, but not to this account and the application is requesting accounts
 		if (requestedSignerAccountsForSiteAccess) return refuseAccess(websiteTabConnections, request)
 		const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
-		if (isSignerProviderDisconnectedError(signerAccountsResult.error)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
+		if (isTerminalSignerAccountConnectionError(signerAccountsResult.error)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
 		if (signerAccountsResult.accounts.length === 0) return refuseAccess(websiteTabConnections, request)
 		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 		return result

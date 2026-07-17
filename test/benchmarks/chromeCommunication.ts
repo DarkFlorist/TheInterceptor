@@ -6,10 +6,12 @@ type CommunicationPageState = {
 	phase: 'loading' | 'provider-ready' | 'requesting-access' | 'access-granted' | 'error'
 	accounts?: readonly string[]
 	error?: string
+	errorCode?: number
 }
 
 const COMMUNICATION_PAGE_STATE_GLOBAL = '__interceptorChromeCommunicationState' as const
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
+const UNAVAILABLE_SIGNER_ERROR_MESSAGE = 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.'
 
 function sleep(ms: number) {
 	return new Promise<void>((resolve) => {
@@ -42,6 +44,14 @@ async function waitForCommunicationPagePhase(connection: CdpConnection, phase: C
 		if (state?.phase === 'error') throw new Error(`Communication page failed: ${ state.error ?? 'unknown error' }`)
 		return state?.phase === phase
 	}, timeoutMs, `communication page phase ${ phase }`)
+}
+
+async function waitForCommunicationPageError(connection: CdpConnection, timeoutMs: number) {
+	await waitForCondition(async () => (await getCommunicationPageState(connection))?.phase === 'error', timeoutMs, 'communication page error')
+	const state = await getCommunicationPageState(connection)
+	if (state?.errorCode !== 4001) throw new Error(`Unexpected unavailable-signer error code: ${ state?.errorCode ?? 'missing' }`)
+	if (state.error !== UNAVAILABLE_SIGNER_ERROR_MESSAGE) throw new Error(`Unexpected unavailable-signer error message: ${ state.error ?? 'missing' }`)
+	return state
 }
 
 async function waitForButtonEnabled(connection: CdpConnection, selector: string, timeoutMs: number) {
@@ -93,12 +103,23 @@ async function main() {
 			}
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
-			const finalState = await getCommunicationPageState(pageConnection)
+			const accessGrantedState = await getCommunicationPageState(pageConnection)
+
+			const signingModeWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+			try {
+				await signingModeWorkerConnection.evaluate('browser.storage.local.set({ simulationMode: false, useSignersAddressAsActiveAddress: false })')
+			} finally {
+				signingModeWorkerConnection.close()
+			}
+			await pageConnection.send('Page.navigate', { url: `${ server.baseUrl }?signer=unavailable` })
+			const unavailableSignerState = await waitForCommunicationPageError(pageConnection, 30_000)
+
 			console.warn(`Interceptor Chrome communication smoke test passed for extension ${ extensionId }.`)
 			console.warn(JSON.stringify({
 				ok: true,
 				extensionId,
-				finalState,
+				accessGrantedState,
+				unavailableSignerState,
 			}, null, 2))
 		} finally {
 			pageConnection.close()

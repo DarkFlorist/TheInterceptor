@@ -1267,8 +1267,8 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		assert.equal(messages.some((message) => message.method === 'accountsChanged'), false)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 13)
-		assert.equal(requestAccountsReplies.at(-1)?.error?.code, 4100)
-		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'The requested method and/or account has not been authorized by the user.')
+		assert.equal(requestAccountsReplies.at(-1)?.error?.code, 4001)
+		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'User rejected the request.')
 	})
 
 	test('does not connect an unapproved port when signer returns empty accounts for site-approved eth_requestAccounts', async () => {
@@ -1320,7 +1320,7 @@ describe('background eth_accounts', () => {
 		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'The requested method and/or account has not been authorized by the user.')
 	})
 
-	test('resolves approved eth_requestAccounts when signer rejects the account request', async () => {
+	test('preserves the signer account-access rejection for approved eth_requestAccounts', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -1368,12 +1368,12 @@ describe('background eth_accounts', () => {
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 8)
-		assert.equal(requestAccountsReplies.at(-1)?.error?.code, 4100)
-		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'The requested method and/or account has not been authorized by the user.')
+		assert.equal(requestAccountsReplies.at(-1)?.error?.code, 4001)
+		assert.equal(requestAccountsReplies.at(-1)?.error?.message, 'User rejected the request.')
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [])
 	})
 
-	test('returns an actionable provider-disconnected error when no signer is available to the page', async () => {
+	test('maps unavailable signer errors only for interactive account connection methods', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -1388,21 +1388,30 @@ describe('background eth_accounts', () => {
 			code: 4900,
 			message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.',
 		}
+		const accountRequests = [
+			{ method: 'eth_requestAccounts', signerRequestMethod: 'request_signer_to_eth_requestAccounts', expectedPublicErrorCode: 4001, requestAccounts: true },
+			{ method: 'wallet_requestPermissions', signerRequestMethod: 'request_signer_to_eth_requestAccounts', expectedPublicErrorCode: 4001, requestAccounts: true },
+			{ method: 'eth_accounts', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4900, requestAccounts: false },
+			{ method: 'wallet_getPermissions', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4900, requestAccounts: false },
+		] as const
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		let port: browser.runtime.Port
+		let internalRequestId = 104
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
-			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			const accountRequest = accountRequests.find((candidate) => candidate.signerRequestMethod === message.method)
+			if (accountRequest === undefined) return
+			internalRequestId += 1
 			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: true,
-				uniqueRequestIdentifier: { requestId: 104, requestSocket: socket },
+				uniqueRequestIdentifier: { requestId: internalRequestId, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'error', requestAccounts: true, error: unavailableSignerError }],
+				params: [{ type: 'error', requestAccounts: accountRequest.requestAccounts, error: unavailableSignerError }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		port = createdPort
@@ -1411,18 +1420,25 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const request = {
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: true,
-			uniqueRequestIdentifier: { requestId: 15, requestSocket: socket },
-			method: 'eth_requestAccounts',
+
+		for (const [requestIndex, accountRequest] of accountRequests.entries()) {
+			const requestId = 15 + requestIndex
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: true,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method: accountRequest.method,
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+			const replies = messages.filter((message) => message.method === accountRequest.method && message.requestId === requestId)
+			assert.equal(replies.length, 1)
+			assert.deepEqual(replies[0]?.error, {
+				...unavailableSignerError,
+				code: accountRequest.expectedPublicErrorCode,
+			})
+			assert.equal(messages.some((message) => (message.method === 'connect' || message.method === 'accountsChanged') && message.requestId === requestId), false)
 		}
-
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
-
-		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 15)
-		assert.equal(requestAccountsReplies.length, 1)
-		assert.deepEqual(requestAccountsReplies[0]?.error, unavailableSignerError)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'accountsChanged'), false)
 	})
 
 	test('ignores a provider-disconnected completion from a sibling socket', async () => {
