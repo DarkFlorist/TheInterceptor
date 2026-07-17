@@ -329,6 +329,136 @@ describe('inpage signer bridge', () => {
 		assert.equal(bridgeRequests.filter((request) => request.internal === true).every((request) => request.replayOnDisconnect === undefined), true)
 	})
 
+	test('settles the first account request and keeps signing when MetaMask initializes after Interceptor', async () => {
+		const signerAccountReplies: unknown[] = []
+		const connectedSignerNames: unknown[] = []
+		const signerRequestMethods: string[] = []
+		const signedTransactionHash = '0x2222222222222222222222222222222222222222222222222222222222222222'
+		let pendingAccountRequest: InpageRequest | undefined
+		const { fakeWindow, signerAccounts, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'connected_to_signer') {
+					connectedSignerNames.push(request.params?.[1])
+					return false
+				}
+				if (request.method === 'eth_requestAccounts' && request.internal !== true) {
+					pendingAccountRequest = request
+					return true
+				}
+				if (request.method === 'eth_accounts_reply') {
+					const signerAccountsReply = request.params?.[0]
+					if (!isRecord(signerAccountsReply)) throw new Error('Malformed signer accounts reply')
+					signerAccountReplies.push(signerAccountsReply)
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'eth_accounts_reply',
+						result: undefined,
+					})
+					const accountRequest = pendingAccountRequest
+					if (signerAccountsReply.type !== 'success' || !Array.isArray(signerAccountsReply.accounts) || accountRequest === undefined) return true
+					pendingAccountRequest = undefined
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: accountRequest.requestId,
+						type: 'result',
+						method: 'eth_accounts',
+						result: signerAccountsReply.accounts,
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'forwardToSigner',
+						method: request.method,
+						params: request.params,
+					})
+					return true
+				}
+				if (request.method !== 'signer_reply') return false
+				const signerReply = request.params?.[0]
+				if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest) || typeof signerReply.forwardRequest.requestId !== 'number') throw new Error('Malformed signer reply')
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: signerReply.forwardRequest.requestId,
+					type: 'result',
+					method: 'eth_sendTransaction',
+					result: signerReply.reply,
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_reply',
+					result: '0x',
+				})
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				signerRequestMethods.push(method)
+				if (method === 'eth_sendTransaction') return signedTransactionHash
+				return undefined
+			},
+		})
+		const lateMetaMaskProvider = fakeWindow.ethereum
+		Reflect.deleteProperty(fakeWindow, 'ethereum')
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?late-metamask-first-connect-and-signing', async () => {
+			const interceptorProvider = fakeWindow.ethereum
+			const accountRequest = interceptorProvider.request({ method: 'eth_requestAccounts' })
+			await waitFor(() => pendingAccountRequest !== undefined)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_requestAccounts',
+				result: [],
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+
+			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: {
+					info: { uuid: '55555555-5555-4555-8555-555555555555', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+					provider: lateMetaMaskProvider,
+				},
+			}))
+			fakeWindow.dispatchEvent({ type: 'ethereum#initialized' })
+
+			await waitFor(() => signerAccountReplies.length === 1, 500)
+			assert.deepEqual(signerAccountReplies, [{ type: 'success', accounts: signerAccounts, requestAccounts: true }])
+			assert.deepEqual(await accountRequest, signerAccounts)
+			assert.equal(await interceptorProvider.request({ method: 'eth_sendTransaction', params: [{ from: signerAccounts[0] }] }), signedTransactionHash)
+		})
+
+		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
+		assert.equal(signerRequestMethods.includes('eth_requestAccounts'), true)
+		assert.equal(signerRequestMethods.includes('eth_sendTransaction'), true)
+	})
+
+	test('settles signer account discovery when no signer initializes', async () => {
+		const { fakeWindow, backgroundEthAccountsReplies, sendBackgroundMessage } = createFakeWindow()
+		Reflect.deleteProperty(fakeWindow, 'ethereum')
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?unavailable-signer-account-reply', async () => {
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_requestAccounts',
+				result: [],
+			})
+			await waitFor(() => backgroundEthAccountsReplies.length === 1, 3500)
+		})
+
+		assert.deepEqual(backgroundEthAccountsReplies, [{
+			type: 'error',
+			requestAccounts: true,
+			error: { code: 4900, message: 'No signer wallet became available for this page.' },
+		}])
+	})
+
 	test('ignores replayed terminal replies after the original request settles', async () => {
 		let capturedRequest: InpageRequest | undefined
 		const { fakeWindow, interceptorErrorPayloads, sendBackgroundMessage } = createFakeWindow({

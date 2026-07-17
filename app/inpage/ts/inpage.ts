@@ -1,8 +1,10 @@
 const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
+const METAMASK_ERROR_PROVIDER_DISCONNECTED = 4900
 const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
 const METAMASK_ERROR_BLANKET_ERROR = -32603
 const METAMASK_METHOD_NOT_SUPPORTED = -32004
 const METAMASK_INVALID_METHOD_PARAMS = -32602
+const SIGNER_DISCOVERY_TIMEOUT_MS = 3000
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -466,6 +468,7 @@ class InterceptorMessageListener {
 	private acceptingAnnouncedMetaMaskProviders = false
 	private signerSelectionGeneration = 0
 	private signerConnectionTransition: Promise<void> = Promise.resolve()
+	private readonly signerAvailabilityWaiters = new Set<InterceptorFuture<void>>()
 
 	private readonly outstandingRequests: Map<number, OutstandingRequest> = new Map()
 
@@ -760,6 +763,59 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private readonly setSignerProvider = (provider: WindowEthereum | undefined, request: EthereumRequest | undefined, fallbackRequest: EthereumRequest | undefined = undefined) => {
+		this.signerWindowEthereumProvider = provider
+		this.signerWindowEthereumRequest = request
+		this.fallbackSignerWindowEthereumRequest = fallbackRequest
+		if (request === undefined) return
+		for (const waiter of this.signerAvailabilityWaiters) waiter.resolve(undefined)
+		this.signerAvailabilityWaiters.clear()
+	}
+
+	private readonly discoverAnnouncedMetaMaskProvider = () => {
+		if (this.acceptingAnnouncedMetaMaskProviders) return
+		window.addEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+		this.acceptingAnnouncedMetaMaskProviders = true
+		try {
+			window.dispatchEvent(new Event('eip6963:requestProvider'))
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('request EIP-6963 signer providers', error)
+		} finally {
+			this.acceptingAnnouncedMetaMaskProviders = false
+			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+		}
+	}
+
+	private readonly waitForSignerAvailability = async () => {
+		if (this.signerWindowEthereumRequest === undefined && this.signerName === 'NoSigner') this.discoverAnnouncedMetaMaskProvider()
+		if (this.signerWindowEthereumRequest !== undefined) return true
+
+		const signerAvailability = new InterceptorFuture<void>()
+		this.signerAvailabilityWaiters.add(signerAvailability)
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			await Promise.race([
+				Promise.resolve(signerAvailability),
+				new Promise<void>((resolve) => { timeout = setTimeout(resolve, SIGNER_DISCOVERY_TIMEOUT_MS) }),
+			])
+		} finally {
+			this.signerAvailabilityWaiters.delete(signerAvailability)
+			if (timeout !== undefined) clearTimeout(timeout)
+		}
+		return this.signerWindowEthereumRequest !== undefined
+	}
+
+	private readonly replyWithUnavailableSignerAccounts = async (requestAccounts: boolean) => {
+		return await this.sendInternalMessageToBackgroundPage({
+			method: 'eth_accounts_reply',
+			params: [{
+				type: 'error',
+				requestAccounts,
+				error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet became available for this page.' },
+			}],
+		})
+	}
+
 	private readonly findPreparedLegacyMetaMaskProvider = (injectedWindowEthereum: WindowEthereum) => {
 		let providers: readonly unknown[] | undefined
 		try {
@@ -809,9 +865,7 @@ class InterceptorMessageListener {
 		const preparedSigner = this.prepareSignerProvider(provider, 'MetaMask')
 		if (preparedSigner === undefined) return
 		this.announcedMetaMaskUuid = info.uuid
-		this.signerWindowEthereumProvider = preparedSigner.provider
-		this.signerWindowEthereumRequest = preparedSigner.request
-		this.fallbackSignerWindowEthereumRequest = undefined
+		this.setSignerProvider(preparedSigner.provider, preparedSigner.request)
 		this.connected = preparedSigner.connected
 		this.connectToSigner('MetaMask')
 	}
@@ -930,7 +984,7 @@ class InterceptorMessageListener {
 
 	// attempts to call signer for eth_accounts
 	private readonly getAccountsFromSigner = async () => {
-		if (this.signerWindowEthereumRequest === undefined) return
+		if (!await this.waitForSignerAvailability()) return await this.replyWithUnavailableSignerAccounts(false)
 		try {
 			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
@@ -953,7 +1007,7 @@ class InterceptorMessageListener {
 
 	// attempts to call signer for eth_requestAccounts
 	private readonly requestAccountsFromSigner = async () => {
-		if (this.signerWindowEthereumRequest === undefined) return
+		if (!await this.waitForSignerAvailability()) return await this.replyWithUnavailableSignerAccounts(true)
 		if (this.pendingSignerAddressRequest !== undefined) {
 			const pendingReply = await this.pendingSignerAddressRequest
 			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [pendingReply] })
@@ -1333,7 +1387,6 @@ class InterceptorMessageListener {
 
 	private readonly onPageLoad = () => {
 		const interceptorMessageListener = this
-		window.addEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
 		function announceProvider() {
 			const info: EIP6963ProviderInfo = {
 				uuid: '200ecd95-afe4-4684-bce7-0f2f8bdd3498',
@@ -1349,13 +1402,12 @@ class InterceptorMessageListener {
 		}
 		window.addEventListener('eip6963:requestProvider', () => { announceProvider() } )
 		announceProvider()
-		this.acceptingAnnouncedMetaMaskProviders = true
-		try {
-			window.dispatchEvent(new Event('eip6963:requestProvider'))
-		} finally {
-			this.acceptingAnnouncedMetaMaskProviders = false
-			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
-		}
+		this.discoverAnnouncedMetaMaskProvider()
+	}
+
+	public readonly handleEthereumInitialized = () => {
+		this.injectEthereumIntoWindow()
+		if (this.signerName === 'NoSigner') this.discoverAnnouncedMetaMaskProvider()
 	}
 
 	public readonly injectEthereumIntoWindow = () => {
@@ -1380,9 +1432,7 @@ class InterceptorMessageListener {
 		const useNoSigner = () => {
 			inpageWindow.ethereum = this.createInterceptorProvider(undefined)
 			this.connected = true
-			this.signerWindowEthereumProvider = undefined
-			this.signerWindowEthereumRequest = undefined
-			this.fallbackSignerWindowEthereumRequest = undefined
+			this.setSignerProvider(undefined, undefined)
 			this.connectToSigner('NoSigner')
 		}
 		let rootIsInterceptor = false
@@ -1416,9 +1466,7 @@ class InterceptorMessageListener {
 				try { fallbackRequest = injectedWindowEthereum.request.bind(injectedWindowEthereum) } catch (error: unknown) { this.reportSignerDiscoveryError('bind root fallback signer request', error) }
 			}
 			this.connected = preparedSigner.connected
-			this.signerWindowEthereumProvider = preparedSigner.provider
-			this.signerWindowEthereumRequest = preparedSigner.request
-			this.fallbackSignerWindowEthereumRequest = fallbackRequest
+			this.setSignerProvider(preparedSigner.provider, preparedSigner.request, fallbackRequest)
 			inpageWindow.ethereum = this.createInterceptorProvider(preparedSigner.provider)
 			this.installControlledAccountCompatibilityProperties()
 			this.connectToSigner(signerName)
@@ -1431,9 +1479,7 @@ class InterceptorMessageListener {
 		}
 		const fallbackSignerWindowEthereum = preparedRootSigner.provider
 		const fallbackSignerName = preparedMetaMaskProvider === undefined ? rootSignerName : 'MetaMask'
-		this.signerWindowEthereumProvider = fallbackSignerWindowEthereum
-		this.signerWindowEthereumRequest = preparedRootSigner.request // store the request object to signer
-		this.fallbackSignerWindowEthereumRequest = undefined
+		this.setSignerProvider(fallbackSignerWindowEthereum, preparedRootSigner.request)
 		this.connected = preparedRootSigner.connected
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
 		if (fallbackSignerWindowEthereum !== injectedWindowEthereum || this.hasNonConfigurableAccountCompatibilityProperty()) {
@@ -1452,11 +1498,7 @@ function injectInterceptor() {
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 
 	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
-	const onEthereumInitialized = () => {
-		if (inpageWindow.ethereum?.isInterceptor) return
-		interceptorMessageListener.injectEthereumIntoWindow()
-	}
-	window.addEventListener('ethereum#initialized', onEthereumInitialized)
+	window.addEventListener('ethereum#initialized', interceptorMessageListener.handleEthereumInitialized)
 	window.dispatchEvent(new Event('ethereum#initialized'))
 }
 
