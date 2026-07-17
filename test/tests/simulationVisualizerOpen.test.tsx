@@ -110,6 +110,20 @@ function sendRuntimeMessage(listener: RuntimeMessageListener, message: unknown) 
 	return { returned, response }
 }
 
+function isHomeDataRequest(message: unknown, refreshSignerAccounts: boolean, includeWebsiteAccessAddressMetadata: boolean) {
+	return typeof message === 'object'
+		&& message !== null
+		&& 'method' in message
+		&& message.method === 'popup_requestNewHomeData'
+		&& 'data' in message
+		&& typeof message.data === 'object'
+		&& message.data !== null
+		&& 'refreshSignerAccounts' in message.data
+		&& message.data.refreshSignerAccounts === refreshSignerAccounts
+		&& 'includeWebsiteAccessAddressMetadata' in message.data
+		&& message.data.includeWebsiteAccessAddressMetadata === includeWebsiteAccessAddressMetadata
+}
+
 function collectElements(node: TestDomNode | null | undefined, tagName: string, results: TestDomNode[] = []) {
 	if (node?.tagName === tagName.toUpperCase()) results.push(node)
 	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
@@ -748,7 +762,7 @@ describe('simulation visualizer open replies', () => {
 				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(createSimulatedCompleteVisualizedSimulation(serializableSettings, [1n], 1))), {}, () => undefined)
 			})
 
-			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'), true)
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), true)
 		} finally {
 			dom.restore()
 		}

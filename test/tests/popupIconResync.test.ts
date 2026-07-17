@@ -421,6 +421,41 @@ describe('popup icon sync', () => {
 		}
 	})
 
+	test('requests fresh data for live updates while the initial refresh is pending', async () => {
+		const dom = installDomMock()
+		const { messageListener, sentMessages } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			sentMessages.splice(0)
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					method: 'popup_signer_name_changed',
+				}, undefined, () => undefined)
+			})
+
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshHomeData'), true)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('accepts fresh data for a newly active tab after rendering bootstrap data', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
@@ -942,7 +977,7 @@ describe('popup icon sync', () => {
 
 	test('settings update blocks stale home updates with lower generation', async () => {
 		const dom = installDomMock()
-		const { messageListener } = installBrowserMock()
+		const { messageListener, sentMessages } = installBrowserMock()
 		try {
 			Object.defineProperty(globalThis, 'window', {
 				value: {
@@ -968,6 +1003,7 @@ describe('popup icon sync', () => {
 			})
 			const iconAfterCurrentTabUpdate = collectImageSrcs(dom.document.body).find((src) => src.includes('head-'))
 			assert.equal(iconAfterCurrentTabUpdate?.endsWith('head-signing.png'), true)
+			sentMessages.splice(0)
 
 			await act(() => {
 				listener?.({
@@ -977,6 +1013,7 @@ describe('popup icon sync', () => {
 					data: defaultSettings,
 				}, undefined, () => undefined)
 			})
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, true)), true)
 
 			await act(() => {
 				listener?.({
