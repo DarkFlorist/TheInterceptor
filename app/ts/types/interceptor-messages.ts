@@ -7,7 +7,7 @@ import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, Et
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
-import { SignerName } from './signerTypes.js'
+import { EIP6963ProviderInfo, SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -46,6 +46,21 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('signer_providers_changed'),
+		result: funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				preferredSignerRdns: funtypes.Union(funtypes.String, funtypes.Undefined),
+				automaticSelectionAllowed: funtypes.Boolean,
+				signerSelectionChangeAllowed: funtypes.Boolean,
+				legacySignerAllowed: funtypes.Union(funtypes.Boolean, funtypes.Undefined),
+			}),
+			funtypes.ReadonlyPartial({ selectedSignerProviderUuid: EIP6963ProviderInfo.fields.uuid }),
+		),
+	}),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_provider_selected'), result: funtypes.Literal('0x') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('begin_signer_provider_selection'), result: funtypes.Union(funtypes.String, funtypes.Undefined) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('finish_signer_provider_selection'), result: funtypes.Literal('0x') }),
 )
 
 export type InpageScriptRequest = funtypes.Static<typeof InpageScriptRequest>
@@ -67,6 +82,8 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_accounts'), result: funtypes.ReadonlyTuple() }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('select_signer_provider'), result: EIP6963ProviderInfo.fields.uuid }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_provider_catalog'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('disconnect'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
@@ -308,6 +325,16 @@ export const RequestAccountsFromSigner = funtypes.ReadonlyObject({
 	data: funtypes.Boolean
 }).asReadonly()
 
+export type SelectSignerProvider = funtypes.Static<typeof SelectSignerProvider>
+export const SelectSignerProvider = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_selectSignerProvider'),
+	data: funtypes.ReadonlyObject({
+		tabId: funtypes.Number,
+		websiteOrigin: funtypes.String,
+		uuid: EIP6963ProviderInfo.fields.uuid,
+	}),
+}).asReadonly()
+
 export type EnableSimulationMode = funtypes.Static<typeof EnableSimulationMode>
 export const EnableSimulationMode = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_enableSimulationMode'),
@@ -398,6 +425,30 @@ export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
 	params: funtypes.Tuple(funtypes.Boolean, SignerName),
+}).asReadonly()
+
+export type SignerProvidersChanged = funtypes.Static<typeof SignerProvidersChanged>
+export const SignerProvidersChanged = funtypes.ReadonlyObject({
+	method: funtypes.Literal('signer_providers_changed'),
+	params: funtypes.Tuple(funtypes.ReadonlyArray(EIP6963ProviderInfo), funtypes.Boolean, EIP6963ProviderInfo.fields.uuid),
+}).asReadonly()
+
+export type SignerProviderSelected = funtypes.Static<typeof SignerProviderSelected>
+export const SignerProviderSelected = funtypes.ReadonlyObject({
+	method: funtypes.Literal('signer_provider_selected'),
+	params: funtypes.Tuple(EIP6963ProviderInfo, funtypes.Union(funtypes.Literal('explicit'), funtypes.Literal('remembered'))),
+}).asReadonly()
+
+export type BeginSignerProviderSelection = funtypes.Static<typeof BeginSignerProviderSelection>
+export const BeginSignerProviderSelection = funtypes.ReadonlyObject({
+	method: funtypes.Literal('begin_signer_provider_selection'),
+	params: funtypes.ReadonlyTuple(funtypes.Union(EIP6963ProviderInfo.fields.uuid, funtypes.Undefined)),
+}).asReadonly()
+
+export type FinishSignerProviderSelection = funtypes.Static<typeof FinishSignerProviderSelection>
+export const FinishSignerProviderSelection = funtypes.ReadonlyObject({
+	method: funtypes.Literal('finish_signer_provider_selection'),
+	params: funtypes.ReadonlyTuple(funtypes.String),
 }).asReadonly()
 
 
@@ -944,6 +995,7 @@ const PopupMessageRuntype = funtypes.Union(
 	ChangeActiveAddress,
 	ChangePage,
 	RequestAccountsFromSigner,
+	SelectSignerProvider,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation') }),
 	RefreshConfirmTransactionMetadata,
 	InterceptorAccess,

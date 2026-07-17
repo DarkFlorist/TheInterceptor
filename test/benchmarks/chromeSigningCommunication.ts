@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForPopupTarget, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -97,6 +97,7 @@ async function main() {
 	let pageTargetId: string | undefined
 	let accessTargetId: string | undefined
 	let confirmTargetId: string | undefined
+	let selectionTargetId: string | undefined
 	try {
 		const workerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(workerTarget.url)
@@ -132,10 +133,102 @@ async function main() {
 				const accessState = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, preloadStarted: globalThis.__fakeSignerPreloadStarted, signerRequests: globalThis.__fakeSignerRequests, aggregateRequests: globalThis.__aggregateSignerRequests, ethereumType: typeof globalThis.ethereum, isBraveWallet: globalThis.ethereum?.isBraveWallet, isMetaMask: globalThis.ethereum?.isMetaMask })')
 				throw new Error(`Access approval failed with page state ${ JSON.stringify(accessState) }`, { cause: error })
 			}
+			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === accessTargetId, 10_000, 'completed initial access popup')
+			accessTargetId = undefined
+			const selectionWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+			let signerSelection: { readonly tabId: number, readonly websiteOrigin: string, readonly uuid: string }
+			try {
+				await waitForCondition(async () => await selectionWorkerConnection.evaluate<boolean>(`(async () => {
+					const storage = await browser.storage.local.get()
+					return Object.values(storage).some((value) => Array.isArray(value?.availableSignerProviders) && value.availableSignerProviders.length === 1)
+				})()`).catch(() => false), 10_000, 'EIP-6963 provider catalog')
+				signerSelection = await selectionWorkerConnection.evaluate(`(async () => {
+					const storage = await browser.storage.local.get()
+					const tabState = Object.values(storage).find((value) => Array.isArray(value?.availableSignerProviders) && value.availableSignerProviders.length === 1)
+					if (tabState?.website === undefined) throw new Error('Missing website state for signer selection')
+					const provider = tabState.availableSignerProviders[0]
+					return { tabId: tabState.tabId, websiteOrigin: tabState.website.websiteOrigin, uuid: provider.uuid }
+				})()`)
+				await selectionWorkerConnection.evaluate(`(async () => {
+					const openPopup = browser.action.openPopup
+					if (typeof openPopup !== 'function') throw new Error('browser.action.openPopup is unavailable')
+					await openPopup()
+				})()`, { userGesture: true })
+			} finally {
+				selectionWorkerConnection.close()
+			}
+			const selectionTarget = await waitForPopupTarget(chrome.browserDebugPort, extensionId, 30_000)
+			selectionTargetId = selectionTarget.id
+			const selectionConnection = await connectTarget(chrome.browserDebugPort, selectionTargetId)
+			try {
+				await waitForCondition(async () => await selectionConnection.evaluate<boolean>(`(() => {
+					const selector = document.querySelector('#signer-provider-selector')
+					return selector instanceof HTMLSelectElement && [...selector.options].some((option) => option.value === ${ JSON.stringify(signerSelection.uuid) })
+				})()`).catch(() => false), 30_000, 'rendered signer provider selector')
+				await selectionConnection.evaluate(`(() => {
+					const selector = document.querySelector('#signer-provider-selector')
+					if (!(selector instanceof HTMLSelectElement)) throw new Error('Missing signer provider selector')
+					selector.value = ${ JSON.stringify(signerSelection.uuid) }
+					selector.dispatchEvent(new Event('input', { bubbles: true }))
+				})()`)
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__fakeSignerRequests?.includes('eth_chainId')`).catch(() => false), 10_000, 'selected signer connection')
+			} finally {
+				selectionConnection.close()
+				await closeTarget(chrome.browserConnection, selectionTargetId)
+				selectionTargetId = undefined
+			}
+			await pageConnection.evaluate(`(() => {
+				const iframe = document.createElement('iframe')
+				iframe.src = ${ JSON.stringify(`${ server.baseUrl }?signing-frame`) }
+				globalThis.__signingFrame = iframe
+				document.body.append(iframe)
+			})()`)
+			try {
+				let iframeAccessTargetId: string | undefined
+				await waitForCondition(async () => {
+					if (await pageConnection.evaluate(`globalThis.__signingFrame?.contentWindow?.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false)) return true
+					const targets = await chrome.browserConnection.send<{ targetInfos: readonly { targetId: string, url: string }[] }>('Target.getTargets')
+					const accessTarget = targets.targetInfos.find((target) => target.url.startsWith(`chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`))
+					iframeAccessTargetId = accessTarget?.targetId
+					return iframeAccessTargetId !== undefined
+				}, 30_000, 'iframe access approval or address-access prompt')
+				if (iframeAccessTargetId !== undefined) {
+					accessTargetId = iframeAccessTargetId
+					const iframeAccessConnection = await connectTarget(chrome.browserDebugPort, iframeAccessTargetId)
+					try {
+						await waitForButtonEnabled(iframeAccessConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+						await clickButton(iframeAccessConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
+					} finally {
+						iframeAccessConnection.close()
+					}
+					await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingFrame?.contentWindow?.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'iframe address-access approval')
+					await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === iframeAccessTargetId, 10_000, 'completed iframe access popup')
+					accessTargetId = undefined
+				}
+			} catch(error: unknown) {
+				const frameState = await pageConnection.evaluate('({ communicationState: globalThis.__signingFrame?.contentWindow?.__interceptorChromeCommunicationState, signerRequests: globalThis.__signingFrame?.contentWindow?.__fakeSignerRequests, aggregateRequests: globalThis.__signingFrame?.contentWindow?.__aggregateSignerRequests, topDocumentGeneration: globalThis[Symbol.for(\'dark.florist.interceptor.signerDocumentGeneration\')] })')
+				const diagnosticWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+				const backgroundState = await diagnosticWorkerConnection.evaluate(`(async () => {
+					const storage = await browser.storage.local.get()
+					return { tabStates: Object.entries(storage).filter(([key]) => key.startsWith('tabState_')), websiteAccess: storage.websiteAccess, pendingAccessRequests: storage.pendingAccessRequests, interceptorErrorDiagnostics: storage.interceptorErrorDiagnostics }
+				})()`).finally(() => diagnosticWorkerConnection.close())
+				throw new Error(`Iframe access approval failed with frame state ${ JSON.stringify(frameState) } and background state ${ JSON.stringify(backgroundState) }`, { cause: error })
+			}
+			try {
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingFrame?.contentWindow?.__fakeSignerRequests?.includes('eth_chainId')`).catch(() => false), 10_000, 'iframe selected signer propagation')
+			} catch(error: unknown) {
+				const frameState = await pageConnection.evaluate('({ signerRequests: globalThis.__signingFrame?.contentWindow?.__fakeSignerRequests, aggregateRequests: globalThis.__signingFrame?.contentWindow?.__aggregateSignerRequests, documentGeneration: globalThis.__signingFrame?.contentWindow?.[Symbol.for(\'dark.florist.interceptor.signerDocumentGeneration\')], topDocumentGeneration: globalThis[Symbol.for(\'dark.florist.interceptor.signerDocumentGeneration\')] })')
+				const diagnosticWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+				const backgroundState = await diagnosticWorkerConnection.evaluate(`(async () => {
+					const storage = await browser.storage.local.get()
+					return { tabStates: Object.entries(storage).filter(([key]) => key.startsWith('tabState_')), interceptorErrorDiagnostics: storage.interceptorErrorDiagnostics }
+				})()`).finally(() => diagnosticWorkerConnection.close())
+				throw new Error(`Iframe signer propagation failed with frame state ${ JSON.stringify(frameState) } and background state ${ JSON.stringify(backgroundState) }`, { cause: error })
+			}
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__signingResult = { status: 'pending' }
-				globalThis.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0', data: '0x' }] })
+				globalThis.__signingFrame.contentWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0', data: '0x' }] })
 					.then((result) => { globalThis.__signingResult = { status: 'fulfilled', result } })
 					.catch((error) => { globalThis.__signingResult = { status: 'rejected', error: error instanceof Error ? error.message : String(error), code: typeof error?.code === 'number' ? error.code : undefined } })
 			})()`)
@@ -150,11 +243,25 @@ async function main() {
 				confirmConnection.close()
 			}
 
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__fakeSignerRequests?.includes('eth_sendTransaction')`).catch(() => false), 10_000, 'signer eth_sendTransaction request')
+			try {
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingFrame?.contentWindow?.__fakeSignerRequests?.includes('eth_sendTransaction')`).catch(() => false), 10_000, 'iframe selected signer eth_sendTransaction request')
+			} catch (error) {
+				const signerState = await pageConnection.evaluate('({ signingResult: globalThis.__signingResult, signerRequests: globalThis.__signingFrame?.contentWindow?.__fakeSignerRequests, aggregateRequests: globalThis.__signingFrame?.contentWindow?.__aggregateSignerRequests })')
+				const diagnosticWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+				const backgroundState = await diagnosticWorkerConnection.evaluate(`(async () => {
+					const storage = await browser.storage.local.get()
+					return {
+						tabStates: Object.entries(storage).filter(([key]) => key.startsWith('tabState_')),
+						signerPreferences: storage.signerPreferences,
+						interceptorErrorDiagnostics: storage.interceptorErrorDiagnostics,
+					}
+				})()`).finally(() => diagnosticWorkerConnection.close())
+				throw new Error(`Signer request failed with page state ${ JSON.stringify(signerState) } and background state ${ JSON.stringify(backgroundState) }`, { cause: error })
+			}
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingResult?.status === 'fulfilled'`).catch(() => false), 10_000, 'signing result')
 			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__signingResult')
 			if (signingResult.result !== FAKE_SIGNED_TRANSACTION_HASH) throw new Error(`Unexpected signing result: ${ signingResult.result ?? 'missing' }`)
-			const aggregateReceivedSigningRequest = await pageConnection.evaluate<boolean>(`globalThis.__aggregateSignerRequests?.includes('eth_sendTransaction')`)
+			const aggregateReceivedSigningRequest = await pageConnection.evaluate<boolean>(`globalThis.__signingFrame?.contentWindow?.__aggregateSignerRequests?.includes('eth_sendTransaction')`)
 			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to Brave instead of its EIP-6963 MetaMask provider')
 
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed confirmation popup')
@@ -177,6 +284,7 @@ async function main() {
 			pageConnection.close()
 		}
 	} finally {
+		if (selectionTargetId !== undefined) await closeTarget(chrome.browserConnection, selectionTargetId).catch(() => undefined)
 		if (confirmTargetId !== undefined) await closeTarget(chrome.browserConnection, confirmTargetId).catch(() => undefined)
 		if (accessTargetId !== undefined) await closeTarget(chrome.browserConnection, accessTargetId).catch(() => undefined)
 		if (pageTargetId !== undefined) await closeTarget(chrome.browserConnection, pageTargetId).catch(() => undefined)

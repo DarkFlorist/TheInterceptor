@@ -5,6 +5,13 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
+import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
+
+const isSignerTouchingCallback = (message: SubscriptionReplyOrCallBack) => message.method === 'request_signer_to_eth_requestAccounts'
+	|| message.method === 'request_signer_to_eth_accounts'
+	|| message.method === 'request_signer_chainId'
+	|| message.method === 'request_signer_to_wallet_switchEthereumChain'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -21,18 +28,28 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	if (message.type === 'doNotReply') return
-	const tabConnection = websiteTabConnections.get(message.uniqueRequestIdentifier.requestSocket.tabId)
-	const identifier = websiteSocketToString(message.uniqueRequestIdentifier.requestSocket)
+	const authorizedMessage = message.type === 'forwardToSigner' && !socketCanExecuteWithSelectedSigner(message.uniqueRequestIdentifier.requestSocket)
+		? {
+			...message,
+			type: 'result' as const,
+			error: {
+				code: METAMASK_ERROR_NOT_AUTHORIZED,
+				message: 'The selected signer provider is not ready for this frame. Retry the request after wallet synchronization completes.',
+			},
+		}
+		: message
+	const tabConnection = websiteTabConnections.get(authorizedMessage.uniqueRequestIdentifier.requestSocket.tabId)
+	const identifier = websiteSocketToString(authorizedMessage.uniqueRequestIdentifier.requestSocket)
 	if (tabConnection === undefined) return false
 	for (const socketAsString in tabConnection.connections) {
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
 		return postMessageToPortIfConnected(connection.port, {
-			...message,
+			...authorizedMessage,
 			interceptorApproved: true,
-			requestId: message.uniqueRequestIdentifier.requestId,
-			...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
+			requestId: authorizedMessage.uniqueRequestIdentifier.requestId,
+			...(authorizedMessage.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
 		})
 	}
 	return false
@@ -47,6 +64,7 @@ export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port
 }
 
 export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: SubscriptionReplyOrCallBack) {
+	if (isSignerTouchingCallback(message) && !socketCanExecuteWithSelectedSigner(socket)) return false
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false

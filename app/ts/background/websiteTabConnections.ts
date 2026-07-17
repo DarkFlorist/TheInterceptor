@@ -4,12 +4,13 @@ import { websiteSocketToString } from './backgroundUtils.js'
 
 export function removeWebsiteTabConnection(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, disconnectedPort: browser.runtime.Port) {
 	const tabConnection = websiteTabConnections.get(socket.tabId)
-	if (tabConnection === undefined) return
+	if (tabConnection === undefined) return false
 	const connectionIdentifier = websiteSocketToString(socket)
 	const currentConnection = tabConnection.connections[connectionIdentifier]
-	if (currentConnection?.port !== disconnectedPort) return
+	if (currentConnection?.port !== disconnectedPort) return false
 	delete tabConnection.connections[connectionIdentifier]
 	if (Object.keys(tabConnection.connections).length === 0) {
 		websiteTabConnections.delete(socket.tabId)
 	}
+	return true
 }

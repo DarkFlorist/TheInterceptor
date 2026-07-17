@@ -6,13 +6,19 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
+import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 type Listener = () => void
 type PortMessage = { type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 const ADDRESS_PROMPT_TIMEOUT_MS = 100
 
-function installBrowserMock() {
+function installBrowserMock(tabStatus: 'loading' | 'complete' = 'complete') {
+	const signerSocket = { tabId: 1, connectionName: 0n }
+	clearSignerExecutionAuthorityForTab(signerSocket.tabId)
+	registerAuthoritativeTopSocket(signerSocket, 'https://example.test')
+	reconcileSignerExecutionDocument(signerSocket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(signerSocket, 'https://example.test')
 	const storageState: Record<string, unknown> = {}
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
@@ -43,7 +49,7 @@ function installBrowserMock() {
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
-			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
+			async get(tabId: number) { return { id: tabId, active: true, status: tabStatus } },
 			async update() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -2008,6 +2014,42 @@ describe('background eth_accounts', () => {
 		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 		assert.equal(access?.interceptorDisabled, true)
+	})
+
+	test('access refresh reuses top metadata for same-origin children without leaking it cross-origin', async () => {
+		installBrowserMock('loading')
+		const { changeSimulationMode, getPendingAccessRequests, getSettings, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const sameOrigin = 'https://example.test'
+		const crossOrigin = 'https://frame.test'
+		const account = 0x1111111111111111111111111111111111111111n
+		const cachedWebsite = { websiteOrigin: sameOrigin, icon: undefined, title: 'Cached top-frame title' }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateTabState(1, (previousState) => ({ ...previousState, website: cachedWebsite }))
+		await updateWebsiteAccess(() => [
+			{ website: cachedWebsite, access: true, addressAccess: undefined },
+			{ website: { websiteOrigin: crossOrigin, icon: undefined, title: 'Untrusted frame title' }, access: true, addressAccess: undefined },
+		])
+
+		const sameOriginSocket = { tabId: 1, connectionName: 2n }
+		const crossOriginSocket = { tabId: 1, connectionName: 3n }
+		const websiteTabConnections = new Map([[1, { connections: {
+			[websiteSocketToString(sameOriginSocket)]: { port: createPort(1).port, socket: sameOriginSocket, websiteOrigin: sameOrigin, frameId: 2, approved: false, wantsToConnect: true },
+			[websiteSocketToString(crossOriginSocket)]: { port: createPort(1).port, socket: crossOriginSocket, websiteOrigin: crossOrigin, frameId: 3, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const metadataTimeout = new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Child access refresh waited for the loading tab')), ADDRESS_PROMPT_TIMEOUT_MS))
+		await Promise.race([
+			updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true),
+			metadataTimeout,
+		])
+
+		const pendingRequests = await getPendingAccessRequests()
+		const sameOriginRequest = pendingRequests.find((request) => request.website.websiteOrigin === sameOrigin)
+		const crossOriginRequest = pendingRequests.find((request) => request.website.websiteOrigin === crossOrigin)
+		assert.equal(sameOriginRequest?.website.title, cachedWebsite.title)
+		assert.equal(crossOriginRequest?.website.title, undefined)
+		assert.equal(crossOriginRequest?.website.icon, undefined)
 	})
 
 	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {

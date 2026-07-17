@@ -5,7 +5,7 @@ import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscripti
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { SignerName } from '../types/signerTypes.js'
+import { SignerName, SignerPreferences } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
@@ -63,6 +63,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
+	signerPreferences: SignerPreferences,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
 	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,
@@ -103,6 +104,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('popupVisualisation'),
 	funtypes.Literal('signerName'),
+	funtypes.Literal('signerPreferences'),
 	funtypes.Literal('currentTabId'),
 	funtypes.Literal('rpcConnectionStatus'),
 	funtypes.Literal('ethereumSubscriptionsAndFilters'),

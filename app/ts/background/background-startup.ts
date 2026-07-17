@@ -32,6 +32,11 @@ import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminal
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
+import { clearSignerExecutionAuthorityForTab, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval } from './signerExecutionAuthority.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { registerTopSignerDocument, releaseSignerSelectionLeasesForTab } from './signerSelectionLease.js'
+import { getChildSignerConnectionSynchronization } from './signerProviderSelection.js'
+import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -107,6 +112,8 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 }
 
 browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
+	releaseSignerSelectionLeasesForTab(tabId)
+	clearSignerExecutionAuthorityForTab(tabId)
 	for (const socketIdentifier of latestReceivedBridgeRequestIds.keys()) {
 		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
 	}
@@ -130,20 +137,23 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {
-		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+		const websiteDetails = await getWebsiteDetailsForConnection(socket.tabId, websiteOrigin, port.sender?.frameId)
+		const website = { websiteOrigin, ...websiteDetails }
 		await updateKnownWebsiteMetadata(website)
 		return website
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
-	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+	const newConnection = { port, socket, websiteOrigin, frameId: port.sender?.frameId, approved: false, wantsToConnect: false }
+	let startsNewSignerDocument = false
+	let childSignerCatalogResynchronizationNeeded = false
 
 	const listenersRegistered = tryRegisterContentScriptPortListeners(
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
-				removeWebsiteTabConnection(websiteTabConnections, socket, port)
+				if (removeWebsiteTabConnection(websiteTabConnections, socket, port)) scheduleCurrentChildSignerSocketRemoval(socket)
 			})
 		},
 		(payload) => {
@@ -180,25 +190,59 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		checkAndThrowRuntimeLastError,
 	)
 	if (!listenersRegistered) return
+	if (port.sender?.frameId === 0) {
+		startsNewSignerDocument = registerTopSignerDocument(socket, websiteOrigin)
+	} else if (port.sender?.frameId !== undefined) {
+		childSignerCatalogResynchronizationNeeded = registerCurrentChildSignerSocket(socket, port.sender.frameId)
+			&& latestReceivedBridgeRequestIds.has(identifier)
+	}
 
 	if (tabConnection === undefined) {
 		websiteTabConnections.set(socket.tabId, {
 			connections: { [identifier]: newConnection },
 		})
-		await updateTabState(socket.tabId, (previousState: TabState) => {
+		if (port.sender?.frameId === 0) await updateTabState(socket.tabId, (previousState: TabState) => {
 			return modifyObject(previousState, {
 				website: { websiteOrigin, icon: undefined, title: undefined },
+				availableSignerProviders: [],
+				selectedSignerProvider: undefined,
+				explicitlySelectedSignerProviderUuid: undefined,
+				preferredSignerUnavailable: false,
+				signerProviderCatalogOverflowed: false,
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
+		if (port.sender?.frameId === 0) void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 	} else {
 		tabConnection.connections[identifier] = newConnection
+		if (port.sender?.frameId === 0 && startsNewSignerDocument) {
+			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, {
+				website: { websiteOrigin, icon: undefined, title: undefined },
+				availableSignerProviders: [],
+				selectedSignerProvider: undefined,
+				explicitlySelectedSignerProviderUuid: undefined,
+				preferredSignerUnavailable: false,
+				signerProviderCatalogOverflowed: false,
+			}))
+		}
+	}
+	if (startsNewSignerDocument) {
+		const currentConnections = websiteTabConnections.get(socket.tabId)
+		for (const connection of Object.values(currentConnections?.connections ?? {})) {
+			if (connection.websiteOrigin !== websiteOrigin) continue
+			sendSubscriptionReplyOrCallBackToPort(connection.port, { type: 'result', method: 'request_signer_provider_catalog', result: [] })
+		}
+	}
+	if (port.sender?.frameId !== 0) {
+		const synchronization = getChildSignerConnectionSynchronization(socket, websiteOrigin, childSignerCatalogResynchronizationNeeded)
+		if (synchronization !== undefined) sendSubscriptionReplyOrCallBackToPort(port, synchronization)
 	}
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
-		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
+		if (port.sender?.frameId === 0) {
+			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
+		}
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
 		if (isMissingBrowserTargetError(error)) return

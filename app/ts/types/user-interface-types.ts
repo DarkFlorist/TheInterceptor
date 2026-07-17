@@ -5,7 +5,7 @@ import type { IdentifiedSwapWithMetadata } from '../components/simulationExplain
 import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import type { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
-import { SignerName } from './signerTypes.js'
+import { EIP6963ProviderInfo, SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACCESS_DENIED_WITH_SHIELD, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
 import { type RpcEntries, type RpcEntry, RpcNetwork } from './rpc.js'
 import type { TransactionOrMessageIdentifier } from './interceptor-messages.js'
@@ -122,6 +122,7 @@ type SocketConnection = {
 	port: browser.runtime.Port,
 	socket: WebsiteSocket,
 	websiteOrigin: string,
+	frameId?: number,
 	approved: boolean, // if user has approved connection
 	wantsToConnect: boolean,
 }
@@ -157,17 +158,26 @@ export type TabConnection = {
 export type WebsiteTabConnections = Map<number, TabConnection>
 
 export type TabState = funtypes.Static<typeof TabState>
-export const TabState = funtypes.ReadonlyObject({
-	tabId: funtypes.Number,
-	website: funtypes.Union(Website, funtypes.Undefined),
-	signerConnected: funtypes.Boolean,
-	signerName: SignerName,
-	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
-	signerAccountError: funtypes.Union(ErrorWithCodeAndOptionalData, funtypes.Undefined),
-	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-	tabIconDetails: TabIconDetails,
-	activeSigningAddress: OptionalEthereumAddress,
-})
+export const TabState = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		tabId: funtypes.Number,
+		website: funtypes.Union(Website, funtypes.Undefined),
+		signerConnected: funtypes.Boolean,
+		signerName: SignerName,
+		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
+		signerAccountError: funtypes.Union(ErrorWithCodeAndOptionalData, funtypes.Undefined),
+		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+		tabIconDetails: TabIconDetails,
+		activeSigningAddress: OptionalEthereumAddress,
+	}),
+	funtypes.ReadonlyPartial({
+		availableSignerProviders: funtypes.ReadonlyArray(EIP6963ProviderInfo),
+		selectedSignerProvider: EIP6963ProviderInfo,
+		explicitlySelectedSignerProviderUuid: EIP6963ProviderInfo.fields.uuid,
+		preferredSignerUnavailable: funtypes.Boolean,
+		signerProviderCatalogOverflowed: funtypes.Boolean,
+	}),
+)
 
 export type RpcSlowRequest = funtypes.Static<typeof RpcSlowRequest>
 export const RpcSlowRequest = funtypes.ReadonlyObject({

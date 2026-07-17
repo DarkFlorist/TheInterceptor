@@ -323,7 +323,7 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		removeWebsiteTabConnection(websiteTabConnections, socket, port)
+		assert.equal(removeWebsiteTabConnection(websiteTabConnections, socket, port), true)
 
 		assert.equal(websiteTabConnections.has(1), false)
 	})
@@ -344,10 +344,10 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		removeWebsiteTabConnection(websiteTabConnections, socket, disconnectedPort)
+		assert.equal(removeWebsiteTabConnection(websiteTabConnections, socket, disconnectedPort), false)
 
 		assert.strictEqual(websiteTabConnections.get(1)?.connections[connectionIdentifier]?.port, replacementPort)
-		removeWebsiteTabConnection(websiteTabConnections, socket, replacementPort)
+		assert.equal(removeWebsiteTabConnection(websiteTabConnections, socket, replacementPort), true)
 		assert.equal(websiteTabConnections.has(1), false)
 	})
 })

@@ -20,6 +20,7 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
+import { socketCanExecuteWithSelectedSigner } from '../signerExecutionAuthority.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -133,6 +134,7 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true) {
 	const tabState = await getTabState(socket.tabId)
 	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
+	if (!socketCanExecuteWithSelectedSigner(socket)) return []
 
 	const future = new Future<void>
 	const listener = createInternalMessageListener( (message: WindowMessage) => {

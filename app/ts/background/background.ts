@@ -36,6 +36,8 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
+import { beginSignerProviderSelection, finishSignerProviderSelection, selectSignerProvider, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
+import { isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -45,6 +47,10 @@ const INTERNAL_PROVIDER_METHODS = [
 	'InterceptorError',
 	'signer_chainChanged',
 	'signer_reply',
+	'signer_provider_selected',
+	'signer_providers_changed',
+	'begin_signer_provider_selection',
+	'finish_signer_provider_selection',
 	'wallet_switchEthereumChain_reply',
 ] as const
 
@@ -522,7 +528,41 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	const initialActiveAddress = await getActiveAddress(initialSettings, socket.tabId)
+	const requestCanReachSigner = !initialSettings.simulationMode
+		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
+	const isTopFrame = port?.sender?.frameId === 0 && isAuthoritativeTopSocket(socket)
+	if (request.method === 'signer_providers_changed') {
+		const result = await signerProvidersChanged(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_providers_changed', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.method === 'signer_provider_selected') {
+		await signerProviderSelected(request, websiteOrigin, isTopFrame, port?.sender?.frameId, websiteTabConnections)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_provider_selected', result: '0x', uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.method === 'begin_signer_provider_selection') {
+		const result = await beginSignerProviderSelection(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'begin_signer_provider_selection', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.method === 'finish_signer_provider_selection') {
+		finishSignerProviderSelection(request)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'finish_signer_provider_selection', result: '0x', uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.interceptorInternalRequest !== true
+		&& requestCanReachSigner
+		&& !request.usingInterceptorWithoutSigner
+		&& !(isAccountConnectionMethod(request.method)
+			&& (initialActiveAddress !== undefined || getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin) !== 'hasAccess'))
+		&& !socketCanExecuteWithSelectedSigner(request.uniqueRequestIdentifier.requestSocket)) {
+		return replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result',
+			...getRequestWithDefinedParams(request),
+			error: {
+				code: METAMASK_ERROR_NOT_AUTHORIZED,
+				message: 'The selected signer provider is not ready for this frame. Retry the request after wallet synchronization completes.',
+			},
+		})
+	}
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
@@ -706,6 +746,7 @@ export async function popupMessageHandler(
 				case 'popup_modifyMakeMeRich': return await modifyMakeMeRich(parsedRequest)
 				case 'popup_changePage': return await changePage(parsedRequest)
 				case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
+				case 'popup_selectSignerProvider': return await selectSignerProvider(websiteTabConnections, parsedRequest)
 				case 'popup_resetSimulation': return await resetSimulationStateFromConfig(ethereum, tokenPriceService)
 				case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, parsedRequest)
 				case 'popup_refreshSimulation': {
