@@ -329,10 +329,11 @@ describe('inpage signer bridge', () => {
 		assert.equal(bridgeRequests.filter((request) => request.internal === true).every((request) => request.replayOnDisconnect === undefined), true)
 	})
 
-	test('settles the first account request and keeps signing when MetaMask initializes after Interceptor', async () => {
+	test('waits for late MetaMask instead of using Brave for the first account request and signing', async () => {
 		const signerAccountReplies: unknown[] = []
 		const connectedSignerNames: unknown[] = []
 		const signerRequestMethods: string[] = []
+		const braveSignerRequestMethods: string[] = []
 		const signedTransactionHash = '0x2222222222222222222222222222222222222222222222222222222222222222'
 		let pendingAccountRequest: InpageRequest | undefined
 		const { fakeWindow, signerAccounts, sendBackgroundMessage } = createFakeWindow({
@@ -404,7 +405,19 @@ describe('inpage signer bridge', () => {
 			},
 		})
 		const lateMetaMaskProvider = fakeWindow.ethereum
-		Reflect.deleteProperty(fakeWindow, 'ethereum')
+		const braveSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				braveSignerRequestMethods.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				if (method === 'eth_accounts' || method === 'eth_requestAccounts') return []
+				throw new Error(`Unexpected Brave signer request: ${ method }`)
+			},
+			on: () => braveSigner,
+			removeListener: () => braveSigner,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: braveSigner })
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?late-metamask-first-connect-and-signing', async () => {
 			const interceptorProvider = fakeWindow.ethereum
@@ -417,6 +430,7 @@ describe('inpage signer bridge', () => {
 				result: [],
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(braveSignerRequestMethods.includes('eth_requestAccounts'), false)
 
 			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
 				type: 'eip6963:announceProvider',
@@ -425,7 +439,6 @@ describe('inpage signer bridge', () => {
 					provider: lateMetaMaskProvider,
 				},
 			}))
-			fakeWindow.dispatchEvent({ type: 'ethereum#initialized' })
 
 			await waitFor(() => signerAccountReplies.length === 1, 500)
 			assert.deepEqual(signerAccountReplies, [{ type: 'success', accounts: signerAccounts, requestAccounts: true }])
@@ -433,7 +446,8 @@ describe('inpage signer bridge', () => {
 			assert.equal(await interceptorProvider.request({ method: 'eth_sendTransaction', params: [{ from: signerAccounts[0] }] }), signedTransactionHash)
 		})
 
-		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
+		assert.deepEqual(connectedSignerNames, ['Brave', 'MetaMask'])
+		assert.equal(braveSignerRequestMethods.includes('eth_requestAccounts'), false)
 		assert.equal(signerRequestMethods.includes('eth_requestAccounts'), true)
 		assert.equal(signerRequestMethods.includes('eth_sendTransaction'), true)
 	})
@@ -1122,10 +1136,10 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('does not let a late page announcement replace the selected Brave signer', async () => {
+	test('only replaces a selected Brave signer during requested provider discovery', async () => {
 		const connectedSignerNames: unknown[] = []
 		let announcedProviderSubscriptionCount = 0
-		const { fakeWindow } = createFakeWindow({
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
 				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
 				return false
@@ -1160,10 +1174,27 @@ describe('inpage signer bridge', () => {
 				},
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(announcedProviderSubscriptionCount, 0)
+			assert.deepEqual(connectedSignerNames, ['Brave'])
+
+			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: {
+					info: { uuid: '44444444-4444-4444-8444-444444444444', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+					provider: announcedProvider,
+				},
+			}))
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_requestAccounts',
+				result: [],
+			})
+			await waitFor(() => connectedSignerNames.includes('MetaMask'))
 		})
 
-		assert.equal(announcedProviderSubscriptionCount, 0)
-		assert.deepEqual(connectedSignerNames, ['Brave'])
+		assert.equal(announcedProviderSubscriptionCount > 0, true)
+		assert.deepEqual(connectedSignerNames, ['Brave', 'MetaMask'])
 	})
 
 	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {

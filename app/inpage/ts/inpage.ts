@@ -5,6 +5,7 @@ const METAMASK_ERROR_BLANKET_ERROR = -32603
 const METAMASK_METHOD_NOT_SUPPORTED = -32004
 const METAMASK_INVALID_METHOD_PARAMS = -32602
 const SIGNER_DISCOVERY_TIMEOUT_MS = 3000
+const SIGNER_DISCOVERY_RETRY_INTERVAL_MS = 100
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -469,6 +470,8 @@ class InterceptorMessageListener {
 	private signerSelectionGeneration = 0
 	private signerConnectionTransition: Promise<void> = Promise.resolve()
 	private readonly signerAvailabilityWaiters = new Set<InterceptorFuture<void>>()
+	private readonly metaMaskAvailabilityWaiters = new Set<InterceptorFuture<void>>()
+	private signerDiscoveryRetryTimer: ReturnType<typeof setTimeout> | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, OutstandingRequest> = new Map()
 
@@ -767,9 +770,6 @@ class InterceptorMessageListener {
 		this.signerWindowEthereumProvider = provider
 		this.signerWindowEthereumRequest = request
 		this.fallbackSignerWindowEthereumRequest = fallbackRequest
-		if (request === undefined) return
-		for (const waiter of this.signerAvailabilityWaiters) waiter.resolve(undefined)
-		this.signerAvailabilityWaiters.clear()
 	}
 
 	private readonly discoverAnnouncedMetaMaskProvider = () => {
@@ -786,12 +786,36 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private readonly stopSignerDiscoveryRetries = () => {
+		if (this.signerDiscoveryRetryTimer === undefined) return
+		clearTimeout(this.signerDiscoveryRetryTimer)
+		this.signerDiscoveryRetryTimer = undefined
+	}
+
+	private readonly scheduleSignerDiscoveryRetry = () => {
+		const waitingForAnySigner = this.signerAvailabilityWaiters.size > 0 && this.signerWindowEthereumRequest === undefined
+		const waitingForMetaMaskInsteadOfBrave = this.metaMaskAvailabilityWaiters.size > 0 && this.signerName === 'Brave'
+		if (this.signerDiscoveryRetryTimer !== undefined || (!waitingForAnySigner && !waitingForMetaMaskInsteadOfBrave)) return
+		// A late wallet may start answering EIP-6963 requests without successfully replacing window.ethereum or dispatching ethereum#initialized.
+		this.signerDiscoveryRetryTimer = setTimeout(() => {
+			this.signerDiscoveryRetryTimer = undefined
+			const stillWaitingForAnySigner = this.signerAvailabilityWaiters.size > 0 && this.signerWindowEthereumRequest === undefined
+			const stillWaitingForMetaMaskInsteadOfBrave = this.metaMaskAvailabilityWaiters.size > 0 && this.signerName === 'Brave'
+			if (!stillWaitingForAnySigner && !stillWaitingForMetaMaskInsteadOfBrave) return
+			this.discoverAnnouncedMetaMaskProvider()
+			this.scheduleSignerDiscoveryRetry()
+		}, SIGNER_DISCOVERY_RETRY_INTERVAL_MS)
+	}
+
 	private readonly waitForSignerAvailability = async () => {
-		if (this.signerWindowEthereumRequest === undefined && this.signerName === 'NoSigner') this.discoverAnnouncedMetaMaskProvider()
-		if (this.signerWindowEthereumRequest !== undefined) return true
+		if (this.signerName === 'NoSigner' || this.signerName === 'Brave') this.discoverAnnouncedMetaMaskProvider()
+		const waitForMetaMaskInsteadOfBrave = this.signerName === 'Brave'
+		if (this.signerWindowEthereumRequest !== undefined && !waitForMetaMaskInsteadOfBrave) return true
 
 		const signerAvailability = new InterceptorFuture<void>()
-		this.signerAvailabilityWaiters.add(signerAvailability)
+		const waiters = waitForMetaMaskInsteadOfBrave ? this.metaMaskAvailabilityWaiters : this.signerAvailabilityWaiters
+		waiters.add(signerAvailability)
+		this.scheduleSignerDiscoveryRetry()
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await Promise.race([
@@ -799,7 +823,8 @@ class InterceptorMessageListener {
 				new Promise<void>((resolve) => { timeout = setTimeout(resolve, SIGNER_DISCOVERY_TIMEOUT_MS) }),
 			])
 		} finally {
-			this.signerAvailabilityWaiters.delete(signerAvailability)
+			waiters.delete(signerAvailability)
+			if (this.signerAvailabilityWaiters.size === 0 && this.metaMaskAvailabilityWaiters.size === 0) this.stopSignerDiscoveryRetries()
 			if (timeout !== undefined) clearTimeout(timeout)
 		}
 		return this.signerWindowEthereumRequest !== undefined
@@ -1345,6 +1370,15 @@ class InterceptorMessageListener {
 
 	private readonly connectToSigner = (signerName: Signer) => {
 		this.signerName = signerName
+		if (this.signerWindowEthereumRequest !== undefined) {
+			for (const waiter of this.signerAvailabilityWaiters) waiter.resolve(undefined)
+			this.signerAvailabilityWaiters.clear()
+			if (signerName === 'MetaMask') {
+				for (const waiter of this.metaMaskAvailabilityWaiters) waiter.resolve(undefined)
+				this.metaMaskAvailabilityWaiters.clear()
+			}
+			if (this.signerAvailabilityWaiters.size === 0 && this.metaMaskAvailabilityWaiters.size === 0) this.stopSignerDiscoveryRetries()
+		}
 		const selectionGeneration = ++this.signerSelectionGeneration
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
 			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
@@ -1407,7 +1441,7 @@ class InterceptorMessageListener {
 
 	public readonly handleEthereumInitialized = () => {
 		this.injectEthereumIntoWindow()
-		if (this.signerName === 'NoSigner') this.discoverAnnouncedMetaMaskProvider()
+		if (this.signerName === 'NoSigner' || this.signerName === 'Brave') this.discoverAnnouncedMetaMaskProvider()
 	}
 
 	public readonly injectEthereumIntoWindow = () => {

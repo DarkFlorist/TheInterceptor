@@ -30,6 +30,24 @@ type OpenedDialogWithListeners = {
 let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
+// Signer account replies identify their socket but not the request. Keep one round trip active per socket so an empty passive reply cannot settle an interactive request.
+const signerAccountRequestLocks = new Map<string, { readonly semaphore: Semaphore, pendingRequests: number }>()
+
+async function serializeSignerAccountRequest<T>(socket: WebsiteSocket, request: () => Promise<T>): Promise<T> {
+	const socketIdentifier = websiteSocketToString(socket)
+	let lock = signerAccountRequestLocks.get(socketIdentifier)
+	if (lock === undefined) {
+		lock = { semaphore: new Semaphore(1), pendingRequests: 0 }
+		signerAccountRequestLocks.set(socketIdentifier, lock)
+	}
+	lock.pendingRequests += 1
+	try {
+		return await lock.semaphore.execute(request)
+	} finally {
+		lock.pendingRequests -= 1
+		if (lock.pendingRequests === 0 && signerAccountRequestLocks.get(socketIdentifier) === lock) signerAccountRequestLocks.delete(socketIdentifier)
+	}
+}
 
 const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
@@ -130,27 +148,44 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 	} })
 }
 
-export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true) {
-	const tabState = await getTabState(socket.tabId)
-	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
+async function requestSignerAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts: boolean, onlyIfUnavailable: boolean) {
+	return await serializeSignerAccountRequest(socket, async () => {
+		const tabState = await getTabState(socket.tabId)
+		if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return tabState.signerAccounts
 
-	const future = new Future<void>
-	const listener = createInternalMessageListener( (message: WindowMessage) => {
-		if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve()
+		const future = new Future<void>
+		const listener = createInternalMessageListener( (message: WindowMessage) => {
+			if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve()
+		})
+		const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		try {
+			channel.addEventListener('message', listener)
+			const requestSignerAccountsMessage = requestAccounts
+				? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
+				: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
+			const messageSent = await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, requestSignerAccountsMessage)
+			if (messageSent) await future
+		} finally {
+			channel.removeEventListener('message', listener)
+			channel.close()
+		}
+		return (await getTabState(socket.tabId)).signerAccounts
 	})
-	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
-	try {
-		channel.addEventListener('message', listener)
-		const requestSignerAccountsMessage = requestAccounts
-			? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
-			: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
-		const messageSent = await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, requestSignerAccountsMessage)
-		if (messageSent) await future
-	} finally {
-		channel.removeEventListener('message', listener)
-		channel.close()
+}
+
+export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true) {
+	return await requestSignerAccountsFromSigner(websiteTabConnections, socket, requestAccounts, true)
+}
+
+export async function refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, requestAccounts: boolean) {
+	const accountRequests: Promise<readonly bigint[]>[] = []
+	for (const tabConnection of websiteTabConnections.values()) {
+		for (const connection of Object.values(tabConnection.connections)) {
+			if (!connection.approved) continue
+			accountRequests.push(requestSignerAccountsFromSigner(websiteTabConnections, connection.socket, requestAccounts, false))
+		}
 	}
-	return (await getTabState(socket.tabId)).signerAccounts
+	await Promise.all(accountRequests)
 }
 
 export async function requestAccessFromUser(

@@ -104,6 +104,14 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 	return { port, messages }
 }
 
+async function waitForPortMessageCount(messages: readonly PortMessage[], method: string, count: number, timeoutMs = 100) {
+	const deadline = Date.now() + timeoutMs
+	while (messages.filter((message) => message.method === method).length < count) {
+		if (Date.now() >= deadline) throw new Error(`Missing ${ method } port message`)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+}
+
 async function waitForPendingAddressRequest<T extends { requestAccessToAddress?: { address?: bigint } }>(
 	getPendingAccessRequests: () => Promise<readonly T[]>,
 	account: bigint,
@@ -539,6 +547,63 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 7)
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
+	})
+
+	test('serializes a popup refresh and interactive signer account discovery for one connection', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			refreshSignerAccountsFromApprovedWebsitePorts,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x2323232323232323232323232323232323232323n
+		const accountString = '0x2323232323232323232323232323232323232323'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const replyWithSignerAccounts = async (requestId: number, requestAccounts: boolean, accounts: readonly string[]) => {
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ type: 'success', accounts, requestAccounts }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}
+
+		const passiveRequest = refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
+		await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
+
+		const interactiveRequest = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 71, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		const interactiveRequestsBeforePassiveReply = messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length
+
+		await replyWithSignerAccounts(90, false, [])
+		await waitForPortMessageCount(messages, 'request_signer_to_eth_requestAccounts', 1)
+		await replyWithSignerAccounts(91, true, [accountString])
+		await Promise.all([passiveRequest, interactiveRequest])
+
+		assert.equal(interactiveRequestsBeforePassiveReply, 0)
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 71).at(-1)?.result, [accountString])
 	})
 
 	test('resolves approved eth_requestAccounts after signer account state is refreshed', async () => {
