@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import type { Abi } from '../../app/ts/utils/ethereumPrimitives.js'
+import type { Abi, Hex } from '../../app/ts/utils/ethereumPrimitives.js'
 import {
 	bytesToHex,
 	concat,
@@ -438,16 +438,18 @@ describe('local Ethereum primitive helpers', () => {
 			args: [checksumDeadAddress, 123n],
 		})
 
+		const decodedTransfer = decodeEventLog({
+			abi: transferEventAbi,
+			topics: [
+				toEventSelector('Transfer(address,address,uint256)'),
+				'0x000000000000000000000000000000000000000000000000000000000000dead',
+				'0x000000000000000000000000000000000000000000000000000000000000beef',
+			],
+			data: encodeAbiParameters([{ type: 'uint256' }], [987654321n]),
+		})
+		const inferredTransferArgs: { readonly from: Hex, readonly to: Hex, readonly value: bigint } = decodedTransfer.args
 		assert.deepStrictEqual(
-			decodeEventLog({
-				abi: transferEventAbi,
-				topics: [
-					toEventSelector('Transfer(address,address,uint256)'),
-					'0x000000000000000000000000000000000000000000000000000000000000dead',
-					'0x000000000000000000000000000000000000000000000000000000000000beef',
-				],
-				data: encodeAbiParameters([{ type: 'uint256' }], [987654321n]),
-			}),
+			decodedTransfer,
 			{
 				eventName: 'Transfer',
 				args: {
@@ -457,6 +459,29 @@ describe('local Ethereum primitive helpers', () => {
 				},
 			},
 		)
+		assert.equal(inferredTransferArgs.value, 987654321n)
+
+		const emptyEventAbi = [{ type: 'event', name: 'Ping', inputs: [] }] as const satisfies Abi
+		const decodedEmptyEvent = decodeEventLog({
+			abi: emptyEventAbi,
+			topics: [toEventSelector('Ping()')],
+			data: '0x',
+		})
+		const inferredEmptyArgs: Readonly<Record<string, never>> = decodedEmptyEvent.args
+		assert.deepStrictEqual(inferredEmptyArgs, {})
+
+		const mixedEventAbi = [{
+			type: 'event',
+			name: 'Mixed',
+			inputs: [{ name: 'first', type: 'uint256' }, { type: 'uint256' }],
+		}] as const satisfies Abi
+		const decodedMixedEvent = decodeEventLog({
+			abi: mixedEventAbi,
+			topics: [toEventSelector('Mixed(uint256,uint256)')],
+			data: encodeAbiParameters(mixedEventAbi[0].inputs, [1n, 2n]),
+		})
+		const inferredMixedArgs: readonly [bigint, bigint] = decodedMixedEvent.args
+		assert.deepStrictEqual(inferredMixedArgs, [1n, 2n])
 	})
 
 	test('matches reference ENS normalization and namehash vectors', () => {
@@ -881,8 +906,10 @@ describe('local Ethereum primitive helpers', () => {
 			'0x000000000000000000000000000000000000000000000000000000000000beef',
 		] as const
 		assert.throws(() => decodeEventLog({ abi: transferEventAbi, data: '0x', topics: transferTopics, strict: true }))
+		const decodedLooseTransfer = decodeEventLog({ abi: transferEventAbi, data: '0x', topics: transferTopics, strict: false })
+		const inferredLooseTransferArgs: Partial<{ readonly from: Hex, readonly to: Hex, readonly value: bigint }> = decodedLooseTransfer.args
 		assert.deepStrictEqual(
-			decodeEventLog({ abi: transferEventAbi, data: '0x', topics: transferTopics, strict: false }),
+			decodedLooseTransfer,
 			{
 				eventName: 'Transfer',
 				args: {
@@ -891,6 +918,7 @@ describe('local Ethereum primitive helpers', () => {
 				},
 			},
 		)
+		assert.equal(inferredLooseTransferArgs.value, undefined)
 		const topicB = keccak256(stringToBytes('hello'))
 		assert.deepStrictEqual(
 			decodeEventLog({
@@ -911,6 +939,46 @@ describe('local Ethereum primitive helpers', () => {
 				},
 			},
 		)
+
+		const indexedFirstMixedAbi = [{
+			type: 'event',
+			name: 'IndexedFirstMixed',
+			inputs: [
+				{ name: 'first', type: 'uint256', indexed: true },
+				{ type: 'uint256' },
+			],
+		}] as const satisfies Abi
+		const decodedIndexedFirstMixed = decodeEventLog({
+			abi: indexedFirstMixedAbi,
+			data: '0x',
+			topics: [
+				toEventSelector('IndexedFirstMixed(uint256,uint256)'),
+				'0x0000000000000000000000000000000000000000000000000000000000000001',
+			],
+			strict: false,
+		})
+		const inferredIndexedFirstMixedArgs: readonly [bigint | undefined, bigint | undefined] = decodedIndexedFirstMixed.args
+		assert.deepStrictEqual(inferredIndexedFirstMixedArgs, [1n, undefined])
+
+		const indexedSecondUnnamedAbi = [{
+			type: 'event',
+			name: 'IndexedSecondUnnamed',
+			inputs: [
+				{ type: 'uint256' },
+				{ type: 'uint256', indexed: true },
+			],
+		}] as const satisfies Abi
+		const decodedIndexedSecondUnnamed = decodeEventLog({
+			abi: indexedSecondUnnamedAbi,
+			data: '0x',
+			topics: [
+				toEventSelector('IndexedSecondUnnamed(uint256,uint256)'),
+				'0x0000000000000000000000000000000000000000000000000000000000000002',
+			],
+			strict: false,
+		})
+		const inferredIndexedSecondUnnamedArgs: readonly [bigint | undefined, bigint | undefined] = decodedIndexedSecondUnnamed.args
+		assert.deepStrictEqual(inferredIndexedSecondUnnamedArgs, [undefined, 2n])
 	})
 
 	test('matches reference EIP-1559 serialize and parse vectors used by raw transaction approval', () => {
