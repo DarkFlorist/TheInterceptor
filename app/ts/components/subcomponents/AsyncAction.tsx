@@ -40,6 +40,7 @@ type AsyncActionButtonProps = {
 	text: ComponentChildren
 	pendingText: ComponentChildren
 	keepTextWhilePending?: boolean
+	pendingIndicatorPlacement?: 'inline' | 'overlay'
 	onClick: () => void | Promise<void>
 	disabled?: boolean
 	class?: string
@@ -47,8 +48,37 @@ type AsyncActionButtonProps = {
 	type?: 'button' | 'submit' | 'reset'
 }
 
+type PendingButtonContentProps = {
+	children: ComponentChildren
+	pending: boolean
+	pendingIndicatorPlacement: 'inline' | 'overlay'
+}
+
+function PendingButtonContent({ children, pending, pendingIndicatorPlacement }: PendingButtonContentProps) {
+	const indicatorSize = pendingIndicatorPlacement === 'overlay' ? '0.75em' : '1em'
+	const indicator = pending ? <AsyncStatusIcon state = 'pending' size = { indicatorSize } /> : <></>
+	if (pendingIndicatorPlacement === 'overlay') {
+		return <span class = 'async-action-button__stable-content' style = { { display: 'inline-flex', alignItems: 'center', position: 'relative' } }>
+			<span
+				class = 'async-action-button__status-slot'
+				aria-hidden = 'true'
+				style = { { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', right: 'calc(100% + 0.125em)', top: '50%', transform: 'translateY(-50%)', width: indicatorSize, height: indicatorSize, lineHeight: 0, pointerEvents: 'none', visibility: pending ? 'visible' : 'hidden' } }
+			>
+				{ indicator }
+			</span>
+			{ children }
+		</span>
+	}
+	if (!pending) return <>{ children }</>
+	return <span class = 'async-action-button__inline-content' style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5em' } }>
+		{ indicator }
+		<span>{ children }</span>
+	</span>
+}
+
 export function AsyncActionButton(props: AsyncActionButtonProps) {
 	const pending = props.state === 'pending'
+	const displayedText = pending && !props.keepTextWhilePending ? props.pendingText : props.text
 	return (
 		<button
 			type = { props.type ?? 'button' }
@@ -58,13 +88,9 @@ export function AsyncActionButton(props: AsyncActionButtonProps) {
 			disabled = { props.disabled || pending }
 			aria-busy = { pending }
 		>
-			{ pending
-				? <span style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5em' } }>
-					<AsyncStatusIcon state = 'pending' />
-					<span>{ props.keepTextWhilePending ? props.text : props.pendingText }</span>
-				</span>
-				: props.text
-			}
+			<PendingButtonContent pending = { pending } pendingIndicatorPlacement = { props.pendingIndicatorPlacement ?? 'inline' }>
+				{ displayedText }
+			</PendingButtonContent>
 		</button>
 	)
 }
