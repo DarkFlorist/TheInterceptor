@@ -282,7 +282,7 @@ export function SimulationStackPage() {
 	useEffect(() => {
 		const scrollOnHashChange = () => {
 			handledStackTargetHash.value = undefined
-			scrollToRequestedStackRow()
+			scheduleStackTargetFrame(scrollToRequestedStackRow)
 		}
 		const browserWindow = globalThis.window
 		if (browserWindow === undefined || typeof browserWindow.addEventListener !== 'function' || typeof browserWindow.removeEventListener !== 'function') {

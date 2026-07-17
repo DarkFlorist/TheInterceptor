@@ -120,6 +120,9 @@ function createBrowserMock() {
 		setStorageSet(set: (items: Record<string, unknown>) => Promise<void>) {
 			browserMock.storage.local.set = set
 		},
+		async writeStorage(items: Record<string, unknown>) {
+			await defaultSetStorage(items)
+		},
 	}
 }
 
@@ -137,6 +140,74 @@ async function loadModules() {
 const modulesPromise = loadModules()
 
 describe('unexpected error diagnostics', () => {
+	test('returns and clears stored diagnostics for the management page', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+		const { clearDiagnostics, requestDiagnostics } = await import('../../app/ts/background/popupMessageHandlers.js')
+		await appendInterceptorErrorDiagnostic({
+			timestamp: new Date('2026-01-01T00:00:00.000Z'),
+			source: 'test',
+			code: 'test_diagnostic',
+			category: 'unexpected',
+			severity: 'error',
+			message: 'Test diagnostic',
+			cause: 'root failure',
+			userVisible: true,
+			debugId: 'debug-1',
+			details: undefined,
+		})
+
+		const requestReply = await requestDiagnostics()
+		assert.equal(requestReply.method, 'popup_requestDiagnostics')
+		assert.equal(requestReply.diagnostics.length, 1)
+		assert.equal(requestReply.diagnostics[0]?.code, 'test_diagnostic')
+
+		const clearReply = await clearDiagnostics()
+		assert.deepEqual(clearReply, { method: 'popup_clearDiagnostics', diagnostics: [] })
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+	})
+
+	test('clearing diagnostics waits for an earlier append and removes its completed result', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+		const { clearDiagnostics } = await import('../../app/ts/background/popupMessageHandlers.js')
+		let releaseStorageWrite = () => undefined
+		const storageWriteGate = new Promise<void>((resolve) => { releaseStorageWrite = resolve })
+		let reportStorageWriteStarted = () => undefined
+		const storageWriteStarted = new Promise<void>((resolve) => { reportStorageWriteStarted = resolve })
+		browserMock.setStorageSet(async (items) => {
+			reportStorageWriteStarted()
+			await storageWriteGate
+			await browserMock.writeStorage(items)
+		})
+
+		const appendPromise = appendInterceptorErrorDiagnostic({
+			timestamp: new Date('2026-01-01T00:00:00.000Z'),
+			source: 'test',
+			code: 'concurrent_diagnostic',
+			category: 'unexpected',
+			severity: 'error',
+			message: 'Concurrent diagnostic',
+			cause: undefined,
+			userVisible: false,
+			debugId: undefined,
+			details: undefined,
+		})
+		await storageWriteStarted
+		let clearSettled = false
+		const clearPromise = clearDiagnostics().then((reply) => {
+			clearSettled = true
+			return reply
+		})
+		await Promise.resolve()
+		assert.equal(clearSettled, false)
+
+		releaseStorageWrite()
+		await appendPromise
+		assert.deepEqual(await clearPromise, { method: 'popup_clearDiagnostics', diagnostics: [] })
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+	})
+
 	test('recognizes expected infrastructure errors from unknown thrown values', async () => {
 		const { classifyCaughtError, createInterceptorInternalError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } = await modulesPromise
 

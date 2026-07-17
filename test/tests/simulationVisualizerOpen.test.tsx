@@ -982,6 +982,70 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('stack visualizer defers a hidden-panel hash target until the management panel can become visible', async () => {
+		const dom = installDomMock()
+		const flushAnimationFrames = installQueuedAnimationFrames()
+		const { listeners } = installBrowserMock()
+		const hashChangeListeners = new Set<EventListenerOrEventListenerObject>()
+		const scrollCalls: ScrollIntoViewOptions[] = []
+		let panelVisible = false
+		globalThis.window.addEventListener = (type, listener) => {
+			if (type === 'hashchange') hashChangeListeners.add(listener)
+		}
+		globalThis.window.removeEventListener = (type, listener) => {
+			if (type === 'hashchange') hashChangeListeners.delete(listener)
+		}
+		Object.defineProperty(globalThis.window, 'location', {
+			configurable: true,
+			writable: true,
+			value: { hash: '#simulation-stack' },
+		})
+		Object.defineProperty(dom.document, 'getElementById', {
+			configurable: true,
+			value: (id: string) => {
+				const element = findElementById(dom.document.body, id)
+				if (element === undefined) return null
+				element.scrollIntoView = (options?: ScrollIntoViewOptions) => {
+					if (panelVisible && options !== undefined) scrollCalls.push(options)
+				}
+				return element
+			},
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(18, 1, 'Stack tab')) }, {}, () => undefined)
+				flushAnimationFrames()
+			})
+			globalThis.window.location.hash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'hidden-panel')
+			await act(() => {
+				const event = new Event('hashchange')
+				for (const hashChangeListener of hashChangeListeners) {
+					if (typeof hashChangeListener === 'function') hashChangeListener(event)
+					else hashChangeListener.handleEvent(event)
+				}
+			})
+			assert.equal(scrollCalls.length, 0)
+
+			panelVisible = true
+			await act(() => {
+				flushAnimationFrames()
+				flushAnimationFrames()
+			})
+			assert.deepStrictEqual(scrollCalls, [{ behavior: 'smooth', block: 'center' }])
+			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
+			assert.ok(targetRow)
+			assert.equal(targetRow.getAttribute?.('class')?.includes('simulation-stack-row--highlighted'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer target hash does not replay after same-hash updates', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
