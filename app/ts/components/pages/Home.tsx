@@ -51,6 +51,51 @@ function isSignerAvailable(tabState: TabState | undefined) {
 	return tabState !== undefined && (tabState.signerConnected || tabState.signerAccounts.length > 0)
 }
 
+export function signerProviderOptionLabel(provider: { readonly name: string, readonly rdns: string, readonly uuid: string }) {
+	return `${ provider.name } — ${ provider.rdns } — ${ provider.uuid }`
+}
+
+function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>, isInitialHomeDataLoaded: Signal<boolean> }) {
+	const tabState = param.tabState.value
+	const providers = tabState?.availableSignerProviders ?? []
+	if (providers.length === 0 && tabState?.preferredSignerUnavailable !== true && tabState?.signerProviderCatalogOverflowed !== true) return <></>
+	const selectedProvider = tabState?.selectedSignerProvider
+	const selectProvider = (event: Event) => {
+		if (!(event.target instanceof HTMLSelectElement)) return
+		if (event.target.value === '' || tabState?.website === undefined) return
+		void sendPopupMessageToBackgroundPage({
+			method: 'popup_selectSignerProvider',
+			data: {
+				tabId: tabState.tabId,
+				websiteOrigin: tabState.website.websiteOrigin,
+				uuid: event.target.value,
+			},
+		})
+	}
+	return <div style = 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;' title = 'Wallet names and icons are self-reported by installed providers.'>
+		{ selectedProvider === undefined
+			? <span class = 'signer-logo-slot' aria-hidden = 'true'></span>
+			: <img src = { selectedProvider.icon } width = '24' height = '24' alt = '' style = 'object-fit: contain;'/> }
+		<label style = 'display: flex; align-items: center; gap: 0.5rem; flex: 1;'>
+			<span>Signer for this site</span>
+			<select
+				id = 'signer-provider-selector'
+				class = 'select'
+				style = 'flex: 1; min-width: 0;'
+				value = { selectedProvider?.uuid ?? '' }
+				disabled = { !param.isInitialHomeDataLoaded.value }
+				onInput = { selectProvider }
+			>
+				<option value = '' disabled = { true }>{ tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer' }</option>
+				{ providers.map((provider) => <option key = { provider.uuid } value = { provider.uuid }>{ signerProviderOptionLabel(provider) }</option>) }
+			</select>
+		</label>
+		{ tabState?.signerProviderCatalogOverflowed === true
+			? <p class = 'is-size-7' style = 'width: 100%; color: var(--warning-color);'>Too many wallet announcements were received. Only the bounded list above is available; choose a wallet explicitly.</p>
+			: <></> }
+	</div>
+}
+
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
 	if (!isSignerAvailable(param.tabState.value)) {
@@ -268,6 +313,7 @@ function FirstCard(param: FirstCardParams) {
 			<section class = 'card' style = 'margin: 10px;'>
 				<FirstCardHeader { ...param }/>
 				<div class = 'card-content'>
+					<SignerProviderSelector tabState = { param.tabState } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
 				</div>
 			</section>
@@ -278,6 +324,7 @@ function FirstCard(param: FirstCardParams) {
 		<section class = 'card' style = 'margin: 10px;'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
+				<SignerProviderSelector tabState = { param.tabState } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
