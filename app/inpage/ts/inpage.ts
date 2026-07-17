@@ -332,6 +332,20 @@ function getSignerNameFromWalletMarkers(markers: { readonly isAmbire: boolean, r
 	return 'NotRecognizedSigner'
 }
 
+function canAnnouncedMetaMaskReplaceSigner(signerName: Signer): boolean {
+	switch (signerName) {
+		case 'NoSigner':
+		case 'MetaMask':
+		case 'Ambire':
+		case 'Brave':
+		case 'Rabby':
+			return true
+		case 'NotRecognizedSigner':
+		case 'CoinbaseWallet':
+			return false
+	}
+}
+
 function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
@@ -818,7 +832,7 @@ class InterceptorMessageListener {
 		const { provider, info } = announcement
 		if (provider === this.signerWindowEthereumProvider) return
 		if (this.announcedMetaMaskUuid !== undefined) return
-		if (this.signerName !== 'NoSigner' && this.signerName !== 'MetaMask' && this.signerName !== 'Brave') return
+		if (!canAnnouncedMetaMaskReplaceSigner(this.signerName)) return
 		const preparedSigner = this.prepareSignerProvider(provider, 'MetaMask')
 		if (preparedSigner === undefined) return
 		this.announcedMetaMaskUuid = info.uuid
