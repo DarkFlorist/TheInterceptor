@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { getManagementTabTarget, getSimulationStackManagementTabTarget, type ManagementOpenRequest } from '../../app/ts/utils/managementPages.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 
 type TabRecord = {
@@ -109,6 +110,32 @@ const emptyOpenedTabs = (): OpenedTabIds => ({
 	settingsView: undefined,
 	websiteAccess: undefined,
 	simulationStack: undefined,
+})
+
+describe('open management tab', () => {
+	test('reuses the tracked settings tab for all three popup management controls', async () => {
+		const { createdTabs, updatedTabs } = installBrowserMock(
+			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites' }],
+			{ ...emptyOpenedTabs(), settingsView: 42 },
+		)
+		const openNewTab = await loadOpenNewTab()
+		const requests: readonly ManagementOpenRequest[] = ['popup_openWebsiteAccess', 'popup_openAddressBook', 'popup_openSettings']
+
+		for (const request of requests) {
+			const target = getManagementTabTarget(request)
+			await openNewTab(target.tabName, target.targetHash)
+		}
+		const simulationStackTarget = getSimulationStackManagementTabTarget()
+		await openNewTab(simulationStackTarget.tabName, simulationStackTarget.targetHash)
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(updatedTabs, [
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#websites' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#address-book' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#settings' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#simulation-stack' } },
+		])
+	})
 })
 
 describe('open simulation stack tab', () => {

@@ -3,7 +3,8 @@ import 'webextension-polyfill'
 import { getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInterceptorTransactionStack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, trackPreviousActiveAddressForMakeMeRichList, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleIterceptorError, installNewFilter, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHanders.js'
-import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, reportUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, popupReadyAndListening } from './popupMessageHandlers.js'
+import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, reportUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, popupReadyAndListening, requestDiagnostics, clearDiagnostics } from './popupMessageHandlers.js'
+import { getManagementTabTarget, getSimulationStackManagementTabTarget } from '../utils/managementPages.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -17,7 +18,6 @@ import { appendTransactionsToInput, mockSignTransaction } from '../simulation/se
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
-import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
@@ -722,7 +722,12 @@ export async function popupMessageHandler(
 				case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
 				case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
-				case 'popup_openAddressBook': return await openNewTab('addressBook')
+				case 'popup_openAddressBook':
+				case 'popup_openSettings':
+				case 'popup_openWebsiteAccess': {
+					const target = getManagementTabTarget(parsedRequest.method)
+					return await openNewTab(target.tabName, target.targetHash)
+				}
 				case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, parsedRequest.data.refreshSignerAccounts, parsedRequest.data.includeWebsiteAccessAddressMetadata, simulationAbortController, bumpPopupRefreshGeneration())
 				case 'popup_refreshHomeData': return await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, bumpPopupRefreshGeneration(), publishRpcConnectionStatus)
 				case 'popup_requestSettings': return await settingsOpened()
@@ -730,7 +735,6 @@ export async function popupMessageHandler(
 				case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 				case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 				case 'popup_ChangeSettings': return await changeSettings(ethereum, tokenPriceService, resetSimulationServices, parsedRequest, simulationAbortController)
-				case 'popup_openSettings': return await openNewTab('settingsView')
 				case 'popup_import_settings': {
 					const importSettingsReply = await importSettings(parsedRequest)
 					await sendPopupMessageToOpenWindows(importSettingsReply)
@@ -750,8 +754,10 @@ export async function popupMessageHandler(
 				case 'popup_setDisableInterceptor': return await disableInterceptor(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
 				case 'popup_setEnsNameForHash': return await setEnsNameForHash(parsedRequest)
-				case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
-				case 'popup_openSimulationStack': return await openNewTab('simulationStack', 'data' in parsedRequest ? getSimulationStackTargetHash(parsedRequest.data) : undefined)
+				case 'popup_openSimulationStack': {
+					const target = getSimulationStackManagementTabTarget('data' in parsedRequest ? parsedRequest.data : undefined)
+					return await openNewTab(target.tabName, target.targetHash)
+				}
 				case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess(parsedRequest)
 				case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(websiteTabConnections, parsedRequest)
@@ -764,6 +770,8 @@ export async function popupMessageHandler(
 				case 'popup_requestActiveAddresses': return await requestActiveAddresses()
 				case 'popup_requestSimulationMode': return await requestSimulationMode()
 				case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
+				case 'popup_requestDiagnostics': return await requestDiagnostics()
+				case 'popup_clearDiagnostics': return await clearDiagnostics()
 				case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(ethereum, websiteTabConnections, parsedRequest)
 				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, parsedRequest.data.page)
 				case 'popup_UnexpectedErrorOccured': return await reportUnexpectedErrorInWindow(parsedRequest)

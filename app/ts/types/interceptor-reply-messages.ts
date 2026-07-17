@@ -8,6 +8,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
+import { InterceptorErrorDiagnostic } from './errorDiagnostics.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -51,6 +52,18 @@ type RequestLatestUnexpectedErrorReply = funtypes.Static<typeof RequestLatestUne
 const RequestLatestUnexpectedErrorReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestLatestUnexpectedError'),
 	latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
+})
+
+type RequestDiagnosticsReply = funtypes.Static<typeof RequestDiagnosticsReply>
+const RequestDiagnosticsReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestDiagnostics'),
+	diagnostics: funtypes.ReadonlyArray(InterceptorErrorDiagnostic),
+})
+
+type ClearDiagnosticsReply = funtypes.Static<typeof ClearDiagnosticsReply>
+const ClearDiagnosticsReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_clearDiagnostics'),
+	diagnostics: funtypes.ReadonlyArray(InterceptorErrorDiagnostic),
 })
 
 type RequestInterceptorSimulationInputReply = funtypes.Static<typeof RequestInterceptorSimulationInputReply>
@@ -170,6 +183,8 @@ type PopupRequestsRepliesMap = {
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
 	popup_requestLatestUnexpectedError: typeof RequestLatestUnexpectedErrorReply
+	popup_requestDiagnostics: typeof RequestDiagnosticsReply
+	popup_clearDiagnostics: typeof ClearDiagnosticsReply
 	popup_requestInterceptorSimulationInput: typeof RequestInterceptorSimulationInputReply
 	popup_importSimulationStack: typeof ImportSimulationStackReply
 	popup_requestCompleteVisualizedSimulation: typeof RequestCompleteVisualizedSimulationReply
@@ -188,6 +203,8 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
+	popup_requestDiagnostics: RequestDiagnosticsReply,
+	popup_clearDiagnostics: ClearDiagnosticsReply,
 	popup_requestInterceptorSimulationInput: RequestInterceptorSimulationInputReply,
 	popup_importSimulationStack: ImportSimulationStackReply,
 	popup_requestCompleteVisualizedSimulation: RequestCompleteVisualizedSimulationReply,
@@ -220,6 +237,8 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestDiagnostics') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearDiagnostics') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulationInput') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSimulationStack'), data: InterceptorSimulationExport }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
@@ -247,6 +266,8 @@ export type PopupReplyOption =
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
 	| RequestLatestUnexpectedErrorReply
+	| RequestDiagnosticsReply
+	| ClearDiagnosticsReply
 	| RequestInterceptorSimulationInputReply
 	| ImportSimulationStackReply
 	| RequestCompleteVisualizedSimulationReply
@@ -264,6 +285,8 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
 	RequestLatestUnexpectedErrorReply,
+	RequestDiagnosticsReply,
+	ClearDiagnosticsReply,
 	RequestInterceptorSimulationInputReply,
 	ImportSimulationStackReply,
 	RequestCompleteVisualizedSimulationReply,

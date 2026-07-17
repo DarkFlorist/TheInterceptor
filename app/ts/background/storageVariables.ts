@@ -321,7 +321,9 @@ export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorEr
 }
 
 export async function clearInterceptorErrorDiagnostics() {
-	await browserStorageLocalRemove('interceptorErrorDiagnostics')
+	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
+		await browserStorageLocalRemove('interceptorErrorDiagnostics')
+	})
 }
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []

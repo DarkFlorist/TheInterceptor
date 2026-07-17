@@ -79,7 +79,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	const listenForWindowHashChanges = () => {
 		const handleHashChange = () => {
 			const hash = window.location.hash
-			const domainInHash = hash.slice(URL_HASH_PREFIX.length)
+			const domainInHash = hash.startsWith(URL_HASH_PREFIX) ? hash.slice(URL_HASH_PREFIX.length) : ''
 			selectedDomain.value = domainInHash || undefined
 		}
 
