@@ -8,7 +8,14 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
 	EthereumBytes32,
-	funtypes.String.withParser({ parse: x => x === '0x' ? { success: true, value: null } : { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` } }),
+	funtypes.String.withParser({
+		parse: value => value === '0x'
+			? { success: true, value: 0n }
+			: { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` },
+		serialize: value => value === 0n
+			? { success: true, value: '0x' }
+			: { success: false, message: 'eth_getStorageAt value is not zero.' },
+	}),
 )
 
 export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
@@ -334,6 +341,11 @@ const Web3ClientVersion = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple()
 })
 
+export type MaxPriorityFeePerGas = funtypes.Static<typeof MaxPriorityFeePerGas>
+export const MaxPriorityFeePerGas = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_maxPriorityFeePerGas'),
+})
+
 //https://docs.infura.io/networks/ethereum/json-rpc-methods/eth_feehistory
 const EthereumQuantityBetween1And1024 = EthereumQuantity.withConstraint((x) => x >= 1n && x <= 1024n)
 
@@ -416,6 +428,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthSimulateV1Params,
 	WalletAddEthereumChain,
 	Web3ClientVersion,
+	MaxPriorityFeePerGas,
 	FeeHistory,
 	EthNewFilter,
 	UninstallFilter,

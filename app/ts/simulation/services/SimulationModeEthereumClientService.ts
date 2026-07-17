@@ -7,7 +7,7 @@ import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimu
 import type { Abi } from 'viem'
 import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/viem.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
+import type { EthGetLogsResponse, EthGetLogsRequest, EthGetStorageAtResponse, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
@@ -30,6 +30,8 @@ const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+// Runtime bytecode: load the requested slot from calldata, SLOAD it, and return the 32-byte word.
+const STORAGE_READER_CODE = stringToUint8Array('0x6000355460005260206000f3')
 const getCodeAbi = [
 	{
 		type: 'function',
@@ -283,14 +285,17 @@ const simulateBlockCallWithPreparedInputContext = async (
 	transaction: Simulated1559BlockCall,
 	extraOverrides: StateOverrides = {},
 	simulateWithZeroBaseFee = false,
+	simulationPrefixBlockCount = context?.executionBlocks.length ?? 0,
 ) => {
 	const parentBlock = context?.parentBlock ?? await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	const previousBlockOverride = context?.prepared.blockOverrides[context.prepared.blockOverrides.length - 1]
+	if (simulationPrefixBlockCount < 0 || simulationPrefixBlockCount > (context?.executionBlocks.length ?? 0)) throw new Error('Simulation prefix block count is out of bounds')
+	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
+	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
 	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
-		...(context?.prepared.request.params[0].blockStateCalls ?? []),
+		...simulationPrefix,
 		{
 			calls: [createSimulated1559BlockCall(transaction)],
 			blockOverrides: {
@@ -1322,6 +1327,53 @@ export const getSimulatedCodeFromInput = async (
 		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
 		throw error
 	}
+}
+
+export const getSimulatedStorageAtFromInput = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationStateInput: ResolvedSimulationInput,
+	address: bigint,
+	slot: bigint,
+	blockTag: EthereumBlockTag = 'latest',
+): Promise<EthGetStorageAtResponse> => {
+	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) {
+		return await ethereumClientService.getStorageAt(address, slot, blockTag, requestAbortController)
+	}
+	const simulationPrefixBlockCount = getExecutionBlocksUpToTag(context, blockTag).length
+	if (simulationPrefixBlockCount === 0) return await ethereumClientService.getStorageAt(address, slot, blockTag, requestAbortController)
+
+	const storageReaderTransaction = {
+		type: '1559',
+		from: MOCK_ADDRESS,
+		chainId: ethereumClientService.getChainId(),
+		nonce: await getSimulatedTransactionCountFromPreparedInputContext(ethereumClientService, requestAbortController, context, MOCK_ADDRESS, blockTag),
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		to: address,
+		value: 0n,
+		input: bigintToUint8Array(slot, 32),
+		accessList: [],
+	} as const
+	const result = await simulateBlockCallWithPreparedInputContext(
+		ethereumClientService,
+		requestAbortController,
+		context,
+		storageReaderTransaction,
+		{ [addressString(address)]: { code: STORAGE_READER_CODE } },
+		false,
+		simulationPrefixBlockCount,
+	)
+	if (result === undefined) throw new Error('Failed to execute simulated storage lookup')
+	if (result.status === 'failure') {
+		throw new JsonRpcResponseError({
+			jsonrpc: '2.0',
+			id: 1,
+			error: result.error,
+		})
+	}
+	return EthereumBytes32.parse(dataStringWith0xStart(result.returnData))
 }
 
 export const getSimulatedBalanceFromInput = async (
