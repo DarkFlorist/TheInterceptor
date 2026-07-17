@@ -56,6 +56,7 @@ export type HomeParams = {
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
 	numberOfAddressesMadeRich: Signal<number>
 	isInitialHomeDataLoaded: Signal<boolean>
+	isFreshHomeDataLoaded: Signal<boolean>
 }
 
 export type ChangeActiveAddressParam = {
@@ -84,6 +85,7 @@ export type FirstCardParams = {
 	rpcEntries: Signal<RpcEntries>,
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	isInitialHomeDataLoaded: Signal<boolean>
+	isFreshHomeDataLoaded: Signal<boolean>
 }
 
 export type SimulationStateParam = {

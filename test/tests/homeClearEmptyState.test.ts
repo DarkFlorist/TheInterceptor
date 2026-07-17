@@ -195,6 +195,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 		numberOfAddressesMadeRich: new Signal(0),
 		isInitialHomeDataLoaded: new Signal(true),
+		isFreshHomeDataLoaded: new Signal(true),
 		...overrides,
 	}
 }

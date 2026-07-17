@@ -231,6 +231,7 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
 	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
+	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
 
 	const connectToSigner = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
@@ -281,21 +282,29 @@ function FirstCard(param: FirstCardParams) {
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
-						{ signerAvailable.value ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
+						{ isActiveAddressLoading
+							? <span aria-label = 'Loading signer connection state' style = 'float: right;'><Spinner height = '1em'/></span>
+							: signerAvailable.value
+								? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span>
+								: <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span>
+						}
 					</p>
 					: <></>
 				}
 
-				<ActiveAddressComponent
-					activeAddress = { param.activeAddress }
-					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
-					noCopying = { !param.isInitialHomeDataLoaded.value }
-					noEditAddress = { !param.isInitialHomeDataLoaded.value }
-					changeActiveAddress = { param.changeActiveAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-				{ !param.simulationMode.value ? <>
+				{ isActiveAddressLoading
+					? <div aria-label = 'Loading active address' style = 'display: grid; place-items: center; min-height: 4em;'><Spinner height = '2em'/></div>
+					: <ActiveAddressComponent
+						activeAddress = { param.activeAddress }
+						buttonText = { 'Change' }
+						disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
+						noCopying = { !param.isInitialHomeDataLoaded.value }
+						noEditAddress = { !param.isInitialHomeDataLoaded.value }
+						changeActiveAddress = { param.changeActiveAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				}
+				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
 							<AsyncActionButton
@@ -312,7 +321,9 @@ function FirstCard(param: FirstCardParams) {
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
-				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
+				</> : !param.isFreshHomeDataLoaded.value ?
+					<div aria-label = 'Loading simulation controls' style = 'display: grid; place-items: center; min-height: 5em;'><Spinner height = '2em'/></div>
+				: <div style = 'justify-content: space-between; padding-top: 10px;'>
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
@@ -329,7 +340,7 @@ function FirstCard(param: FirstCardParams) {
 			</div>
 		</section>
 
-		<SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/>
+		{ isActiveAddressLoading ? <></> : <SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/> }
 	</>
 }
 
@@ -429,7 +440,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
-		return <div style = 'display: grid; place-items: center; height: 250px;'>
+		return <div aria-label = 'Loading current simulation state' style = 'display: grid; place-items: center; height: 250px;'>
 			<Spinner height = '3em'/>
 		</div>
 	}
@@ -552,6 +563,11 @@ export function Home(param: HomeParams) {
 		globalThis.close()
 	}
 
+	if (!param.isInitialHomeDataLoaded.value) {
+		return <section aria-label = 'Loading current popup state' class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
+			<Spinner height = '3em'/>
+		</section>
+	}
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
@@ -575,6 +591,7 @@ export function Home(param: HomeParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
 			isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }
+			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
 		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
@@ -595,7 +612,7 @@ export function Home(param: HomeParams) {
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
-				: <section class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
+				: <section aria-label = 'Loading current simulation state' class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
 					<Spinner height = '3em'/>
 				</section>
 			: <></> }

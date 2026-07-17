@@ -238,6 +238,7 @@ function createRichListElement(address: bigint, name: string): EnrichedRichListE
 function createHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, numberOfAddressesMadeRich = 0, richList: readonly EnrichedRichListElement[] = []): UpdateHomePage {
 	return {
 		method: 'popup_UpdateHomePage',
+		homeDataSource: 'fresh',
 		popupRefreshGeneration,
 		data: {
 			visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(0, 'done', numberOfAddressesMadeRich),
@@ -469,9 +470,14 @@ describe('simulation visualizer open replies', () => {
 			value: (id: string) => id === 'simulation-stack-root' ? root : null,
 		})
 		try {
-			await import(`../../app/ts/simulationStack.ts?entrypoint-test=${ crypto.randomUUID() }`)
+			await act(async () => {
+				await import(`../../app/ts/simulationStack.ts?entrypoint-test=${ crypto.randomUUID() }`)
+			})
 			assert.equal(root.textContent?.includes('Loading...'), false)
 		} finally {
+			await act(() => {
+				render(null, root)
+			})
 			dom.restore()
 		}
 	})
@@ -733,6 +739,9 @@ describe('simulation visualizer open replies', () => {
 			})
 			const listener = listeners[0]
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+			})
 			sentMessages.splice(0)
 
 			await act(() => {

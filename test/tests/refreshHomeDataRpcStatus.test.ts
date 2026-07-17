@@ -4,10 +4,17 @@ import { describe, test } from 'bun:test'
 type RuntimeMessage = {
 	method?: string
 	role?: string
+	homeDataSource?: 'cached' | 'fresh'
+	popupRefreshGeneration?: number
 	data?: {
+		activeSigningAddressInThisTab?: bigint
 		rpcConnectionStatus?: {
 			retrying: boolean
 		}
+		settings?: {
+			simulationMode?: boolean
+		}
+		visualizedSimulatorState?: unknown
 	}
 }
 
@@ -170,6 +177,7 @@ describe('refreshHomeData', () => {
 		}
 
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
+		assert.equal(homeUpdate?.homeDataSource, 'fresh')
 		assert.equal(homeUpdate?.data?.rpcConnectionStatus?.retrying, true)
 	})
 
@@ -317,6 +325,41 @@ describe('refreshHomeData', () => {
 		assert.equal(homeUpdate?.data?.tabState?.signerAccounts?.[0], '0x4444444444444444444444444444444444444444')
 	})
 
+	test('home bootstrap returns mode and signer data without a simulation snapshot', async () => {
+		const browserMock = installBrowserMock()
+		const modules: TestModules = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, defaultActiveAddresses, defaultRpcs } = modules
+
+		const [defaultAddress] = defaultActiveAddresses
+		if (defaultAddress === undefined) throw new Error('missing default address')
+		const rpcNetwork = defaultRpcs[0]
+		if (rpcNetwork === undefined) throw new Error('missing default rpc')
+		const signerAddress = 0x5555555555555555555555555555555555555555n
+		await browserStorageLocalSet({
+			activeSimulationAddress: defaultAddress.address,
+			openedPageV2: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: false,
+		})
+		await saveCurrentTabId(1)
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			signerName: 'MetaMask',
+			signerAccounts: [signerAddress],
+			activeSigningAddress: undefined,
+		}))
+
+		await requestHomePageBootstrap(7)
+
+		const bootstrap = browserMock.sentMessages.findLast((message) => message.method === 'popup_homePageBootstrap')
+		assert.equal(bootstrap?.popupRefreshGeneration, 7)
+		assert.equal(bootstrap?.data?.activeSigningAddressInThisTab, signerAddress)
+		assert.equal(bootstrap?.data?.settings?.simulationMode, false)
+		assert.equal(bootstrap?.data?.visualizedSimulatorState, undefined)
+	})
+
 	test('cached home snapshot refreshes signer accounts only when requested', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
@@ -390,7 +433,8 @@ describe('refreshHomeData', () => {
 
 		try {
 			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 1)
-			const fastHomeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
+			const fastHomeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { homeDataSource?: 'cached' | 'fresh', data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
+			assert.equal(fastHomeUpdate?.homeDataSource, 'cached')
 			assert.equal(fastHomeUpdate?.data?.websiteAccessAddressMetadata?.length, 0)
 			assert.equal(requestCount, 0)
 

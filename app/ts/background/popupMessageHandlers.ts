@@ -554,6 +554,33 @@ export async function requestNewHomeData(
 	await sendPopupMessageToOpenWindows(updatedPage)
 }
 
+export async function requestHomePageBootstrap(popupRefreshGeneration: number) {
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
+	const tabId = await getLastKnownCurrentTabId()
+	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
+	const settings = await settingsPromise
+	const tabState = await tabStatePromise
+	const activeSigningAddress = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
+	const websiteOrigin = tabState.website?.websiteOrigin
+	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_homePageBootstrap',
+		popupRefreshGeneration,
+		data: {
+			activeAddresses: await activeAddressesPromise,
+			tabState,
+			settings,
+			activeSigningAddressInThisTab: activeSigningAddress,
+			tabId,
+			rpcEntries: await rpcEntriesPromise,
+			interceptorDisabled,
+		},
+	})
+}
+
 export async function refreshHomeData(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -1013,6 +1040,7 @@ async function buildHomePageUpdate(
 	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
 	return {
 		method: 'popup_UpdateHomePage' as const,
+		homeDataSource: richDataSource,
 		popupRefreshGeneration: popupRefreshGeneration,
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,

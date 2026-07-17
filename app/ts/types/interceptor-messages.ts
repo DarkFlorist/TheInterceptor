@@ -587,6 +587,7 @@ export const Settings = funtypes.ReadonlyObject({
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
+	homeDataSource: funtypes.Union(funtypes.Literal('cached'), funtypes.Literal('fresh')),
 	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: CompleteVisualizedSimulation,
@@ -604,6 +605,21 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
+	})
+})
+
+export type HomePageBootstrap = funtypes.Static<typeof HomePageBootstrap>
+export const HomePageBootstrap = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_homePageBootstrap'),
+	popupRefreshGeneration: PopupRefreshGeneration,
+	data: funtypes.ReadonlyObject({
+		activeAddresses: AddressBookEntries,
+		tabState: TabState,
+		settings: Settings,
+		activeSigningAddressInThisTab: OptionalEthereumAddress,
+		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
+		rpcEntries: RpcEntries,
+		interceptorDisabled: funtypes.Boolean,
 	})
 })
 
@@ -900,6 +916,7 @@ const messageToPopupPayloadCodecs: [
 	typeof DisableInterceptorReply,
 	typeof UnexpectedErrorOccured,
 	typeof RetrieveWebsiteAccessReply,
+	typeof HomePageBootstrap,
 	typeof UpdateHomePage,
 	typeof FetchSimulationStackRequest,
 	typeof PopupIsMainPopupWindowOpen,
@@ -924,6 +941,7 @@ const messageToPopupPayloadCodecs: [
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,
+	HomePageBootstrap,
 	UpdateHomePage,
 	FetchSimulationStackRequest,
 	PopupIsMainPopupWindowOpen,
@@ -966,6 +984,7 @@ const PopupMessageRuntype = funtypes.Union(
 			includeWebsiteAccessAddressMetadata: funtypes.Boolean,
 		}),
 	}),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestHomePageBootstrap') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),

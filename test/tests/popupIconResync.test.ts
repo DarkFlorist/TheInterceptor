@@ -105,6 +105,11 @@ function collectElements(node: TestDomNode, tagName: string, results: TestDomNod
 	return results
 }
 
+function hasAriaLabel(node: TestDomNode, label: string): boolean {
+	if (node.getAttribute?.('aria-label') === label) return true
+	return (node.childNodes ?? []).some((child) => hasAriaLabel(child, label))
+}
+
 function isHomeDataRequest(message: unknown, refreshSignerAccounts: boolean, includeWebsiteAccessAddressMetadata: boolean) {
 	return typeof message === 'object'
 		&& message !== null
@@ -196,6 +201,7 @@ const loadedAddress = '0x1000000000000000000000000000000000000001'
 const loadedAddressBookEntry = { type: 'contact', name: 'Loaded Account', address: loadedAddress, entrySource: 'User', useAsActiveAddress: true }
 const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string }, popupRefreshGeneration: number, dataOverrides: Record<string, unknown> = {}) => ({
 	method: 'popup_UpdateHomePage',
+	homeDataSource: 'fresh',
 	popupRefreshGeneration,
 	data: {
 		visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
@@ -227,8 +233,25 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 	},
 })
 
+const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReason: string }, popupRefreshGeneration: number, dataOverrides: Record<string, unknown> = {}) => {
+	const homePage = defaultHomePage(tabId, icon, popupRefreshGeneration, dataOverrides)
+	return {
+		method: 'popup_homePageBootstrap',
+		popupRefreshGeneration,
+		data: {
+			activeAddresses: homePage.data.activeAddresses,
+			tabState: homePage.data.tabState,
+			settings: homePage.data.settings,
+			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,
+			tabId: homePage.data.tabId,
+			rpcEntries: homePage.data.rpcEntries,
+			interceptorDisabled: homePage.data.interceptorDisabled,
+		},
+	}
+}
+
 describe('popup icon sync', () => {
-	test('marks Home first commit on the immediate default render', async () => {
+	test('renders loading instead of default popup data while requesting bootstrap and fresh home data', async () => {
 		clearPerformanceMarks()
 		const dom = installDomMock()
 		const { sentMessages } = installBrowserMock()
@@ -247,20 +270,61 @@ describe('popup icon sync', () => {
 				render(h(App, {}), dom.document.body)
 			})
 
-			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
-			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
-			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
-			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
+			const loadingState = collectElements(dom.document.body, 'section').find((section) => section.getAttribute?.('aria-label') === 'Loading current popup state')
+			assert.notEqual(loadingState, undefined)
+			assert.equal(dom.document.body.textContent?.includes('vitalik.eth'), false)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulating')), false)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Signing')), false)
 			assert.equal(performance.getEntriesByName(POPUP_PERFORMANCE_MARKS.homeFirstCommit).length, 1)
 			assert.equal(performance.getEntriesByName(POPUP_PERFORMANCE_MARKS.refreshRendered).length, 0)
-			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), true)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestHomePageBootstrap'), true)
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), false)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshHomeData'), true)
 		} finally {
 			dom.restore()
 			clearPerformanceMarks()
 		}
 	})
 
-	test('keeps the signing mode logo slot stable while signer identity loads', async () => {
+	test('does not render a full cached home snapshot while waiting for current data', async () => {
+		const dom = installDomMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Cached simulation' }, 50, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+					}),
+					homeDataSource: 'cached',
+				}, undefined, () => undefined)
+			})
+
+			assert.equal(hasAriaLabel(dom.document.body, 'Loading current popup state'), true)
+			assert.equal(dom.document.body.textContent?.includes('Loaded Account'), false)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulating')), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('renders known signing mode and address from bootstrap home data', async () => {
 		const dom = installDomMock()
 		const { messageListener } = installBrowserMock()
 		try {
@@ -279,35 +343,85 @@ describe('popup icon sync', () => {
 			})
 
 			const logoSlotBeforeHomeData = collectElements(dom.document.body, 'span').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('signer-logo-slot'))
-			if (logoSlotBeforeHomeData === undefined) throw new Error('Expected reserved signer logo slot before home data loads')
-			assert.notEqual(collectElements(logoSlotBeforeHomeData, 'svg').find((element) => element.getAttribute?.('class') === 'signer-logo-placeholder'), undefined)
-			assert.equal(collectElements(logoSlotBeforeHomeData, 'img').length, 0)
+			assert.equal(logoSlotBeforeHomeData, undefined)
 
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
-			const homePage = defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1)
+			const homePageBootstrap = defaultHomePageBootstrap(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1, {
+				activeAddresses: [loadedAddressBookEntry],
+				activeSigningAddressInThisTab: loadedAddress,
+				tabState: {
+					...defaultHomePage(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1).data.tabState,
+					signerConnected: true,
+					signerName: 'MetaMask',
+					signerAccounts: [loadedAddress],
+				},
+			})
 			await act(() => {
 				listener?.({
 					role: 'all',
-					...homePage,
-					data: {
-						...homePage.data,
-						tabState: { ...homePage.data.tabState, signerName: 'MetaMask' },
-					},
+					...homePageBootstrap,
 				}, undefined, () => undefined)
 			})
 
-			const logoSlotAfterHomeData = collectElements(dom.document.body, 'span').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('signer-logo-slot'))
-			assert.equal(logoSlotAfterHomeData, logoSlotBeforeHomeData)
-			if (logoSlotAfterHomeData === undefined) throw new Error('Expected signer logo slot after home data loads')
-			assert.equal(collectElements(logoSlotAfterHomeData, 'svg').find((element) => element.getAttribute?.('class') === 'signer-logo-placeholder'), undefined)
-			assert.equal(collectElements(logoSlotAfterHomeData, 'img')[0]?.getAttribute?.('src'), '../img/signers/metamask.svg')
+			const logoSlotAfterCachedHomeData = collectElements(dom.document.body, 'span').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('signer-logo-slot'))
+			if (logoSlotAfterCachedHomeData === undefined) throw new Error('Expected signer logo slot after bootstrap data loads')
+			assert.equal(collectElements(logoSlotAfterCachedHomeData, 'img')[0]?.getAttribute?.('src'), '../img/signers/metamask.svg')
+			assert.equal(collectElements(dom.document.body, 'section').some((section) => section.getAttribute?.('aria-label') === 'Loading current popup state'), false)
+			assert.equal(collectElements(dom.document.body, 'div').some((div) => div.getAttribute?.('aria-label') === 'Loading active address'), false)
+			assert.equal(dom.document.body.textContent?.includes('Loaded Account'), true)
+			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
+			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
+			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
+			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('keeps mutation controls disabled until initial home data arrives', async () => {
+	test('keeps only the missing active address loading after bootstrap home data arrives', async () => {
+		const dom = installDomMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			const homePageBootstrap = defaultHomePageBootstrap(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1, {
+				tabState: {
+					...defaultHomePage(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1).data.tabState,
+					signerName: 'MetaMask',
+				},
+			})
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...homePageBootstrap,
+				}, undefined, () => undefined)
+			})
+
+			assert.equal(collectElements(dom.document.body, 'section').some((section) => section.getAttribute?.('aria-label') === 'Loading current popup state'), false)
+			assert.notEqual(collectElements(dom.document.body, 'div').find((div) => div.getAttribute?.('aria-label') === 'Loading active address'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('No address found'), false)
+			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Signing')), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('accepts fresh data for a newly active tab after rendering bootstrap data', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
 		const { messageListener } = installBrowserMock()
@@ -326,12 +440,6 @@ describe('popup icon sync', () => {
 				render(h(App, {}), dom.document.body)
 			})
 
-			const richListHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Make current account rich'))
-			if (richListHeader === undefined) throw new Error('Expected rich-list header before home data loads')
-			await act(async () => {
-				await clickElement(richListHeader)
-			})
-
 			const buttonsBeforeHomeData = collectElements(dom.document.body, 'button')
 			const signingButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Signing'))
 			const rpcButtonBeforeHomeData = buttonsBeforeHomeData.find((button) => button.textContent?.includes('Ethereum Mainnet'))
@@ -341,38 +449,41 @@ describe('popup icon sync', () => {
 			const copyButtonsBeforeHomeData = buttonsBeforeHomeData.filter((button) => button.textContent?.toLowerCase().includes('copy'))
 			const richCheckboxBeforeHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'checkbox')
 			const timePickerDeltaInputBeforeHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')
-			assert.equal(isButtonDisabled(signingButtonBeforeHomeData), true)
-			assert.equal(isButtonDisabled(rpcButtonBeforeHomeData), true)
-			assert.equal(isButtonDisabled(timePickerModeButtonBeforeHomeData), true)
-			assert.equal(isButtonDisabled(timePickerDeltaButtonBeforeHomeData), true)
+			assert.equal(signingButtonBeforeHomeData, undefined)
+			assert.equal(rpcButtonBeforeHomeData, undefined)
+			assert.equal(timePickerModeButtonBeforeHomeData, undefined)
+			assert.equal(timePickerDeltaButtonBeforeHomeData, undefined)
 			assert.equal(editButtonsBeforeHomeData.length, 0)
 			assert.equal(copyButtonsBeforeHomeData.length, 0)
 			assert.deepEqual(clipboardMock.copiedText, [])
-			assert.equal(isButtonDisabled(richCheckboxBeforeHomeData), true)
-			assert.equal(isButtonDisabled(timePickerDeltaInputBeforeHomeData), true)
+			assert.equal(richCheckboxBeforeHomeData, undefined)
+			assert.equal(timePickerDeltaInputBeforeHomeData, undefined)
 
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
+			const bootstrapHomePage = defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
+				activeAddresses: [loadedAddressBookEntry],
+				settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+			})
 			await act(() => {
 				listener?.({
 					role: 'all',
-					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
-						activeAddresses: [loadedAddressBookEntry],
-						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
-					}),
+					...bootstrapHomePage,
 				}, undefined, () => undefined)
 			})
 
 			const buttonsAfterHomeData = collectElements(dom.document.body, 'button')
+			const simulatingButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('Simulating'))
 			const rpcButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('Ethereum'))
 			const timePickerModeButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('For'))
 			const timePickerDeltaButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.includes('Seconds'))
 			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
 			const copyButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.toLowerCase().includes('copy'))
 			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')
+			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('is-outlined'), false)
 			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
-			assert.equal(isButtonDisabled(timePickerModeButtonAfterHomeData), false)
-			assert.equal(isButtonDisabled(timePickerDeltaButtonAfterHomeData), false)
+			assert.equal(timePickerModeButtonAfterHomeData, undefined)
+			assert.equal(timePickerDeltaButtonAfterHomeData, undefined)
 			assert.equal(editButtonsAfterHomeData.length > 0, true)
 			assert.notEqual(copyButtonAfterHomeData, undefined)
 			if (copyButtonAfterHomeData === undefined) throw new Error('Expected active address copy action after home data loads')
@@ -380,7 +491,26 @@ describe('popup icon sync', () => {
 				await clickElement(copyButtonAfterHomeData)
 			})
 			assert.deepEqual(clipboardMock.copiedText, [loadedAddress])
-			assert.equal(isButtonDisabled(timePickerDeltaInputAfterHomeData), false)
+			assert.equal(timePickerDeltaInputAfterHomeData, undefined)
+			assert.equal(hasAriaLabel(dom.document.body, 'Loading simulation controls'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Loading current simulation state'), true)
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(2, { icon: ICON_SIMULATING, iconReason: 'Fresh tab' }, 2, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+					}),
+				}, undefined, () => undefined)
+			})
+			const buttonsAfterFreshHomeData = collectElements(dom.document.body, 'button')
+			assert.equal(isButtonDisabled(buttonsAfterFreshHomeData.find((button) => button.textContent?.includes('For'))), false)
+			assert.equal(isButtonDisabled(buttonsAfterFreshHomeData.find((button) => button.textContent?.includes('Seconds'))), false)
+			assert.equal(isButtonDisabled(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Loading simulation controls'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Loading current simulation state'), false)
+			assert.equal(dom.document.body.textContent?.includes('tab-2.invalid'), true)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
@@ -459,6 +589,12 @@ describe('popup icon sync', () => {
 			})
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1),
+				}, undefined, () => undefined)
+			})
 			sentMessages.splice(0)
 
 			await act(() => {
@@ -587,7 +723,7 @@ describe('popup icon sync', () => {
 			})
 
 			const iconSrcAfterUnknownTabUpdate = collectImageSrcs(dom.document.body).find((src) => src.includes('head-'))
-			assert.equal(iconSrcAfterUnknownTabUpdate?.endsWith('head-not-active.png'), true)
+			assert.equal(iconSrcAfterUnknownTabUpdate, undefined)
 		} finally {
 			dom.restore()
 		}
