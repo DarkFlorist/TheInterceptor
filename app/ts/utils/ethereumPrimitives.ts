@@ -7,7 +7,6 @@ import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
 import { ens_normalize as normalizeEnsNameWithLocalData } from './ensNormalize.js'
 
 export type Hex = `0x${ string }`
-export type RLPInput = unknown
 export type AbiStateMutability = 'pure' | 'view' | 'nonpayable' | 'payable'
 export type AbiParameter = {
 	readonly name?: string
@@ -170,20 +169,16 @@ const DOMAIN_FIELD_TYPES = {
 	verifyingContract: 'address',
 	salt: 'bytes32',
 } as const
-const encodeRlpWithMicro = RLP.encode as (value: unknown) => Uint8Array
-const prepareMicroTransaction = Transaction.prepare as (data: Record<string, unknown>) => { readonly toHex: (includeSignature?: boolean) => string }
-const createMicroTransaction = (
-	type: string,
-	raw: Record<string, unknown>,
-	strict: boolean,
-	allowSignatureFields: boolean,
-) => Reflect.construct(Transaction, [type, raw, strict, allowSignatureFields]) as { readonly toHex: (includeSignature?: boolean) => string }
+const DETERMINISTIC_SIGNATURES = false
 
 const ensureHex = (value: string, name = 'hex'): Hex => {
 	if (!HEX_REGEX.test(value)) throw new Error(`${ name } must be a 0x-prefixed hex string`)
 	if (value.length % 2 !== 0) throw new Error(`${ name } must have an even number of hex digits`)
 	return value as Hex
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const getRecordProperty = (record: Record<string, unknown>, property: string): unknown => record[property]
 
 const stripHexPrefix = (value: Hex) => value.slice(2)
 
@@ -417,10 +412,16 @@ const abiCodec = (parameters: readonly AbiParameter[]): AbiCodecMethod => {
 		outputs: parameters.map(removeTopLevelParameterName),
 	}] as const
 	const contract = createContract(codecAbi)
-	const method = Reflect.get(contract, ABI_CODEC_FUNCTION_NAME)
-	if (typeof method !== 'object' || method === null) throw new Error('Failed to create ABI codec')
-	if (!('encodeInput' in method) || !('decodeOutput' in method)) throw new Error('Invalid ABI codec')
-	return method as AbiCodecMethod
+	if (!isRecord(contract)) throw new Error('Failed to create ABI codec')
+	const method = contract[ABI_CODEC_FUNCTION_NAME]
+	if (!isRecord(method)) throw new Error('Failed to create ABI codec')
+	const encodeInput = getRecordProperty(method, 'encodeInput')
+	const decodeOutput = getRecordProperty(method, 'decodeOutput')
+	if (typeof encodeInput !== 'function' || typeof decodeOutput !== 'function') throw new Error('Invalid ABI codec')
+	return {
+		encodeInput: (value) => encodeInput(value),
+		decodeOutput: (bytes) => decodeOutput(bytes),
+	}
 }
 
 const arrayChildParameter = (parameter: AbiParameter): AbiParameter => ({
@@ -448,10 +449,10 @@ const normalizeAbiInputValue = (parameter: AbiParameter, value: unknown): unknow
 					return [component.name, normalizeAbiInputValue(component, value[index])]
 				}))
 			}
-			if (typeof value === 'object' && value !== null) {
+			if (isRecord(value)) {
 				return Object.fromEntries(components.map((component) => {
 					if (component.name === undefined) throw new Error('Named tuple component is missing a name')
-					return [component.name, normalizeAbiInputValue(component, Reflect.get(value, component.name))]
+					return [component.name, normalizeAbiInputValue(component, value[component.name])]
 				}))
 			}
 		}
@@ -482,11 +483,11 @@ const normalizeAbiOutputValue = (parameter: AbiParameter, value: unknown): unkno
 	if (parameter.type.startsWith('tuple')) {
 		if (parameter.components === undefined) return value
 		if (Array.isArray(value)) return parameter.components.map((component, index) => normalizeAbiOutputValue(component, value[index]))
-		if (typeof value === 'object' && value !== null && hasNamedComponents(parameter)) {
+		if (isRecord(value) && hasNamedComponents(parameter)) {
 			const components = parameter.components
 			return Object.fromEntries(components.map((component) => {
 				if (component.name === undefined) throw new Error('Named tuple component is missing a name')
-				return [component.name, normalizeAbiOutputValue(component, Reflect.get(value, component.name))]
+				return [component.name, normalizeAbiOutputValue(component, value[component.name])]
 			}))
 		}
 		return value
@@ -551,13 +552,30 @@ export const encodeAbiParameters = (parameters: readonly AbiParameter[], values:
 	return bytesToHex(encoded)
 }
 
+export const ABI_DATA_DECODE_ERROR_CODE = 'abi_data_decode_failed'
+
+export const isAbiDataDecodeError = (error: unknown): boolean => {
+	return isRecord(error) && getRecordProperty(error, 'code') === ABI_DATA_DECODE_ERROR_CODE
+}
+
+const createAbiDataDecodeError = (cause: unknown) => {
+	return Object.assign(new Error('Failed to decode ABI data'), { code: ABI_DATA_DECODE_ERROR_CODE, cause })
+}
+
 export const decodeAbiParameters = (parameters: readonly AbiParameter[], data: Hex): readonly unknown[] => {
 	const encoded = bytesFromHex(ensureHex(data, 'ABI data'))
 	if (parameters.length === 0) {
 		if (encoded.length !== 0) throw new Error('Cannot decode non-empty ABI data with no parameters')
 		return []
 	}
-	return normalizeAbiOutputValues(parameters, abiCodec(parameters).decodeOutput(encoded))
+	const codec = abiCodec(parameters)
+	let decoded: unknown
+	try {
+		decoded = codec.decodeOutput(encoded)
+	} catch (error) {
+		throw createAbiDataDecodeError(error)
+	}
+	return normalizeAbiOutputValues(parameters, decoded)
 }
 
 export const decodeFunctionData = <const TAbi extends Abi>({ abi, data }: { readonly abi: TAbi, readonly data: Hex }): DecodeFunctionDataReturnType<TAbi> => {
@@ -586,11 +604,15 @@ export const decodeEventLog = <const TAbi extends Abi, const TStrict extends boo
 	const fragment = abi.find((item): item is Extract<TAbi[number], { readonly type: 'event' }> => item.type === 'event' && toEventSelector(formatAbiItem(item)) === signature)
 	if (fragment === undefined) throw new Error(`Unknown event signature ${ signature }`)
 	const decoder = events([fragment])
-	const method = Reflect.get(decoder, fragment.name)
-	if (typeof method !== 'object' || method === null || !('decode' in method)) throw new Error(`Failed to create event decoder for ${ fragment.name }`)
+	const decoderValue: unknown = decoder
+	if (!isRecord(decoderValue)) throw new Error(`Failed to create event decoder for ${ fragment.name }`)
+	const method = decoderValue[fragment.name]
+	if (!isRecord(method)) throw new Error(`Failed to create event decoder for ${ fragment.name }`)
+	const decode = getRecordProperty(method, 'decode')
+	if (typeof decode !== 'function') throw new Error(`Failed to create event decoder for ${ fragment.name }`)
 	const decoded = (() => {
 		try {
-			return (method as { readonly decode: (eventTopics: string[], eventData: string) => unknown }).decode([...topics], data)
+			return decode([...topics], data)
 		} catch (error) {
 			if (strict !== false) throw error
 			return decodeIndexedEventTopics(fragment.inputs, topics)
@@ -717,7 +739,7 @@ export const toEventSelector = (signature: string | AbiItem): Hex => {
 
 export const getAddress = (address: string): Hex => {
 	if (!addr.isValid(address)) throw new Error(`Address "${ address }" is invalid`)
-	return addr.addChecksum(address) as Hex
+	return ensureHex(addr.addChecksum(address), 'checksummed address')
 }
 
 export const isAddress = (address: string): boolean => addr.isValid(address)
@@ -732,23 +754,20 @@ export const getCreate2Address = ({ from, salt, bytecodeHash }: { readonly from:
 	return getAddress(`0x${ stripHexPrefix(hash).slice(24) }`)
 }
 
-const assertValidRlpInput = (value: unknown): void => {
+type ParsedRlpInput = string | ParsedRlpInput[]
+
+const parseRlpInput = (value: unknown): ParsedRlpInput => {
 	if (typeof value === 'string') {
-		ensureHex(value, 'RLP value')
-		return
+		return ensureHex(value, 'RLP value')
 	}
-	if (Array.isArray(value)) {
-		for (const entry of value) assertValidRlpInput(entry)
-		return
-	}
+	if (Array.isArray(value)) return value.map(parseRlpInput)
 	throw new Error('RLP value must be a hex string or array of RLP values')
 }
 
-export function toRlp(value: RLPInput, to?: 'hex'): Hex
-export function toRlp(value: RLPInput, to: 'bytes'): Uint8Array
-export function toRlp(value: RLPInput, to: 'hex' | 'bytes' = 'hex'): Hex | Uint8Array {
-	assertValidRlpInput(value)
-	const encoded = encodeRlpWithMicro(value)
+export function toRlp(value: unknown, to?: 'hex'): Hex
+export function toRlp(value: unknown, to: 'bytes'): Uint8Array
+export function toRlp(value: unknown, to: 'hex' | 'bytes' = 'hex'): Hex | Uint8Array {
+	const encoded = RLP.encode(parseRlpInput(value))
 	return to === 'bytes' ? encoded : bytesToHex(encoded)
 }
 
@@ -773,8 +792,9 @@ export const ens_normalize = (name: string) => {
 }
 
 export const hashMessage = (message: string | { readonly raw: Hex | Uint8Array }): Hex => {
-	if (typeof message === 'string') return eip191Signer._getHash(message) as Hex
-	return eip191Signer._getHash(bytesFromHexOrBytes(message.raw)) as Hex
+	const messageBytes = typeof message === 'string' ? stringToBytes(message) : bytesFromHexOrBytes(message.raw)
+	const prefix = stringToBytes(`\x19Ethereum Signed Message:\n${ messageBytes.length }`)
+	return keccak256(concatBytes(prefix, messageBytes))
 }
 
 const getTypedDataDependencies = (types: Record<string, readonly TypedDataField[] | undefined>, primaryType: string, found = new Set<string>()): Set<string> => {
@@ -871,7 +891,7 @@ export const hashTypedData = (typedData: TypedData): Hex => {
 }
 
 const signDigest = (digest: Hex, privateKey: Hex): Hex => {
-	const signature = signDigestWithMicro(bytesFromHex(digest), bytesFromHex(privateKey), false)
+	const signature = signDigestWithMicro(bytesFromHex(digest), bytesFromHex(privateKey), DETERMINISTIC_SIGNATURES)
 	const recovery = signature.recovery
 	if (recovery !== 0 && recovery !== 1) throw new Error('Unexpected signature recovery bit')
 	return `0x${ signature.toHex('compact') }${ recovery === 0 ? '1b' : '1c' }`
@@ -890,12 +910,12 @@ const normalizeSignatureYParity = (signature: { readonly yParity?: number, reado
 }
 
 export const privateKeyToAccount = (privateKey: Hex) => {
-	const address = addr.fromPrivateKey(privateKey) as Hex
+	const address = ensureHex(addr.fromPrivateKey(privateKey), 'account address')
 	return {
 		address,
 		signMessage: async ({ message }: { readonly message: string | { readonly raw: Hex | Uint8Array } }) => {
-			if (typeof message === 'string') return eip191Signer.sign(message, privateKey, false) as Hex
-			return eip191Signer.sign(bytesFromHexOrBytes(message.raw), privateKey, false) as Hex
+			if (typeof message === 'string') return ensureHex(eip191Signer.sign(message, privateKey, DETERMINISTIC_SIGNATURES), 'message signature')
+			return ensureHex(eip191Signer.sign(bytesFromHexOrBytes(message.raw), privateKey, DETERMINISTIC_SIGNATURES), 'message signature')
 		},
 		signTypedData: async (typedData: TypedData) => signDigest(hashTypedData(typedData), privateKey),
 	}
@@ -919,7 +939,7 @@ export const recoverAddress = async ({ hash, signature }: {
 				yParity: normalizeSignatureYParity(signature),
 			}
 	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
-	return addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)) as Hex
+	return ensureHex(addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)), 'recovered address')
 }
 
 const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: bigint, readonly yParity: number } => {
@@ -934,11 +954,10 @@ const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: big
 }
 
 type SerializableTransaction = {
-	readonly type?: 'eip1559' | 'legacy' | 'eip2930' | 'eip4844' | 'eip7702'
+	readonly type?: 'eip1559'
 	readonly chainId?: number | bigint
 	readonly nonce?: number | bigint
 	readonly gas?: number | bigint
-	readonly gasPrice?: bigint
 	readonly maxFeePerGas?: bigint
 	readonly maxPriorityFeePerGas?: bigint
 	readonly to?: string | null
@@ -956,9 +975,8 @@ type TransactionSignature = {
 
 export const serializeTransaction = (transaction: SerializableTransaction, signature?: TransactionSignature): Hex => {
 	const type = transaction.type ?? 'eip1559'
-	if (type !== 'eip1559') throw new Error(`Unsupported transaction type ${ type }`)
 	const raw = {
-		type: 'eip1559',
+		type,
 		chainId: BigInt(transaction.chainId ?? 0),
 		nonce: BigInt(transaction.nonce ?? 0),
 		maxFeePerGas: transaction.maxFeePerGas ?? 0n,
@@ -971,9 +989,9 @@ export const serializeTransaction = (transaction: SerializableTransaction, signa
 		...(signature === undefined ? {} : normalizeTransactionSignature(signature)),
 	}
 	const prepared = signature === undefined
-		? prepareMicroTransaction(raw)
-		: createMicroTransaction(type, raw, false, true)
-	return prepared.toHex(signature !== undefined) as Hex
+		? Transaction.prepare(raw)
+		: new Transaction(type, raw, false, true)
+	return ensureHex(prepared.toHex(signature !== undefined), 'serialized transaction')
 }
 
 const normalizeTransactionSignature = (signature: TransactionSignature) => ({
@@ -982,23 +1000,57 @@ const normalizeTransactionSignature = (signature: TransactionSignature) => ({
 	yParity: normalizeSignatureYParity(signature),
 })
 
+const parseEip1559RawTransaction = (value: unknown) => {
+	if (!isRecord(value)) throw new Error('Invalid EIP-1559 transaction data')
+	const getBigint = (name: string) => {
+		const field = value[name]
+		if (typeof field !== 'bigint') throw new Error(`Invalid EIP-1559 ${ name }`)
+		return field
+	}
+	const getString = (name: string) => {
+		const field = value[name]
+		if (typeof field !== 'string') throw new Error(`Invalid EIP-1559 ${ name }`)
+		return field
+	}
+	const accessListValue = getRecordProperty(value, 'accessList')
+	if (!Array.isArray(accessListValue)) throw new Error('Invalid EIP-1559 accessList')
+	const accessList = accessListValue.map((entry) => {
+		if (!isRecord(entry)) throw new Error('Invalid EIP-1559 accessList entry')
+		const address = getRecordProperty(entry, 'address')
+		const storageKeysValue = getRecordProperty(entry, 'storageKeys')
+		if (typeof address !== 'string' || !Array.isArray(storageKeysValue)) throw new Error('Invalid EIP-1559 accessList entry')
+		const storageKeys = storageKeysValue.map((storageKey) => {
+			if (typeof storageKey !== 'string') throw new Error('Invalid EIP-1559 accessList storage key')
+			return storageKey
+		})
+		return { address, storageKeys }
+	})
+	const r = getRecordProperty(value, 'r')
+	const s = getRecordProperty(value, 's')
+	const yParity = getRecordProperty(value, 'yParity')
+	if (r !== undefined && typeof r !== 'bigint') throw new Error('Invalid EIP-1559 r')
+	if (s !== undefined && typeof s !== 'bigint') throw new Error('Invalid EIP-1559 s')
+	if (yParity !== undefined && typeof yParity !== 'number') throw new Error('Invalid EIP-1559 yParity')
+	return {
+		chainId: getBigint('chainId'),
+		nonce: getBigint('nonce'),
+		maxPriorityFeePerGas: getBigint('maxPriorityFeePerGas'),
+		maxFeePerGas: getBigint('maxFeePerGas'),
+		gasLimit: getBigint('gasLimit'),
+		to: getString('to'),
+		value: getBigint('value'),
+		data: getString('data'),
+		accessList,
+		r,
+		s,
+		yParity,
+	}
+}
+
 export const parseTransaction = (serializedTransaction: Hex) => {
 	const parsed = Transaction.fromHex(serializedTransaction, false)
 	if (parsed.type !== 'eip1559') throw new Error(`Unsupported transaction type ${ parsed.type }`)
-	const raw = parsed.raw as {
-		readonly chainId: bigint
-		readonly nonce: bigint
-		readonly maxPriorityFeePerGas: bigint
-		readonly maxFeePerGas: bigint
-		readonly gasLimit: bigint
-		readonly to: string
-		readonly value: bigint
-		readonly data: string
-		readonly accessList: readonly { readonly address: string, readonly storageKeys: readonly Hex[] }[]
-		readonly r?: bigint
-		readonly s?: bigint
-		readonly yParity?: number
-	}
+	const raw = parseEip1559RawTransaction(parsed.raw)
 	return {
 		type: 'eip1559' as const,
 		chainId: Number(raw.chainId),
@@ -1006,13 +1058,13 @@ export const parseTransaction = (serializedTransaction: Hex) => {
 		maxPriorityFeePerGas: raw.maxPriorityFeePerGas,
 		maxFeePerGas: raw.maxFeePerGas,
 		gas: raw.gasLimit,
-		...(raw.to === '0x' ? {} : { to: raw.to.toLowerCase() as Hex }),
+		...(raw.to === '0x' ? {} : { to: ensureHex(raw.to.toLowerCase(), 'transaction recipient') }),
 		...(raw.value === 0n ? {} : { value: raw.value }),
-		...(raw.data === '0x' ? {} : { data: raw.data as Hex }),
+		...(raw.data === '0x' ? {} : { data: ensureHex(raw.data, 'transaction data') }),
 		...(raw.accessList.length === 0 ? {} : {
 			accessList: raw.accessList.map((entry) => ({
-				address: entry.address.toLowerCase() as Hex,
-				storageKeys: entry.storageKeys,
+				address: ensureHex(entry.address.toLowerCase(), 'access list address'),
+				storageKeys: entry.storageKeys.map((storageKey) => ensureHex(storageKey, 'access list storage key')),
 			})),
 		}),
 		...(raw.r !== undefined && raw.s !== undefined && raw.yParity !== undefined ? {

@@ -23,6 +23,7 @@ import {
 	formatAbiItem,
 	concat,
 	bytesToHex,
+	isAbiDataDecodeError,
 	toEventSelector,
 	toFunctionSelector,
 } from './ethereumPrimitives.js'
@@ -250,19 +251,6 @@ export function decodeFunctionOutput<
 ): ContractFunctionReturnType<TAbi, AbiStateMutability, TName>
 export function decodeFunctionOutput(abi: Abi, functionName: string, data: Hex | Uint8Array) {
 	return decodeFunctionOutputUnchecked(abi, functionName, data)
-}
-
-const legacyAbiDataDecodeErrorNames = new Set([
-	'AbiDecodingDataSizeInvalidError',
-	'AbiDecodingDataSizeTooSmallError',
-	'AbiDecodingZeroDataError',
-	'InvalidBytesBooleanError',
-	'PositionOutOfBoundsError',
-])
-
-const isAbiDataDecodeError = (error: unknown) => {
-	return error instanceof Error
-		&& (legacyAbiDataDecodeErrorNames.has(error.name) || error.message.startsWith('Reader():'))
 }
 
 export const decodeFunctionOutputSafely = <T>(

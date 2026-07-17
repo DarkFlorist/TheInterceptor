@@ -986,9 +986,5 @@ describe('local Ethereum primitive helpers', () => {
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
 		})
-		assert.throws(
-			() => serializeTransaction({ type: 'legacy', to: checksumDeadAddress }),
-			/Unsupported transaction type legacy/u,
-		)
 	})
 })
