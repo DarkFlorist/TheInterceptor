@@ -62,6 +62,11 @@ const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? '
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
 const importSimulationStackFailure = (message: string): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: false, message })
 
+function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
+	if (websiteOrigin === undefined) return false
+	return settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+}
+
 async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: WebsiteTabConnections, tabId: number | undefined, tabState: TabState, shouldRefreshSignerAccounts: boolean) {
 	if (!shouldRefreshSignerAccounts || tabId === undefined) return tabState
 	if (tabState.signerAccounts.length !== 0) return tabState
@@ -563,8 +568,7 @@ export async function requestHomePageBootstrap(popupRefreshGeneration: number) {
 	const settings = await settingsPromise
 	const tabState = await tabStatePromise
 	const activeSigningAddress = getActiveOrFirstSignerAddressFromTabState(settings, tabState)
-	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_homePageBootstrap',
@@ -1034,8 +1038,7 @@ async function buildHomePageUpdate(
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	const activeSigningAddress = getActiveOrFirstSignerAddressFromTabState(settings, tabState)
-	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
+	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	const richData = await richDataPromise
 	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
 	return {
