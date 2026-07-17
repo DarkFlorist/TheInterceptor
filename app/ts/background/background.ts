@@ -7,7 +7,7 @@ import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSign
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -36,6 +36,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
+import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -501,16 +502,26 @@ async function discoverAccountRequestAddressContext(
 ) {
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
-	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
-	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
-	if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) !== 'hasAccess') return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false }
+	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
+	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
+	if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) !== 'hasAccess') return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
 
-	const accounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
+	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId)
-	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true }
-	const firstSignerAddress = accounts[0] === undefined ? undefined : await getActiveAddressEntry(accounts[0])
-	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForSiteAccess: true }
+	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true, signerAccountError: signerAccountsResult.error }
+	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getActiveAddressEntry(signerAccountsResult.accounts[0])
+	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForSiteAccess: true, signerAccountError: signerAccountsResult.error }
+}
+
+const isSignerProviderDisconnectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_PROVIDER_DISCONNECTED
+
+function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, error: ErrorWithCodeAndOptionalData) {
+	return replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result',
+		...getRequestWithDefinedParams(request),
+		error,
+	})
 }
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
@@ -538,7 +549,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	const { settings, activeAddress, requestedSignerAccountsForSiteAccess } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	const { settings, activeAddress, requestedSignerAccountsForSiteAccess, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	if (isSignerProviderDisconnectedError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForSiteAccess && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
@@ -559,13 +571,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
 		if (requestedSignerAccountsForSiteAccess) return refuseAccess(websiteTabConnections, request)
-		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
-		if (account.length === 0) return refuseAccess(websiteTabConnections, request)
+		const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
+		if (isSignerProviderDisconnectedError(signerAccountsResult.error)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
+		if (signerAccountsResult.accounts.length === 0) return refuseAccess(websiteTabConnections, request)
 		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 		return result
 	}
 	if (access === 'hasAccess' && activeAddress === undefined && (request.method === 'eth_accounts' || request.method === 'wallet_getPermissions') && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
-		const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
+		const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
+		if (isSignerProviderDisconnectedError(signerAccountsResult.error)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
+		const signerAccounts = signerAccountsResult.accounts
 		if (signerAccounts.length === 0) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)

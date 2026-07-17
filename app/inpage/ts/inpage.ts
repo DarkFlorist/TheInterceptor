@@ -836,7 +836,7 @@ class InterceptorMessageListener {
 			params: [{
 				type: 'error',
 				requestAccounts,
-				error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet became available for this page.' },
+				error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 			}],
 		})
 	}

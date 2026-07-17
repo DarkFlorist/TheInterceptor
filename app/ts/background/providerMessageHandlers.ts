@@ -28,15 +28,16 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	if (signerAccountsReply.type === 'error') {
 		const stringifiedData = signerAccountsReply.error.data ? JSON.stringify(signerAccountsReply.error.data) : undefined
 		const error = signerAccountsReply.error
+		const signerAccountError = {
+			code: error.code,
+			message: error.message,
+			...(stringifiedData !== undefined ? { data: stringifiedData } : {}),
+		}
 		await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, {
-			signerAccountError: {
-				code: error.code,
-				message: error.message,
-				...(stringifiedData !== undefined ? { data: stringifiedData } : {}),
-			}
+			signerAccountError,
 		}))
 		// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
-		if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+		if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket, error: signerAccountError } })
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		return returnValue
 	}

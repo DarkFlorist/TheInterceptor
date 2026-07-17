@@ -20,6 +20,7 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
+import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -47,6 +48,11 @@ async function serializeSignerAccountRequest<T>(socket: WebsiteSocket, request: 
 		lock.pendingRequests -= 1
 		if (lock.pendingRequests === 0 && signerAccountRequestLocks.get(socketIdentifier) === lock) signerAccountRequestLocks.delete(socketIdentifier)
 	}
+}
+
+type SignerAccountsRequestResult = {
+	readonly accounts: readonly bigint[]
+	readonly error: ErrorWithCodeAndOptionalData | undefined
 }
 
 const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
@@ -151,34 +157,35 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 async function requestSignerAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts: boolean, onlyIfUnavailable: boolean) {
 	return await serializeSignerAccountRequest(socket, async () => {
 		const tabState = await getTabState(socket.tabId)
-		if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return tabState.signerAccounts
+		if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return { accounts: tabState.signerAccounts, error: undefined }
 
-		const future = new Future<void>
+		const future = new Future<ErrorWithCodeAndOptionalData | undefined>
 		const listener = createInternalMessageListener( (message: WindowMessage) => {
-			if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve()
+			if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve(message.data.error)
 		})
 		const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		let error: ErrorWithCodeAndOptionalData | undefined
 		try {
 			channel.addEventListener('message', listener)
 			const requestSignerAccountsMessage = requestAccounts
 				? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
 				: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
 			const messageSent = await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, requestSignerAccountsMessage)
-			if (messageSent) await future
+			if (messageSent) error = await future
 		} finally {
 			channel.removeEventListener('message', listener)
 			channel.close()
 		}
-		return (await getTabState(socket.tabId)).signerAccounts
+		return { accounts: (await getTabState(socket.tabId)).signerAccounts, error }
 	})
 }
 
-export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true) {
+export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true): Promise<SignerAccountsRequestResult> {
 	return await requestSignerAccountsFromSigner(websiteTabConnections, socket, requestAccounts, true)
 }
 
 export async function refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, requestAccounts: boolean) {
-	const accountRequests: Promise<readonly bigint[]>[] = []
+	const accountRequests: Promise<SignerAccountsRequestResult>[] = []
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.approved) continue
@@ -436,8 +443,8 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 				return tabState.signerAccounts[0]
 			}
 			if (message.data.newActiveAddress === 'signer') {
-				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
-				return signerAccounts[0]
+				const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
+				return signerAccountsResult.accounts[0]
 			}
 			return message.data.newActiveAddress
 		}

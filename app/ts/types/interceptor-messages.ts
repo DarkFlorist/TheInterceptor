@@ -619,9 +619,14 @@ const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
 const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('window_signer_accounts_changed'),
-	data: funtypes.ReadonlyObject({
-		socket: WebsiteSocket,
-	})
+	data: funtypes.Intersect(
+		funtypes.ReadonlyObject({
+			socket: WebsiteSocket,
+		}),
+		funtypes.ReadonlyPartial({
+			error: ErrorWithCodeAndOptionalData,
+		}),
+	)
 })
 
 export type WindowMessage = funtypes.Static<typeof WindowMessage>

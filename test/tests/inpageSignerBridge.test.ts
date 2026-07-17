@@ -469,7 +469,7 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(backgroundEthAccountsReplies, [{
 			type: 'error',
 			requestAccounts: true,
-			error: { code: 4900, message: 'No signer wallet became available for this page.' },
+			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
 	})
 
