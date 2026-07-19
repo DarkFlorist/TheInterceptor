@@ -167,10 +167,11 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 }
 
 export async function getStorageAt(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthGetStorageAtParams) {
+	const [address, slot, blockTag] = request.params
 	return {
 		type: 'result' as const,
 		method: request.method,
-		result: await getSimulatedStorageAtFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1], request.params[2]),
+		result: await getSimulatedStorageAtFromInput(ethereumClientService, undefined, simulationInput, address, slot, blockTag),
 	}
 }
 

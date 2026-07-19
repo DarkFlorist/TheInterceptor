@@ -15,6 +15,8 @@ import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
+import { STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS, STORAGE_READER_RUNTIME_BYTECODE } from '../../app/ts/simulation/storageReader.js'
+import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -33,7 +35,8 @@ const getCodeAbi = [{
 	outputs: [{ name: 'code', type: 'bytes' }],
 }] as const
 const getCodeSelector = encodeFunctionCall(getCodeAbi, 'at', ['0x0000000000000000000000000000000000000000']).slice(0, 10)
-const storageReaderCode = '0x6000355460005260206000f3'
+const SHA256_PRECOMPILE_ADDRESS = 0x2n
+const activePrecompileAddresses = new Set([SHA256_PRECOMPILE_ADDRESS])
 
 function buildAggregate3BalanceBlock(balanceQueryCount: number) {
 	const aggregate3BalanceBlock = ethSimulateAggregate3Result[ethSimulateAggregate3Result.length - 1]
@@ -159,18 +162,35 @@ class MockEthereumJSONRpcRequestHandler {
 						}],
 					})
 				}
-				const storageReaderOverride = lastCall?.to === undefined || lastCall.to === null
+				const storageReaderAccountOverride = lastCall?.to === undefined || lastCall.to === null
 					? undefined
-					: lastBlockStateCall?.stateOverrides?.[addressString(lastCall.to)]?.code
-				if (storageReaderOverride !== undefined && dataStringWith0xStart(storageReaderOverride) === storageReaderCode) {
+					: lastBlockStateCall?.stateOverrides?.[addressString(lastCall.to)]
+				const storageReaderOverride = storageReaderAccountOverride?.code
+				if (storageReaderOverride !== undefined && areEqualUint8Arrays(storageReaderOverride, STORAGE_READER_RUNTIME_BYTECODE)) {
 					const singleTransactionBlock = ethSimulateSingleBlockResult[0]
 					const singleCall = singleTransactionBlock?.calls[0]
 					if (singleTransactionBlock === undefined || singleCall === undefined) throw new Error('missing single transaction simulation fixture')
+					if (lastCall?.to === undefined || lastCall.to === null || lastCall.input === undefined) throw new Error('storage reader call is incomplete')
+					const isActivePrecompile = activePrecompileAddresses.has(lastCall.to)
+					if (!isActivePrecompile && storageReaderAccountOverride.movePrecompileToAddress !== undefined) {
+						throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: `account ${ addressString(lastCall.to) } is not a precompile` } })
+					}
+					const requestedAddress = addressString(lastCall.to)
+					const requestedSlot = bytes32String(BigInt(dataStringWith0xStart(lastCall.input)))
+					let storageValue = 0n
+					for (const prefixBlock of rpcRequest.params[0].blockStateCalls.slice(0, -1)) {
+						const accountOverride = prefixBlock.stateOverrides?.[requestedAddress]
+						if (accountOverride?.state !== undefined) storageValue = accountOverride.state[requestedSlot] ?? 0n
+						storageValue = accountOverride?.stateDiff?.[requestedSlot] ?? storageValue
+					}
 					return createMockEthSimulateV1ResultWithCustomLastBlock(blockStateCallCount, {
 						...singleTransactionBlock,
 						calls: [{
 							...singleCall,
-							returnData: testBytes32('1234'),
+							// Without relocation, precompile execution wins over injected account code.
+							returnData: isActivePrecompile && storageReaderAccountOverride.movePrecompileToAddress === undefined
+								? testBytes32('bad')
+								: testBytes32(storageValue.toString(16)),
 						}],
 					})
 				}
@@ -800,23 +820,97 @@ describe('SimulationModeEthereumClientService', () => {
 			requestHandler.ethSimulateV1Requests.length = 0
 			const address = 0x1234n
 			const slot = 0x42n
+			const expectedStorageValue = 0x1234n
+			const simulationStateInput = createSimulationStateInput()
+			const stateWithStorageOverride = [{
+				...simulationStateInput[0],
+				stateOverrides: {
+					[addressString(address)]: {
+						stateDiff: { [bytes32String(slot)]: expectedStorageValue },
+					},
+				},
+			}] as const
 			const storage = await getSimulatedStorageAtFromInput(
 				ethereum,
 				undefined,
-				toResolvedSimulationInput(createSimulationStateInput()),
+				toResolvedSimulationInput(stateWithStorageOverride),
 				address,
 				slot,
 			)
 
-			assert.equal(storage, 0x1234n)
+			assert.equal(storage, expectedStorageValue)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
+			assert.equal(requestHandler.ethSimulateV1Requests.length, 2)
+			const relocationProbe = requestHandler.ethSimulateV1Requests[0]
+			const relocationProbeOverride = relocationProbe?.params[0].blockStateCalls.at(-1)?.stateOverrides?.[addressString(address)]
+			assert.equal(relocationProbeOverride?.movePrecompileToAddress, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS)
 			const storageRequest = requestHandler.ethSimulateV1Requests.at(-1)
 			const storageBlock = storageRequest?.params[0].blockStateCalls.at(-1)
 			const storageCall = storageBlock?.calls[0]
 			assert.equal(storageCall?.to, address)
 			assert.equal(storageCall?.input === undefined ? undefined : dataStringWith0xStart(storageCall.input), testBytes32(slot.toString(16)))
 			const overrideCode = storageBlock?.stateOverrides?.[addressString(address)]?.code
-			assert.equal(overrideCode === undefined ? undefined : dataStringWith0xStart(overrideCode), storageReaderCode)
+			assert.equal(storageBlock?.stateOverrides?.[addressString(address)]?.movePrecompileToAddress, undefined)
+			assert.deepEqual(overrideCode, STORAGE_READER_RUNTIME_BYTECODE)
+		})
+
+		test('getSimulatedStorageAtFromInput relocates a precompile before reading its simulated storage', async () => {
+			requestHandler.ethSimulateV1Requests.length = 0
+			const slot = 0x42n
+			const expectedStorageValue = 0x5678n
+			const [simulationBlock] = createSimulationStateInput()
+			const simulationStateInput = [{
+				...simulationBlock,
+				stateOverrides: {
+					[addressString(SHA256_PRECOMPILE_ADDRESS)]: {
+						stateDiff: { [bytes32String(slot)]: expectedStorageValue },
+					},
+				},
+			}] as const
+
+			const storage = await getSimulatedStorageAtFromInput(
+				ethereum,
+				undefined,
+				toResolvedSimulationInput(simulationStateInput),
+				SHA256_PRECOMPILE_ADDRESS,
+				slot,
+			)
+
+			assert.equal(storage, expectedStorageValue)
+			const storageRequest = requestHandler.ethSimulateV1Requests.at(-1)
+			const readerOverride = storageRequest?.params[0].blockStateCalls.at(-1)?.stateOverrides?.[addressString(SHA256_PRECOMPILE_ADDRESS)]
+			assert.equal(readerOverride?.movePrecompileToAddress, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS)
+			assert.notEqual(readerOverride?.movePrecompileToAddress, SHA256_PRECOMPILE_ADDRESS)
+			assert.deepEqual(readerOverride?.code, STORAGE_READER_RUNTIME_BYTECODE)
+		})
+
+		test('getSimulatedStorageAtFromInput selects the requested simulated block prefix', async () => {
+			requestHandler.ethSimulateV1Calls.length = 0
+			const address = 0x1234n
+			const slot = 0x42n
+			const firstBlockStorageValue = 0x1111n
+			const secondBlockStorageValue = 0x2222n
+			const [firstBlock, secondBlock] = createTwoBlockSimulationStateInput()
+			const simulationStateInput = [
+				{
+					...firstBlock,
+					stateOverrides: {
+						[addressString(address)]: { stateDiff: { [bytes32String(slot)]: firstBlockStorageValue } },
+					},
+				},
+				{
+					...secondBlock,
+					stateOverrides: {
+						[addressString(address)]: { stateDiff: { [bytes32String(slot)]: secondBlockStorageValue } },
+					},
+				},
+			] as const
+			const resolvedInput = toResolvedSimulationInput(simulationStateInput)
+
+			assert.equal(await getSimulatedStorageAtFromInput(ethereum, undefined, resolvedInput, address, slot, blockNumber + 1n), firstBlockStorageValue)
+			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
+			assert.equal(await getSimulatedStorageAtFromInput(ethereum, undefined, resolvedInput, address, slot, 'latest'), secondBlockStorageValue)
+			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 3)
 		})
 
 		test('getSimulatedStorageAtFromInput queries the node for a pre-simulation block', async () => {
@@ -856,8 +950,13 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('Ethereum client validates eth_maxPriorityFeePerGas responses and rejects malformed quantities', async () => {
-			assert.equal(await ethereum.getMaxPriorityFeePerGas(undefined), 1_000_000_000n)
+			const priorityFee = await ethereum.getMaxPriorityFeePerGas(undefined)
+			assert.equal(priorityFee, 1_000_000_000n)
 			assert.equal(EthereumJsonRpcRequest.parse({ method: 'eth_maxPriorityFeePerGas' }).method, 'eth_maxPriorityFeePerGas')
+			const reply: RPCReply = { type: 'result', method: 'eth_maxPriorityFeePerGas', result: priorityFee }
+			const serializedReply = serialize(RPCReply, reply)
+			assert.deepEqual(serializedReply, { type: 'result', method: 'eth_maxPriorityFeePerGas', result: '0x3b9aca00' })
+			assert.deepEqual(RPCReply.parse(serializedReply), reply)
 			requestHandler.maxPriorityFeePerGasResponse = '1'
 			try {
 				await assert.rejects(async () => await ethereum.getMaxPriorityFeePerGas(undefined))
