@@ -37,6 +37,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
+import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -347,14 +348,25 @@ export async function changeActiveAddressAndChain(
 	})
 }
 
-export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
-	// allow switching RPC only if we are in simulation mode, or that chain id would not change
-	if (simulationMode || rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) return await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
-	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
+export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {
+	if (simulationMode) {
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
+		return { type: 'completedLocally' as const }
+	}
+	// The signer already confirmed this chain through chainChanged, so no wallet request is needed.
+	if (rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) {
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
+		return { type: 'signerRequestNotNeeded' as const }
+	}
+	const signerStateToken = signerTabId !== undefined
+		&& sendCallbackToConfirmedSignerOwner(websiteTabConnections, signerTabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
 	const settings = await getSettings()
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })
 	await promoteRpcAsPrimary(rpcNetwork)
+	return signerStateToken === false
+		? { type: 'signerUnavailable' as const }
+		: { type: 'signerRequestSent' as const, signerStateToken }
 }
 
 function getProviderHandler(method: string) {
@@ -494,6 +506,14 @@ function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabCo
 	return undefined
 }
 
+async function getActiveAddressForRequest(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return await getActiveAddress(settings, tabId)
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	if (signerStateToken === undefined) return undefined
+	const activeAddress = await getActiveAddress(settings, tabId)
+	return isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) ? activeAddress : undefined
+}
+
 async function discoverAccountRequestAddressContext(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
@@ -501,14 +521,14 @@ async function discoverAccountRequestAddressContext(
 	websiteOrigin: string,
 ) {
 	const settings = await getSettings()
-	const activeAddress = await getActiveAddress(settings, socket.tabId)
+	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
 	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
 	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
 	if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) !== 'hasAccess') return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
-	const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId)
+	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true, signerAccountError: signerAccountsResult.error }
 	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getActiveAddressEntry(signerAccountsResult.accounts[0])
 	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForSiteAccess: true, signerAccountError: signerAccountsResult.error }
@@ -541,7 +561,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const result = await revokeWebsitePermissions(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, websiteOrigin)
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
-	const initialActiveAddress = await getActiveAddress(initialSettings, socket.tabId)
+	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
@@ -594,7 +614,14 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		const refreshedSettings = await getSettings()
-		const refreshedActiveAddress = await getActiveAddress(refreshedSettings, socket.tabId) ?? await getActiveAddressEntry(firstSignerAccount)
+		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
+		if (refreshedActiveAddress === undefined) {
+			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+			if (signerStateToken !== undefined) {
+				const firstSignerAddress = await getActiveAddressEntry(firstSignerAccount)
+				if (isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) refreshedActiveAddress = firstSignerAddress
+			}
+		}
 		if (refreshedActiveAddress === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, true)
 		if (refreshedAccess !== 'hasAccess') return replyWithEmptyAccountIdentity(websiteTabConnections, request)

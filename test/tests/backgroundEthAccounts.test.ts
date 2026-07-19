@@ -6,14 +6,24 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 
 type Listener = () => void
 type PortMessage = { type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 const ADDRESS_PROMPT_TIMEOUT_MS = 100
 
-function installBrowserMock() {
+function createDeferredSignal() {
+	let resolveSignal = () => undefined
+	const promise = new Promise<void>((resolve) => { resolveSignal = resolve })
+	return { promise, resolve: () => resolveSignal() }
+}
+
+function installBrowserMock({ deferFirstChainChangeRemoval = false } = {}) {
 	const storageState: Record<string, unknown> = {}
+	const chainChangeRemovalStarted = createDeferredSignal()
+	const chainChangeRemovalRelease = createDeferredSignal()
+	let chainChangeRemovalDeferred = false
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
 			lastError: null,
@@ -36,7 +46,13 @@ function installBrowserMock() {
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					const keysToRemove = Array.isArray(keys) ? keys : [keys]
+					if (deferFirstChainChangeRemoval && !chainChangeRemovalDeferred && keysToRemove.includes('chainChangeConfirmationPromise')) {
+						chainChangeRemovalDeferred = true
+						chainChangeRemovalStarted.resolve()
+						await chainChangeRemovalRelease.promise
+					}
+					for (const key of keysToRemove) delete storageState[key]
 				},
 			},
 		},
@@ -77,6 +93,10 @@ function installBrowserMock() {
 	} as unknown as typeof globalThis.browser
 	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
 	;(globalThis as typeof globalThis & { location: Location }).location = { origin: '' } as unknown as Location
+	return {
+		waitForDeferredChainChangeRemoval: async () => await chainChangeRemovalStarted.promise,
+		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
+	}
 }
 
 async function loadModules() {
@@ -84,16 +104,20 @@ async function loadModules() {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
+		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/websiteTabConnections.js'),
+		...await import('../../app/ts/background/windows/changeChain.js'),
 		...await import('../../app/ts/background/windows/interceptorAccess.js'),
+		...await import('../../app/ts/background/signerStateOwnership.js'),
 	}
 }
 
-function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId?: number) {
+function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId?: number, connectionName = 0n) {
 	const messages: PortMessage[] = []
 	const port = {
-		name: '0x0',
+		name: `0x${ connectionName.toString(16) }`,
 		sender: { tab: { id: tabId }, ...(frameId === undefined ? {} : { frameId }) },
 		postMessage(message: unknown) {
 			const typedMessage = message as PortMessage
@@ -102,6 +126,15 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 		},
 	} as unknown as browser.runtime.Port
 	return { port, messages }
+}
+
+function confirmedSignerOwnership(socket: { readonly connectionName: bigint }) {
+	return {
+		signerStateOwnerConnectionName: socket.connectionName,
+		signerStateOwnerConfirmed: true,
+		signerStateOwnerGeneration: 1,
+		signerProviderGeneration: 1,
+	}
 }
 
 async function waitForPortMessageCount(messages: readonly PortMessage[], method: string, count: number, timeoutMs = 100) {
@@ -180,7 +213,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -222,7 +255,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -233,7 +266,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 9, requestSocket: socket },
 			method: 'eth_accounts_reply',
-			params: [{ type: 'success', accounts: ['0x3333333333333333333333333333333333333333'], requestAccounts: false }],
+params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x3333333333333333333333333333333333333333'], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const reply = messages.at(-1)
@@ -278,7 +311,7 @@ describe('background eth_accounts', () => {
 		const connectionKey = websiteSocketToString(socket)
 		const childConnectionKey = websiteSocketToString(childSocket)
 		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: connection,
 			[childConnectionKey]: { port: childPort, socket: childSocket, websiteOrigin, approved: false, wantsToConnect: false },
 		} }]])
@@ -290,7 +323,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 90, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [false, 'NoSigner'],
+			params: [false, 'NoSigner', 2],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const noSignerState = await getTabState(socket.tabId)
@@ -309,6 +342,7 @@ describe('background eth_accounts', () => {
 			uniqueRequestIdentifier: { requestId: 91, requestSocket: socket },
 			method: 'eth_accounts_reply',
 			params: [{
+				signerProviderGeneration: 2,
 				type: 'error',
 				requestAccounts: false,
 				signerUnavailable: true,
@@ -324,7 +358,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 92, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask'],
+			params: [true, 'MetaMask', 3],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const identifiedSignerState = await getTabState(socket.tabId)
 		assert.equal(identifiedSignerState.signerName, 'MetaMask')
@@ -337,7 +371,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 94, requestSocket: childSocket },
 			method: 'connected_to_signer',
-			params: [false, 'NoSigner'],
+			params: [false, 'NoSigner', 4],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const stateAfterChildFrame = await getTabState(socket.tabId)
 		assert.equal(stateAfterChildFrame.signerName, 'MetaMask')
@@ -352,12 +386,412 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 93, requestSocket: socket },
 			method: 'eth_accounts_reply',
-			params: [{ type: 'error', requestAccounts: false, error: { code: 4900, message: 'MetaMask disconnected' } }],
+			params: [{ signerProviderGeneration: 3, type: 'error', requestAccounts: false, error: { code: 4900, message: 'MetaMask disconnected' } }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const signerErrorState = await getTabState(socket.tabId)
 		assert.equal(signerErrorState.signerName, 'MetaMask')
 		assert.equal(signerErrorState.signerConnected, true)
 		assert.deepEqual(signerErrorState.signerAccountError, { code: 4900, message: 'MetaMask disconnected' })
+	})
+
+	test('refreshes accounts after signer identity or page ownership changes', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			updateWebsiteAccess,
+			updateTabState,
+			getTabState,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			createInternalMessageListener,
+			INTERNAL_CHANNEL_NAME,
+			registerWebsiteConnectionAndProvisionallyClaimSignerState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const braveAccount = 0x4141414141414141414141414141414141414141n
+		const metaMaskAccount = 0x4242424242424242424242424242424242424242n
+		const metaMaskAccountString = '0x4242424242424242424242424242424242424242'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: braveAccount })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: metaMaskAccount, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const signerAccountSnapshots: bigint[][] = []
+		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			void (async () => {
+				signerAccountSnapshots.push([...(await getTabState(socket.tabId)).signerAccounts])
+				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+					interceptorRequest: true,
+					interceptorInternalRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId: 202, requestSocket: socket },
+					method: 'eth_accounts_reply',
+					params: [{ signerProviderGeneration: 2, type: 'success', accounts: [metaMaskAccountString], requestAccounts: true }],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			})()
+		}, 0)
+		const port = createdPort
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerName: 'Brave',
+			signerConnected: true,
+			signerAccounts: [braveAccount],
+			signerChain: 1n,
+			signerAccountError: { code: 4001, message: 'Stale Brave error' },
+			activeSigningAddress: braveAccount,
+		}))
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 200, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 2],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const stateAfterMetaMaskSelection = await getTabState(socket.tabId)
+		assert.equal(stateAfterMetaMaskSelection.signerName, 'MetaMask')
+		assert.equal(stateAfterMetaMaskSelection.signerConnected, true)
+		assert.deepEqual(stateAfterMetaMaskSelection.signerAccounts, [])
+		assert.equal(stateAfterMetaMaskSelection.signerChain, undefined)
+		assert.equal(stateAfterMetaMaskSelection.signerAccountError, undefined)
+		assert.equal(stateAfterMetaMaskSelection.activeSigningAddress, undefined)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 201, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(signerAccountSnapshots, [[]])
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 201).at(-1)?.result, [metaMaskAccountString])
+		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [metaMaskAccount])
+
+		const nextSocket = { tabId: socket.tabId, connectionName: 1n }
+		const { port: nextPort } = createPort(nextSocket.tabId, undefined, 0, nextSocket.connectionName)
+		const tabConnection = websiteTabConnections.get(nextSocket.tabId)
+		if (tabConnection === undefined) throw new Error('Missing tab connection')
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(
+			websiteTabConnections,
+			nextSocket,
+			{ port: nextPort, socket: nextSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			true,
+		)
+		await handleInterceptedRequest(nextPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, nextSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 203, requestSocket: nextSocket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const stateAfterNewPageConnection = await getTabState(nextSocket.tabId)
+		assert.equal(stateAfterNewPageConnection.signerName, 'MetaMask')
+		assert.equal(stateAfterNewPageConnection.signerConnected, true)
+		assert.deepEqual(stateAfterNewPageConnection.signerAccounts, [])
+		assert.equal(stateAfterNewPageConnection.signerChain, undefined)
+		assert.equal(stateAfterNewPageConnection.signerAccountError, undefined)
+		assert.equal(stateAfterNewPageConnection.activeSigningAddress, undefined)
+
+		const currentSignerError = { code: 4001, message: 'Current MetaMask error' }
+		await updateTabState(nextSocket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [metaMaskAccount],
+			signerChain: 5n,
+			signerAccountError: currentSignerError,
+			activeSigningAddress: metaMaskAccount,
+		}))
+		const staleAccountCompletionErrors: Array<{ code: number, message: string } | undefined> = []
+		const completionChannel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		const completionListener = createInternalMessageListener((message) => {
+			if (message.method !== 'window_signer_accounts_changed') return
+			if (message.data.socket.connectionName !== socket.connectionName) return
+			staleAccountCompletionErrors.push(message.data.error)
+		})
+		completionChannel.addEventListener('message', completionListener)
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 204, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x4141414141414141414141414141414141414141'], requestAccounts: true }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 205, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'error', requestAccounts: true, error: { code: 4001, message: 'Late Brave error' } }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 206, requestSocket: socket },
+				method: 'signer_chainChanged',
+				params: ['0x2', 2],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			const completionDeadline = Date.now() + 100
+			while (staleAccountCompletionErrors.length < 2 && Date.now() < completionDeadline) await new Promise((resolve) => setTimeout(resolve, 0))
+		} finally {
+			completionChannel.removeEventListener('message', completionListener)
+			completionChannel.close()
+		}
+
+		assert.deepEqual(staleAccountCompletionErrors, [])
+		assert.equal(tabConnection.signerStateOwnerConnectionName, nextSocket.connectionName)
+		const stateAfterStaleReplies = await getTabState(nextSocket.tabId)
+		assert.deepEqual(stateAfterStaleReplies.signerAccounts, [metaMaskAccount])
+		assert.equal(stateAfterStaleReplies.activeSigningAddress, metaMaskAccount)
+		assert.equal(stateAfterStaleReplies.signerChain, 5n)
+		assert.deepEqual(stateAfterStaleReplies.signerAccountError, currentSignerError)
+	})
+
+	test('waits for provisional page ownership before reading or requesting signer accounts', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getTabState,
+			handleInterceptedRequest,
+			registerWebsiteConnectionAndProvisionallyClaimSignerState,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const staleAccount = 0x5151515151515151515151515151515151515151n
+		const currentAccount = 0x5252525252525252525252525252525252525252n
+		const currentAccountString = '0x5252525252525252525252525252525252525252'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: staleAccount })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: currentAccount, access: true }] }])
+
+		const previousSocket = { tabId: 1, connectionName: 50n }
+		const restoredSocket = { tabId: 1, connectionName: 51n }
+		const { port: previousPort } = createPort(previousSocket.tabId, undefined, 0, previousSocket.connectionName)
+		let restoredPort: browser.runtime.Port
+		const { port: createdRestoredPort, messages } = createPort(restoredSocket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_accounts') return
+			void handleInterceptedRequest(restoredPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, restoredSocket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 302, requestSocket: restoredSocket },
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [currentAccountString], requestAccounts: false }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}, 0, restoredSocket.connectionName)
+		restoredPort = createdRestoredPort
+		const websiteTabConnections = new Map([[restoredSocket.tabId, {
+			signerStateOwnerConnectionName: previousSocket.connectionName,
+			signerStateOwnerConfirmed: true,
+			signerStateOwnerGeneration: 1,
+			signerProviderGeneration: 7,
+			connections: {
+				[websiteSocketToString(previousSocket)]: { port: previousPort, socket: previousSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			},
+		}]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await updateTabState(restoredSocket.tabId, (previousState) => ({
+			...previousState,
+			signerName: 'MetaMask',
+			signerConnected: true,
+			signerAccounts: [staleAccount],
+			signerChain: 1n,
+			activeSigningAddress: staleAccount,
+		}))
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(
+			websiteTabConnections,
+			restoredSocket,
+			{ port: restoredPort, socket: restoredSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			true,
+		)
+
+		const accountRequest = handleInterceptedRequest(restoredPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, restoredSocket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 300, requestSocket: restoredSocket },
+			method: 'eth_accounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+		assert.equal(messages.some((message) => message.method === 'eth_accounts' && message.requestId === 300), false)
+
+		await handleInterceptedRequest(restoredPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, restoredSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 301, requestSocket: restoredSocket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await accountRequest
+
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 300).at(-1)?.result, [currentAccountString])
+		assert.deepEqual((await getTabState(restoredSocket.tabId)).signerAccounts, [currentAccount])
+	})
+
+	test('finishes the first account request when the signer changes on the same page port', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			handleInterceptedRequest,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6060606060606060606060606060606060606060n
+		const accountString = '0x6060606060606060606060606060606060606060'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 59n }
+		let port: browser.runtime.Port
+		let websiteTabConnections: WebsiteTabConnections
+		const createdPort = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_requestAccounts') return
+			void (async () => {
+				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+					interceptorRequest: true,
+					interceptorInternalRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId: 308, requestSocket: socket },
+					method: 'connected_to_signer',
+					params: [true, 'MetaMask', 2],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
+				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+					interceptorRequest: true,
+					interceptorInternalRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId: 309, requestSocket: socket },
+					method: 'eth_accounts_reply',
+					params: [{ signerProviderGeneration: 2, type: 'success', accounts: [accountString], requestAccounts: true }],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			})()
+		}, 0, socket.connectionName)
+		port = createdPort.port
+		websiteTabConnections = new Map([[socket.tabId, {
+			...confirmedSignerOwnership(socket),
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			},
+		}]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 307, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(createdPort.messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
+		assert.deepEqual(createdPort.messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 307).at(-1)?.result, [accountString])
+	})
+
+	test('rejects stale account and chain callbacks from an older signer epoch on the current port', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			createInternalMessageListener,
+			getTabState,
+			handleInterceptedRequest,
+			INTERNAL_CHANNEL_NAME,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const currentAccount = 0x6161616161616161616161616161616161616161n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 60n }
+		const { port } = createPort(socket.tabId, undefined, 0, socket.connectionName)
+		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwnerConnectionName: socket.connectionName,
+			signerStateOwnerConfirmed: true,
+			signerStateOwnerGeneration: 4,
+			signerProviderGeneration: 2,
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			},
+		}]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const currentError = { code: 4001, message: 'Current signer error' }
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerName: 'MetaMask',
+			signerConnected: true,
+			signerAccounts: [currentAccount],
+			signerChain: 5n,
+			signerAccountError: currentError,
+			activeSigningAddress: currentAccount,
+		}))
+		const completionErrors: Array<{ code: number, message: string } | undefined> = []
+		const completionChannel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		const completionListener = createInternalMessageListener((message) => {
+			if (message.method === 'window_signer_accounts_changed' && message.data.socket.connectionName === socket.connectionName) completionErrors.push(message.data.error)
+		})
+		completionChannel.addEventListener('message', completionListener)
+		try {
+			for (const [requestId, params] of [
+				[310, { signerProviderGeneration: 1, type: 'success', accounts: ['0x6262626262626262626262626262626262626262'], requestAccounts: true }],
+				[311, { signerProviderGeneration: 1, type: 'error', requestAccounts: true, error: { code: 4900, message: 'Stale error' } }],
+			] as const) {
+				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+					interceptorRequest: true,
+					interceptorInternalRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId, requestSocket: socket },
+					method: 'eth_accounts_reply',
+					params: [params],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			}
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 312, requestSocket: socket },
+				method: 'signer_chainChanged',
+				params: ['0x2', 1],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			const completionDeadline = Date.now() + 100
+			while (completionErrors.length < 2 && Date.now() < completionDeadline) await new Promise((resolve) => setTimeout(resolve, 0))
+		} finally {
+			completionChannel.removeEventListener('message', completionListener)
+			completionChannel.close()
+		}
+
+		assert.deepEqual(completionErrors, [])
+		const tabState = await getTabState(socket.tabId)
+		assert.deepEqual(tabState.signerAccounts, [currentAccount])
+		assert.equal(tabState.signerChain, 5n)
+		assert.deepEqual(tabState.signerAccountError, currentError)
+		assert.equal(tabState.activeSigningAddress, currentAccount)
 	})
 
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {
@@ -373,7 +807,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const getBlockCalls = { count: 0 }
@@ -406,7 +840,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -436,7 +870,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -466,7 +900,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: undefined }))
@@ -501,7 +935,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: undefined }))
@@ -542,7 +976,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, false)
@@ -588,7 +1022,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, false)
@@ -641,11 +1075,14 @@ describe('background eth_accounts', () => {
 			if (message.method !== 'request_signer_to_eth_accounts') return
 			void (async () => {
 				await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
-				sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
 			})()
 		})
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -664,11 +1101,12 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
-	test('serializes a popup refresh and interactive signer account discovery for one connection', async () => {
+	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
 			refreshSignerAccountsFromApprovedWebsitePorts,
+			sendCallbackToConfirmedSignerOwner,
 			websiteSocketToString,
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
@@ -683,10 +1121,14 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
+		const childSocket = { tabId: 1, connectionName: 1n }
 		const { port, messages } = createPort(socket.tabId)
+		const { port: childPort, messages: childMessages } = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const childConnectionKey = websiteSocketToString(childSocket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			[childConnectionKey]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 		const replyWithSignerAccounts = async (requestId: number, requestAccounts: boolean, accounts: readonly string[]) => {
@@ -696,7 +1138,7 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts, requestAccounts }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts, requestAccounts }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		}
 
@@ -718,7 +1160,451 @@ describe('background eth_accounts', () => {
 		await Promise.all([passiveRequest, interactiveRequest])
 
 		assert.equal(interactiveRequestsBeforePassiveReply, 0)
+		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_eth_accounts' || message.method === 'request_signer_to_eth_requestAccounts'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 71).at(-1)?.result, [accountString])
+		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		assert.notEqual(signerStateToken, false)
+		if (signerStateToken === false) throw new Error('Expected a confirmed signer owner')
+		assert.equal(signerStateToken.port, port)
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_wallet_switchEthereumChain').length, 1)
+		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
+	})
+
+	test('uses an unapproved signer owner for tab-wide refresh when a sibling frame is approved', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			handleInterceptedRequest,
+			refreshSignerAccountsFromApprovedWebsitePorts,
+			sendCallbackToConfirmedSignerOwner,
+			setUseSignersAddressAsActiveAddress,
+			websiteSocketToString,
+			getTabState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const childSocket = { tabId: 1, connectionName: 1n }
+		const { port, messages } = createPort(socket.tabId)
+		const { port: childPort, messages: childMessages } = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false },
+			[websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const account = '0x2424242424242424242424242424242424242424'
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+
+		const refresh = refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
+		await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 92, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [account], requestAccounts: false }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await refresh
+
+		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [0x2424242424242424242424242424242424242424n])
+		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		assert.notEqual(signerStateToken, false)
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_wallet_switchEthereumChain').length, 1)
+		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 94, requestSocket: socket },
+			method: 'signer_chainChanged',
+			params: ['0x2', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
+	})
+
+	test('settles a pending chain switch when its exact signer owner disconnects', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			removeWebsiteTabConnection,
+			resolveChainChange,
+			setChainChangeConfirmationPromise,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const ownerSocket = { tabId: 1, connectionName: 0n }
+		const requestSocket = { tabId: 1, connectionName: 1n }
+		const { port: ownerPort, messages: ownerMessages } = createPort(ownerSocket.tabId)
+		const { port: requestPort, messages: requestMessages } = createPort(requestSocket.tabId, undefined, 2, requestSocket.connectionName)
+		const websiteTabConnections = new Map([[ownerSocket.tabId, { ...confirmedSignerOwnership(ownerSocket), connections: {
+			[websiteSocketToString(ownerSocket)]: { port: ownerPort, socket: ownerSocket, websiteOrigin, approved: false, wantsToConnect: false },
+			[websiteSocketToString(requestSocket)]: { port: requestPort, socket: requestSocket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const currentRpcNetwork = {
+			name: 'Current RPC',
+			chainId: 1n,
+			httpsRpc: 'https://current.example',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		}
+		const requestedRpcNetwork = {
+			name: 'Requested RPC',
+			chainId: 2n,
+			httpsRpc: 'https://requested.example',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		}
+		const uniqueRequestIdentifier = { requestId: 93, requestSocket }
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier,
+			method: 'wallet_switchEthereumChain' as const,
+			params: [{ chainId: requestedRpcNetwork.chainId }],
+		}
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setChainChangeConfirmationPromise({
+			website,
+			popupOrTabId: { type: 'popup', id: 9 },
+			request,
+			rpcNetwork: requestedRpcNetwork,
+			simulationMode: false,
+		})
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const resolution = resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_changeChainDialog',
+			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
+		})
+		await waitForPortMessageCount(ownerMessages, 'request_signer_to_wallet_switchEthereumChain', 1)
+
+		await removeWebsiteTabConnection(websiteTabConnections, ownerSocket, ownerPort)
+		await resolution
+
+		const reply = requestMessages.find((message) => message.method === 'wallet_switchEthereumChain' && message.requestId === uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.error?.code, 4900)
+		assert.equal(reply?.error?.message, 'Signer connection changed before the previous wallet replied.')
+	})
+
+	test('accepts the exact solicited chain reply after the approving sibling disconnects', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			handleInterceptedRequest,
+			removeWebsiteTabConnection,
+			resolveChainChange,
+			setChainChangeConfirmationPromise,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const ownerSocket = { tabId: 1, connectionName: 0n }
+		const approvingSocket = { tabId: 1, connectionName: 1n }
+		const requestSocket = { tabId: 1, connectionName: 2n }
+		const { port: ownerPort, messages: ownerMessages } = createPort(ownerSocket.tabId)
+		const { port: approvingPort } = createPort(approvingSocket.tabId, undefined, 2, approvingSocket.connectionName)
+		const { port: requestPort, messages: requestMessages } = createPort(requestSocket.tabId, undefined, 3, requestSocket.connectionName)
+		const websiteTabConnections = new Map([[ownerSocket.tabId, { ...confirmedSignerOwnership(ownerSocket), connections: {
+			[websiteSocketToString(ownerSocket)]: { port: ownerPort, socket: ownerSocket, websiteOrigin, approved: false, wantsToConnect: false },
+			[websiteSocketToString(approvingSocket)]: { port: approvingPort, socket: approvingSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[websiteSocketToString(requestSocket)]: { port: requestPort, socket: requestSocket, websiteOrigin, approved: false, wantsToConnect: false },
+		} }]])
+		const currentRpcNetwork = {
+			name: 'Current RPC',
+			chainId: 1n,
+			httpsRpc: 'https://current.example',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		}
+		const requestedRpcNetwork = {
+			name: 'Sepolia',
+			chainId: 11155111n,
+			httpsRpc: 'https://sepolia.example',
+			currencyName: 'Sepolia Testnet ETH',
+			currencyTicker: 'SEETH',
+			primary: true,
+			minimized: false,
+		}
+		const uniqueRequestIdentifier = { requestId: 95, requestSocket }
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier,
+			method: 'wallet_switchEthereumChain' as const,
+			params: [{ chainId: requestedRpcNetwork.chainId }],
+		}
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setChainChangeConfirmationPromise({
+			website,
+			popupOrTabId: { type: 'popup', id: 10 },
+			request,
+			rpcNetwork: requestedRpcNetwork,
+			simulationMode: false,
+		})
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const resolution = resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_changeChainDialog',
+			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
+		})
+		await waitForPortMessageCount(ownerMessages, 'request_signer_to_wallet_switchEthereumChain', 1)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		await removeWebsiteTabConnection(websiteTabConnections, approvingSocket, approvingPort)
+		await handleInterceptedRequest(ownerPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, ownerSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 96, requestSocket: ownerSocket },
+			method: 'wallet_switchEthereumChain_reply',
+			params: [{ accept: true, chainId: '0xaa36a7', signerProviderGeneration: 1 }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await Promise.race([
+			resolution,
+			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Solicited chain reply did not settle')), 100)),
+		])
+
+		const reply = requestMessages.find((message) => message.method === 'wallet_switchEthereumChain' && message.requestId === uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.result, null)
+	})
+
+	test('does not let another tab chain reply settle the pending dapp switch', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getSettings,
+			handleInterceptedRequest,
+			popupChangeActiveRpc,
+			resolveChainChange,
+			saveCurrentTabId,
+			setChainChangeConfirmationPromise,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const requestSocket = { tabId: 1, connectionName: 0n }
+		const popupSocket = { tabId: 2, connectionName: 0n }
+		const { port: requestPort, messages: requestMessages } = createPort(requestSocket.tabId)
+		const { port: popupPort, messages: popupMessages } = createPort(popupSocket.tabId)
+		const websiteTabConnections = new Map([
+			[requestSocket.tabId, { ...confirmedSignerOwnership(requestSocket), connections: {
+				[websiteSocketToString(requestSocket)]: { port: requestPort, socket: requestSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			} }],
+			[popupSocket.tabId, { ...confirmedSignerOwnership(popupSocket), connections: {
+				[websiteSocketToString(popupSocket)]: { port: popupPort, socket: popupSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			} }],
+		])
+		const currentRpcNetwork = {
+			name: 'Current RPC',
+			chainId: 1n,
+			httpsRpc: 'https://current.example',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		}
+		const requestedRpcNetwork = {
+			name: 'Sepolia',
+			chainId: 11155111n,
+			httpsRpc: 'https://sepolia.example',
+			currencyName: 'Sepolia Testnet ETH',
+			currencyTicker: 'SEETH',
+			primary: true,
+			minimized: false,
+		}
+		const popupRpcNetwork = {
+			name: 'Holesky',
+			chainId: 17000n,
+			httpsRpc: 'https://holesky.example',
+			currencyName: 'Holesky Testnet ETH',
+			currencyTicker: 'HOETH',
+			primary: true,
+			minimized: false,
+		}
+		const uniqueRequestIdentifier = { requestId: 97, requestSocket }
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier,
+			method: 'wallet_switchEthereumChain' as const,
+			params: [{ chainId: requestedRpcNetwork.chainId }],
+		}
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setChainChangeConfirmationPromise({
+			website,
+			popupOrTabId: { type: 'popup', id: 11 },
+			request,
+			rpcNetwork: requestedRpcNetwork,
+			simulationMode: false,
+		})
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		let requestSettled = false
+		const resolution = resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_changeChainDialog',
+			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
+		}).then(() => { requestSettled = true })
+		await waitForPortMessageCount(requestMessages, 'request_signer_to_wallet_switchEthereumChain', 1)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		await saveCurrentTabId(popupSocket.tabId)
+		await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_changeActiveRpc',
+			data: popupRpcNetwork,
+		}, await getSettings())
+		await waitForPortMessageCount(popupMessages, 'request_signer_to_wallet_switchEthereumChain', 1)
+		await handleInterceptedRequest(popupPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, popupSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 98, requestSocket: popupSocket },
+			method: 'wallet_switchEthereumChain_reply',
+			params: [{ accept: false, chainId: '0x4268', error: { code: 4001, message: 'Popup tab rejected' }, signerProviderGeneration: 1 }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(requestSettled, false)
+
+		await handleInterceptedRequest(requestPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, requestSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 99, requestSocket },
+			method: 'wallet_switchEthereumChain_reply',
+			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'Dapp tab rejected' }, signerProviderGeneration: 1 }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await resolution
+
+		const reply = requestMessages.find((message) => message.method === 'wallet_switchEthereumChain' && message.requestId === uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.error?.code, 4001)
+		assert.equal(reply?.error?.message, 'Dapp tab rejected')
+	})
+
+	test('keeps the production chain dialog guarded while signer resolution starts', async () => {
+		const { waitForDeferredChainChangeRemoval, releaseDeferredChainChangeRemoval } = installBrowserMock({ deferFirstChainChangeRemoval: true })
+		const {
+			changeSimulationMode,
+			getChainChangeConfirmationPromise,
+			handleInterceptedRequest,
+			openChangeChainDialog,
+			resolveChainChange,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const currentRpcNetwork = {
+			name: 'Current RPC',
+			chainId: 1n,
+			httpsRpc: 'https://current.example',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		}
+		const requestedRpcNetwork = {
+			name: 'Sepolia',
+			chainId: 11155111n,
+			httpsRpc: 'https://sepolia.example',
+			currencyName: 'Sepolia Testnet ETH',
+			currencyTicker: 'SEETH',
+			primary: true,
+			minimized: false,
+		}
+		const secondRpcNetwork = {
+			name: 'Holesky',
+			chainId: 17000n,
+			httpsRpc: 'https://holesky.example',
+			currencyName: 'Holesky Testnet ETH',
+			currencyTicker: 'HOETH',
+			primary: true,
+			minimized: false,
+		}
+		const firstUniqueRequestIdentifier = { requestId: 100, requestSocket: socket }
+		const firstRequest = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: firstUniqueRequestIdentifier,
+			method: 'wallet_switchEthereumChain' as const,
+			params: [{ chainId: requestedRpcNetwork.chainId }],
+		}
+		const secondUniqueRequestIdentifier = { requestId: 101, requestSocket: socket }
+		const secondRequest = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: secondUniqueRequestIdentifier,
+			method: 'wallet_switchEthereumChain' as const,
+			params: [{ chainId: secondRpcNetwork.chainId }],
+		}
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const firstResolution = openChangeChainDialog(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			firstRequest,
+			false,
+			website,
+			{ method: 'wallet_switchEthereumChain', params: [{ chainId: requestedRpcNetwork.chainId }] },
+		)
+		const pendingDeadline = Date.now() + 100
+		let pendingChainChange = await getChainChangeConfirmationPromise()
+		while (pendingChainChange === undefined && Date.now() < pendingDeadline) {
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			pendingChainChange = await getChainChangeConfirmationPromise()
+		}
+		if (pendingChainChange === undefined) throw new Error('Missing production chain-change dialog state')
+		await resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_changeChainDialog',
+			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier: firstUniqueRequestIdentifier, accept: true },
+		})
+		await Promise.race([
+			waitForDeferredChainChangeRemoval(),
+			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Chain resolution did not start')), 100)),
+		])
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		const secondResolution = await Promise.race([
+			openChangeChainDialog(
+				ethereum,
+				tokenPriceService,
+				resetSimulationServices,
+				websiteTabConnections,
+				secondRequest,
+				false,
+				website,
+				{ method: 'wallet_switchEthereumChain', params: [{ chainId: secondRpcNetwork.chainId }] },
+			),
+			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Second chain dialog was not rejected')), 100)),
+		])
+		assert.equal(secondResolution.error?.code, 4001)
+
+		releaseDeferredChainChangeRemoval()
+		await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 102, requestSocket: socket },
+			method: 'wallet_switchEthereumChain_reply',
+			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'First signer rejected' }, signerProviderGeneration: 1 }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const firstResult = await Promise.race([
+			firstResolution,
+			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('First production chain dialog did not settle')), 100)),
+		])
+		assert.equal(firstResult.error?.message, 'First signer rejected')
 	})
 
 	test('resolves approved eth_requestAccounts after signer account state is refreshed', async () => {
@@ -750,7 +1636,7 @@ describe('background eth_accounts', () => {
 					usingInterceptorWithoutSigner: false,
 					uniqueRequestIdentifier: { requestId: 99, requestSocket: socket },
 					method: 'eth_accounts_reply',
-					params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+					params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			}
 			if (message.method === 'eth_accounts' && message.requestId === 9) {
@@ -760,10 +1646,10 @@ describe('background eth_accounts', () => {
 			}
 		})
 		const port = createdPort
-		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId)
+		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId, undefined, undefined, siblingSocket.connectionName)
 		const connectionKey = websiteSocketToString(socket)
 		const siblingConnectionKey = websiteSocketToString(siblingSocket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
@@ -838,14 +1724,14 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 100, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		const port = createdPort
-		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId)
+		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId, undefined, undefined, siblingSocket.connectionName)
 		const connectionKey = websiteSocketToString(socket)
 		const siblingConnectionKey = websiteSocketToString(siblingSocket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
@@ -893,12 +1779,12 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 104, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		const port = createdPort
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -948,7 +1834,7 @@ describe('background eth_accounts', () => {
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1006,7 +1892,7 @@ describe('background eth_accounts', () => {
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1051,7 +1937,7 @@ describe('background eth_accounts', () => {
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1061,7 +1947,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask'],
+			params: [true, 'MetaMask', 2],
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
@@ -1097,11 +1983,11 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 100, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1153,7 +2039,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1220,7 +2106,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1310,12 +2196,12 @@ describe('background eth_accounts', () => {
 					usingInterceptorWithoutSigner: false,
 					uniqueRequestIdentifier: { requestId: 101, requestSocket: socket },
 					method: 'eth_accounts_reply',
-					params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+					params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			})()
 		})
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1361,11 +2247,11 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 102, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } }],
+				params: [{ signerProviderGeneration: 1, type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1410,11 +2296,11 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 103, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts: [], requestAccounts: true }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [], requestAccounts: true }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1462,13 +2348,13 @@ describe('background eth_accounts', () => {
 					usingInterceptorWithoutSigner: false,
 					uniqueRequestIdentifier: { requestId: 99, requestSocket: socket },
 					method: 'eth_accounts_reply',
-					params: [{ type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } }],
+					params: [{ signerProviderGeneration: 1, type: 'error', requestAccounts: true, error: { code: 4001, message: 'User rejected the request.' } }],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			})()
 		})
 		port = createdPort
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1527,12 +2413,12 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: true,
 				uniqueRequestIdentifier: { requestId: internalRequestId, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'error', requestAccounts: accountRequest.requestAccounts, signerUnavailable: true, error: unavailableSignerError }],
+				params: [{ signerProviderGeneration: 1, type: 'error', requestAccounts: accountRequest.requestAccounts, signerUnavailable: true, error: unavailableSignerError }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		port = createdPort
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1554,7 +2440,6 @@ describe('background eth_accounts', () => {
 			})
 			assert.equal(messages.some((message) => (message.method === 'connect' || message.method === 'accountsChanged') && message.requestId === requestId), false)
 		}
-		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'accountsChanged'), false)
 		assert.equal((await getTabState(socket.tabId)).signerAccountError, undefined)
 	})
 
@@ -1579,10 +2464,10 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const siblingSocket = { tabId: 1, connectionName: 1n }
 		const { port, messages } = createPort(socket.tabId)
-		const { port: siblingPort } = createPort(siblingSocket.tabId)
+		const { port: siblingPort } = createPort(siblingSocket.tabId, undefined, undefined, siblingSocket.connectionName)
 		const connectionKey = websiteSocketToString(socket)
 		const siblingConnectionKey = websiteSocketToString(siblingSocket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
@@ -1600,6 +2485,8 @@ describe('background eth_accounts', () => {
 			method: 'window_signer_accounts_changed',
 			data: {
 				socket: siblingSocket,
+				signerStateOwnerGeneration: 1,
+				signerProviderGeneration: 1,
 				error: { code: 4900, message: 'Sibling signer is unavailable' },
 			},
 		})
@@ -1612,7 +2499,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 105, requestSocket: socket },
 			method: 'eth_accounts_reply',
-			params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await requestPromise
 
@@ -1646,10 +2533,10 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const siblingSocket = { tabId: 1, connectionName: 1n }
 		const { port, messages } = createPort(socket.tabId)
-		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId)
+		const { port: siblingPort, messages: siblingMessages } = createPort(siblingSocket.tabId, undefined, undefined, siblingSocket.connectionName)
 		const connectionKey = websiteSocketToString(socket)
 		const siblingConnectionKey = websiteSocketToString(siblingSocket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
@@ -1723,7 +2610,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1783,7 +2670,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1848,7 +2735,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1897,12 +2784,12 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 230, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		port = createdPort
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -1994,12 +2881,12 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId: 731, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'success', accounts: [accountString], requestAccounts: true }],
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		port = createdPort
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2056,7 +2943,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2135,7 +3022,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 171, connectionName: 171n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2176,7 +3063,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 172, connectionName: 172n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2221,7 +3108,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2260,7 +3147,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2305,7 +3192,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2341,7 +3228,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -2384,7 +3271,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })

@@ -468,7 +468,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack,
 		})
 
-		await changeActiveRpc(fakeEthereum, fakeTokenPriceService, resetSimulationServices, new Map(), sameChainRpcNetwork, true)
+		await changeActiveRpc(fakeEthereum, fakeTokenPriceService, resetSimulationServices, new Map(), sameChainRpcNetwork, true, undefined)
 
 		const modules = await modulesPromise
 		const updatedSettings = await modules.getSettings()
@@ -495,7 +495,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
 		})
 
-		await changeActiveRpc(fakeEthereum, fakeTokenPriceService, resetSimulationServices, new Map(), otherChainRpcNetwork, true)
+		await changeActiveRpc(fakeEthereum, fakeTokenPriceService, resetSimulationServices, new Map(), otherChainRpcNetwork, true, undefined)
 
 		const modules = await modulesPromise
 		const updatedSettings = await modules.getSettings()

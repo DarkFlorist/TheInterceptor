@@ -43,7 +43,7 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {
-	postMessageToPortIfConnected(port, {...message, interceptorApproved: true })
+	return postMessageToPortIfConnected(port, {...message, interceptorApproved: true })
 }
 
 export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: SubscriptionReplyOrCallBack) {

@@ -6,8 +6,9 @@ import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type 
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
-import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToAllConfirmedSignerOwners } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -182,7 +183,7 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 	if (addressChange.data.activeAddress === 'signer') {
 		await setUseSignersAddressAsActiveAddress(true, await getSignerAccount())
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 		const signerAccount = await getSignerAccount()
 
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
@@ -262,7 +263,7 @@ export const changePage = async (page: ChangePage) => await setPage(page.data)
 export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, params: RequestAccountsFromSigner) {
 	if (params.data) {
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, true)
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
 }
 
@@ -444,7 +445,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 }
 
 export async function popupChangeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	return await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, settings.simulationMode)
+	await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, settings.simulationMode, await getLastKnownCurrentTabId())
 }
 
 export async function changeChainDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
@@ -456,7 +457,7 @@ export async function enableSimulationMode(ethereum: EthereumClientService, toke
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
@@ -972,6 +973,14 @@ async function getCachedRichData() {
 	}
 }
 
+async function getActiveAddressForCurrentPopupSignerState(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return await getActiveOrFirstSignerAddress(settings, tabId)
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	if (signerStateToken === undefined) return undefined
+	const activeAddress = await getActiveOrFirstSignerAddress(settings, tabId)
+	return isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) ? activeAddress : undefined
+}
+
 async function buildHomePageUpdate(
 	ethereum: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
@@ -1006,7 +1015,7 @@ async function buildHomePageUpdate(
 	const settings = await settingsPromise
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
-	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveOrFirstSignerAddress(settings, tabId))?.address
+	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const richData = await richDataPromise

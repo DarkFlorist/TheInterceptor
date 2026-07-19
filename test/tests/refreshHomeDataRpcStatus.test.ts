@@ -230,10 +230,17 @@ describe('refreshHomeData', () => {
 				signerAccounts: [signerAccount],
 				activeSigningAddress: signerAccount,
 			})).then(() => {
-				sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
 			})
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwnerConnectionName: socket.connectionName,
+			signerStateOwnerConfirmed: true,
+			signerStateOwnerGeneration: 1,
+			signerProviderGeneration: 1,
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
@@ -265,7 +272,7 @@ describe('refreshHomeData', () => {
 	test('home data falls back to signer accounts for active address when activeSigningAddress is unset', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -305,9 +312,20 @@ describe('refreshHomeData', () => {
 				return await new Promise<never>(() => undefined)
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwnerConnectionName: socket.connectionName,
+			signerStateOwnerConfirmed: true,
+			signerStateOwnerGeneration: 1,
+			signerProviderGeneration: 1,
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+			},
+		}]])
 
 		try {
-			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 1)
+			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 1)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -372,10 +390,17 @@ describe('refreshHomeData', () => {
 				signerAccounts: [signerAccount],
 				activeSigningAddress: signerAccount,
 			})).then(() => {
-				sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
 			})
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwnerConnectionName: socket.connectionName,
+			signerStateOwnerConfirmed: true,
+			signerStateOwnerGeneration: 1,
+			signerProviderGeneration: 1,
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
