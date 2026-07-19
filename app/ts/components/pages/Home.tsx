@@ -21,7 +21,6 @@ import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
-import { Spinner } from '../subcomponents/Spinner.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -40,6 +39,29 @@ function scheduleAfterPaint(callback: () => void) {
 	}
 	const timeout = globalThis.setTimeout(callback, 32)
 	return () => globalThis.clearTimeout(timeout)
+}
+
+type PopupLoadingSkeletonVariant = 'home' | 'address' | 'controls' | 'simulation'
+
+function PopupLoadingSkeleton({ variant, ariaLabel }: { variant: PopupLoadingSkeletonVariant, ariaLabel?: string }) {
+	return <div
+		aria-busy = { ariaLabel === undefined ? undefined : true }
+		aria-hidden = { ariaLabel === undefined ? true : undefined }
+		aria-label = { ariaLabel }
+		role = { ariaLabel === undefined ? undefined : 'status' }
+		class = { `popup-loading-skeleton popup-loading-skeleton--${ variant }` }
+	>
+		<span class = 'popup-loading-shape popup-loading-shape--primary'/>
+		<span class = 'popup-loading-shape popup-loading-shape--secondary'/>
+		<span class = 'popup-loading-shape popup-loading-shape--tertiary'/>
+		<span class = 'popup-loading-shape popup-loading-shape--detail'/>
+	</div>
+}
+
+function InlineLoadingSkeleton({ ariaLabel }: { ariaLabel: string }) {
+	return <span aria-busy = 'true' aria-label = { ariaLabel } role = 'status' class = 'popup-loading-inline-skeleton'>
+		<span aria-hidden = 'true' class = 'popup-loading-shape'/>
+	</span>
 }
 
 type SignerExplanationParams = {
@@ -266,7 +288,7 @@ function FirstCard(param: FirstCardParams) {
 
 	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
 		return <>
-			<section class = 'card' style = 'margin: 10px;'>
+			<section class = 'card popup-data-reveal' style = 'margin: 10px;'>
 				<FirstCardHeader { ...param }/>
 				<div class = 'card-content'>
 					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
@@ -276,33 +298,35 @@ function FirstCard(param: FirstCardParams) {
 	}
 
 	return <>
-		<section class = 'card' style = 'margin: 10px;'>
+		<section class = 'card popup-data-reveal' style = 'margin: 10px;'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
 						{ isActiveAddressLoading
-							? <span aria-label = 'Loading signer connection state' style = 'float: right;'><Spinner height = '1em'/></span>
+							? <InlineLoadingSkeleton ariaLabel = 'Loading signer connection state'/>
 							: signerAvailable.value
-								? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span>
-								: <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span>
+								? <span class = 'popup-data-reveal-inline' style = 'float: right; color: var(--primary-color);'>CONNECTED</span>
+								: <span class = 'popup-data-reveal-inline' style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span>
 						}
 					</p>
 					: <></>
 				}
 
 				{ isActiveAddressLoading
-					? <div aria-label = 'Loading active address' style = 'display: grid; place-items: center; min-height: 4em;'><Spinner height = '2em'/></div>
-					: <ActiveAddressComponent
-						activeAddress = { param.activeAddress }
-						buttonText = { 'Change' }
-						disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
-						noCopying = { !param.isInitialHomeDataLoaded.value }
-						noEditAddress = { !param.isInitialHomeDataLoaded.value }
-						changeActiveAddress = { param.changeActiveAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
+					? <PopupLoadingSkeleton variant = 'address' ariaLabel = 'Loading active address'/>
+					: <div class = 'popup-data-reveal'>
+						<ActiveAddressComponent
+							activeAddress = { param.activeAddress }
+							buttonText = { 'Change' }
+							disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
+							noCopying = { !param.isInitialHomeDataLoaded.value }
+							noEditAddress = { !param.isInitialHomeDataLoaded.value }
+							changeActiveAddress = { param.changeActiveAddress }
+							renameAddressCallBack = { param.renameAddressCallBack }
+						/>
+					</div>
 				}
 				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
@@ -322,8 +346,8 @@ function FirstCard(param: FirstCardParams) {
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : !param.isFreshHomeDataLoaded.value ?
-					<div aria-label = 'Loading simulation controls' style = 'display: grid; place-items: center; min-height: 5em;'><Spinner height = '2em'/></div>
-				: <div style = 'justify-content: space-between; padding-top: 10px;'>
+					<PopupLoadingSkeleton variant = 'controls' ariaLabel = 'Loading simulation controls'/>
+				: <div class = 'popup-data-reveal' style = 'justify-content: space-between; padding-top: 10px;'>
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div style ='padding-bottom: 10px'/>
 					<TimePicker
@@ -440,13 +464,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
-		return <div aria-label = 'Loading current simulation state' style = 'display: grid; place-items: center; height: 250px;'>
-			<Spinner height = '3em'/>
-		</div>
+		return <PopupLoadingSkeleton variant = 'simulation' ariaLabel = 'Loading current simulation state'/>
 	}
 
 	if (currentResults.kind === 'passthrough') {
-		return <div>
+		return <div class = 'popup-data-reveal'>
 			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
@@ -456,7 +478,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	const resolvedResults = currentResults.value
 
-	return <div>
+	return <div class = 'popup-data-reveal'>
 		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 			{ resolvedResults.visualizedSimulationState.success === false ? <>
@@ -564,8 +586,8 @@ export function Home(param: HomeParams) {
 	}
 
 	if (!param.isInitialHomeDataLoaded.value) {
-		return <section aria-label = 'Loading current popup state' class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
-			<Spinner height = '3em'/>
+		return <section aria-busy = 'true' aria-label = 'Loading current popup state' role = 'status' class = 'card popup-loading-card'>
+			<PopupLoadingSkeleton variant = 'home'/>
 		</section>
 	}
 	if (param.rpcNetwork.value === undefined) return <></>
@@ -612,13 +634,13 @@ export function Home(param: HomeParams) {
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
-				: <section aria-label = 'Loading current simulation state' class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
-					<Spinner height = '3em'/>
+				: <section aria-busy = 'true' aria-label = 'Loading current simulation state' role = 'status' class = 'card popup-loading-card popup-loading-card--simulation'>
+					<PopupLoadingSkeleton variant = 'simulation'/>
 				</section>
 			: <></> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
-			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
+			<div class = 'popup-footer popup-data-reveal' style = 'display: flex; justify-content: center; flex-direction: column;'>
 				<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 					<div class = 'log-cell' style = 'justify-content: left;'>
 						<WebsiteOriginText website = { tabWebsite } />

@@ -272,6 +272,9 @@ describe('popup icon sync', () => {
 
 			const loadingState = collectElements(dom.document.body, 'section').find((section) => section.getAttribute?.('aria-label') === 'Loading current popup state')
 			assert.notEqual(loadingState, undefined)
+			if (loadingState === undefined) throw new Error('Expected the popup loading placeholder')
+			assert.equal(loadingState.getAttribute?.('class')?.includes('popup-loading-card'), true)
+			assert.equal(collectElements(loadingState, 'svg').length, 0)
 			assert.equal(dom.document.body.textContent?.includes('vitalik.eth'), false)
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulating')), false)
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Signing')), false)
@@ -412,7 +415,10 @@ describe('popup icon sync', () => {
 			})
 
 			assert.equal(collectElements(dom.document.body, 'section').some((section) => section.getAttribute?.('aria-label') === 'Loading current popup state'), false)
-			assert.notEqual(collectElements(dom.document.body, 'div').find((div) => div.getAttribute?.('aria-label') === 'Loading active address'), undefined)
+			const activeAddressLoading = collectElements(dom.document.body, 'div').find((div) => div.getAttribute?.('aria-label') === 'Loading active address')
+			assert.notEqual(activeAddressLoading, undefined)
+			assert.equal(activeAddressLoading?.getAttribute?.('class')?.includes('popup-loading-skeleton--address'), true)
+			assert.equal(collectElements(dom.document.body, 'svg').some((svg) => svg.getAttribute?.('class') === 'spinner'), false)
 			assert.equal(dom.document.body.textContent?.includes('No address found'), false)
 			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Signing')), true)

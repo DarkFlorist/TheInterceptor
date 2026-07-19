@@ -315,7 +315,7 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
-	test('shows a spinner until initial simulation status is known', async () => {
+	test('shows a skeleton until initial simulation status is known', async () => {
 		const dom = installDomMock()
 		const simulationUpdatingState = new Signal<'done' | 'updating' | 'failed' | undefined>(undefined)
 		const simulationResultState = new Signal<'done' | 'invalid' | 'corrupted' | undefined>(undefined)
@@ -328,7 +328,10 @@ describe('Home popup clear empty state', () => {
 				})), dom.document.body)
 			})
 
-			assert.notEqual(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
+			const loadingState = [...collectElements(dom.document.body, 'div'), ...collectElements(dom.document.body, 'section')]
+				.find((element) => element.getAttribute?.('aria-label') === 'Loading current simulation state')
+			assert.notEqual(loadingState, undefined)
+			assert.equal(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 
 			await act(() => {
@@ -336,6 +339,9 @@ describe('Home popup clear empty state', () => {
 				simulationResultState.value = 'done'
 			})
 
+			const resolvedLoadingState = [...collectElements(dom.document.body, 'div'), ...collectElements(dom.document.body, 'section')]
+				.find((element) => element.getAttribute?.('aria-label') === 'Loading current simulation state')
+			assert.equal(resolvedLoadingState, undefined)
 			assert.equal(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
 		} finally {
