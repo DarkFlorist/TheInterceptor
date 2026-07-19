@@ -453,7 +453,21 @@ describe('inpage signer bridge', () => {
 	})
 
 	test('settles signer account discovery when no signer initializes', async () => {
-		const { fakeWindow, backgroundEthAccountsReplies, sendBackgroundMessage } = createFakeWindow()
+		const connectedToSignerParams: unknown[][] = []
+		const { fakeWindow, backgroundEthAccountsReplies, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method !== 'connected_to_signer') return false
+				connectedToSignerParams.push(request.params ?? [])
+				sendBackgroundReply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connected_to_signer',
+					result: { metamaskCompatibilityMode: true },
+				})
+				return true
+			},
+		})
 		Reflect.deleteProperty(fakeWindow, 'ethereum')
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?unavailable-signer-account-reply', async () => {
@@ -469,8 +483,10 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(backgroundEthAccountsReplies, [{
 			type: 'error',
 			requestAccounts: true,
+			signerUnavailable: true,
 			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
+		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner']])
 	})
 
 	test('ignores replayed terminal replies after the original request settles', async () => {

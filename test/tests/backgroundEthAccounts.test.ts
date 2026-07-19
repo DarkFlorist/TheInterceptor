@@ -90,11 +90,11 @@ async function loadModules() {
 	}
 }
 
-function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void) {
+function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId?: number) {
 	const messages: PortMessage[] = []
 	const port = {
 		name: '0x0',
-		sender: { tab: { id: tabId } },
+		sender: { tab: { id: tabId }, ...(frameId === undefined ? {} : { frameId }) },
 		postMessage(message: unknown) {
 			const typedMessage = message as PortMessage
 			messages.push(typedMessage)
@@ -243,6 +243,121 @@ describe('background eth_accounts', () => {
 		const tabState = await getTabState(socket.tabId)
 		assert.deepEqual(tabState.signerAccounts, [account])
 		assert.equal(tabState.activeSigningAddress, account)
+	})
+
+	test('normalizes signer state before access and keeps unavailable discovery out of provider warnings', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			updateWebsiteAccess,
+			updateTabState,
+			getTabState,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const staleAccount = 0x4444444444444444444444444444444444444444n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: staleAccount })
+		await setUseSignersAddressAsActiveAddress(false)
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const childSocket = { tabId: 1, connectionName: 1n }
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerName: 'MetaMask',
+			signerConnected: true,
+			signerAccounts: [staleAccount],
+			signerChain: 1n,
+			signerAccountError: { code: 4001, message: 'Stale signer error' },
+			activeSigningAddress: staleAccount,
+		}))
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		const { port: childPort, messages: childMessages } = createPort(childSocket.tabId, undefined, 1)
+		const connectionKey = websiteSocketToString(socket)
+		const childConnectionKey = websiteSocketToString(childSocket)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: connection,
+			[childConnectionKey]: { port: childPort, socket: childSocket, websiteOrigin, approved: false, wantsToConnect: false },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 90, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [false, 'NoSigner'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const noSignerState = await getTabState(socket.tabId)
+		assert.equal(noSignerState.signerName, 'NoSigner')
+		assert.equal(noSignerState.signerConnected, false)
+		assert.deepEqual(noSignerState.signerAccounts, [])
+		assert.equal(noSignerState.signerChain, undefined)
+		assert.equal(noSignerState.signerAccountError, undefined)
+		assert.equal(noSignerState.activeSigningAddress, undefined)
+		assert.equal(messages.some((message) => message.method === 'request_signer_chainId'), false)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 91, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{
+				type: 'error',
+				requestAccounts: false,
+				signerUnavailable: true,
+				error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal((await getTabState(socket.tabId)).signerAccountError, undefined)
+
+		// Signer identity is trusted extension state and must be current before the website receives access.
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 92, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const identifiedSignerState = await getTabState(socket.tabId)
+		assert.equal(identifiedSignerState.signerName, 'MetaMask')
+		assert.equal(identifiedSignerState.signerConnected, true)
+		assert.equal(messages.some((message) => message.method === 'request_signer_chainId'), false)
+
+		await handleInterceptedRequest(childPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, childSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 94, requestSocket: childSocket },
+			method: 'connected_to_signer',
+			params: [false, 'NoSigner'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const stateAfterChildFrame = await getTabState(socket.tabId)
+		assert.equal(stateAfterChildFrame.signerName, 'MetaMask')
+		assert.equal(stateAfterChildFrame.signerConnected, true)
+		assert.equal(childMessages.some((message) => message.method === 'request_signer_chainId'), false)
+
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		connection.approved = true
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 93, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{ type: 'error', requestAccounts: false, error: { code: 4900, message: 'MetaMask disconnected' } }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const signerErrorState = await getTabState(socket.tabId)
+		assert.equal(signerErrorState.signerName, 'MetaMask')
+		assert.equal(signerErrorState.signerConnected, true)
+		assert.deepEqual(signerErrorState.signerAccountError, { code: 4900, message: 'MetaMask disconnected' })
 	})
 
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {
@@ -1381,6 +1496,7 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
+			getTabState,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1411,7 +1527,7 @@ describe('background eth_accounts', () => {
 				usingInterceptorWithoutSigner: true,
 				uniqueRequestIdentifier: { requestId: internalRequestId, requestSocket: socket },
 				method: 'eth_accounts_reply',
-				params: [{ type: 'error', requestAccounts: accountRequest.requestAccounts, error: unavailableSignerError }],
+				params: [{ type: 'error', requestAccounts: accountRequest.requestAccounts, signerUnavailable: true, error: unavailableSignerError }],
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		})
 		port = createdPort
@@ -1439,6 +1555,7 @@ describe('background eth_accounts', () => {
 			assert.equal(messages.some((message) => (message.method === 'connect' || message.method === 'accountsChanged') && message.requestId === requestId), false)
 		}
 		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'accountsChanged'), false)
+		assert.equal((await getTabState(socket.tabId)).signerAccountError, undefined)
 	})
 
 	test('ignores a provider-disconnected completion from a sibling socket', async () => {

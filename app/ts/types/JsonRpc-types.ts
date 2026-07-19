@@ -177,19 +177,24 @@ export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 			accounts: funtypes.ReadonlyArray(EthereumAddress),
 			requestAccounts: funtypes.Boolean,
 		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('error'),
-			requestAccounts: funtypes.Boolean,
-			error: funtypes.Intersect(
-				funtypes.ReadonlyObject({
-					code: funtypes.Number,
-					message: funtypes.String,
-				}),
-				funtypes.Partial({
-					data: funtypes.Unknown
-				})
-			)
-		})
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('error'),
+				requestAccounts: funtypes.Boolean,
+				error: funtypes.Intersect(
+					funtypes.ReadonlyObject({
+						code: funtypes.Number,
+						message: funtypes.String,
+					}),
+					funtypes.Partial({
+						data: funtypes.Unknown
+					})
+				)
+			}),
+			funtypes.ReadonlyPartial({
+				signerUnavailable: funtypes.Literal(true),
+			}),
+		)
 	)
 )
 

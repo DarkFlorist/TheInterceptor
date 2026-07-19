@@ -16,6 +16,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { isSignerMissing } from '../utils/signerMetadata.js'
 
 export async function ethAccountsReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
@@ -33,9 +34,13 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			message: error.message,
 			...(stringifiedData !== undefined ? { data: stringifiedData } : {}),
 		}
-		await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, {
-			signerAccountError,
-		}))
+		// Signer discovery reports local absence through this request-scoped error so account requests can settle.
+		// The connected_to_signer message owns the persistent NoSigner state; only actual wallet errors belong in the popup.
+		if (signerAccountsReply.signerUnavailable !== true) {
+			await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, {
+				signerAccountError,
+			}))
+		}
 		// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
 		if (socket) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket, error: signerAccountError } })
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -103,14 +108,30 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 
 export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
-	if (approval !== 'hasAccess') {
+	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an
+	// unapproved MV3 child frame from taking ownership of tab-wide signer state.
+	const isTopFrame = port.sender?.frameId === undefined || port.sender.frameId === 0
+	if (approval !== 'hasAccess' && !isTopFrame) {
 		return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 	}
 	await setDefaultSignerName(signerName)
-	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => modifyObject(previousState, { signerName, signerConnected }))
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => {
+		if (!isSignerMissing(signerName)) return modifyObject(previousState, { signerName, signerConnected })
+		return modifyObject(previousState, {
+			signerName,
+			signerConnected: false,
+			signerAccounts: [],
+			signerChain: undefined,
+			signerAccountError: undefined,
+			activeSigningAddress: undefined,
+		})
+	})
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
+	if (approval !== 'hasAccess') {
+		return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
+	}
 	const settings = await getSettings()
-	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
+	if (!isSignerMissing(signerName) && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 	}
 	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
