@@ -174,21 +174,40 @@ const vendoredPackageRoots = [...new Set([
 	...extraPackageRoots,
 ])]
 
-async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transform?: (sourcePath: string, destinationPath: string) => Promise<void>) {
+const maximumConcurrentFileOperations = 32
+let activeFileOperations = 0
+const pendingFileOperationResolvers: (() => void)[] = []
+
+async function runWithFileOperationLimit<T>(operation: () => Promise<T>) {
+	if (activeFileOperations >= maximumConcurrentFileOperations) {
+		await new Promise<void>((resolve) => pendingFileOperationResolvers.push(resolve))
+	}
+	activeFileOperations++
+	try {
+		return await operation()
+	} finally {
+		activeFileOperations--
+		pendingFileOperationResolvers.shift()?.()
+	}
+}
+
+async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transformFile?: (sourcePath: string, destinationPath: string) => Promise<void>) {
 	const entries = await fs.readdir(source, { withFileTypes: true })
 	await fs.mkdir(destination, { recursive: true })
-	for (const entry of entries) {
+	await Promise.all(entries.map(async (entry) => {
 		const sourcePath = path.join(source, entry.name)
 		const destinationPath = path.join(destination, entry.name)
 		if (entry.isDirectory()) {
-			if (include && !await include(sourcePath, 'directory')) continue
-			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transform)
+			if (include && !await include(sourcePath, 'directory')) return
+			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transformFile)
 		} else {
-			if (include && !await include(sourcePath, 'file')) continue
-			await fs.copyFile(sourcePath, destinationPath)
+			if (include && !await include(sourcePath, 'file')) return
+			await runWithFileOperationLimit(async () => {
+				await fs.copyFile(sourcePath, destinationPath)
+				await transformFile?.(sourcePath, destinationPath)
+			})
 		}
-		await transform?.(sourcePath, destinationPath)
-	}
+	}))
 }
 
 async function vendorDependencies() {
@@ -196,30 +215,30 @@ async function vendorDependencies() {
 	for (const packageRoot of vendoredPackageRoots) {
 		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageRoot)
-		async function inclusionPredicate(path: string, fileType: 'directory' | 'file') {
-			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
-			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
-			if (path.endsWith('.js')) return true
-			if (path.endsWith('.ts')) return true
-			if (path.endsWith('.mjs')) return true
-			if (path.endsWith('.mts')) return true
-			if (path.endsWith('package.json')) return true
-			if (path.endsWith('.map')) return true
-			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
-			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
+		async function inclusionPredicate(candidatePath: string, fileType: 'directory' | 'file') {
+			if (packageRoot === '@darkflorist/address-metadata' && candidatePath === path.join(sourceDirectoryPath, 'lib', 'images')) return false
+			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(candidatePath)) return false
+			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(candidatePath)) return false
+			if (candidatePath.endsWith('.js')) return true
+			if (candidatePath.endsWith('.ts')) return true
+			if (candidatePath.endsWith('.mjs')) return true
+			if (candidatePath.endsWith('.mts')) return true
+			if (candidatePath.endsWith('package.json')) return true
+			if (candidatePath.endsWith('.map')) return true
+			if (candidatePath.endsWith('.git') || candidatePath.endsWith('.git/') || candidatePath.endsWith('.git\\')) return false
 			if (fileType === 'directory') return true
 			return false
 		}
 		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
 		await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
-		if (packageRoot === '@darkflorist/address-metadata') await exposeAddressMetadataImagesAtPackageRoot(destinationDirectoryPath)
+		if (packageRoot === '@darkflorist/address-metadata') await copyAddressMetadataImagesToPackageRoot(sourceDirectoryPath, destinationDirectoryPath)
 	}
 	await writeVendorTypeShims()
 }
 
-async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
-	const sourceDirectoryPath = path.join(packageDirectoryPath, 'lib', 'images')
-	const destinationDirectoryPath = path.join(packageDirectoryPath, 'images')
+async function copyAddressMetadataImagesToPackageRoot(sourcePackageDirectoryPath: string, destinationPackageDirectoryPath: string) {
+	const sourceDirectoryPath = path.join(sourcePackageDirectoryPath, 'lib', 'images')
+	const destinationDirectoryPath = path.join(destinationPackageDirectoryPath, 'images')
 	const sourceStats = await fs.stat(sourceDirectoryPath)
 	if (!sourceStats.isDirectory()) return
 	await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath)
