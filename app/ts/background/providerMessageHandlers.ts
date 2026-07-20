@@ -191,16 +191,16 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)
-		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwnerConnectionName !== socket.connectionName) {
+		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()
 		}
-		const previousSignerProviderGeneration = tabConnection.signerProviderGeneration
-		if (tabConnection.signerStateOwnerConfirmed === true
+		const previousSignerProviderGeneration = tabConnection.signerStateOwner.providerGeneration
+		if (tabConnection.signerStateOwner.confirmed
 			&& previousSignerProviderGeneration !== undefined
 			&& signerProviderGeneration < previousSignerProviderGeneration) {
 			return await getConnectedToSignerResult()
 		}
-		const signerStateWasConfirmed = tabConnection.signerStateOwnerConfirmed === true
+		const signerStateWasConfirmed = tabConnection.signerStateOwner.confirmed
 		beginSignerStateConfirmation(tabConnection)
 		const signerMissing = isSignerMissing(signerName)
 		await updateTabState(socket.tabId, (previousState: TabState) => {
@@ -213,7 +213,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 			const baseState = clearSignerState ? clearSignerDerivedTabState(previousState) : previousState
 			return modifyObject(baseState, { signerName, signerConnected: signerMissing ? false : signerConnected })
 		})
-		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwnerConnectionName !== socket.connectionName) {
+		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwner.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()
 		}
 		confirmSignerState(tabConnection, signerProviderGeneration)

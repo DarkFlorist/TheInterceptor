@@ -130,10 +130,12 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 
 function confirmedSignerOwnership(socket: { readonly connectionName: bigint }) {
 	return {
-		signerStateOwnerConnectionName: socket.connectionName,
-		signerStateOwnerConfirmed: true,
-		signerStateOwnerGeneration: 1,
-		signerProviderGeneration: 1,
+		signerStateOwner: {
+			connectionName: socket.connectionName,
+			confirmed: true,
+			generation: 1,
+			providerGeneration: 1,
+		},
 	}
 }
 
@@ -554,7 +556,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}
 
 		assert.deepEqual(staleAccountCompletionErrors, [])
-		assert.equal(tabConnection.signerStateOwnerConnectionName, nextSocket.connectionName)
+		assert.equal(tabConnection.signerStateOwner?.connectionName, nextSocket.connectionName)
 		const stateAfterStaleReplies = await getTabState(nextSocket.tabId)
 		assert.deepEqual(stateAfterStaleReplies.signerAccounts, [metaMaskAccount])
 		assert.equal(stateAfterStaleReplies.activeSigningAddress, metaMaskAccount)
@@ -600,10 +602,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}, 0, restoredSocket.connectionName)
 		restoredPort = createdRestoredPort
 		const websiteTabConnections = new Map([[restoredSocket.tabId, {
-			signerStateOwnerConnectionName: previousSocket.connectionName,
-			signerStateOwnerConfirmed: true,
-			signerStateOwnerGeneration: 1,
-			signerProviderGeneration: 7,
+			signerStateOwner: {
+				connectionName: previousSocket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 7,
+			},
 			connections: {
 				[websiteSocketToString(previousSocket)]: { port: previousPort, socket: previousSocket, websiteOrigin, approved: true, wantsToConnect: true },
 			},
@@ -732,10 +736,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const socket = { tabId: 1, connectionName: 60n }
 		const { port } = createPort(socket.tabId, undefined, 0, socket.connectionName)
 		const websiteTabConnections = new Map([[socket.tabId, {
-			signerStateOwnerConnectionName: socket.connectionName,
-			signerStateOwnerConfirmed: true,
-			signerStateOwnerGeneration: 4,
-			signerProviderGeneration: 2,
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 4,
+				providerGeneration: 2,
+			},
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			},

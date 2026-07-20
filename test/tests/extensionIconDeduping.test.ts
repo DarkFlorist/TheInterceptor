@@ -366,16 +366,20 @@ describe('extension icon deduping', () => {
 					[websiteSocketToString(ownerSocket)]: { port: ownerPort, socket: ownerSocket, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
 					[websiteSocketToString(siblingSocket)]: { port: siblingPort, socket: siblingSocket, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
 				},
-				signerStateOwnerConnectionName: ownerSocket.connectionName,
-				signerStateOwnerConfirmed: true,
+				signerStateOwner: {
+					connectionName: ownerSocket.connectionName,
+					confirmed: true,
+					generation: 1,
+					providerGeneration: 1,
+				},
 			}],
 		])
 
 		await removeWebsiteTabConnection(websiteTabConnections, ownerSocket, ownerPort)
 
 		const remainingTabConnection = websiteTabConnections.get(1)
-		assert.equal(remainingTabConnection?.signerStateOwnerConnectionName, undefined)
-		assert.equal(remainingTabConnection?.signerStateOwnerConfirmed, false)
+		assert.equal(remainingTabConnection?.signerStateOwner?.connectionName, undefined)
+		assert.equal(remainingTabConnection?.signerStateOwner?.confirmed, false)
 		assert.strictEqual(remainingTabConnection?.connections[websiteSocketToString(siblingSocket)]?.port, siblingPort)
 	})
 
@@ -401,10 +405,12 @@ describe('extension icon deduping', () => {
 					[websiteSocketToString(restoredSocket)]: { port: staleRestoredPort, socket: restoredSocket, websiteOrigin: 'example.test', approved: true, wantsToConnect: true },
 					[websiteSocketToString(previousPageSocket)]: { port: previousPagePort, socket: previousPageSocket, websiteOrigin: 'example.test', approved: true, wantsToConnect: true },
 				},
-				signerStateOwnerConnectionName: previousPageSocket.connectionName,
-				signerStateOwnerConfirmed: true,
-				signerStateOwnerGeneration: 1,
-				signerProviderGeneration: 5,
+				signerStateOwner: {
+					connectionName: previousPageSocket.connectionName,
+					confirmed: true,
+					generation: 1,
+					providerGeneration: 5,
+				},
 			}],
 		])
 		await updateTabState(1, (previousState) => ({
@@ -425,8 +431,8 @@ describe('extension icon deduping', () => {
 		await removeWebsiteTabConnection(websiteTabConnections, previousPageSocket, previousPagePort)
 
 		const tabConnection = websiteTabConnections.get(1)
-		assert.equal(tabConnection?.signerStateOwnerConnectionName, restoredSocket.connectionName)
-		assert.equal(tabConnection?.signerStateOwnerConfirmed, false)
+		assert.equal(tabConnection?.signerStateOwner?.connectionName, restoredSocket.connectionName)
+		assert.equal(tabConnection?.signerStateOwner?.confirmed, false)
 		assert.equal((await getTabState(restoredSocket.tabId)).signerName, 'NoSigner')
 		assert.strictEqual(tabConnection?.connections[websiteSocketToString(restoredSocket)]?.port, restoredPort)
 		const tabState = await getTabState(1)

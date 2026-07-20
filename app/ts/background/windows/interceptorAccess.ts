@@ -1,7 +1,7 @@
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
-import { Semaphore } from '../../utils/semaphore.js'
+import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
@@ -34,22 +34,8 @@ let openedDialog: OpenedDialogWithListeners
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 // Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip
 // active per tab so requests from sibling frames cannot settle each other.
-const signerAccountRequestLocks = new Map<number, { readonly semaphore: Semaphore, pendingRequests: number }>()
+const serializeSignerAccountRequest = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
 
-async function serializeSignerAccountRequest<T>(tabId: number, request: () => Promise<T>): Promise<T> {
-	let lock = signerAccountRequestLocks.get(tabId)
-	if (lock === undefined) {
-		lock = { semaphore: new Semaphore(1), pendingRequests: 0 }
-		signerAccountRequestLocks.set(tabId, lock)
-	}
-	lock.pendingRequests += 1
-	try {
-		return await lock.semaphore.execute(request)
-	} finally {
-		lock.pendingRequests -= 1
-		if (lock.pendingRequests === 0 && signerAccountRequestLocks.get(tabId) === lock) signerAccountRequestLocks.delete(tabId)
-	}
-}
 
 type SignerAccountsRequestResult = {
 	readonly accounts: readonly bigint[]
@@ -156,7 +142,7 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 }
 
 async function requestSignerAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts: boolean, onlyIfUnavailable: boolean) {
-	return await serializeSignerAccountRequest(socket.tabId, async () => {
+	return await serializeSignerAccountRequest(websiteTabConnections, socket.tabId, async () => {
 		const signerStateToken = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (signerStateToken === undefined) return { accounts: [], error: signerUnavailableError }
 		const tabState = await getTabState(socket.tabId)

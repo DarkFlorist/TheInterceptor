@@ -8,7 +8,7 @@ import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAcce
 import { resolveChainChange } from './windows/changeChain.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToAllConfirmedSignerOwners } from './signerStateOwnership.js'
+import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -974,11 +974,7 @@ async function getCachedRichData() {
 }
 
 async function getActiveAddressForCurrentPopupSignerState(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return await getActiveOrFirstSignerAddress(settings, tabId)
-	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
-	if (signerStateToken === undefined) return undefined
-	const activeAddress = await getActiveOrFirstSignerAddress(settings, tabId)
-	return isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) ? activeAddress : undefined
+	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveOrFirstSignerAddress(settings, tabId))
 }
 
 async function buildHomePageUpdate(

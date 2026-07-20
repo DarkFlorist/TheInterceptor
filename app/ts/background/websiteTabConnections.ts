@@ -13,12 +13,13 @@ export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteT
 		if (currentConnection?.port !== disconnectedPort) return false
 		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		delete tabConnection.connections[connectionIdentifier]
-		if (tabConnection.signerStateOwnerConnectionName === socket.connectionName) {
+		if (tabConnection.signerStateOwner?.connectionName === socket.connectionName) {
 			resolveSignerStateConfirmation(tabConnection)
 			advanceSignerStateGeneration(tabConnection)
-			tabConnection.signerStateOwnerConnectionName = undefined
-			tabConnection.signerStateOwnerConfirmed = false
-			tabConnection.signerProviderGeneration = undefined
+			if (tabConnection.signerStateOwner === undefined) throw new Error('Signer state owner lifecycle missing')
+			tabConnection.signerStateOwner.connectionName = undefined
+			tabConnection.signerStateOwner.confirmed = false
+			tabConnection.signerStateOwner.providerGeneration = undefined
 			await updateTabState(socket.tabId, clearSignerDerivedTabState)
 			settleSignerRequestsForReplacedState(signerStateToken)
 		}

@@ -1,7 +1,7 @@
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { InpageScriptCallBack } from '../types/interceptor-messages.js'
+import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
-import { Semaphore } from '../utils/semaphore.js'
+import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendInternalWindowMessage, websiteSocketToString } from './backgroundUtils.js'
 import { updateTabState } from './storageVariables.js'
@@ -9,7 +9,7 @@ import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 
 const SIGNER_STATE_CONFIRMATION_TIMEOUT_MS = 3_000
-const signerStateOperationLocks = new WeakMap<WebsiteTabConnections, Map<number, { readonly semaphore: Semaphore, operations: number }>>()
+const serializeSignerStateOperation = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
 const signerStateReplacementListeners = new Set<(signerStateToken: SignerStateToken, error: typeof signerConnectionReplacedError) => void>()
 
 export const signerConnectionReplacedError = {
@@ -77,23 +77,7 @@ export function clearSignerDerivedTabState(previousState: TabState) {
 }
 
 export async function runSignerStateOperation<T>(websiteTabConnections: WebsiteTabConnections, tabId: number, operation: () => Promise<T>) {
-	let tabLocks = signerStateOperationLocks.get(websiteTabConnections)
-	if (tabLocks === undefined) {
-		tabLocks = new Map()
-		signerStateOperationLocks.set(websiteTabConnections, tabLocks)
-	}
-	let lock = tabLocks.get(tabId)
-	if (lock === undefined) {
-		lock = { semaphore: new Semaphore(1), operations: 0 }
-		tabLocks.set(tabId, lock)
-	}
-	lock.operations += 1
-	try {
-		return await lock.semaphore.execute(operation)
-	} finally {
-		lock.operations -= 1
-		if (lock.operations === 0 && tabLocks.get(tabId) === lock) tabLocks.delete(tabId)
-	}
+	return await serializeSignerStateOperation(websiteTabConnections, tabId, operation)
 }
 
 export function isCurrentWebsiteConnection(tabConnection: TabConnection | undefined, socket: WebsiteSocket, port: browser.runtime.Port) {
@@ -101,32 +85,37 @@ export function isCurrentWebsiteConnection(tabConnection: TabConnection | undefi
 }
 
 export function advanceSignerStateGeneration(tabConnection: TabConnection) {
-	tabConnection.signerStateOwnerGeneration = (tabConnection.signerStateOwnerGeneration ?? 0) + 1
-	return tabConnection.signerStateOwnerGeneration
+	const signerStateOwner = tabConnection.signerStateOwner ?? { confirmed: false, generation: 0 }
+	tabConnection.signerStateOwner = signerStateOwner
+	signerStateOwner.generation += 1
+	return signerStateOwner.generation
 }
 
 export function resolveSignerStateConfirmation(tabConnection: TabConnection) {
-	tabConnection.signerStateConfirmation?.resolve()
-	tabConnection.signerStateConfirmation = undefined
+	tabConnection.signerStateOwner?.confirmation?.resolve()
+	if (tabConnection.signerStateOwner !== undefined) tabConnection.signerStateOwner.confirmation = undefined
 }
 
 export function beginSignerStateConfirmation(tabConnection: TabConnection) {
 	resolveSignerStateConfirmation(tabConnection)
 	advanceSignerStateGeneration(tabConnection)
-	tabConnection.signerStateOwnerConfirmed = false
-	tabConnection.signerStateConfirmation = createSignerStateConfirmation()
+	if (tabConnection.signerStateOwner === undefined) throw new Error('Signer state owner lifecycle missing')
+	tabConnection.signerStateOwner.confirmed = false
+	tabConnection.signerStateOwner.confirmation = createSignerStateConfirmation()
 }
 
 export function confirmSignerState(tabConnection: TabConnection, signerProviderGeneration: number) {
-	tabConnection.signerProviderGeneration = signerProviderGeneration
-	tabConnection.signerStateOwnerConfirmed = true
+	if (tabConnection.signerStateOwner === undefined) throw new Error('Signer state owner lifecycle missing')
+	tabConnection.signerStateOwner.providerGeneration = signerProviderGeneration
+	tabConnection.signerStateOwner.confirmed = true
 	resolveSignerStateConfirmation(tabConnection)
 }
 
 function provisionallyClaimSignerStateOwnerWithinOperation(tabConnection: TabConnection, socket: WebsiteSocket) {
 	beginSignerStateConfirmation(tabConnection)
-	tabConnection.signerStateOwnerConnectionName = socket.connectionName
-	tabConnection.signerProviderGeneration = undefined
+	if (tabConnection.signerStateOwner === undefined) throw new Error('Signer state owner lifecycle missing')
+	tabConnection.signerStateOwner.connectionName = socket.connectionName
+	tabConnection.signerStateOwner.providerGeneration = undefined
 }
 
 export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
@@ -155,10 +144,12 @@ export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
 
 export function getConfirmedSignerStateToken(websiteTabConnections: WebsiteTabConnections, tabId: number): SignerStateToken | undefined {
 	const tabConnection = websiteTabConnections.get(tabId)
-	if (tabConnection?.signerStateOwnerConfirmed !== true) return undefined
-	const connectionName = tabConnection.signerStateOwnerConnectionName
-	const ownerGeneration = tabConnection.signerStateOwnerGeneration
-	const signerProviderGeneration = tabConnection.signerProviderGeneration
+	if (tabConnection === undefined) return undefined
+	const signerStateOwner = tabConnection.signerStateOwner
+	if (signerStateOwner?.confirmed !== true) return undefined
+	const connectionName = signerStateOwner.connectionName
+	const ownerGeneration = signerStateOwner.generation
+	const signerProviderGeneration = signerStateOwner.providerGeneration
 	if (connectionName === undefined || ownerGeneration === undefined || signerProviderGeneration === undefined) return undefined
 	const socket = { tabId, connectionName }
 	const port = tabConnection.connections[websiteSocketToString(socket)]?.port
@@ -169,6 +160,19 @@ export function getConfirmedSignerStateToken(websiteTabConnections: WebsiteTabCo
 export function isSignerStateTokenCurrent(websiteTabConnections: WebsiteTabConnections, token: SignerStateToken) {
 	const currentToken = getConfirmedSignerStateToken(websiteTabConnections, token.socket.tabId)
 	return currentToken !== undefined && doSignerStateTokensMatch(currentToken, token)
+}
+
+export async function getActiveAddressForCurrentSignerState<T>(
+	websiteTabConnections: WebsiteTabConnections,
+	settings: Pick<Settings, 'simulationMode' | 'useSignersAddressAsActiveAddress'>,
+	tabId: number,
+	getAddress: () => Promise<T | undefined>,
+): Promise<T | undefined> {
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return await getAddress()
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	if (signerStateToken === undefined) return undefined
+	const activeAddress = await getAddress()
+	return isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) ? activeAddress : undefined
 }
 
 export function tabHasApprovedWebsiteConnection(websiteTabConnections: WebsiteTabConnections, tabId: number) {
@@ -197,7 +201,7 @@ export async function waitForConfirmedSignerStateToken(websiteTabConnections: We
 	for (;;) {
 		const token = getConfirmedSignerStateToken(websiteTabConnections, tabId)
 		if (token !== undefined) return token
-		const confirmation = websiteTabConnections.get(tabId)?.signerStateConfirmation
+		const confirmation = websiteTabConnections.get(tabId)?.signerStateOwner?.confirmation
 		if (confirmation === undefined) return undefined
 		const remainingTime = deadline - Date.now()
 		if (remainingTime <= 0) return undefined

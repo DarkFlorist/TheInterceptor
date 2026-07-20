@@ -237,10 +237,12 @@ describe('refreshHomeData', () => {
 			})
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
-			signerStateOwnerConnectionName: socket.connectionName,
-			signerStateOwnerConfirmed: true,
-			signerStateOwnerGeneration: 1,
-			signerProviderGeneration: 1,
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
@@ -315,10 +317,12 @@ describe('refreshHomeData', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const websiteTabConnections = new Map([[socket.tabId, {
-			signerStateOwnerConnectionName: socket.connectionName,
-			signerStateOwnerConfirmed: true,
-			signerStateOwnerGeneration: 1,
-			signerProviderGeneration: 1,
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
@@ -397,10 +401,12 @@ describe('refreshHomeData', () => {
 			})
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
-			signerStateOwnerConnectionName: socket.connectionName,
-			signerStateOwnerConfirmed: true,
-			signerStateOwnerGeneration: 1,
-			signerProviderGeneration: 1,
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},

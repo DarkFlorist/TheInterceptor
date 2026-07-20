@@ -457,10 +457,12 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	const childPort = createWebsitePort(childSocket, 2, childMessages)
 	const websiteOrigin = 'https://example.com'
 	const websiteTabConnections = new Map([[topSocket.tabId, {
-		signerStateOwnerConnectionName: topSocket.connectionName,
-		signerStateOwnerConfirmed: true,
-		signerStateOwnerGeneration: 3,
-		signerProviderGeneration: 8,
+		signerStateOwner: {
+			connectionName: topSocket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
 		connections: {
 			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
 			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },

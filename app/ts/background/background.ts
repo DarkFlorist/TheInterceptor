@@ -37,7 +37,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
+import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -507,11 +507,7 @@ function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabCo
 }
 
 async function getActiveAddressForRequest(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return await getActiveAddress(settings, tabId)
-	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
-	if (signerStateToken === undefined) return undefined
-	const activeAddress = await getActiveAddress(settings, tabId)
-	return isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) ? activeAddress : undefined
+	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
 async function discoverAccountRequestAddressContext(

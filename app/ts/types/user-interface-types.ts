@@ -150,18 +150,22 @@ export const TabIconDetails = funtypes.ReadonlyObject({
 	iconReason: funtypes.String,
 })
 
-export type TabConnection = {
-	connections: Record<string, SocketConnection> // socket as string
-	// Cached signer fields belong to the page connection that last identified its signer.
-	signerStateOwnerConnectionName?: bigint
-	// A top-frame port provisionally owns signer state until its explicit signer-status handshake completes.
-	signerStateOwnerConfirmed?: boolean
-	signerStateOwnerGeneration?: number
-	signerProviderGeneration?: number
-	signerStateConfirmation?: {
+export type SignerStateOwner = {
+	// The owner lifecycle remains allocated after disconnect so its generation stays monotonic.
+	connectionName?: bigint
+	confirmed: boolean
+	generation: number
+	providerGeneration?: number
+	confirmation?: {
 		readonly promise: Promise<void>
 		readonly resolve: () => void
 	}
+}
+
+export type TabConnection = {
+	connections: Record<string, SocketConnection> // socket as string
+	// Signer ownership is a separate lifecycle from the passive page connection registry.
+	signerStateOwner?: SignerStateOwner
 }
 
 export type WebsiteTabConnections = Map<number, TabConnection>
