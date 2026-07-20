@@ -1,4 +1,4 @@
-import { ens_normalize } from './viem.js'
+import { ens_normalize } from './ethereumPrimitives.js'
 
 export const normalizeEnsNameOrUndefined = (name: string) => {
 	try {

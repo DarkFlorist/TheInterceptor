@@ -1,12 +1,13 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { encodeAbiParameters, encodeFunctionResult, hexToBytes } from 'viem'
 import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
-import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -207,7 +208,7 @@ function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Arra
 	})))
 }
 
-function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules['defaultActiveAddresses'][number], recipient: TestModules['defaultActiveAddresses'][number]) {
+function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules['defaultActiveAddresses'][number], recipient: TestModules['defaultActiveAddresses'][number], operation: 0n | 1n = 0n) {
 	const zeroAddressEntry = {
 		address: 0n,
 		name: '0x0 Address',
@@ -244,7 +245,7 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 			to: recipient.address,
 			value: 0n,
 			data: new Uint8Array(),
-			operation: 0n,
+			operation,
 			safeTxGas: 0n,
 			baseGas: 0n,
 			gasPrice: 0n,
@@ -332,15 +333,11 @@ describe('Gnosis Safe stack simulation', () => {
 						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
 						aggregate3BlockStateCallCount = callCount
 
-						const aggregate3ReturnData = encodeFunctionResult({
-							abi: Multicall3ABI,
-							functionName: 'aggregate3',
-							result: [{
-								success: true,
-								returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
-							}],
-						})
-						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
+						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
+							success: true,
+							returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+						}]])
+						return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
 					}
 					default:
 						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
@@ -430,7 +427,13 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
 	})
 
-	test('simulates a Safe transaction on top of the existing stack', async () => {
+	const safeSimulationCases = [
+		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true },
+		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true },
+		{ name: 'applies Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false },
+	] as const
+
+	for (const { name, operation, seedStack } of safeSimulationCases) test(name, async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
@@ -449,6 +452,8 @@ describe('Gnosis Safe stack simulation', () => {
 		}
 
 		const fakeBlock = makeFakeBlock(123n)
+		let gasEstimationCount = 0
+		let delegateCallSimulationCount = 0
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
 			clearCache() { return undefined },
@@ -461,7 +466,7 @@ describe('Gnosis Safe stack simulation', () => {
 					case 'eth_getBalance':
 						return serializeForRpc(EthereumQuantity, 0n)
 					case 'eth_getCode':
-						return '0x'
+						return '0x6000'
 					case 'eth_gasPrice':
 						return serializeForRpc(EthereumQuantity, 1n)
 					case 'eth_blockNumber':
@@ -478,21 +483,56 @@ describe('Gnosis Safe stack simulation', () => {
 							throw new Error('Missing calls in eth_simulateV1 block')
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
+						const stateOverrides = 'stateOverrides' in lastBlock ? lastBlock.stateOverrides : undefined
+						const hasSafeDelegateCallTarget = typeof lastCall === 'object'
+							&& lastCall !== null
+							&& 'to' in lastCall
+							&& lastCall.to === activeAddress.address
+						if (hasSafeDelegateCallTarget) {
+							delegateCallSimulationCount += 1
+							if (typeof stateOverrides !== 'object' || stateOverrides === null) throw new Error('Missing Safe state overrides during delegatecall simulation')
+							const safeOverride = Object.entries(stateOverrides).find(([address]) => address === addressString(activeAddress.address))?.[1]
+							if (typeof safeOverride !== 'object' || safeOverride === null || !('code' in safeOverride) || !(safeOverride.code instanceof Uint8Array) || safeOverride.code.length === 0) {
+								throw new Error('Missing Safe wrapper code during delegatecall simulation')
+							}
+							const relocatedSafeOverride = Object.entries(stateOverrides).find(([address]) => address === '0x0000000000000000000000000000000000920515')?.[1]
+							if (typeof relocatedSafeOverride !== 'object' || relocatedSafeOverride === null || !('code' in relocatedSafeOverride) || !(relocatedSafeOverride.code instanceof Uint8Array) || relocatedSafeOverride.code.length === 0) {
+								throw new Error('Missing relocated Safe code during delegatecall simulation')
+							}
+						}
+						const blockOverrides = 'blockOverrides' in lastBlock ? lastBlock.blockOverrides : undefined
+						const isGasEstimation = typeof lastCall === 'object'
+							&& lastCall !== null
+							&& 'to' in lastCall
+							&& lastCall.to === (operation === 1n ? activeAddress.address : stackRecipient.address)
+							&& typeof blockOverrides === 'object'
+							&& blockOverrides !== null
+							&& 'baseFeePerGas' in blockOverrides
+							&& blockOverrides.baseFeePerGas === 0n
+						if (isGasEstimation) {
+							gasEstimationCount += 1
+							if (operation === 0n && typeof stateOverrides === 'object' && stateOverrides !== null && Object.keys(stateOverrides).length !== 0) {
+								throw new Error('Normal Safe call gas estimation received unexpected state overrides')
+							}
+						}
+						const isGetCodeCall = typeof lastCall === 'object'
+							&& lastCall !== null
+							&& 'to' in lastCall
+							&& lastCall.to === 0x1ce438391307f908756fefe0fe220c0f0d51508an
+						if (isGetCodeCall) {
+							return makeEthSimulateBlocks(callCount, stringToUint8Array(encodeAbiParameters([{ type: 'bytes' }], ['0x6000'])))
+						}
 						const isAggregate3BalanceCall = typeof lastCall === 'object'
 							&& lastCall !== null
 							&& 'to' in lastCall
 							&& lastCall.to === MULTICALL3
 						if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
 
-						const aggregate3ReturnData = encodeFunctionResult({
-							abi: Multicall3ABI,
-							functionName: 'aggregate3',
-							result: [{
-								success: true,
-								returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
-							}],
-						})
-						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
+						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
+							success: true,
+							returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+						}]])
+						return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
 					}
 					default:
 						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
@@ -517,41 +557,47 @@ describe('Gnosis Safe stack simulation', () => {
 			accessList: [],
 		})
 
+		const stackOperations = seedStack ? [{
+			type: 'Transaction' as const,
+			preSimulationTransaction: {
+				signedTransaction: currentStackTransaction,
+				website: { websiteOrigin: 'https://stack.example', icon: undefined, title: undefined },
+				created: new Date('2024-01-01T00:00:00.000Z'),
+				originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{}] },
+				transactionIdentifier: 1n,
+			},
+		}] : []
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
 			activeSimulationAddress: activeAddress.address,
 			activeRpcNetwork: fakeRpcNetwork,
 			interceptorTransactionStack: {
-				operations: [{
-					type: 'Transaction',
-					preSimulationTransaction: {
-						signedTransaction: currentStackTransaction,
-						website: { websiteOrigin: 'https://stack.example', icon: undefined, title: undefined },
-						created: new Date('2024-01-01T00:00:00.000Z'),
-						originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
-						transactionIdentifier: 1n,
-					},
-				}],
+				operations: stackOperations,
 			},
 		})
 
-		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient)
+		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
 		const simulationInput = await modules.getCurrentSimulationInput()
-		assert.equal(simulationInput.length, 1)
-		assert.equal(simulationInput[0]?.transactions.length, 1)
+		assert.equal(simulationInput.length, seedStack ? 1 : 0)
+		assert.equal(simulationInput[0]?.transactions.length, seedStack ? 1 : undefined)
 
 		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, simulationInput, ethereum, tokenPriceService)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
 
 		assert.equal(reply.result.simulationState.rpcNetwork.chainId, fakeRpcNetwork.chainId)
-		assert.equal(reply.result.simulationState.simulationStateInput.length, 2)
+		assert.equal(reply.result.simulationState.simulationStateInput.length, seedStack ? 2 : 1)
 		assert.equal(reply.result.simulationState.simulationStateInput[0]?.transactions.length, 1)
-		assert.equal(reply.result.simulationState.simulationStateInput[1]?.transactions.length, 1)
+		assert.equal(reply.result.simulationState.simulationStateInput[1]?.transactions.length, seedStack ? 1 : undefined)
+		const safeSimulationBlock = reply.result.simulationState.simulationStateInput[seedStack ? 1 : 0]
+		assert.equal(Object.keys(safeSimulationBlock?.stateOverrides ?? {}).length, operation === 1n ? 2 : 0)
+		if (seedStack) assert.equal(Object.keys(reply.result.simulationState.simulationStateInput[0]?.stateOverrides ?? {}).length, 0)
 		assert.equal(reply.result.visualizedSimulationState.success, true)
 		if (!reply.result.visualizedSimulationState.success) throw new Error('unexpected Safe visualization failure')
-		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks.length, 2)
+		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks.length, seedStack ? 2 : 1)
 		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions.length, 1)
-		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[1]?.simulatedAndVisualizedTransactions.length, 1)
+		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[1]?.simulatedAndVisualizedTransactions.length, seedStack ? 1 : undefined)
+		assert.equal(gasEstimationCount, 1)
+		assert.equal(delegateCallSimulationCount, operation === 1n ? 2 : 0)
 	})
 })

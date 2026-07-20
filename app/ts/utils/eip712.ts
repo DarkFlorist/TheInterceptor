@@ -1,7 +1,7 @@
 import { type EIP712Message, type EIP712Types, Eip712Number } from '../types/eip721.js'
 import { EthereumAddress, EthereumData } from '../types/wire-types.js'
 import { String } from 'funtypes'
-import { hashStruct, hashTypedData } from './viem.js'
+import { hashStruct, hashTypedData } from './ethereumPrimitives.js'
 import type { JSONEncodeableObject, typeJSONEncodeable } from './json.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-signing-types.js'

@@ -1,4 +1,4 @@
-import { getAddress } from './viem.js'
+import { getAddress } from './ethereumPrimitives.js'
 
 export function getIssueWithAddressString(address: string): string | undefined {
 	if (address.length > 42) return 'Address is too long.'

@@ -171,30 +171,40 @@ export const SendRawTransactionParams = funtypes.ReadonlyObject({
 
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = funtypes.ReadonlyTuple(
-	funtypes.Union(
+	funtypes.Intersect(
 		funtypes.ReadonlyObject({
-			type: funtypes.Literal('success'),
-			accounts: funtypes.ReadonlyArray(EthereumAddress),
-			requestAccounts: funtypes.Boolean,
+			signerProviderGeneration: funtypes.Number,
 		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('error'),
-			requestAccounts: funtypes.Boolean,
-			error: funtypes.Intersect(
+		funtypes.Union(
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('success'),
+				accounts: funtypes.ReadonlyArray(EthereumAddress),
+				requestAccounts: funtypes.Boolean,
+			}),
+			funtypes.Intersect(
 				funtypes.ReadonlyObject({
-					code: funtypes.Number,
-					message: funtypes.String,
+					type: funtypes.Literal('error'),
+					requestAccounts: funtypes.Boolean,
+					error: funtypes.Intersect(
+						funtypes.ReadonlyObject({
+							code: funtypes.Number,
+							message: funtypes.String,
+						}),
+						funtypes.Partial({
+							data: funtypes.Unknown
+						})
+					)
 				}),
-				funtypes.Partial({
-					data: funtypes.Unknown
-				})
+				funtypes.ReadonlyPartial({
+					signerUnavailable: funtypes.Literal(true),
+				}),
 			)
-		})
+		)
 	)
 )
 
 export type EthereumChainReply = funtypes.Static<typeof EthereumChainReply>
-export const EthereumChainReply = funtypes.ReadonlyArray(EthereumQuantity)
+export const EthereumChainReply = funtypes.ReadonlyTuple(EthereumQuantity, funtypes.Number)
 
 export type TransactionReceiptParams = funtypes.Static<typeof TransactionReceiptParams>
 export const TransactionReceiptParams = funtypes.ReadonlyObject({

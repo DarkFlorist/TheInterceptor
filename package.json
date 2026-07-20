@@ -8,9 +8,10 @@
 		"typecheck": "bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
-		"setup-chrome": "bun run vendor && bun run inpage && bun run build-chrome",
-		"build-firefox": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run firefox",
-		"build-chrome": "bun run clean-js-output && bun --bun tsc --project tsconfig.json && bun run bundle && bun run chrome",
+		"setup-chrome": "bun ./scripts/setup-chrome.mts",
+		"profile:setup-chrome": "bun ./scripts/setup-chrome.mts --profile",
+		"build-firefox": "bun run compile-app && bun run bundle && bun run firefox",
+		"build-chrome": "bun run compile-app && bun run bundle && bun run chrome",
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
 		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
@@ -19,6 +20,7 @@
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",
 		"chrome": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV3.json`))'",
 		"inpage": "bun run clean-inpage-output && bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json && bun ./scripts/inline-inpage-document-start.mts",
+		"compile-app": "bun run clean-js-output && bun --bun tsc --project tsconfig.json",
 		"clean-js-output": "bun ./build/cleanOutput.mts app/js",
 		"clean-inpage-output": "bun ./build/cleanOutput.mts app/inpage/js",
 		"knip": "bunx knip@5.1.6",
@@ -44,15 +46,12 @@
 		"@noble/hashes": "1.8.0",
 		"@preact/signals": "1.1.3",
 		"funtypes": "5.1.0",
+		"micro-eth-signer": "0.19.0",
 		"preact": "10.24.2",
-		"viem": "2.53.1",
 		"webextension-polyfill": "0.10.0"
-	},
-	"overrides": {
-		"ws": "8.21.0"
 	},
 	"devDependencies": {
 		"@types/firefox-webext-browser": "120.0.3",
-		"typescript": "5.4.5"
+		"typescript": "5.9.3"
 	}
 }

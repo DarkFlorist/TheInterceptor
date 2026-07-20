@@ -40,7 +40,7 @@ async function readBlobWithSizeLimit(response: Response, maxSizeInBytes: number)
 		return blob
 	}
 	const reader = response.body.getReader()
-	const chunks: Uint8Array[] = []
+	const chunks: BlobPart[] = []
 	let receivedBytes = 0
 	try {
 		while (true) {
@@ -52,7 +52,9 @@ async function readBlobWithSizeLimit(response: Response, maxSizeInBytes: number)
 				await reader.cancel('image exceeded size limit')
 				return imageTooLarge(maxSizeInBytes)
 			}
-			chunks.push(value)
+			const chunk = new Uint8Array(value.byteLength)
+			chunk.set(value)
+			chunks.push(chunk)
 		}
 	} finally {
 		reader.releaseLock()

@@ -6,7 +6,7 @@ import { type ComponentChildren, createRef } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { keccak256, namehash, stringToBytes } from '../../utils/viem.js'
+import { keccak256, namehash, stringToBytes } from '../../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../../utils/ens.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 

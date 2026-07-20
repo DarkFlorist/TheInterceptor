@@ -1,4 +1,4 @@
-import type { Abi } from 'viem'
+import type { Abi } from './ethereumPrimitives.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from './constants.js'
 import type { AbiLike } from './abiRuntime.js'

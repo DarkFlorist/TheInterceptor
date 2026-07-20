@@ -4,8 +4,8 @@ import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlo
 import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
-import type { Abi } from 'viem'
-import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/viem.js'
+import type { Abi } from '../../utils/ethereumPrimitives.js'
+import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -607,7 +607,7 @@ const createPreparedSimulatedExecutionBlocks = async (
 export const getPreSimulated = (simulatedTransactions: readonly SimulatedTransaction[]) => simulatedTransactions.map((transaction) => transaction.preSimulationTransaction)
 
 export const appendTransactionsToInput = (simulationStateInput: SimulationStateInput, transactions: PreSimulationTransaction[], blockDelta: number | undefined = undefined, stateOverrides: StateOverrides = {}, simulateWithZeroBaseFee = false): SimulationStateInput => {
-	const nonUndefinedBlockDelta = simulationStateInput.length
+	const blockToAppendTo = blockDelta ?? simulationStateInput.length
 	const mergeStateSets = (oldOverrides: StateOverrides, newOverrides: StateOverrides) => {
 		const copy = { ...oldOverrides }
 		for (const [key, value] of Object.entries(newOverrides)) {
@@ -616,25 +616,18 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 		return copy
 	}
 	const newTransactions = [...transactions]
-	if (simulationStateInput[nonUndefinedBlockDelta] !== undefined) {
+	if (simulationStateInput[blockToAppendTo] !== undefined) {
 		return simulationStateInput.map((block, index) => ({
-			stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
-			transactions: index === blockDelta ? [...block.transactions, ...newTransactions] : block.transactions,
+			stateOverrides: index === blockToAppendTo ? mergeStateSets(block.stateOverrides, stateOverrides) : block.stateOverrides,
+			transactions: index === blockToAppendTo ? [...block.transactions, ...newTransactions] : block.transactions,
 			signedMessages: block.signedMessages,
 			blockTimeManipulation: block.blockTimeManipulation,
 			simulateWithZeroBaseFee: block.simulateWithZeroBaseFee,
 		}))
 	}
-	const oldBlocks = simulationStateInput.map((block) => ({
-		stateOverrides: mergeStateSets(block.stateOverrides, stateOverrides),
-		transactions: block.transactions,
-		signedMessages: block.signedMessages,
-		blockTimeManipulation: block.blockTimeManipulation,
-		simulateWithZeroBaseFee: block.simulateWithZeroBaseFee
-	}))
 	return [
-		...oldBlocks,
-		{ stateOverrides: {}, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
+		...simulationStateInput,
+		{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
 	]
 }
 
@@ -1358,6 +1351,7 @@ export const simulateEstimateGasFromInput = async (
 	simulationStateInput: ResolvedSimulationInput,
 	data: PartialEthereumTransaction,
 	blockDelta: number | undefined = undefined,
+	extraOverrides: StateOverrides = {},
 ): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> => {
 	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
@@ -1381,7 +1375,7 @@ export const simulateEstimateGasFromInput = async (
 		accessList: []
 	}
 	try {
-		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, {}, true)
+		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, extraOverrides, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
 		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n)
@@ -1708,7 +1702,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData = decodeFunctionOutput(Multicall3ABI, 'aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))
 	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
-	return multicallReturnData.map((singleCallResult, callIndex) => {
+	return multicallReturnData.map((singleCallResult: { readonly success: boolean, readonly returnData: `0x${ string }` }, callIndex: number) => {
 		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
 		return {

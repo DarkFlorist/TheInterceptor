@@ -31,6 +31,11 @@
 		"webRequest",
 		"webRequestBlocking"
 	],
-	"web_accessible_resources": ["inpage/js/inpage.js"],
+	"web_accessible_resources": [
+		"vendor/webextension-polyfill/dist/browser-polyfill.js",
+		"inpage/js/listenContentScript.js",
+		"inpage/js/document_start.js",
+		"inpage/js/inpage.js"
+	],
 	"content_security_policy": "object-src 'self'; script-src 'self'"
 }

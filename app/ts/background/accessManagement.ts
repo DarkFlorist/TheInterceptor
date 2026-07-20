@@ -19,6 +19,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -125,7 +126,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
 			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
-			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
+			const activeAddress = await getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
 				method: 'accountsChanged',
@@ -211,8 +212,8 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 
 // gets active address if the website has been give access for it, otherwise returns undefined
 // this is to guard websites from seeing addresses without access
-async function getActiveAddressForDomain(websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
-	const activeAddress = await getActiveAddress(settings, socket.tabId)
+async function getActiveAddressForDomain(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
+	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
 	if (activeAddress === undefined) return undefined
 	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
 	if (hasAccess === 'hasAccess') return activeAddress
@@ -291,7 +292,12 @@ async function updateTabConnections(
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
-		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
+		const currentActiveAddress = await getActiveAddressForCurrentSignerState(
+			websiteTabConnections,
+			settings,
+			connection.socket.tabId,
+			async () => await getActiveAddress(settings, connection.socket.tabId),
+		)
 		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 

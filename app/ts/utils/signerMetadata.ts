@@ -9,6 +9,10 @@ const signerLogos = {
 	Rabby: RABBY_LOGO,
 } as const
 
+export function isSignerMissing(signerName: SignerName) {
+	return signerName === 'NoSigner' || signerName === 'NoSignerDetected'
+}
+
 export function getPrettySignerName(signerName: SignerName) {
 	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return 'Unknown signer'
 	if (signerName === 'Ambire' || signerName === 'Rabby') return `${ signerName } Wallet`

@@ -2,7 +2,8 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
-import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
+import * as ts from 'typescript'
+import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
 
 const repositoryRoot = process.cwd()
 
@@ -29,25 +30,25 @@ describe('bundler import rewriting', () => {
 	})
 
 	test('rewrites deduped vendored package imports through the root vendor tree', () => {
-		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'ox', '_esm', 'core', 'Hash.js')
-		const source = 'import { keccak_256 as noble_keccak256 } from \'@noble/hashes/sha3\';'
+		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'micro-eth-signer', 'advanced', 'abi.js')
+		const source = 'import { coders } from \'micro-packed\';'
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, 'import { keccak_256 as noble_keccak256 } from \'../../../@noble/hashes/esm/sha3.js\';')
+		assert.equal(rewritten, 'import { coders } from \'../../micro-packed/index.js\';')
 	})
 
 	test('rewrites vendored relative node_modules imports away from node_modules paths', () => {
-		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')
-		const source = 'import { keccak_256 } from \'../../../node_modules/@noble/hashes/esm/sha3.js\';'
+		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'micro-eth-signer', 'advanced', 'abi.js')
+		const source = 'import { bytesToHex } from \'../node_modules/@noble/hashes/utils.js\';'
 
 		const rewritten = replaceImport(filePath, source)
 
-		assert.equal(rewritten, 'import { keccak_256 } from \'../../../../@noble/hashes/esm/sha3.js\';')
+		assert.equal(rewritten, 'import { bytesToHex } from \'../__dependencies__/@noble/hashes/utils.js\';')
 	})
 
 	test('does not rewrite comment examples that are not real imports', () => {
-		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')
+		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'micro-eth-signer', 'core', 'typed-data.js')
 		const source = '// import { keccak_256 } from \'@noble/hashes/sha3\';\nexport const ok = true;'
 
 		const rewritten = replaceImport(filePath, source)
@@ -55,19 +56,45 @@ describe('bundler import rewriting', () => {
 		assert.equal(rewritten, source)
 	})
 
-	test('flags viem barrel entrypoints as browser-incompatible runtime modules', () => {
+	test('does not rewrite AMD dependency array entries as module imports', () => {
+		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'webextension-polyfill', 'dist', 'browser-polyfill.js')
+		const source = 'define("webextension-polyfill", ["module"], factory);'
+
+		assert.equal(replaceImport(filePath, source), source)
+	})
+
+	test('rewrites dynamic imports and require calls', () => {
+		const filePath = path.join(repositoryRoot, 'app', 'js', 'background', 'background-startup.js')
+		const source = 'const dynamicModule = import("webextension-polyfill"); const requiredModule = require("webextension-polyfill");'
+
 		assert.equal(
-			isBrowserIncompatibleRuntimeModule(path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'index.js')),
-			true,
-		)
-		assert.equal(
-			isBrowserIncompatibleRuntimeModule(path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')),
-			false,
+			replaceImport(filePath, source),
+			'const dynamicModule = import("../../vendor/webextension-polyfill/dist/browser-polyfill.js"); const requiredModule = require("../../vendor/webextension-polyfill/dist/browser-polyfill.js");',
 		)
 	})
 
+	test('rewrites escaped static and dynamic import specifiers without corrupting surrounding syntax', () => {
+		const filePath = path.join(repositoryRoot, 'app', 'js', 'background', 'background-startup.js')
+		const cases = [
+			{
+				source: 'import"webextension-poly\\u0066ill";',
+				expected: 'import"../../vendor/webextension-polyfill/dist/browser-polyfill.js";',
+			},
+			{
+				source: 'const dynamicModule = import("webextension-poly\\u0066ill").then(useModule);',
+				expected: 'const dynamicModule = import("../../vendor/webextension-polyfill/dist/browser-polyfill.js").then(useModule);',
+			},
+		]
+
+		for (const { source, expected } of cases) {
+			const rewritten = replaceImport(filePath, source)
+			assert.equal(rewritten, expected)
+			assert.equal(ts.createSourceFile('runtime.js', rewritten, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS).parseDiagnostics.length, 0)
+		}
+	})
+
 	test('keeps only reachable runtime modules and required public assets', () => {
-		const reachableFilePath = path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'hash', 'keccak256.js')
+		const reachableFilePath = path.join(repositoryRoot, 'app', 'vendor', 'micro-eth-signer', 'index.js')
 		const reachableRuntimeFiles = new Set([reachableFilePath])
 
 		assert.equal(shouldKeepRuntimeOutputFile(reachableFilePath, reachableRuntimeFiles), true)
