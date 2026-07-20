@@ -1,7 +1,10 @@
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
 import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
-import { encodeAbiParameters, keccak256, stringToBytes, type Hex } from './ethereumPrimitiveCore.js'
+import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
+import { bytesFromHex, bytesFromHexOrBytes, ensureHex, isHexString, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
+import { encodeAbiParameters } from './ethereumPrimitiveCore.js'
+import { normalizeSignatureYParity } from './ethereumSignature.js'
 import { isRecord } from './runtimeTypeGuards.js'
 
 type TypedDataField = {
@@ -22,11 +25,6 @@ type HashStructParameters = {
 	readonly types: Record<string, readonly TypedDataField[] | undefined>
 }
 
-const HEX_REGEX = /^0x[0-9a-fA-F]*$/u
-const HEX_INTEGER_STRING_REGEX = /^0x[0-9a-fA-F]+$/u
-const DECIMAL_INTEGER_STRING_REGEX = /^-?[0-9]+$/u
-const INTEGER_REGEX = /^(u?)int([0-9]*)$/u
-const FIXED_BYTES_REGEX = /^bytes([1-9]|[12][0-9]|3[0-2])$/u
 const DOMAIN_FIELD_TYPES = {
 	name: 'string',
 	version: 'string',
@@ -35,16 +33,6 @@ const DOMAIN_FIELD_TYPES = {
 	salt: 'bytes32',
 } as const
 const DETERMINISTIC_SIGNATURES = false
-
-const ensureHex = (value: string, name = 'hex'): Hex => {
-	if (!HEX_REGEX.test(value)) throw new Error(`${ name } must be a 0x-prefixed hex string`)
-	if (value.length % 2 !== 0) throw new Error(`${ name } must have an even number of hex digits`)
-	return value as Hex
-}
-
-const bytesFromHex = (value: Hex) => hexToBytes(value.slice(2))
-
-const bytesFromHexOrBytes = (value: Hex | Uint8Array): Uint8Array => value instanceof Uint8Array ? value : bytesFromHex(ensureHex(value))
 
 const integerToMinimalBytes = (value: number | bigint): Uint8Array => {
 	if (typeof value === 'number') {
@@ -61,7 +49,7 @@ const bytesFromTypedDataPrimitive = (value: unknown): Uint8Array => {
 	if (typeof value === 'boolean') return new Uint8Array([value ? 1 : 0])
 	if (typeof value === 'number' || typeof value === 'bigint') return integerToMinimalBytes(value)
 	if (typeof value === 'string') {
-		if (HEX_REGEX.test(value)) {
+		if (isHexString(value)) {
 			const hex = value.slice(2)
 			return hexToBytes(hex.length % 2 === 0 ? hex : `0${ hex }`)
 		}
@@ -71,17 +59,6 @@ const bytesFromTypedDataPrimitive = (value: unknown): Uint8Array => {
 }
 
 const bytesFromTypedDataString = (value: unknown): Uint8Array => typeof value === 'string' ? utf8ToBytes(value) : bytesFromTypedDataPrimitive(value)
-
-const canonicalAbiType = (type: string): string => {
-	if (type.startsWith('uint[') || type === 'uint') return type.replace(/^uint/u, 'uint256')
-	if (type.startsWith('int[') || type === 'int') return type.replace(/^int/u, 'int256')
-	return type
-}
-
-const parseIntegerString = (value: string): bigint | undefined => {
-	if (DECIMAL_INTEGER_STRING_REGEX.test(value) || HEX_INTEGER_STRING_REGEX.test(value)) return BigInt(value)
-	return undefined
-}
 
 export const hashMessage = (message: string | { readonly raw: Hex | Uint8Array }): Hex => {
 	const messageBytes = typeof message === 'string' ? stringToBytes(message) : bytesFromHexOrBytes(message.raw)
@@ -187,18 +164,6 @@ const signDigest = (digest: Hex, privateKey: Hex): Hex => {
 	const recovery = signature.recovery
 	if (recovery !== 0 && recovery !== 1) throw new Error('Unexpected signature recovery bit')
 	return `0x${ signature.toHex('compact') }${ recovery === 0 ? '1b' : '1c' }`
-}
-
-const normalizeSignatureYParity = (signature: { readonly yParity?: number, readonly v?: bigint | number }) => {
-	if (signature.yParity !== undefined) {
-		if (signature.yParity !== 0 && signature.yParity !== 1) throw new Error(`Invalid signature yParity ${ signature.yParity }`)
-		return signature.yParity
-	}
-	if (signature.v === undefined) return 0
-	const v = BigInt(signature.v)
-	if (v === 0n || v === 1n) return Number(v)
-	if (v === 27n || v === 28n) return Number(v - 27n)
-	throw new Error(`Invalid signature v ${ v }`)
 }
 
 export const privateKeyToAccount = (privateKey: Hex) => {

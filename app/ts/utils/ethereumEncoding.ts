@@ -1,6 +1,7 @@
 import { keccak_256 } from '@noble/hashes/sha3'
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { RLP } from 'micro-eth-signer/core/rlp.js'
+import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX } from './ethereumAbiInternals.js'
 import { ens_normalize as normalizeEnsNameWithLocalData } from './ensNormalize.js'
 import {
 	bytesFromHex,
@@ -13,16 +14,8 @@ import {
 	type Hex,
 } from './ethereumBytes.js'
 
-const INTEGER_REGEX = /^(u?)int([0-9]*)$/u
-const FIXED_BYTES_REGEX = /^bytes([1-9]|[12][0-9]|3[0-2])$/u
 const PACKED_ARRAY_TYPE_REGEX = /^(.*)\[([0-9]*)\]$/u
 const PACKED_ARRAY_ELEMENT_BYTES = 32
-
-const canonicalAbiType = (type: string): string => {
-	if (type.startsWith('uint[') || type === 'uint') return type.replace(/^uint/u, 'uint256')
-	if (type.startsWith('int[') || type === 'int') return type.replace(/^int/u, 'int256')
-	return type
-}
 
 export const encodePacked = (types: readonly string[], values: readonly unknown[]): Hex => {
 	if (types.length !== values.length) throw new Error(`Packed value count mismatch: expected ${ types.length }, got ${ values.length }`)

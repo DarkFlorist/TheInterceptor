@@ -249,8 +249,14 @@ const typedDataArrayVectors = [
 describe('local Ethereum primitive helpers', () => {
 	test('matches reference address, bytes, RLP, selector, and unit formatting vectors', () => {
 		assert.equal(getAddress(lowercaseDeadAddress), checksumDeadAddress)
+		assert.equal(getAddress('0x000000000000000000000000000000000000DEAD'), checksumDeadAddress)
+		assert.equal(getAddress(invalidChecksumDeadAddress), checksumDeadAddress)
+		assert.throws(() => getAddress('0x1234'), /invalid/u)
 		assert.equal(isAddress(checksumDeadAddress), true)
-		assert.equal(isAddress('0x000000000000000000000000000000000000dEad'), false)
+		assert.equal(isAddress(lowercaseDeadAddress), true)
+		assert.equal(isAddress('0x000000000000000000000000000000000000DEAD'), false)
+		assert.equal(isAddress('0X000000000000000000000000000000000000DEAD'), false)
+		assert.equal(isAddress(invalidChecksumDeadAddress), false)
 		assert.equal(
 			getCreate2Address({
 				from: checksumDeadAddress,
@@ -263,7 +269,7 @@ describe('local Ethereum primitive helpers', () => {
 		assert.equal(bytesToHex(stringToBytes('hello')), '0x68656c6c6f')
 		assert.equal(keccak256(stringToBytes('hello')), '0x1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36deac8')
 		assert.equal(concat(['0x12', '0x3456']), '0x123456')
-		assert.throws(() => concat(['0x12', new Uint8Array([0x34])]), /Cannot concat hex strings and byte arrays/u)
+		assert.throws(() => Reflect.apply(concat, undefined, [['0x12', new Uint8Array([0x34])]]), /Cannot concat hex strings and byte arrays/u)
 		assert.equal(toRlp(['0x01', ['0x02', '0x636174']], 'hex'), '0xc701c50283636174')
 		assert.deepStrictEqual(toRlp(['0x01', ['0x02', '0x636174']], 'bytes'), new Uint8Array([0xc7, 0x01, 0xc5, 0x02, 0x83, 0x63, 0x61, 0x74]))
 		assert.throws(() => toRlp(0), /RLP value/u)
@@ -373,8 +379,8 @@ describe('local Ethereum primitive helpers', () => {
 		)
 		assert.equal(encodePacked(['address'], [lowercaseDeadAddress]), '0x000000000000000000000000000000000000dead')
 		assert.equal(encodePacked(['address'], [checksumDeadAddress]), '0x000000000000000000000000000000000000dead')
+		assert.equal(encodePacked(['address'], [invalidChecksumDeadAddress]), '0x000000000000000000000000000000000000dead')
 		assert.throws(() => encodePacked(['address'], ['0x1234']), /invalid|Address/u)
-		assert.throws(() => encodePacked(['address'], [invalidChecksumDeadAddress]), /invalid|Address/u)
 		assert.equal(encodePacked(['bool'], [true]), '0x01')
 		assert.equal(encodePacked(['bool'], [false]), '0x00')
 		assert.equal(encodePacked(['bool'], [1]), '0x01')
@@ -388,7 +394,10 @@ describe('local Ethereum primitive helpers', () => {
 			encodePacked(['address[]'], [[checksumDeadAddress, checksumBeefAddress]]),
 			'0x000000000000000000000000000000000000000000000000000000000000dead000000000000000000000000000000000000000000000000000000000000beef',
 		)
-		assert.throws(() => encodePacked(['address[]'], [[checksumDeadAddress, invalidChecksumDeadAddress]]), /invalid|Address/u)
+		assert.equal(
+			encodePacked(['address[]'], [[checksumDeadAddress, invalidChecksumDeadAddress]]),
+			'0x000000000000000000000000000000000000000000000000000000000000dead000000000000000000000000000000000000000000000000000000000000dead',
+		)
 		assert.equal(
 			encodePacked(['bool[]'], [[true, false, true]]),
 			'0x000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001',
@@ -419,8 +428,14 @@ describe('local Ethereum primitive helpers', () => {
 			encodeAbiParameters([{ type: 'address' }], [checksumDeadAddress]),
 			'0x000000000000000000000000000000000000000000000000000000000000dead',
 		)
-		assert.throws(() => encodeAbiParameters([{ type: 'address' }], [invalidChecksumDeadAddress]), /invalid|checksum/u)
-		assert.throws(() => encodeFunctionCall(transferAbi, 'transfer', [invalidChecksumDeadAddress, 1n]), /invalid|checksum/u)
+		assert.equal(
+			encodeAbiParameters([{ type: 'address' }], [invalidChecksumDeadAddress]),
+			encodeAbiParameters([{ type: 'address' }], [lowercaseDeadAddress]),
+		)
+		assert.equal(
+			encodeFunctionCall(transferAbi, 'transfer', [invalidChecksumDeadAddress, 1n]),
+			encodeFunctionCall(transferAbi, 'transfer', [lowercaseDeadAddress, 1n]),
+		)
 		const tupleParameters = parseAbiParameters('(uint256 a, address b) p')
 		const encodedTuple = encodeAbiParameters(tupleParameters, [{ a: 1n, b: checksumDeadAddress }])
 		assert.equal(

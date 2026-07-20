@@ -1,5 +1,6 @@
 import { Transaction } from 'micro-eth-signer'
-import type { Hex } from './ethereumPrimitiveCore.js'
+import { ensureHex, type Hex } from './ethereumBytes.js'
+import { normalizeSignatureYParity } from './ethereumSignature.js'
 import { getRecordProperty, isRecord } from './runtimeTypeGuards.js'
 
 type SerializableTransaction = {
@@ -22,30 +23,11 @@ type TransactionSignature = {
 	readonly v?: bigint | number
 }
 
-const HEX_REGEX = /^0x[0-9a-fA-F]*$/u
 const EIP1559_TRANSACTION_TYPE = 'eip1559'
-
-const ensureHex = (value: string, name = 'hex'): Hex => {
-	if (!HEX_REGEX.test(value)) throw new Error(`${ name } must be a 0x-prefixed hex string`)
-	if (value.length % 2 !== 0) throw new Error(`${ name } must have an even number of hex digits`)
-	return value as Hex
-}
 
 const bytes32FromBigint = (value: bigint): Hex => {
 	if (value < 0n || value >= 2n ** 256n) throw new Error('Value is out of bytes32 range')
 	return `0x${ value.toString(16).padStart(64, '0') }`
-}
-
-const normalizeSignatureYParity = (signature: { readonly yParity?: number, readonly v?: bigint | number }) => {
-	if (signature.yParity !== undefined) {
-		if (signature.yParity !== 0 && signature.yParity !== 1) throw new Error(`Invalid signature yParity ${ signature.yParity }`)
-		return signature.yParity
-	}
-	if (signature.v === undefined) return 0
-	const v = BigInt(signature.v)
-	if (v === 0n || v === 1n) return Number(v)
-	if (v === 27n || v === 28n) return Number(v - 27n)
-	throw new Error(`Invalid signature v ${ v }`)
 }
 
 const normalizeTransactionSignature = (signature: TransactionSignature) => ({

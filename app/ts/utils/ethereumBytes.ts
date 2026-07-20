@@ -5,6 +5,9 @@ import { addr } from 'micro-eth-signer'
 export type Hex = `0x${ string }`
 
 const HEX_REGEX = /^0x[0-9a-fA-F]*$/u
+const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/u
+
+export const isHexString = (value: string): value is Hex => HEX_REGEX.test(value)
 
 export const ensureHex = (value: string, name = 'hex'): Hex => {
 	if (!HEX_REGEX.test(value)) throw new Error(`${ name } must be a 0x-prefixed hex string`)
@@ -21,7 +24,7 @@ export const bytesFromHexOrBytes = (value: Hex | Uint8Array): Uint8Array => valu
 const isHex = (value: Hex | Uint8Array): value is Hex => typeof value === 'string'
 
 export function concat(values: readonly Hex[]): Hex
-export function concat(values: readonly (Hex | Uint8Array)[]): Hex | Uint8Array
+export function concat(values: readonly Uint8Array[]): Uint8Array
 export function concat(values: readonly (Hex | Uint8Array)[]): Hex | Uint8Array {
 	if (values.every(isHex)) {
 		return `0x${ values.map((value) => stripHexPrefix(ensureHex(value))).join('') }`
@@ -37,8 +40,12 @@ export const stringToBytes = (value: string): Uint8Array => utf8ToBytes(value)
 export const keccak256 = (value: Hex | Uint8Array): Hex => bytesToHex(keccak_256(bytesFromHexOrBytes(value)))
 
 export const getAddress = (address: string): Hex => {
-	if (!addr.isValid(address)) throw new Error(`Address "${ address }" is invalid`)
-	return ensureHex(addr.addChecksum(address), 'checksummed address')
+	if (!ADDRESS_REGEX.test(address)) throw new Error(`Address "${ address }" is invalid`)
+	return ensureHex(addr.addChecksum(address.toLowerCase()), 'checksummed address')
 }
 
-export const isAddress = (address: string): boolean => addr.isValid(address)
+export const isAddress = (address: string): boolean => {
+	if (!ADDRESS_REGEX.test(address)) return false
+	if (address.toLowerCase() === address) return true
+	return addr.addChecksum(address.toLowerCase()) === address
+}
