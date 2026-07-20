@@ -21,11 +21,12 @@ import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
-import { Spinner } from '../subcomponents/Spinner.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import type { ComponentChildren, JSX } from 'preact'
+import { DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -40,6 +41,170 @@ function scheduleAfterPaint(callback: () => void) {
 	}
 	const timeout = globalThis.setTimeout(callback, 32)
 	return () => globalThis.clearTimeout(timeout)
+}
+
+type LoadingControlProps = {
+	class: string
+	children: ComponentChildren
+	style?: JSX.CSSProperties | string
+}
+
+function LoadingControl({ class: className, children, style }: LoadingControlProps) {
+	return <button type = 'button' disabled = { true } tabIndex = { -1 } class = { `${ className } popup-loading-shape popup-loading-control` } style = { style }>
+		<span class = 'popup-loading-control-content'>{ children }</span>
+	</button>
+}
+
+function LoadingInput() {
+	return <input
+		aria-hidden = 'true'
+		class = 'input popup-loading-shape popup-loading-control popup-loading-input'
+		disabled = { true }
+		tabIndex = { -1 }
+		style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;'
+		type = 'number'
+		value = ''
+	/>
+}
+
+function LoadingDropdownControl({ label }: { label: string }) {
+	return <div class = 'dropdown'>
+		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
+			<LoadingControl class = 'btn btn--outline is-small' style = { { width: '100%' } }>
+				<DropDownMenuButtonContent label = { label }/>
+			</LoadingControl>
+		</div>
+	</div>
+}
+
+function OpenSimulationStackButtonContent() {
+	return <>
+		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+			<OpenInNewIcon/>
+		</span>
+		<span>View stack details</span>
+	</>
+}
+
+function ClearSimulationButtonContent() {
+	return <>
+		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+			<BroomIcon />
+		</span>
+		<span>Clear</span>
+	</>
+}
+
+function HomeHeaderLoadingSkeleton() {
+	return <header aria-hidden = 'true' class = 'px-3 py-2 popup-home-header-layout'>
+		<div>
+			<span class = 'popup-loading-shape popup-loading-home-icon'/>
+		</div>
+		<div>
+			<div class = 'buttons has-addons popup-home-mode-selector popup-loading-mode-selector'>
+				<LoadingControl class = 'button is-primary'>Simulating</LoadingControl>
+				<LoadingControl class = 'button is-primary'>
+					<SignerLogoText signerName = 'NoSignerDetected' text = 'Signing' reserveLogoSpace = { true } />
+				</LoadingControl>
+			</div>
+		</div>
+		<div class = 'popup-home-rpc-selector'>
+			<LoadingDropdownControl label = 'No RPC Selected'/>
+		</div>
+	</header>
+}
+
+function ActiveAddressLoadingSkeleton({ ariaLabel }: { ariaLabel?: string }) {
+	return <div
+		aria-busy = { ariaLabel === undefined ? undefined : true }
+		aria-hidden = { ariaLabel === undefined ? true : undefined }
+		aria-label = { ariaLabel }
+		role = { ariaLabel === undefined ? undefined : 'status' }
+		class = 'log-table active-address-row popup-loading-address'
+	>
+		<div aria-hidden = 'true' class = 'log-cell' style = 'display: block;'>
+			<figure class = 'multiline-card popup-loading-address-details'>
+				<span class = 'popup-loading-shape popup-loading-address-icon'/>
+				<span class = 'popup-loading-shape popup-loading-address-title'/>
+				<span class = 'popup-loading-shape popup-loading-address-subtitle'/>
+			</figure>
+		</div>
+		<div aria-hidden = 'true' class = 'log-cell'>
+			<div class = 'media-right'>
+				<LoadingControl class = 'button is-primary'>Change</LoadingControl>
+			</div>
+		</div>
+	</div>
+}
+
+function InlineLoadingSkeleton({ ariaLabel }: { ariaLabel: string }) {
+	return <span aria-busy = 'true' aria-label = { ariaLabel } role = 'status' class = 'popup-home-connection-status popup-loading-inline-skeleton'>
+		<span aria-hidden = 'true' class = 'popup-loading-shape'/>
+	</span>
+}
+
+function SimulationControlsLoadingSkeleton() {
+	return <div aria-busy = 'true' aria-label = 'Loading simulation controls' role = 'status' class = 'popup-simulation-controls popup-loading-controls'>
+		<header aria-hidden = 'true' class = 'card-header popup-loading-rich-list-header'>
+			<span class = 'popup-loading-shape'/>
+		</header>
+		<div aria-hidden = 'true' class = 'popup-simulation-controls-gap'/>
+		<div aria-hidden = 'true'>
+			<div class = 'time-picker-row'>
+				<span class = 'popup-loading-shape popup-loading-time-picker-label'/>
+				<div class = 'time-picker-actions'>
+					<LoadingDropdownControl label = 'For'/>
+					<div>
+						<LoadingInput/>
+						<LoadingDropdownControl label = 'Seconds'/>
+					</div>
+					<LoadingControl class = 'btn is-small is-primary'>Commit</LoadingControl>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+function SimulationLoadingSkeleton() {
+	return <div aria-busy = 'true' aria-label = 'Loading current simulation state' role = 'status' class = 'popup-loading-simulation'>
+		<div aria-hidden = 'true' class = 'simulation-results-header'>
+			<div class = 'log-cell'>
+				<span class = 'popup-loading-shape popup-loading-simulation-title'/>
+			</div>
+			<div class = 'log-cell' style = 'justify-content: right; gap: 6px;'>
+				<LoadingControl class = 'btn btn--outline is-small'>
+					<OpenSimulationStackButtonContent/>
+				</LoadingControl>
+				<LoadingControl class = 'btn is-small is-danger'>
+					<ClearSimulationButtonContent/>
+				</LoadingControl>
+			</div>
+		</div>
+		<section aria-hidden = 'true' class = 'card simulation-summary-card'>
+			<header class = 'card-header'>
+				<div class = 'card-header-icon unset-cursor'>
+					<span class = 'popup-loading-shape popup-loading-simulation-icon'/>
+				</div>
+				<div class = 'card-header-title'>
+					<span class = 'popup-loading-shape popup-loading-simulation-card-title'/>
+				</div>
+			</header>
+			<div class = 'card-content popup-loading-simulation-content'>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+			</div>
+		</section>
+	</div>
+}
+
+function HomeLoadingSkeleton() {
+	return <section aria-busy = 'true' aria-label = 'Loading current popup state' role = 'status' class = 'card popup-home-card'>
+		<HomeHeaderLoadingSkeleton/>
+		<div class = 'card-content'>
+			<ActiveAddressLoadingSkeleton/>
+		</div>
+	</section>
 }
 
 type SignerExplanationParams = {
@@ -80,14 +245,14 @@ function FirstCardHeader(param: FirstCardParams) {
 	}
 
 	return <>
-		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
+		<header class = 'px-3 py-2 popup-home-header-layout'>
 			<div>
 				<ToolTip content = { tabIconReason }>
 					<img class = 'noselect nopointer' src = { param.tabIconDetails.value.icon } width = '48' height = '48' style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
 			<div>
-				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
+				<div class = 'buttons has-addons popup-home-mode-selector'>
 					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
@@ -112,7 +277,9 @@ function FirstCardHeader(param: FirstCardParams) {
 					/>
 				</div>
 			</div>
-			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
+			<div class = 'popup-home-rpc-selector'>
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
+			</div>
 		</header>
 	</>
 }
@@ -231,6 +398,7 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
 	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
+	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
 
 	const connectToSigner = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
@@ -265,7 +433,7 @@ function FirstCard(param: FirstCardParams) {
 
 	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
 		return <>
-			<section class = 'card' style = 'margin: 10px;'>
+			<section class = 'card popup-home-card popup-data-reveal'>
 				<FirstCardHeader { ...param }/>
 				<div class = 'card-content'>
 					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
@@ -275,27 +443,37 @@ function FirstCard(param: FirstCardParams) {
 	}
 
 	return <>
-		<section class = 'card' style = 'margin: 10px;'>
+		<section class = 'card popup-home-card popup-data-reveal'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
-						{ signerAvailable.value ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
+						{ isActiveAddressLoading
+							? <InlineLoadingSkeleton ariaLabel = 'Loading signer connection state'/>
+							: signerAvailable.value
+								? <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--primary-color);'>CONNECTED</span>
+								: <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--negative-color);'>NOT CONNECTED</span>
+						}
 					</p>
 					: <></>
 				}
 
-				<ActiveAddressComponent
-					activeAddress = { param.activeAddress }
-					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
-					noCopying = { !param.isInitialHomeDataLoaded.value }
-					noEditAddress = { !param.isInitialHomeDataLoaded.value }
-					changeActiveAddress = { param.changeActiveAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-				{ !param.simulationMode.value ? <>
+				{ isActiveAddressLoading
+					? <ActiveAddressLoadingSkeleton ariaLabel = 'Loading active address'/>
+					: <div class = 'popup-data-reveal'>
+						<ActiveAddressComponent
+							activeAddress = { param.activeAddress }
+							buttonText = { 'Change' }
+							disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
+							noCopying = { !param.isInitialHomeDataLoaded.value }
+							noEditAddress = { !param.isInitialHomeDataLoaded.value }
+							changeActiveAddress = { param.changeActiveAddress }
+							renameAddressCallBack = { param.renameAddressCallBack }
+						/>
+					</div>
+				}
+				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
 					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
 						<div style = 'margin-top: 5px'>
 							<AsyncActionButton
@@ -312,9 +490,11 @@ function FirstCard(param: FirstCardParams) {
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
-				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
+				</> : !param.isFreshHomeDataLoaded.value ?
+					<SimulationControlsLoadingSkeleton/>
+				: <div class = 'popup-simulation-controls popup-data-reveal'>
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
-					<div style ='padding-bottom: 10px'/>
+					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
 						mode = { timeSelectorMode }
@@ -329,7 +509,7 @@ function FirstCard(param: FirstCardParams) {
 			</div>
 		</section>
 
-		<SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/>
+		{ isActiveAddressLoading ? <></> : <SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/> }
 	</>
 }
 
@@ -354,17 +534,14 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 		void waitForClearSimulation(resetSimulation)
 	}
 
-	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
+	return <div class = 'simulation-results-header'>
 		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
 			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
 		</div>
 		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
 				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<OpenInNewIcon/>
-					</span>
-					<span>View stack details</span>
+					<OpenSimulationStackButtonContent/>
 				</button>
 			}
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
@@ -373,12 +550,7 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 					state = { clearSimulationState.value.state }
 					disabled = { param.disableReset.value }
 					onClick = { clearSimulation }
-					text = { <>
-						<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-							<BroomIcon />
-						</span>
-						<span>Clear</span>
-					</> }
+					text = { <ClearSimulationButtonContent/> }
 					pendingText = 'Clearing...'
 				/>
 			}
@@ -429,13 +601,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
-		return <div style = 'display: grid; place-items: center; height: 250px;'>
-			<Spinner height = '3em'/>
-		</div>
+		return <SimulationLoadingSkeleton/>
 	}
 
 	if (currentResults.kind === 'passthrough') {
-		return <div>
+		return <div class = 'popup-data-reveal'>
 			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
@@ -445,7 +615,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	const resolvedResults = currentResults.value
 
-	return <div>
+	return <div class = 'popup-data-reveal'>
 		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 			{ resolvedResults.visualizedSimulationState.success === false ? <>
@@ -552,6 +722,9 @@ export function Home(param: HomeParams) {
 		globalThis.close()
 	}
 
+	if (!param.isInitialHomeDataLoaded.value) {
+		return <HomeLoadingSkeleton/>
+	}
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
@@ -575,6 +748,7 @@ export function Home(param: HomeParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
 			isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }
+			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
 		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
@@ -595,13 +769,11 @@ export function Home(param: HomeParams) {
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
-				: <section class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
-					<Spinner height = '3em'/>
-				</section>
+				: <SimulationLoadingSkeleton/>
 			: <></> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
-			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
+			<div class = 'popup-footer popup-data-reveal' style = 'display: flex; justify-content: center; flex-direction: column;'>
 				<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 					<div class = 'log-cell' style = 'justify-content: left;'>
 						<WebsiteOriginText website = { tabWebsite } />

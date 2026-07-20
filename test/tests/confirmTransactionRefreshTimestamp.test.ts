@@ -149,6 +149,7 @@ async function loadModules() {
 		messageSending,
 		pendingTerminalReplies,
 		terminalReplyDelivery,
+		providerMessageHandlers,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -165,6 +166,7 @@ async function loadModules() {
 		import('../../app/ts/background/messageSending.js'),
 		import('../../app/ts/background/pendingTerminalReplies.js'),
 		import('../../app/ts/background/terminalReplyDelivery.js'),
+		import('../../app/ts/background/providerMessageHandlers.js'),
 	])
 
 	return {
@@ -187,6 +189,7 @@ async function loadModules() {
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
+		signerReply: providerMessageHandlers.signerReply,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
@@ -428,6 +431,14 @@ function createRecordingPort(postedMessages: unknown[]): browser.runtime.Port {
 	}
 }
 
+function createWebsitePort(socket: { readonly tabId: number, readonly connectionName: bigint }, frameId: number, postedMessages: unknown[]): browser.runtime.Port {
+	return {
+		...createRecordingPort(postedMessages),
+		name: `0x${ socket.connectionName.toString(16) }`,
+		sender: { tab: { id: socket.tabId }, frameId },
+	}
+}
+
 async function waitForPendingTransactionsToClear() {
 	const deadline = Date.now() + 2_000
 	while ((await modules.getPendingTransactionsAndMessages()).length > 0) {
@@ -435,6 +446,63 @@ async function waitForPendingTransactionsToClear() {
 		await new Promise((resolve) => setTimeout(resolve, 10))
 	}
 }
+
+test('accepts a signer reply from the current approved child-frame port', async () => {
+	const topSocket = { tabId: 1, connectionName: 40n }
+	const childSocket = { tabId: 1, connectionName: 41n }
+	const childRequestIdentifier = { requestId: 77, requestSocket: childSocket }
+	const topMessages: unknown[] = []
+	const childMessages: unknown[] = []
+	const topPort = createWebsitePort(topSocket, 0, topMessages)
+	const childPort = createWebsitePort(childSocket, 2, childMessages)
+	const websiteOrigin = 'https://example.com'
+	const websiteTabConnections = new Map([[topSocket.tabId, {
+		signerStateOwner: {
+			connectionName: topSocket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {
+			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
+		},
+	}]])
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: childRequestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+		}],
+	})
+
+	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, childPort, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 12,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: pendingTransaction.originalRequestParameters.method,
+				params: pendingTransaction.originalRequestParameters.params,
+				requestId: childRequestIdentifier.requestId,
+			},
+			reply: modules.EthereumBytes32.serialize(signedTransaction.hash),
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 78, requestSocket: childSocket },
+	}, 'hasAccess', activeAddress)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(topMessages.length, 0)
+	const childReply = childMessages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === childRequestIdentifier.requestId)
+	if (!isRecord(childReply)) throw new Error('Missing child-frame signer reply')
+	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
+})
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })

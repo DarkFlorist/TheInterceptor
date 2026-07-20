@@ -110,6 +110,7 @@ export const CAN_DO_EVERYTHING = 0n
 // https://blog.logrocket.com/understanding-resolving-metamask-error-codes/#4001
 export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 export const METAMASK_ERROR_NOT_AUTHORIZED = 4100
+export const METAMASK_ERROR_PROVIDER_DISCONNECTED = 4900
 export const METAMASK_ERROR_FAILED_TO_PARSE_REQUEST = -32700
 export const METAMASK_ERROR_BLANKET_ERROR = -32603
 export const HTTP_STATUS_REQUEST_TIMEOUT = 408
@@ -133,7 +134,7 @@ export const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
 export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'The Interceptor is disabled' } }
 export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: 'Access request pending already.' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
-export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
+export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Interceptor: Not connected to chain' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: -40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
 export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = -40002
 // const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
