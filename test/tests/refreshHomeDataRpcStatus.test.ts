@@ -239,10 +239,19 @@ describe('refreshHomeData', () => {
 				signerAccounts: [signerAccount],
 				activeSigningAddress: signerAccount,
 			})).then(() => {
-				sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
 			})
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
@@ -274,7 +283,7 @@ describe('refreshHomeData', () => {
 	test('home data falls back to signer accounts for active address when activeSigningAddress is unset', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -314,9 +323,22 @@ describe('refreshHomeData', () => {
 				return await new Promise<never>(() => undefined)
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+			},
+		}]])
 
 		try {
-			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 1)
+			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 1)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -329,7 +351,7 @@ describe('refreshHomeData', () => {
 	test('home bootstrap uses mode-aware active address resolution without a simulation snapshot', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, updateTabState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -344,14 +366,28 @@ describe('refreshHomeData', () => {
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
 		})
-		await updateTabState(-1, (previousState) => ({
+		await saveCurrentTabId(1)
+		await updateTabState(1, (previousState) => ({
 			...previousState,
 			signerName: 'MetaMask',
 			signerAccounts: [signerAddress],
 			activeSigningAddress: undefined,
 		}))
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+			},
+		}]])
 
-		await requestHomePageBootstrap(7)
+		await requestHomePageBootstrap(websiteTabConnections, 7)
 
 		const bootstrap = browserMock.sentMessages.findLast((message) => message.method === 'popup_homePageBootstrap')
 		assert.equal(bootstrap?.popupRefreshGeneration, 7)
@@ -360,7 +396,7 @@ describe('refreshHomeData', () => {
 		assert.equal(bootstrap?.data?.visualizedSimulatorState, undefined)
 
 		await browserStorageLocalSet({ simulationMode: true })
-		await requestHomePageBootstrap(8)
+		await requestHomePageBootstrap(websiteTabConnections, 8)
 
 		const simulationBootstrap = browserMock.sentMessages.findLast((message) => message.method === 'popup_homePageBootstrap')
 		assert.equal(simulationBootstrap?.popupRefreshGeneration, 8)
@@ -375,13 +411,46 @@ describe('refreshHomeData', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		try {
-			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 9)
+			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 9)
 		} finally {
 			ethereum.cleanup()
 		}
 
 		const fullHomeData = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
 		assert.equal(fullHomeData?.data?.activeSigningAddressInThisTab, defaultAddress.address)
+	})
+
+	test('home bootstrap hides cached signer addresses without a confirmed signer owner', async () => {
+		const browserMock = installBrowserMock()
+		const modules: TestModules = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, defaultActiveAddresses, defaultRpcs } = modules
+
+		const [defaultAddress] = defaultActiveAddresses
+		if (defaultAddress === undefined) throw new Error('missing default address')
+		const rpcNetwork = defaultRpcs[0]
+		if (rpcNetwork === undefined) throw new Error('missing default rpc')
+		const staleSignerAddress = 0x6666666666666666666666666666666666666666n
+		await browserStorageLocalSet({
+			activeSimulationAddress: defaultAddress.address,
+			openedPageV2: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: false,
+		})
+		await saveCurrentTabId(1)
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			signerName: 'MetaMask',
+			signerAccounts: [staleSignerAddress],
+			activeSigningAddress: staleSignerAddress,
+		}))
+
+		await requestHomePageBootstrap(new Map(), 10)
+
+		const bootstrap = browserMock.sentMessages.findLast((message) => message.method === 'popup_homePageBootstrap')
+		assert.equal(bootstrap?.data?.activeSigningAddressInThisTab, undefined)
+		assert.equal(bootstrap?.data?.settings?.simulationMode, false)
 	})
 
 	test('bootstrap and full home data share the interceptor-disabled state for the current website', async () => {
@@ -415,7 +484,7 @@ describe('refreshHomeData', () => {
 			website,
 		}))
 
-		await requestHomePageBootstrap(10)
+		await requestHomePageBootstrap(new Map(), 11)
 
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
@@ -425,7 +494,7 @@ describe('refreshHomeData', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		try {
-			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 11)
+			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 12)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -491,10 +560,19 @@ describe('refreshHomeData', () => {
 				signerAccounts: [signerAccount],
 				activeSigningAddress: signerAccount,
 			})).then(() => {
-				sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket } })
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
 			})
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},

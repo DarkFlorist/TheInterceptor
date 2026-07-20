@@ -103,6 +103,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
+		...await import('../../app/ts/background/signerStateOwnership.js'),
 	}
 }
 
@@ -323,7 +324,7 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		removeWebsiteTabConnection(websiteTabConnections, socket, port)
+		await removeWebsiteTabConnection(websiteTabConnections, socket, port)
 
 		assert.equal(websiteTabConnections.has(1), false)
 	})
@@ -344,10 +345,99 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		removeWebsiteTabConnection(websiteTabConnections, socket, disconnectedPort)
+		await removeWebsiteTabConnection(websiteTabConnections, socket, disconnectedPort)
 
 		assert.strictEqual(websiteTabConnections.get(1)?.connections[connectionIdentifier]?.port, replacementPort)
-		removeWebsiteTabConnection(websiteTabConnections, socket, replacementPort)
+		await removeWebsiteTabConnection(websiteTabConnections, socket, replacementPort)
 		assert.equal(websiteTabConnections.has(1), false)
+	})
+
+	test('signer owner disconnect releases ownership while sibling connections remain', async () => {
+		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { removeWebsiteTabConnection, websiteSocketToString } = await loadModules()
+
+		const ownerSocket = { tabId: 1, connectionName: 0n }
+		const siblingSocket = { tabId: 1, connectionName: 1n }
+		const ownerPort = createPort(1)
+		const siblingPort = createPort(1)
+		const websiteTabConnections = new Map([
+			[1, {
+				connections: {
+					[websiteSocketToString(ownerSocket)]: { port: ownerPort, socket: ownerSocket, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
+					[websiteSocketToString(siblingSocket)]: { port: siblingPort, socket: siblingSocket, websiteOrigin: 'example.test', approved: false, wantsToConnect: false },
+				},
+				signerStateOwner: {
+					connectionName: ownerSocket.connectionName,
+					confirmed: true,
+					generation: 1,
+					providerGeneration: 1,
+				},
+			}],
+		])
+
+		await removeWebsiteTabConnection(websiteTabConnections, ownerSocket, ownerPort)
+
+		const remainingTabConnection = websiteTabConnections.get(1)
+		assert.equal(remainingTabConnection?.signerStateOwner?.connectionName, undefined)
+		assert.equal(remainingTabConnection?.signerStateOwner?.confirmed, false)
+		assert.strictEqual(remainingTabConnection?.connections[websiteSocketToString(siblingSocket)]?.port, siblingPort)
+	})
+
+	test('BFCache restoration provisionally reclaims signer ownership before the previous page disconnects', async () => {
+		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const {
+			getTabState,
+			registerWebsiteConnectionAndProvisionallyClaimSignerState,
+			removeWebsiteTabConnection,
+			updateTabState,
+			websiteSocketToString,
+		} = await loadModules()
+
+		const restoredSocket = { tabId: 1, connectionName: 10n }
+		const previousPageSocket = { tabId: 1, connectionName: 11n }
+		const staleRestoredPort = createPort(1)
+		const restoredPort = createPort(1)
+		const previousPagePort = createPort(1)
+		const staleAccount = 0x1111111111111111111111111111111111111111n
+		const websiteTabConnections = new Map([
+			[1, {
+				connections: {
+					[websiteSocketToString(restoredSocket)]: { port: staleRestoredPort, socket: restoredSocket, websiteOrigin: 'example.test', approved: true, wantsToConnect: true },
+					[websiteSocketToString(previousPageSocket)]: { port: previousPagePort, socket: previousPageSocket, websiteOrigin: 'example.test', approved: true, wantsToConnect: true },
+				},
+				signerStateOwner: {
+					connectionName: previousPageSocket.connectionName,
+					confirmed: true,
+					generation: 1,
+					providerGeneration: 5,
+				},
+			}],
+		])
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			signerName: 'MetaMask',
+			signerConnected: true,
+			signerAccounts: [staleAccount],
+			signerChain: 1n,
+			activeSigningAddress: staleAccount,
+		}))
+
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(
+			websiteTabConnections,
+			restoredSocket,
+			{ port: restoredPort, socket: restoredSocket, websiteOrigin: 'example.test', approved: true, wantsToConnect: true },
+			true,
+		)
+		await removeWebsiteTabConnection(websiteTabConnections, previousPageSocket, previousPagePort)
+
+		const tabConnection = websiteTabConnections.get(1)
+		assert.equal(tabConnection?.signerStateOwner?.connectionName, restoredSocket.connectionName)
+		assert.equal(tabConnection?.signerStateOwner?.confirmed, false)
+		assert.equal((await getTabState(restoredSocket.tabId)).signerName, 'NoSigner')
+		assert.strictEqual(tabConnection?.connections[websiteSocketToString(restoredSocket)]?.port, restoredPort)
+		const tabState = await getTabState(1)
+		assert.deepEqual(tabState.signerAccounts, [])
+		assert.equal(tabState.signerChain, undefined)
+		assert.equal(tabState.activeSigningAddress, undefined)
 	})
 })
