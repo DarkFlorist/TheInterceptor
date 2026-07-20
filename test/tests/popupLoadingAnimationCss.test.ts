@@ -10,7 +10,14 @@ function getRuleBody(css: string, selector: string) {
 	return css.slice(ruleStart + 1, ruleEnd)
 }
 
-describe('popup loading animation CSS', () => {
+describe('popup loading layout and animation CSS', () => {
+	test('keeps the shared active address layout more specific than the generic log table', async () => {
+		const css = await Bun.file('app/css/interceptor.css').text()
+		const activeAddressRule = getRuleBody(css, '.log-table.active-address-row {')
+
+		assert.match(activeAddressRule, /grid-template-columns:\s*auto max-content/)
+	})
+
 	test('releases reveal transforms after animations so dropdowns keep their stacking behavior', async () => {
 		const css = await Bun.file('app/css/interceptor.css').text()
 		const revealRule = getRuleBody(css, '.popup-data-reveal {')

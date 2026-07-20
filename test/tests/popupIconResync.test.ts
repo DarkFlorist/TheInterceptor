@@ -110,6 +110,14 @@ function hasAriaLabel(node: TestDomNode, label: string): boolean {
 	return (node.childNodes ?? []).some((child) => hasAriaLabel(child, label))
 }
 
+function hasClass(node: TestDomNode | undefined, className: string) {
+	return node?.getAttribute?.('class')?.split(/\s+/).includes(className) === true
+}
+
+function findElementWithClass(node: TestDomNode, tagName: string, className: string) {
+	return collectElements(node, tagName).find((element) => hasClass(element, className))
+}
+
 function isHomeDataRequest(message: unknown, refreshSignerAccounts: boolean, includeWebsiteAccessAddressMetadata: boolean) {
 	return typeof message === 'object'
 		&& message !== null
@@ -273,7 +281,9 @@ describe('popup icon sync', () => {
 			const loadingState = collectElements(dom.document.body, 'section').find((section) => section.getAttribute?.('aria-label') === 'Loading current popup state')
 			assert.notEqual(loadingState, undefined)
 			if (loadingState === undefined) throw new Error('Expected the popup loading placeholder')
-			assert.equal(loadingState.getAttribute?.('class')?.includes('popup-loading-card'), true)
+			assert.equal(hasClass(loadingState, 'popup-home-card'), true)
+			assert.notEqual(findElementWithClass(loadingState, 'header', 'popup-home-header-layout'), undefined)
+			assert.notEqual(findElementWithClass(loadingState, 'div', 'active-address-row'), undefined)
 			assert.equal(collectElements(loadingState, 'svg').length, 0)
 			assert.equal(dom.document.body.textContent?.includes('vitalik.eth'), false)
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulating')), false)
@@ -373,6 +383,10 @@ describe('popup icon sync', () => {
 			assert.equal(collectElements(dom.document.body, 'section').some((section) => section.getAttribute?.('aria-label') === 'Loading current popup state'), false)
 			assert.equal(collectElements(dom.document.body, 'div').some((div) => div.getAttribute?.('aria-label') === 'Loading active address'), false)
 			assert.equal(dom.document.body.textContent?.includes('Loaded Account'), true)
+			const loadedHomeCard = findElementWithClass(dom.document.body, 'section', 'popup-home-card')
+			if (loadedHomeCard === undefined) throw new Error('Expected the loaded Home card')
+			assert.notEqual(findElementWithClass(loadedHomeCard, 'header', 'popup-home-header-layout'), undefined)
+			assert.notEqual(findElementWithClass(loadedHomeCard, 'div', 'active-address-row'), undefined)
 			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
 			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
 			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
@@ -417,7 +431,8 @@ describe('popup icon sync', () => {
 			assert.equal(collectElements(dom.document.body, 'section').some((section) => section.getAttribute?.('aria-label') === 'Loading current popup state'), false)
 			const activeAddressLoading = collectElements(dom.document.body, 'div').find((div) => div.getAttribute?.('aria-label') === 'Loading active address')
 			assert.notEqual(activeAddressLoading, undefined)
-			assert.equal(activeAddressLoading?.getAttribute?.('class')?.includes('popup-loading-skeleton--address'), true)
+			assert.equal(hasClass(activeAddressLoading, 'active-address-row'), true)
+			assert.equal(hasClass(activeAddressLoading, 'popup-loading-address'), true)
 			assert.equal(collectElements(dom.document.body, 'svg').some((svg) => svg.getAttribute?.('class') === 'spinner'), false)
 			assert.equal(dom.document.body.textContent?.includes('No address found'), false)
 			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
@@ -535,6 +550,11 @@ describe('popup icon sync', () => {
 			assert.equal(timePickerDeltaInputAfterHomeData, undefined)
 			assert.equal(hasAriaLabel(dom.document.body, 'Loading simulation controls'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Loading current simulation state'), true)
+			const loadingSimulationControls = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('aria-label') === 'Loading simulation controls')
+			const loadingSimulationState = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('aria-label') === 'Loading current simulation state')
+			assert.equal(hasClass(loadingSimulationControls, 'popup-simulation-controls'), true)
+			assert.notEqual(findElementWithClass(loadingSimulationControls ?? dom.document.body, 'div', 'time-picker-row'), undefined)
+			assert.notEqual(findElementWithClass(loadingSimulationState ?? dom.document.body, 'div', 'simulation-results-header'), undefined)
 
 			await act(() => {
 				listener?.({
@@ -551,6 +571,9 @@ describe('popup icon sync', () => {
 			assert.equal(isButtonDisabled(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number')), false)
 			assert.equal(hasAriaLabel(dom.document.body, 'Loading simulation controls'), false)
 			assert.equal(hasAriaLabel(dom.document.body, 'Loading current simulation state'), false)
+			assert.notEqual(findElementWithClass(dom.document.body, 'div', 'popup-simulation-controls'), undefined)
+			assert.notEqual(findElementWithClass(dom.document.body, 'div', 'time-picker-row'), undefined)
+			assert.notEqual(findElementWithClass(dom.document.body, 'div', 'simulation-results-header'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('tab-2.invalid'), true)
 		} finally {
 			clipboardMock.restore()

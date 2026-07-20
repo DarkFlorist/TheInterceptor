@@ -331,6 +331,7 @@ describe('Home popup clear empty state', () => {
 			const loadingState = [...collectElements(dom.document.body, 'div'), ...collectElements(dom.document.body, 'section')]
 				.find((element) => element.getAttribute?.('aria-label') === 'Loading current simulation state')
 			assert.notEqual(loadingState, undefined)
+			assert.notEqual(collectElements(loadingState, 'div').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('simulation-results-header')), undefined)
 			assert.equal(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
 
@@ -342,6 +343,7 @@ describe('Home popup clear empty state', () => {
 			const resolvedLoadingState = [...collectElements(dom.document.body, 'div'), ...collectElements(dom.document.body, 'section')]
 				.find((element) => element.getAttribute?.('aria-label') === 'Loading current simulation state')
 			assert.equal(resolvedLoadingState, undefined)
+			assert.notEqual(collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('simulation-results-header')), undefined)
 			assert.equal(collectElements(dom.document.body, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), true)
 		} finally {

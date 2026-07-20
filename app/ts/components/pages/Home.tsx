@@ -41,27 +41,105 @@ function scheduleAfterPaint(callback: () => void) {
 	return () => globalThis.clearTimeout(timeout)
 }
 
-type PopupLoadingSkeletonVariant = 'home' | 'address' | 'controls' | 'simulation'
+function HomeHeaderLoadingSkeleton() {
+	return <header aria-hidden = 'true' class = 'px-3 py-2 popup-home-header-layout'>
+		<div>
+			<span class = 'popup-loading-shape popup-loading-home-icon'/>
+		</div>
+		<div>
+			<div class = 'buttons has-addons popup-home-mode-selector popup-loading-mode-selector'>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+			</div>
+		</div>
+		<span class = 'popup-loading-shape popup-loading-rpc-selector'/>
+	</header>
+}
 
-function PopupLoadingSkeleton({ variant, ariaLabel }: { variant: PopupLoadingSkeletonVariant, ariaLabel?: string }) {
+function ActiveAddressLoadingSkeleton({ ariaLabel }: { ariaLabel?: string }) {
 	return <div
 		aria-busy = { ariaLabel === undefined ? undefined : true }
 		aria-hidden = { ariaLabel === undefined ? true : undefined }
 		aria-label = { ariaLabel }
 		role = { ariaLabel === undefined ? undefined : 'status' }
-		class = { `popup-loading-skeleton popup-loading-skeleton--${ variant }` }
+		class = 'log-table active-address-row popup-loading-address'
 	>
-		<span class = 'popup-loading-shape popup-loading-shape--primary'/>
-		<span class = 'popup-loading-shape popup-loading-shape--secondary'/>
-		<span class = 'popup-loading-shape popup-loading-shape--tertiary'/>
-		<span class = 'popup-loading-shape popup-loading-shape--detail'/>
+		<div aria-hidden = 'true' class = 'log-cell' style = 'display: block;'>
+			<figure class = 'multiline-card popup-loading-address-details'>
+				<span class = 'popup-loading-shape popup-loading-address-icon'/>
+				<span class = 'popup-loading-shape popup-loading-address-title'/>
+				<span class = 'popup-loading-shape popup-loading-address-subtitle'/>
+			</figure>
+		</div>
+		<div aria-hidden = 'true' class = 'log-cell'>
+			<div class = 'media-right'>
+				<span class = 'popup-loading-shape popup-loading-action-button'/>
+			</div>
+		</div>
 	</div>
 }
 
 function InlineLoadingSkeleton({ ariaLabel }: { ariaLabel: string }) {
-	return <span aria-busy = 'true' aria-label = { ariaLabel } role = 'status' class = 'popup-loading-inline-skeleton'>
+	return <span aria-busy = 'true' aria-label = { ariaLabel } role = 'status' class = 'popup-home-connection-status popup-loading-inline-skeleton'>
 		<span aria-hidden = 'true' class = 'popup-loading-shape'/>
 	</span>
+}
+
+function SimulationControlsLoadingSkeleton() {
+	return <div aria-busy = 'true' aria-label = 'Loading simulation controls' role = 'status' class = 'popup-simulation-controls popup-loading-controls'>
+		<header aria-hidden = 'true' class = 'card-header popup-loading-rich-list-header'>
+			<span class = 'popup-loading-shape'/>
+		</header>
+		<div aria-hidden = 'true' class = 'popup-simulation-controls-gap'/>
+		<div aria-hidden = 'true'>
+			<div class = 'time-picker-row'>
+				<span class = 'popup-loading-shape popup-loading-time-picker-label'/>
+				<div class = 'time-picker-actions'>
+					<span class = 'popup-loading-shape popup-loading-time-picker-mode'/>
+					<span class = 'popup-loading-shape popup-loading-time-picker-value'/>
+					<span class = 'popup-loading-shape popup-loading-time-picker-commit'/>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+function SimulationLoadingSkeleton() {
+	return <div aria-busy = 'true' aria-label = 'Loading current simulation state' role = 'status' class = 'popup-loading-simulation'>
+		<div aria-hidden = 'true' class = 'simulation-results-header'>
+			<div class = 'log-cell'>
+				<span class = 'popup-loading-shape popup-loading-simulation-title'/>
+			</div>
+			<div class = 'log-cell' style = 'justify-content: right; gap: 6px;'>
+				<span class = 'popup-loading-shape popup-loading-simulation-action'/>
+				<span class = 'popup-loading-shape popup-loading-simulation-action popup-loading-simulation-action--small'/>
+			</div>
+		</div>
+		<section aria-hidden = 'true' class = 'card simulation-summary-card'>
+			<header class = 'card-header'>
+				<div class = 'card-header-icon unset-cursor'>
+					<span class = 'popup-loading-shape popup-loading-simulation-icon'/>
+				</div>
+				<div class = 'card-header-title'>
+					<span class = 'popup-loading-shape popup-loading-simulation-card-title'/>
+				</div>
+			</header>
+			<div class = 'card-content popup-loading-simulation-content'>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+			</div>
+		</section>
+	</div>
+}
+
+function HomeLoadingSkeleton() {
+	return <section aria-busy = 'true' aria-label = 'Loading current popup state' role = 'status' class = 'card popup-home-card'>
+		<HomeHeaderLoadingSkeleton/>
+		<div class = 'card-content'>
+			<ActiveAddressLoadingSkeleton/>
+		</div>
+	</section>
 }
 
 type SignerExplanationParams = {
@@ -102,14 +180,14 @@ function FirstCardHeader(param: FirstCardParams) {
 	}
 
 	return <>
-		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
+		<header class = 'px-3 py-2 popup-home-header-layout'>
 			<div>
 				<ToolTip content = { tabIconReason }>
 					<img class = 'noselect nopointer' src = { param.tabIconDetails.value.icon } width = '48' height = '48' style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
 			<div>
-				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
+				<div class = 'buttons has-addons popup-home-mode-selector'>
 					<AsyncActionButton
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
@@ -288,7 +366,7 @@ function FirstCard(param: FirstCardParams) {
 
 	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
 		return <>
-			<section class = 'card popup-data-reveal' style = 'margin: 10px;'>
+			<section class = 'card popup-home-card popup-data-reveal'>
 				<FirstCardHeader { ...param }/>
 				<div class = 'card-content'>
 					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
@@ -298,7 +376,7 @@ function FirstCard(param: FirstCardParams) {
 	}
 
 	return <>
-		<section class = 'card popup-data-reveal' style = 'margin: 10px;'>
+		<section class = 'card popup-home-card popup-data-reveal'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
@@ -307,15 +385,15 @@ function FirstCard(param: FirstCardParams) {
 						{ isActiveAddressLoading
 							? <InlineLoadingSkeleton ariaLabel = 'Loading signer connection state'/>
 							: signerAvailable.value
-								? <span class = 'popup-data-reveal-inline' style = 'float: right; color: var(--primary-color);'>CONNECTED</span>
-								: <span class = 'popup-data-reveal-inline' style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span>
+								? <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--primary-color);'>CONNECTED</span>
+								: <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--negative-color);'>NOT CONNECTED</span>
 						}
 					</p>
 					: <></>
 				}
 
 				{ isActiveAddressLoading
-					? <PopupLoadingSkeleton variant = 'address' ariaLabel = 'Loading active address'/>
+					? <ActiveAddressLoadingSkeleton ariaLabel = 'Loading active address'/>
 					: <div class = 'popup-data-reveal'>
 						<ActiveAddressComponent
 							activeAddress = { param.activeAddress }
@@ -346,10 +424,10 @@ function FirstCard(param: FirstCardParams) {
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
 					}
 				</> : !param.isFreshHomeDataLoaded.value ?
-					<PopupLoadingSkeleton variant = 'controls' ariaLabel = 'Loading simulation controls'/>
-				: <div class = 'popup-data-reveal' style = 'justify-content: space-between; padding-top: 10px;'>
+					<SimulationControlsLoadingSkeleton/>
+				: <div class = 'popup-simulation-controls popup-data-reveal'>
 					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
-					<div style ='padding-bottom: 10px'/>
+					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
 						mode = { timeSelectorMode }
@@ -389,7 +467,7 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 		void waitForClearSimulation(resetSimulation)
 	}
 
-	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
+	return <div class = 'simulation-results-header'>
 		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
 			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
 		</div>
@@ -464,7 +542,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
-		return <PopupLoadingSkeleton variant = 'simulation' ariaLabel = 'Loading current simulation state'/>
+		return <SimulationLoadingSkeleton/>
 	}
 
 	if (currentResults.kind === 'passthrough') {
@@ -586,9 +664,7 @@ export function Home(param: HomeParams) {
 	}
 
 	if (!param.isInitialHomeDataLoaded.value) {
-		return <section aria-busy = 'true' aria-label = 'Loading current popup state' role = 'status' class = 'card popup-loading-card'>
-			<PopupLoadingSkeleton variant = 'home'/>
-		</section>
+		return <HomeLoadingSkeleton/>
 	}
 	if (param.rpcNetwork.value === undefined) return <></>
 
@@ -634,9 +710,7 @@ export function Home(param: HomeParams) {
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
-				: <section aria-busy = 'true' aria-label = 'Loading current simulation state' role = 'status' class = 'card popup-loading-card popup-loading-card--simulation'>
-					<PopupLoadingSkeleton variant = 'simulation'/>
-				</section>
+				: <SimulationLoadingSkeleton/>
 			: <></> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
