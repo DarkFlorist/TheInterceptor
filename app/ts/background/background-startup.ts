@@ -32,6 +32,8 @@ import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminal
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
+import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -136,14 +138,14 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+	const isTopFrame = port.sender.frameId === undefined || port.sender.frameId === 0
 
 	const listenersRegistered = tryRegisterContentScriptPortListeners(
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
-				removeWebsiteTabConnection(websiteTabConnections, socket, port)
+				await removeWebsiteTabConnection(websiteTabConnections, socket, port)
 			})
 		},
 		(payload) => {
@@ -181,10 +183,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	)
 	if (!listenersRegistered) return
 
-	if (tabConnection === undefined) {
-		websiteTabConnections.set(socket.tabId, {
-			connections: { [identifier]: newConnection },
-		})
+	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
+	if (registration.createdTabConnection) {
 		await updateTabState(socket.tabId, (previousState: TabState) => {
 			return modifyObject(previousState, {
 				website: { websiteOrigin, icon: undefined, title: undefined },
@@ -192,8 +192,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 			})
 		})
 		void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
-	} else {
-		tabConnection.connections[identifier] = newConnection
+	}
+	if (registration.provisionallyClaimedSignerState) {
+		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 	}
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
