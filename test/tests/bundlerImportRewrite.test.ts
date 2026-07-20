@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
+import * as ts from 'typescript'
 import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, isBrowserIncompatibleRuntimeModule, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
 
 const repositoryRoot = process.cwd()
@@ -70,6 +71,26 @@ describe('bundler import rewriting', () => {
 			replaceImport(filePath, source),
 			'const dynamicModule = import("../../vendor/webextension-polyfill/dist/browser-polyfill.js"); const requiredModule = require("../../vendor/webextension-polyfill/dist/browser-polyfill.js");',
 		)
+	})
+
+	test('rewrites escaped static and dynamic import specifiers without corrupting surrounding syntax', () => {
+		const filePath = path.join(repositoryRoot, 'app', 'js', 'background', 'background-startup.js')
+		const cases = [
+			{
+				source: 'import"webextension-poly\\u0066ill";',
+				expected: 'import"../../vendor/webextension-polyfill/dist/browser-polyfill.js";',
+			},
+			{
+				source: 'const dynamicModule = import("webextension-poly\\u0066ill").then(useModule);',
+				expected: 'const dynamicModule = import("../../vendor/webextension-polyfill/dist/browser-polyfill.js").then(useModule);',
+			},
+		]
+
+		for (const { source, expected } of cases) {
+			const rewritten = replaceImport(filePath, source)
+			assert.equal(rewritten, expected)
+			assert.equal(ts.createSourceFile('runtime.js', rewritten, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS).parseDiagnostics.length, 0)
+		}
 	})
 
 	test('flags viem barrel entrypoints as browser-incompatible runtime modules', () => {
