@@ -25,6 +25,8 @@ import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import type { ComponentChildren, JSX } from 'preact'
+import { DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -41,6 +43,58 @@ function scheduleAfterPaint(callback: () => void) {
 	return () => globalThis.clearTimeout(timeout)
 }
 
+type LoadingControlProps = {
+	class: string
+	children: ComponentChildren
+	style?: JSX.CSSProperties | string
+}
+
+function LoadingControl({ class: className, children, style }: LoadingControlProps) {
+	return <button type = 'button' disabled = { true } tabIndex = { -1 } class = { `${ className } popup-loading-shape popup-loading-control` } style = { style }>
+		<span class = 'popup-loading-control-content'>{ children }</span>
+	</button>
+}
+
+function LoadingInput() {
+	return <input
+		aria-hidden = 'true'
+		class = 'input popup-loading-shape popup-loading-control popup-loading-input'
+		disabled = { true }
+		tabIndex = { -1 }
+		style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;'
+		type = 'number'
+		value = ''
+	/>
+}
+
+function LoadingDropdownControl({ label }: { label: string }) {
+	return <div class = 'dropdown'>
+		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
+			<LoadingControl class = 'btn btn--outline is-small' style = { { width: '100%' } }>
+				<DropDownMenuButtonContent label = { label }/>
+			</LoadingControl>
+		</div>
+	</div>
+}
+
+function OpenSimulationStackButtonContent() {
+	return <>
+		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+			<OpenInNewIcon/>
+		</span>
+		<span>View stack details</span>
+	</>
+}
+
+function ClearSimulationButtonContent() {
+	return <>
+		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+			<BroomIcon />
+		</span>
+		<span>Clear</span>
+	</>
+}
+
 function HomeHeaderLoadingSkeleton() {
 	return <header aria-hidden = 'true' class = 'px-3 py-2 popup-home-header-layout'>
 		<div>
@@ -48,11 +102,15 @@ function HomeHeaderLoadingSkeleton() {
 		</div>
 		<div>
 			<div class = 'buttons has-addons popup-home-mode-selector popup-loading-mode-selector'>
-				<span class = 'popup-loading-shape'/>
-				<span class = 'popup-loading-shape'/>
+				<LoadingControl class = 'button is-primary'>Simulating</LoadingControl>
+				<LoadingControl class = 'button is-primary'>
+					<SignerLogoText signerName = 'NoSignerDetected' text = 'Signing' reserveLogoSpace = { true } />
+				</LoadingControl>
 			</div>
 		</div>
-		<span class = 'popup-loading-shape popup-loading-rpc-selector'/>
+		<div class = 'popup-home-rpc-selector'>
+			<LoadingDropdownControl label = 'No RPC Selected'/>
+		</div>
 	</header>
 }
 
@@ -73,7 +131,7 @@ function ActiveAddressLoadingSkeleton({ ariaLabel }: { ariaLabel?: string }) {
 		</div>
 		<div aria-hidden = 'true' class = 'log-cell'>
 			<div class = 'media-right'>
-				<span class = 'popup-loading-shape popup-loading-action-button'/>
+				<LoadingControl class = 'button is-primary'>Change</LoadingControl>
 			</div>
 		</div>
 	</div>
@@ -95,9 +153,12 @@ function SimulationControlsLoadingSkeleton() {
 			<div class = 'time-picker-row'>
 				<span class = 'popup-loading-shape popup-loading-time-picker-label'/>
 				<div class = 'time-picker-actions'>
-					<span class = 'popup-loading-shape popup-loading-time-picker-mode'/>
-					<span class = 'popup-loading-shape popup-loading-time-picker-value'/>
-					<span class = 'popup-loading-shape popup-loading-time-picker-commit'/>
+					<LoadingDropdownControl label = 'For'/>
+					<div>
+						<LoadingInput/>
+						<LoadingDropdownControl label = 'Seconds'/>
+					</div>
+					<LoadingControl class = 'btn is-small is-primary'>Commit</LoadingControl>
 				</div>
 			</div>
 		</div>
@@ -111,8 +172,12 @@ function SimulationLoadingSkeleton() {
 				<span class = 'popup-loading-shape popup-loading-simulation-title'/>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right; gap: 6px;'>
-				<span class = 'popup-loading-shape popup-loading-simulation-action'/>
-				<span class = 'popup-loading-shape popup-loading-simulation-action popup-loading-simulation-action--small'/>
+				<LoadingControl class = 'btn btn--outline is-small'>
+					<OpenSimulationStackButtonContent/>
+				</LoadingControl>
+				<LoadingControl class = 'btn is-small is-danger'>
+					<ClearSimulationButtonContent/>
+				</LoadingControl>
 			</div>
 		</div>
 		<section aria-hidden = 'true' class = 'card simulation-summary-card'>
@@ -212,7 +277,9 @@ function FirstCardHeader(param: FirstCardParams) {
 					/>
 				</div>
 			</div>
-			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
+			<div class = 'popup-home-rpc-selector'>
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
+			</div>
 		</header>
 	</>
 }
@@ -474,10 +541,7 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
 				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<OpenInNewIcon/>
-					</span>
-					<span>View stack details</span>
+					<OpenSimulationStackButtonContent/>
 				</button>
 			}
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
@@ -486,12 +550,7 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 					state = { clearSimulationState.value.state }
 					disabled = { param.disableReset.value }
 					onClick = { clearSimulation }
-					text = { <>
-						<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-							<BroomIcon />
-						</span>
-						<span>Clear</span>
-					</> }
+					text = { <ClearSimulationButtonContent/> }
 					pendingText = 'Clearing...'
 				/>
 			}

@@ -18,6 +18,20 @@ describe('popup loading layout and animation CSS', () => {
 		assert.match(activeAddressRule, /grid-template-columns:\s*auto max-content/)
 	})
 
+	test('sizes loading controls from their real content instead of fixed button dimensions', async () => {
+		const css = await Bun.file('app/css/interceptor.css').text()
+		const loadingControlRule = getRuleBody(css, '.popup-loading-control {')
+		const loadingInputRule = getRuleBody(css, '.input.popup-loading-input {')
+		const rpcSlotRule = getRuleBody(css, '.popup-home-rpc-selector {')
+
+		assert.match(loadingControlRule, /position:\s*relative/)
+		assert.doesNotMatch(loadingControlRule, /\b(?:height|width):/)
+		assert.match(loadingInputRule, /-webkit-text-fill-color:\s*transparent/)
+		assert.match(loadingInputRule, /color:\s*transparent/)
+		assert.match(rpcSlotRule, /width:\s*9rem/)
+		assert.doesNotMatch(css, /popup-loading-(?:action-button|rpc-selector|simulation-action|time-picker-(?:mode|value|commit))/)
+	})
+
 	test('releases reveal transforms after animations so dropdowns keep their stacking behavior', async () => {
 		const css = await Bun.file('app/css/interceptor.css').text()
 		const revealRule = getRuleBody(css, '.popup-data-reveal {')

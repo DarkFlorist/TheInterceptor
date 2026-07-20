@@ -879,6 +879,16 @@ svg.spinner > circle {
 	padding: 1px;
 }
 
+.popup-home-rpc-selector {
+	min-width: 0;
+	width: 9rem;
+}
+
+.popup-home-rpc-selector > .dropdown,
+.popup-home-rpc-selector > .dropdown > .dropdown-trigger {
+	width: 100%;
+}
+
 .log-table.active-address-row {
 	grid-template-columns: auto max-content;
 }
@@ -931,6 +941,37 @@ svg.spinner > circle {
 	display: block;
 }
 
+.popup-loading-control {
+	pointer-events: none;
+	position: relative;
+}
+
+.button.popup-loading-control,
+.btn.popup-loading-control,
+.input.popup-loading-control {
+	border-radius: 4px;
+}
+
+.button.popup-loading-control,
+.input.popup-loading-control {
+	display: inline-flex;
+}
+
+.btn.popup-loading-control {
+	display: flex;
+}
+
+.popup-loading-control-content {
+	align-items: inherit;
+	display: inline-flex;
+	visibility: hidden;
+}
+
+.input.popup-loading-input {
+	-webkit-text-fill-color: transparent;
+	color: transparent;
+}
+
 .popup-loading-home-icon {
 	border-radius: 14px;
 	height: 48px;
@@ -941,16 +982,9 @@ svg.spinner > circle {
 	pointer-events: none;
 }
 
-.popup-loading-mode-selector .popup-loading-shape {
-	border-radius: 4px;
-	height: 2.5em;
-	width: 94px;
-}
-
-.popup-loading-rpc-selector {
-	border-radius: 4px;
-	height: 1.8rem;
-	width: 100px;
+.popup-loading-mode-selector .button {
+	border-color: transparent;
+	margin-bottom: 0;
 }
 
 .popup-loading-address {
@@ -982,12 +1016,6 @@ svg.spinner > circle {
 	width: 14rem;
 }
 
-.popup-loading-action-button {
-	border-radius: 4px;
-	height: 2.5em;
-	width: 72px;
-}
-
 .popup-loading-inline-skeleton {
 	display: inline-grid;
 	height: 1em;
@@ -1017,25 +1045,6 @@ svg.spinner > circle {
 	width: 8.5rem;
 }
 
-.popup-loading-time-picker-mode,
-.popup-loading-time-picker-value,
-.popup-loading-time-picker-commit {
-	border-radius: 4px;
-	height: 1.8rem;
-}
-
-.popup-loading-time-picker-mode {
-	width: 58px;
-}
-
-.popup-loading-time-picker-value {
-	width: 106px;
-}
-
-.popup-loading-time-picker-commit {
-	width: 54px;
-}
-
 .popup-loading-simulation {
 	min-height: 250px;
 }
@@ -1043,16 +1052,6 @@ svg.spinner > circle {
 .popup-loading-simulation-title {
 	height: 1rem;
 	width: 8rem;
-}
-
-.popup-loading-simulation-action {
-	border-radius: 4px;
-	height: 1.8rem;
-	width: 8rem;
-}
-
-.popup-loading-simulation-action--small {
-	width: 4rem;
 }
 
 .popup-loading-simulation-icon {
