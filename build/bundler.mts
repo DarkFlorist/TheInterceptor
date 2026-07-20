@@ -250,29 +250,28 @@ function resolvePackageSpecifierFromNodeModules(specifier: string, baseFilePath:
 	return undefined
 }
 
-function getModuleSpecifierOccurrences(filePath: string, text: string): readonly ModuleSpecifierOccurrence[] {
-	const sourceFile = ts.createSourceFile(filePath, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS)
-	const occurrences: ModuleSpecifierOccurrence[] = []
-	const addOccurrence = (moduleSpecifier: ts.StringLiteralLike) => occurrences.push({
-		start: moduleSpecifier.getStart(sourceFile),
-		end: moduleSpecifier.getEnd(),
-		specifier: moduleSpecifier.text,
-	})
-
+function getModuleSpecifierOccurrences(text: string): readonly ModuleSpecifierOccurrence[] {
+	const occurrences = ts.preProcessFile(text, true, false).importedFiles
+		.map((importedFile): ModuleSpecifierOccurrence => ({
+			start: importedFile.pos + 1,
+			end: importedFile.end + 1,
+			specifier: importedFile.fileName,
+		}))
+	if (!/\brequire\s*\(/u.test(text)) return occurrences
+	const sourceFile = ts.createSourceFile('runtime.js', text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS)
 	const visit = (node: ts.Node) => {
-		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined && ts.isStringLiteralLike(node.moduleSpecifier)) {
-			addOccurrence(node.moduleSpecifier)
-		}
-		if (ts.isCallExpression(node)) {
+		if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require') {
 			const [firstArgument] = node.arguments
 			if (firstArgument !== undefined && ts.isStringLiteralLike(firstArgument)) {
-				if (node.expression.kind === ts.SyntaxKind.ImportKeyword) addOccurrence(firstArgument)
-				if (ts.isIdentifier(node.expression) && node.expression.text === 'require') addOccurrence(firstArgument)
+				occurrences.push({
+					start: firstArgument.getStart(sourceFile) + 1,
+					end: firstArgument.getEnd() - 1,
+					specifier: firstArgument.text,
+				})
 			}
 		}
 		ts.forEachChild(node, visit)
 	}
-
 	visit(sourceFile)
 	return occurrences.sort((left, right) => left.start - right.start)
 }
@@ -323,37 +322,17 @@ function getRewrittenRelativeImportPath(filePath: string, specifier: string) {
 	return vendoredImportPath === specifier ? undefined : vendoredImportPath
 }
 
-function getBareImportIssues(filePath: string, text: string): BareImportIssue[] {
-	return getModuleSpecifierOccurrences(filePath, text)
-		.filter(({ specifier }) => isBareSpecifier(specifier))
-		.map(({ specifier }) => ({ filePath, specifier }))
-}
-
 export function replaceImport(filePath: string, text: string) {
 	let replaced = text
-	const occurrences = getModuleSpecifierOccurrences(filePath, text)
+	const occurrences = getModuleSpecifierOccurrences(text)
 	for (let index = occurrences.length - 1; index >= 0; index--) {
 		const occurrence = occurrences[index]
 		if (occurrence === undefined) continue
-		const vendoredImportPath = getVendoredImportPath(filePath, occurrence.specifier) ?? getRewrittenRelativeImportPath(filePath, occurrence.specifier)
-		if (vendoredImportPath === undefined) continue
-		const quote = text[occurrence.start]
-		replaced = `${ replaced.slice(0, occurrence.start) }${ quote }${ vendoredImportPath }${ quote }${ replaced.slice(occurrence.end) }`
+		const rewrittenImportPath = getVendoredImportPath(filePath, occurrence.specifier) ?? getRewrittenRelativeImportPath(filePath, occurrence.specifier)
+		if (rewrittenImportPath === undefined) continue
+		replaced = `${ replaced.slice(0, occurrence.start) }${ rewrittenImportPath }${ replaced.slice(occurrence.end) }`
 	}
 	return replaced
-}
-
-function getFiles(topDir: string): string[] {
-	const filePaths: string[] = []
-	for (const dir of fs.readdirSync(topDir, { withFileTypes: true })) {
-		const resolvedPath = path.resolve(topDir, dir.name)
-		if (dir.isDirectory()) {
-			filePaths.push(...getFiles(resolvedPath))
-			continue
-		}
-		filePaths.push(resolvedPath)
-	}
-	return filePaths
 }
 
 function ensureDirectoryExists(dir: string) {
@@ -402,7 +381,6 @@ async function bundleChromeRuntimeEntrypoints() {
 		target: 'browser',
 		format: 'esm',
 		splitting: false,
-		sourcemap: 'external',
 		external: [...externalRuntimeModules],
 	})
 	if (!buildResult.success) {
@@ -411,12 +389,10 @@ async function bundleChromeRuntimeEntrypoints() {
 	for (const entrypointPath of existingEntrypoints) {
 		const relativeEntrypointPath = path.relative(appDirectory, entrypointPath)
 		const bundledEntrypointPath = path.join(bundledOutputDirectory, relativeEntrypointPath)
-		const bundledEntrypointMapPath = `${ bundledEntrypointPath }.map`
 		if (!fs.existsSync(bundledEntrypointPath)) {
 			throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
 		}
 		fs.copyFileSync(bundledEntrypointPath, entrypointPath)
-		if (fs.existsSync(bundledEntrypointMapPath)) fs.copyFileSync(bundledEntrypointMapPath, `${ entrypointPath }.map`)
 	}
 	fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 }
@@ -448,9 +424,11 @@ function formatMissingRuntimeImportIssues(missingRuntimeImportIssues: readonly M
 		.join('\n')
 }
 
-function collectRuntimeDependencyGraph() {
+function collectRuntimeDependencyGraph(rewriteImports = false) {
 	const visited = new Set<string>()
 	const missingRuntimeImportIssues = new Map<string, MissingRuntimeImportIssue>()
+	const bareImportIssues: BareImportIssue[] = []
+	const forbiddenRuntimeModuleIssues: ForbiddenRuntimeModuleIssue[] = []
 	const runtimeEntryFiles = getExistingRuntimeEntrypointPaths()
 	const pendingFiles = [...runtimeEntryFiles]
 	while (pendingFiles.length > 0) {
@@ -458,32 +436,48 @@ function collectRuntimeDependencyGraph() {
 		if (filePath === undefined || visited.has(filePath)) continue
 		visited.add(filePath)
 		const text = fs.readFileSync(filePath, 'utf8')
-		for (const occurrence of getModuleSpecifierOccurrences(filePath, text)) {
-			if (!occurrence.specifier.startsWith('.') && !occurrence.specifier.startsWith('/')) continue
-			const importedFilePath = resolveRuntimeImportedFilePath(filePath, occurrence.specifier)
+		const occurrences = getModuleSpecifierOccurrences(text)
+		let rewrittenText = text
+		for (let index = occurrences.length - 1; index >= 0; index--) {
+			const occurrence = occurrences[index]
+			if (occurrence === undefined) continue
+			const rewrittenSpecifier = rewriteImports
+				? getVendoredImportPath(filePath, occurrence.specifier) ?? getRewrittenRelativeImportPath(filePath, occurrence.specifier) ?? occurrence.specifier
+				: occurrence.specifier
+			if (rewriteImports && rewrittenSpecifier !== occurrence.specifier) {
+				rewrittenText = `${ rewrittenText.slice(0, occurrence.start) }${ rewrittenSpecifier }${ rewrittenText.slice(occurrence.end) }`
+			}
+			if (isBareSpecifier(rewrittenSpecifier)) {
+				bareImportIssues.push({ filePath, specifier: rewrittenSpecifier })
+				continue
+			}
+			if (!rewrittenSpecifier.startsWith('.') && !rewrittenSpecifier.startsWith('/')) continue
+			const importedFilePath = resolveRuntimeImportedFilePath(filePath, rewrittenSpecifier)
 			if (importedFilePath === undefined) {
-				const issueKey = `${ filePath }\0${ occurrence.specifier }`
+				const issueKey = `${ filePath }\0${ rewrittenSpecifier }`
 				if (!missingRuntimeImportIssues.has(issueKey)) {
-					missingRuntimeImportIssues.set(issueKey, { filePath, specifier: occurrence.specifier })
+					missingRuntimeImportIssues.set(issueKey, { filePath, specifier: rewrittenSpecifier })
 				}
 				continue
 			}
 			pendingFiles.push(importedFilePath)
 		}
+		if (rewriteImports) {
+			const runtimeText = stripSourceMappingUrlComment(rewrittenText)
+			if (runtimeText !== text) fs.writeFileSync(filePath, runtimeText)
+		}
+		if (isBrowserIncompatibleRuntimeModule(filePath)) forbiddenRuntimeModuleIssues.push({ filePath })
 	}
 	return {
 		files: [...visited],
 		missingRuntimeImportIssues: [...missingRuntimeImportIssues.values()],
+		bareImportIssues,
+		forbiddenRuntimeModuleIssues,
 	}
 }
 
 export function findBareImportsInRuntimeFiles() {
-	const bareImportIssues: BareImportIssue[] = []
-	for (const filePath of collectRuntimeDependencyGraph().files) {
-		const text = fs.readFileSync(filePath, 'utf8')
-		bareImportIssues.push(...getBareImportIssues(filePath, text))
-	}
-	return bareImportIssues
+	return collectRuntimeDependencyGraph().bareImportIssues
 }
 
 export function findMissingRuntimeImportsInRuntimeFiles() {
@@ -501,9 +495,7 @@ function formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues: readon
 }
 
 export function findForbiddenRuntimeModulesInRuntimeFiles() {
-	return collectRuntimeDependencyGraph().files
-		.filter(isBrowserIncompatibleRuntimeModule)
-		.map((filePath) => ({ filePath }))
+	return collectRuntimeDependencyGraph().forbiddenRuntimeModuleIssues
 }
 
 export function shouldKeepRuntimeOutputFile(filePath: string, reachableRuntimeFiles: ReadonlySet<string>) {
@@ -517,23 +509,35 @@ export function findMissingRequiredImportedRuntimeAssets(reachableRuntimeFiles: 
 		.filter((requiredAssetPath) => !reachableRuntimeFiles.has(requiredAssetPath))
 }
 
-function removeEmptyChildDirectories(directoryPath: string) {
-	for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
-		if (!entry.isDirectory()) continue
-		const childDirectoryPath = path.join(directoryPath, entry.name)
-		removeEmptyChildDirectories(childDirectoryPath)
-		if (fs.readdirSync(childDirectoryPath).length === 0) fs.rmdirSync(childDirectoryPath)
-	}
-}
-
 function pruneRuntimeOutputFiles(reachableRuntimeFiles: ReadonlySet<string>) {
+	const filesToKeep = new Set([...reachableRuntimeFiles, ...requiredRuntimeAssetPaths])
+	const directoriesToKeep = new Set<string>()
+	for (const keptPath of [...filesToKeep, addressMetadataImagesDirectory]) {
+		let currentDirectoryPath = path.dirname(keptPath)
+		while (isInsideDirectory(currentDirectoryPath, appDirectory)) {
+			directoriesToKeep.add(currentDirectoryPath)
+			if (currentDirectoryPath === appDirectory) break
+			currentDirectoryPath = path.dirname(currentDirectoryPath)
+		}
+	}
+	const pruneDirectory = (directoryPath: string) => {
+		for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+			const entryPath = path.join(directoryPath, entry.name)
+			if (entry.isDirectory()) {
+				if (entryPath === addressMetadataImagesDirectory) continue
+				if (!directoriesToKeep.has(entryPath)) {
+					fs.rmSync(entryPath, { recursive: true, force: true })
+					continue
+				}
+				pruneDirectory(entryPath)
+				continue
+			}
+			if (!filesToKeep.has(entryPath)) fs.rmSync(entryPath, { force: true })
+		}
+	}
 	for (const folder of getRuntimeFiles()) {
 		if (!fs.existsSync(folder)) continue
-		for (const filePath of getFiles(folder)) {
-			if (shouldKeepRuntimeOutputFile(filePath, reachableRuntimeFiles)) continue
-			fs.rmSync(filePath, { force: true })
-		}
-		removeEmptyChildDirectories(folder)
+		pruneDirectory(folder)
 	}
 }
 
@@ -541,34 +545,13 @@ export function stripSourceMappingUrlComment(text: string) {
 	return text.replace(/(?:\r?\n)?\/\/# sourceMappingURL=.*(?:\r?\n)?$/u, '\n')
 }
 
-function stripSourceMappingUrlCommentsInRuntimeFiles() {
-	for (const folder of getRuntimeFiles()) {
-		if (!fs.existsSync(folder)) continue
-		for (const filePath of getFiles(folder)) {
-			if (path.extname(filePath) !== '.js' && path.extname(filePath) !== '.mjs') continue
-			const text = fs.readFileSync(filePath, 'utf8')
-			const stripped = stripSourceMappingUrlComment(text)
-			if (stripped !== text) fs.writeFileSync(filePath, stripped)
-		}
-	}
-}
-
 export async function replaceImportsInJSFiles() {
 	await bundleChromeRuntimeEntrypoints()
-	for (const folder of getRuntimeFiles()) {
-		ensureDirectoryExists(folder)
-		for (const filePath of getFiles(folder)) {
-			if (path.extname(filePath) !== '.js' && path.extname(filePath) !== '.mjs') continue
-			const replaced = replaceImport(filePath, fs.readFileSync(filePath, 'utf8'))
-			fs.writeFileSync(filePath, replaced)
-		}
-	}
-	const runtimeDependencyGraph = collectRuntimeDependencyGraph()
+	for (const folder of getRuntimeFiles()) ensureDirectoryExists(folder)
+	const runtimeDependencyGraph = collectRuntimeDependencyGraph(true)
 	const missingRuntimeImportIssues = runtimeDependencyGraph.missingRuntimeImportIssues
-	const bareImportIssues = runtimeDependencyGraph.files.flatMap((filePath) => getBareImportIssues(filePath, fs.readFileSync(filePath, 'utf8')))
-	const forbiddenRuntimeModuleIssues = runtimeDependencyGraph.files
-		.filter(isBrowserIncompatibleRuntimeModule)
-		.map((filePath) => ({ filePath }))
+	const bareImportIssues = runtimeDependencyGraph.bareImportIssues
+	const forbiddenRuntimeModuleIssues = runtimeDependencyGraph.forbiddenRuntimeModuleIssues
 	const reachableRuntimeFiles = new Set(runtimeDependencyGraph.files)
 	const missingRequiredImportedRuntimeAssets = findMissingRequiredImportedRuntimeAssets(reachableRuntimeFiles)
 	if (missingRuntimeImportIssues.length > 0) {
@@ -584,7 +567,6 @@ export async function replaceImportsInJSFiles() {
 		throw new Error(`Required runtime assets were bundled inline or left unreachable after bundling:\n${ missingRequiredImportedRuntimeAssets.join('\n') }\nEnsure vendored runtime-only modules remain listed in Bun.build external.`)
 	}
 	pruneRuntimeOutputFiles(reachableRuntimeFiles)
-	stripSourceMappingUrlCommentsInRuntimeFiles()
 }
 
 if (import.meta.main) {

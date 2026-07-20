@@ -55,6 +55,23 @@ describe('bundler import rewriting', () => {
 		assert.equal(rewritten, source)
 	})
 
+	test('does not rewrite AMD dependency array entries as module imports', () => {
+		const filePath = path.join(repositoryRoot, 'app', 'vendor', 'webextension-polyfill', 'dist', 'browser-polyfill.js')
+		const source = 'define("webextension-polyfill", ["module"], factory);'
+
+		assert.equal(replaceImport(filePath, source), source)
+	})
+
+	test('rewrites dynamic imports and require calls', () => {
+		const filePath = path.join(repositoryRoot, 'app', 'js', 'background', 'background-startup.js')
+		const source = 'const dynamicModule = import("webextension-polyfill"); const requiredModule = require("webextension-polyfill");'
+
+		assert.equal(
+			replaceImport(filePath, source),
+			'const dynamicModule = import("../../vendor/webextension-polyfill/dist/browser-polyfill.js"); const requiredModule = require("../../vendor/webextension-polyfill/dist/browser-polyfill.js");',
+		)
+	})
+
 	test('flags viem barrel entrypoints as browser-incompatible runtime modules', () => {
 		assert.equal(
 			isBrowserIncompatibleRuntimeModule(path.join(repositoryRoot, 'app', 'vendor', 'viem', '_esm', 'utils', 'index.js')),
