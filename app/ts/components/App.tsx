@@ -2,12 +2,10 @@ import { useEffect } from 'preact/hooks'
 import type { JSX } from 'preact'
 import type { ModifyAddressWindowState, EditEnsNamedHashWindowState } from '../types/visualizer-types.js'
 import { Home } from './pages/Home.js'
-import type { TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { getAddress, isAddress } from '../utils/viem.js'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
-import { METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -15,8 +13,7 @@ import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
-import { ErrorBoundary, ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
-import { SignersLogoName } from './subcomponents/signers.js'
+import { ErrorBoundary, UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
@@ -25,18 +22,8 @@ import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListPa
 import { createUnexpectedErrorPopupMessage } from '../utils/unexpectedErrorPopupMessage.js'
 import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
+import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
-
-type ProviderErrorsParam = {
-	tabState: Signal<TabState | undefined>
-}
-
-function ProviderErrors({ tabState } : ProviderErrorsParam) {
-	if (tabState.value === undefined || tabState.value.signerAccountError === undefined) return <></>
-	if (tabState.value.signerAccountError.code === METAMASK_ERROR_USER_REJECTED_REQUEST) return <ErrorComponent warning = { true } text = { <>Could not get an account from <SignersLogoName signerName = { tabState.value.signerName } /> as user denied the request.</> }/>
-	if (tabState.value.signerAccountError.code === METAMASK_ERROR_ALREADY_PENDING.error.code) return <ErrorComponent warning = { true } text = { <>There's a connection request pending on <SignersLogoName signerName = { tabState.value.signerName } />. Please review the request.</> }/>
-	return <ErrorComponent warning = { true } text = { <><SignersLogoName signerName = { tabState.value.signerName } /> returned error: "{ tabState.value.signerAccountError.message }".</> }/>
-}
 
 type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' | 'Unknown' }
 	| { page: 'EditEnsNamedHash', state: EditEnsNamedHashWindowState }
@@ -109,6 +96,7 @@ export function App() {
 		rpcNetwork,
 		tabIconDetails,
 		isSettingsLoaded,
+		isFreshHomeDataLoaded,
 		currentBlockNumber,
 		tabState,
 		rpcConnectionStatus,
@@ -346,6 +334,7 @@ export function App() {
 						fixedAddressRichList = { fixedAddressRichList }
 						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
 						isInitialHomeDataLoaded = { isSettingsLoaded }
+						isFreshHomeDataLoaded = { isFreshHomeDataLoaded }
 					/>
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>

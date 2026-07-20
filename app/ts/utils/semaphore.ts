@@ -157,3 +157,31 @@ export class Semaphore {
 		}
 	}
 }
+
+type SerialExecutionLock = {
+	readonly semaphore: Semaphore
+	operations: number
+}
+
+export function createScopedKeyedSerialExecutor<Scope extends object, Key>() {
+	const scopedLocks = new WeakMap<Scope, Map<Key, SerialExecutionLock>>()
+	return async <T>(scope: Scope, key: Key, operation: () => Promise<T>): Promise<T> => {
+		let locks = scopedLocks.get(scope)
+		if (locks === undefined) {
+			locks = new Map()
+			scopedLocks.set(scope, locks)
+		}
+		let lock = locks.get(key)
+		if (lock === undefined) {
+			lock = { semaphore: new Semaphore(1), operations: 0 }
+			locks.set(key, lock)
+		}
+		lock.operations += 1
+		try {
+			return await lock.semaphore.execute(operation)
+		} finally {
+			lock.operations -= 1
+			if (lock.operations === 0 && locks.get(key) === lock) locks.delete(key)
+		}
+	}
+}

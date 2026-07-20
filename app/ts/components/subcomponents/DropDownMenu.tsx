@@ -11,6 +11,13 @@ type DropDownMenuParams<OptionType> = {
 	disabled?: boolean
 }
 
+export function DropDownMenuButtonContent({ label }: { label: string }) {
+	return <>
+		<span class = 'truncate' style = { { contain: 'content' } }>{ label }</span>
+		<span class = 'dropdown-chevron'><ChevronIcon /></span>
+	</>
+}
+
 export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, disabled = false }: DropDownMenuParams<OptionType>) => {
 	const isOpen = useSignal(false)
 	const ref = useRef<HTMLDivElement>(null)
@@ -30,8 +37,7 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
 			<button class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
-				<span class = 'truncate' style = { { contain: 'content' } }>{ selected.value }</span>
-				<span class = 'dropdown-chevron'><ChevronIcon /></span>
+				<DropDownMenuButtonContent label = { selected.value }/>
 			</button>
 		</div>
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>
