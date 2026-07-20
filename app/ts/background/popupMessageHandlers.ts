@@ -63,6 +63,11 @@ const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? '
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
 const importSimulationStackFailure = (message: string): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: false, message })
 
+function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
+	if (websiteOrigin === undefined) return false
+	return settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+}
+
 async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: WebsiteTabConnections, tabId: number | undefined, tabState: TabState, shouldRefreshSignerAccounts: boolean) {
 	if (!shouldRefreshSignerAccounts || tabId === undefined) return tabState
 	if (tabState.signerAccounts.length !== 0) return tabState
@@ -555,6 +560,32 @@ export async function requestNewHomeData(
 	await sendPopupMessageToOpenWindows(updatedPage)
 }
 
+export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTabConnections, popupRefreshGeneration: number) {
+	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
+	const tabId = await getLastKnownCurrentTabId()
+	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
+	const settings = await settingsPromise
+	const tabState = await tabStatePromise
+	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
+	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
+
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_homePageBootstrap',
+		popupRefreshGeneration,
+		data: {
+			activeAddresses: await activeAddressesPromise,
+			tabState,
+			settings,
+			activeSigningAddressInThisTab: activeSigningAddress,
+			tabId,
+			rpcEntries: await rpcEntriesPromise,
+			interceptorDisabled,
+		},
+	})
+}
+
 export async function refreshHomeData(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -1012,12 +1043,12 @@ async function buildHomePageUpdate(
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
-	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
+	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	const richData = await richDataPromise
 	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
 	return {
 		method: 'popup_UpdateHomePage' as const,
+		homeDataSource: richDataSource,
 		popupRefreshGeneration: popupRefreshGeneration,
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,

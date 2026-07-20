@@ -7,6 +7,7 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
+import type { TabState } from '../types/user-interface-types.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -23,13 +24,15 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 }
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
-	const activeAddress = await getActiveAddress(settings, tabId)
-	if (activeAddress !== undefined) return activeAddress
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return undefined
 	const tabState = await getTabState(tabId)
-	const firstSigner = tabState.signerAccounts[0]
-	if (firstSigner === undefined) return undefined
-	return await getActiveAddressEntry(firstSigner)
+	const address = getActiveOrFirstSignerAddressFromTabState(settings, tabState)
+	if (address === undefined) return undefined
+	return await getActiveAddressEntry(address)
+}
+
+export function getActiveOrFirstSignerAddressFromTabState(settings: Settings, tabState: TabState) {
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return settings.activeSimulationAddress
+	return tabState.activeSigningAddress ?? tabState.signerAccounts[0]
 }
 
 export async function getActiveAddressesForAllTabs(settings: Settings) {

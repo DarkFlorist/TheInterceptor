@@ -96,6 +96,7 @@ export function App() {
 		rpcNetwork,
 		tabIconDetails,
 		isSettingsLoaded,
+		isFreshHomeDataLoaded,
 		currentBlockNumber,
 		tabState,
 		rpcConnectionStatus,
@@ -333,6 +334,7 @@ export function App() {
 						fixedAddressRichList = { fixedAddressRichList }
 						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
 						isInitialHomeDataLoaded = { isSettingsLoaded }
+						isFreshHomeDataLoaded = { isFreshHomeDataLoaded }
 					/>
 
 					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
