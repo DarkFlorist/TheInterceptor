@@ -5,7 +5,7 @@ import { identifyAddress } from '../background/metadataUtils.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type EnrichedGroupedSolidityType, type PureFlatGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, SolidityType, type SolidityVariable } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
-import type { AbiParameter } from 'viem'
+import type { AbiParameter } from './ethereumPrimitives.js'
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {

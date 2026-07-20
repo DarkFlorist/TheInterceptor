@@ -1,4 +1,4 @@
-import type { Abi } from 'viem'
+import type { Abi } from './ethereumPrimitives.js'
 import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'

@@ -1,12 +1,13 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { encodeAbiParameters, encodeFunctionResult, hexToBytes } from 'viem'
 import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
-import { addressString, stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -332,15 +333,11 @@ describe('Gnosis Safe stack simulation', () => {
 						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
 						aggregate3BlockStateCallCount = callCount
 
-						const aggregate3ReturnData = encodeFunctionResult({
-							abi: Multicall3ABI,
-							functionName: 'aggregate3',
-							result: [{
-								success: true,
-								returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
-							}],
-						})
-						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
+						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
+							success: true,
+							returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+						}]])
+						return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
 					}
 					default:
 						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
@@ -523,7 +520,7 @@ describe('Gnosis Safe stack simulation', () => {
 							&& 'to' in lastCall
 							&& lastCall.to === 0x1ce438391307f908756fefe0fe220c0f0d51508an
 						if (isGetCodeCall) {
-							return makeEthSimulateBlocks(callCount, hexToBytes(encodeAbiParameters([{ type: 'bytes' }], ['0x6000'])))
+							return makeEthSimulateBlocks(callCount, stringToUint8Array(encodeAbiParameters([{ type: 'bytes' }], ['0x6000'])))
 						}
 						const isAggregate3BalanceCall = typeof lastCall === 'object'
 							&& lastCall !== null
@@ -531,15 +528,11 @@ describe('Gnosis Safe stack simulation', () => {
 							&& lastCall.to === MULTICALL3
 						if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
 
-						const aggregate3ReturnData = encodeFunctionResult({
-							abi: Multicall3ABI,
-							functionName: 'aggregate3',
-							result: [{
-								success: true,
-								returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
-							}],
-						})
-						return makeEthSimulateBlocks(callCount, hexToBytes(aggregate3ReturnData))
+						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
+							success: true,
+							returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+						}]])
+						return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
 					}
 					default:
 						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)

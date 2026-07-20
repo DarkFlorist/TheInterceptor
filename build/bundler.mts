@@ -32,10 +32,6 @@ type MissingRuntimeImportIssue = {
 	specifier: string
 }
 
-type ForbiddenRuntimeModuleIssue = {
-	filePath: string
-}
-
 type RuntimeImportProcessor = (filePath: string, text: string, occurrences: readonly ModuleSpecifierOccurrence[]) => readonly string[]
 
 type PackageJson = {
@@ -59,11 +55,6 @@ const isInsideDirectory = (candidatePath: string, directoryPath: string) => {
 	const relativePath = path.relative(directoryPath, candidatePath)
 	return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
-const forbiddenRuntimeModules = new Set([
-	path.join(vendorDirectory, 'viem', '_esm', 'utils', 'index.js'),
-	path.join(vendorDirectory, 'viem', '_esm', 'ens', 'index.js'),
-	path.join(vendorDirectory, 'viem', '_esm', 'accounts', 'index.js'),
-])
 const requiredRuntimeAssetPaths = new Set([
 	path.join(vendorDirectory, 'webextension-polyfill', 'dist', 'browser-polyfill.js'),
 ])
@@ -392,7 +383,7 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-	path.join(appDirectory, 'js', 'utils', 'viem.js'),
+	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
 function getExistingRuntimeEntrypointPaths() {
@@ -459,7 +450,6 @@ function traverseRuntimeDependencyGraph(processImports: RuntimeImportProcessor) 
 	const visited = new Set<string>()
 	const missingRuntimeImportIssues = new Map<string, MissingRuntimeImportIssue>()
 	const bareImportIssues: BareImportIssue[] = []
-	const forbiddenRuntimeModuleIssues: ForbiddenRuntimeModuleIssue[] = []
 	const runtimeEntryFiles = getExistingRuntimeEntrypointPaths()
 	const pendingFiles = [...runtimeEntryFiles]
 	while (pendingFiles.length > 0) {
@@ -484,13 +474,11 @@ function traverseRuntimeDependencyGraph(processImports: RuntimeImportProcessor) 
 			}
 			pendingFiles.push(importedFilePath)
 		}
-		if (isBrowserIncompatibleRuntimeModule(filePath)) forbiddenRuntimeModuleIssues.push({ filePath })
 	}
 	return {
 		files: [...visited],
 		missingRuntimeImportIssues: [...missingRuntimeImportIssues.values()],
 		bareImportIssues,
-		forbiddenRuntimeModuleIssues,
 	}
 }
 
@@ -513,20 +501,6 @@ export function findBareImportsInRuntimeFiles() {
 
 export function findMissingRuntimeImportsInRuntimeFiles() {
 	return collectRuntimeDependencyGraph().missingRuntimeImportIssues
-}
-
-export function isBrowserIncompatibleRuntimeModule(filePath: string) {
-	return forbiddenRuntimeModules.has(filePath)
-}
-
-function formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues: readonly ForbiddenRuntimeModuleIssue[]) {
-	return forbiddenRuntimeModuleIssues
-		.map(({ filePath }) => `${ path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/') }: do not import the viem barrel entrypoint in MV3 runtime code`)
-		.join('\n')
-}
-
-export function findForbiddenRuntimeModulesInRuntimeFiles() {
-	return collectRuntimeDependencyGraph().forbiddenRuntimeModuleIssues
 }
 
 export function shouldKeepRuntimeOutputFile(filePath: string, reachableRuntimeFiles: ReadonlySet<string>) {
@@ -581,7 +555,6 @@ export async function replaceImportsInJSFiles() {
 	const runtimeDependencyGraph = rewriteRuntimeImportsAndCollectDependencyGraph()
 	const missingRuntimeImportIssues = runtimeDependencyGraph.missingRuntimeImportIssues
 	const bareImportIssues = runtimeDependencyGraph.bareImportIssues
-	const forbiddenRuntimeModuleIssues = runtimeDependencyGraph.forbiddenRuntimeModuleIssues
 	const reachableRuntimeFiles = new Set(runtimeDependencyGraph.files)
 	const missingRequiredImportedRuntimeAssets = findMissingRequiredImportedRuntimeAssets(reachableRuntimeFiles)
 	if (missingRuntimeImportIssues.length > 0) {
@@ -589,9 +562,6 @@ export async function replaceImportsInJSFiles() {
 	}
 	if (bareImportIssues.length > 0) {
 		throw new Error(`Unresolved bare module specifiers remain after bundling:\n${ formatBareImportIssues(bareImportIssues) }`)
-	}
-	if (forbiddenRuntimeModuleIssues.length > 0) {
-		throw new Error(`Browser-incompatible runtime modules remain after bundling:\n${ formatForbiddenRuntimeModuleIssues(forbiddenRuntimeModuleIssues) }`)
 	}
 	if (missingRequiredImportedRuntimeAssets.length > 0) {
 		throw new Error(`Required runtime assets were bundled inline or left unreachable after bundling:\n${ missingRequiredImportedRuntimeAssets.join('\n') }\nEnsure vendored runtime-only modules remain listed in Bun.build external.`)

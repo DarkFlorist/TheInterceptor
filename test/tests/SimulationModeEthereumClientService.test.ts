@@ -1,12 +1,11 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { recoverAddress } from 'viem'
-import { keccak256 } from 'viem/utils'
+import { keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
-import { EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
+import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
@@ -14,6 +13,7 @@ import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
+import { d2ArrayFixed } from './data/eip712Data.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -344,6 +344,107 @@ describe('SimulationModeEthereumClientService', () => {
 				},
 			})
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
+		})
+
+		test('simulatePersonalSign signs fixed-array EIP-712 messages with the local Ethereum primitive signature', async () => {
+			const signingAddress = EthereumAddress.parse('0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf')
+			assert.deepStrictEqual(
+				await simulatePersonalSign({
+					method: 'eth_signTypedData_v4',
+					params: [signingAddress, JSON.parse(d2ArrayFixed)],
+				}, signingAddress),
+				{
+					messageHash: '0x0581bbcb9d6c92c0c6c4f81e5893f79e39fa4df2b706ef9f4019b58c4f03ddc7',
+					signature: '0xf7ca21e850390d92d5b4c0f674eab809fff955910bde1f07a80bbd7c13b5528d03f348f459edc126b8721218c5f9074088cdfac420233d5c30dabaea5f8f31cb1c',
+				},
+			)
+		})
+
+		test('simulatePersonalSign rejects malformed EIP-712 messages with missing string fields', async () => {
+			const signingAddress = EthereumAddress.parse('0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf')
+			await assert.rejects(
+				simulatePersonalSign({
+					method: 'eth_signTypedData_v4',
+					params: [signingAddress, {
+						domain: {
+							name: 'Ether Mail',
+							version: '1',
+							chainId: 1,
+							verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+						},
+						types: {
+							Mail: [{ name: 'contents', type: 'string' }],
+						},
+						primaryType: 'Mail',
+						message: {},
+					}],
+				}, signingAddress),
+				/Missing EIP-712 value for Mail\.contents/u,
+			)
+		})
+
+		test('simulatePersonalSign matches reference primitive coercion for malformed but accepted EIP-712 values', async () => {
+			const signingAddress = EthereumAddress.parse('0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf')
+			assert.deepStrictEqual(
+				await simulatePersonalSign({
+					method: 'eth_signTypedData_v4',
+					params: [signingAddress, {
+						domain: {
+							name: 'Primitive Coercion',
+							version: '1',
+							chainId: 1,
+							verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+						},
+						types: {
+							Weird: [
+								{ name: 'numericText', type: 'string' },
+								{ name: 'booleanText', type: 'string' },
+								{ name: 'payload', type: 'bytes' },
+							],
+						},
+						primaryType: 'Weird',
+						message: {
+							numericText: 123,
+							booleanText: false,
+							payload: 'abc',
+						},
+					}],
+				}, signingAddress),
+				{
+					messageHash: '0x1a5961e55544fd296fa56bf3b3a2f44f9d3d8c382537240e670f5fadf0fb97e4',
+					signature: '0x878b751710ce2ef85acdfd5f65ffc7b6a0bfe2881e2a7038c729ba29bb299f8135023f386885dd7ef72a67fe84fd4fa08f8548a22a727c27ed169eb407bccaf81b',
+				},
+			)
+		})
+
+		test('simulatePersonalSign hashes hex-looking EIP-712 strings as UTF-8 strings', async () => {
+			const signingAddress = EthereumAddress.parse('0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf')
+			assert.deepStrictEqual(
+				await simulatePersonalSign({
+					method: 'eth_signTypedData_v4',
+					params: [signingAddress, {
+						domain: {
+							name: 'Hex String',
+							version: '1',
+							chainId: 1,
+							verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+						},
+						types: {
+							Message: [
+								{ name: 'text', type: 'string' },
+							],
+						},
+						primaryType: 'Message',
+						message: {
+							text: '0x1234',
+						},
+					}],
+				}, signingAddress),
+				{
+					messageHash: '0x42f5f2d4ed7271ca48bcf4aeebb8ccccc373da3857717b52f1c4950434133830',
+					signature: '0x68f4ff205ffa91140515b9bf35a540b6fac7b298f8b0910bc5ead6c24bedfce441792802329733e10610aa314e93239ddb9985739fcd3794867968e7aafdddd11c',
+				},
+			)
 		})
 
 		test('typed transaction v values 0x0 and 0x1 normalize to parity', async () => {

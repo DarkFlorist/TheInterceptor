@@ -4,8 +4,8 @@ import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlo
 import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
-import type { Abi } from 'viem'
-import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/viem.js'
+import type { Abi } from '../../utils/ethereumPrimitives.js'
+import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -1702,7 +1702,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData = decodeFunctionOutput(Multicall3ABI, 'aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))
 	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
-	return multicallReturnData.map((singleCallResult, callIndex) => {
+	return multicallReturnData.map((singleCallResult: { readonly success: boolean, readonly returnData: `0x${ string }` }, callIndex: number) => {
 		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
 		return {

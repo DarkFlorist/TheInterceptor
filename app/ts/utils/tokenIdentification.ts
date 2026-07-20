@@ -1,4 +1,4 @@
-import type { Abi } from 'viem'
+import type { Abi } from './ethereumPrimitives.js'
 import { Erc20ABI, Erc721ABI } from './abi.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
