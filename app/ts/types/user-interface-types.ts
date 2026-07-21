@@ -12,7 +12,7 @@ import type { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import type { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 import type { ReadonlySignal, Signal } from '@preact/signals'
-import { SimulationStackVersion } from './JsonRpc-types.js'
+import { SimulationStackVersion, WalletWatchAssetParameters } from './JsonRpc-types.js'
 import type { EnrichedRichListElement } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 
@@ -214,14 +214,21 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 })
 
-export type PendingWatchAssetRequest = funtypes.Static<typeof PendingWatchAssetRequest>
-export const PendingWatchAssetRequest = funtypes.ReadonlyObject({
+const WatchAssetRequestDetails = funtypes.ReadonlyObject({
 	website: Website,
-	popupOrTabId: PopupOrTabId,
 	request: InterceptedRequest,
+	requestedAsset: WalletWatchAssetParameters,
 	token: Erc20TokenEntry,
 	canForward: funtypes.Boolean,
 })
+export type StoredWatchAssetRequest = funtypes.Static<typeof StoredWatchAssetRequest>
+export const StoredWatchAssetRequest = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({
+	popupOrTabId: funtypes.Union(PopupOrTabId, funtypes.Undefined),
+}))
+export type PendingWatchAssetRequest = funtypes.Static<typeof PendingWatchAssetRequest>
+export const PendingWatchAssetRequest = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({
+	popupOrTabId: PopupOrTabId,
+}))
 
 export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof PendingFetchSimulationStackRequestPromise>
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({

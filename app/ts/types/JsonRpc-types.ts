@@ -347,17 +347,19 @@ const ChecksummedWatchAssetAddress = funtypes.String.withConstraint((value) => {
 	parse: value => ({ success: true, value: BigInt(value) }),
 	serialize: value => ({ success: true, value: checksummedAddress(value) }),
 })
+export type WalletWatchAssetParameters = funtypes.Static<typeof WalletWatchAssetParameters>
+export const WalletWatchAssetParameters = funtypes.ReadonlyObject({
+	type: funtypes.String,
+	options: funtypes.ReadonlyObject({ address: ChecksummedWatchAssetAddress }).And(funtypes.Partial({
+		chainId: funtypes.Number,
+		symbol: funtypes.String,
+		decimals: funtypes.Number,
+		image: funtypes.String,
+	})),
+})
 export const WalletWatchAsset = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_watchAsset'),
-	params: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({
-		type: funtypes.String,
-		options: funtypes.ReadonlyObject({ address: ChecksummedWatchAssetAddress }).And(funtypes.Partial({
-			chainId: funtypes.Number,
-			symbol: funtypes.String,
-			decimals: funtypes.Number,
-			image: funtypes.String,
-		})),
-	})),
+	params: funtypes.ReadonlyTuple(WalletWatchAssetParameters),
 })
 
 type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>

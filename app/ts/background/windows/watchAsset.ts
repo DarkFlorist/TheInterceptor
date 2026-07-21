@@ -1,33 +1,44 @@
-import { Future } from '../../utils/future.js'
 import type { WalletWatchAsset } from '../../types/JsonRpc-types.js'
 import type { WatchAssetConfirmation } from '../../types/interceptor-messages.js'
-import type { PendingWatchAssetRequest } from '../../types/user-interface-types.js'
+import type { PendingWatchAssetRequest, StoredWatchAssetRequest, WebsiteTabConnections } from '../../types/user-interface-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import type { InterceptedRequest } from '../../utils/requests.js'
+import type { InterceptedRequest, UniqueRequestIdentifier } from '../../utils/requests.js'
 import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
-import { updateUserAddressBookEntries } from '../storageVariables.js'
+import { getPendingWatchAssetRequests, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
+import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc20TokenEntry } from '../../types/addressBookTypes.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
-import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { sendCallbackToConfirmedSignerOwner } from '../signerStateOwnership.js'
-import { getConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { getConfirmedSignerStateToken, sendCallbackToConfirmedSignerOwner } from '../signerStateOwnership.js'
 import { checksummedAddress } from '../../utils/bigint.js'
-
-type WatchAssetAction = WatchAssetConfirmation['data']['action']
-
-let pendingConfirmation: Future<WatchAssetAction> | undefined
-let pendingRequest: PendingWatchAssetRequest | undefined
-let openedDialog: PopupOrTab | undefined
+import { Semaphore } from '../../utils/semaphore.js'
 
 const invalidWatchAssetRequest = (message: string) => ({
 	type: 'result' as const,
 	method: 'wallet_watchAsset' as const,
 	error: { code: -32602, message },
 })
+
+export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
+export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
+
+function watchAssetQueueIdentity(request: StoredWatchAssetRequest) {
+	return `${ request.website.websiteOrigin }|${ request.token.chainId ?? 1n }|${ request.requestedAsset.type }|${ request.requestedAsset.options.address }`
+}
+
+export function enqueueStoredWatchAssetRequest(requests: readonly StoredWatchAssetRequest[], request: StoredWatchAssetRequest) {
+	if (requests.some((pending) => watchAssetQueueIdentity(pending) === watchAssetQueueIdentity(request))) return requests
+	if (requests.length >= MAX_PENDING_WATCH_ASSET_REQUESTS) return requests
+	const pendingFromOrigin = requests.filter((pending) => pending.website.websiteOrigin === request.website.websiteOrigin).length
+	if (pendingFromOrigin >= MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN) return requests
+	return [...requests, request]
+}
+
+function requestsMatch(request: StoredWatchAssetRequest, identifier: UniqueRequestIdentifier) {
+	return doesUniqueRequestIdentifiersMatch(request.request.uniqueRequestIdentifier, identifier)
+}
 
 export function validateWatchAssetParameters(params: WalletWatchAsset, currentChainId: bigint) {
 	const [{ type, options }] = params.params
@@ -59,84 +70,171 @@ export function replaceAddressBookEntryWithVerifiedToken(entries: AddressBookEnt
 	})
 }
 
-export async function updateWatchAssetViewWithPendingRequest() {
-	if (pendingRequest !== undefined) await sendPopupMessageToOpenWindows({ method: 'popup_WatchAssetRequest', data: pendingRequest })
+function toPendingRequest(request: StoredWatchAssetRequest): PendingWatchAssetRequest | undefined {
+	if (request.popupOrTabId === undefined) return undefined
+	return { ...request, popupOrTabId: request.popupOrTabId }
 }
 
-let forwardPendingWatchAsset: (() => boolean) | undefined
+function canForwardRequest(websiteTabConnections: WebsiteTabConnections, request: StoredWatchAssetRequest) {
+	return getConfirmedSignerStateToken(websiteTabConnections, request.request.uniqueRequestIdentifier.requestSocket.tabId) !== undefined
+}
 
-export async function resolveWatchAsset(confirmation: WatchAssetConfirmation) {
-	if (pendingRequest === undefined || pendingConfirmation === undefined) return
-	if (!doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, pendingRequest.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in watch asset dialog')
-	if (confirmation.data.action === 'forward') {
-		if (forwardPendingWatchAsset?.() === true) {
-			pendingConfirmation.resolve('forward')
+async function publishWatchAssetRequest(request: StoredWatchAssetRequest) {
+	const pending = toPendingRequest(request)
+	if (pending !== undefined) await sendPopupMessageToOpenWindows({ method: 'popup_WatchAssetRequest', data: pending })
+}
+
+export async function updateWatchAssetViewWithPendingRequest(websiteTabConnections?: WebsiteTabConnections) {
+	const [first] = await getPendingWatchAssetRequests()
+	if (first === undefined || first.popupOrTabId === undefined) return undefined
+	const canForward = websiteTabConnections === undefined ? first.canForward : canForwardRequest(websiteTabConnections, first)
+	const request = canForward === first.canForward
+		? first
+		: (await updatePendingWatchAssetRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, canForward } : stored)))[0]
+	if (request === undefined) return undefined
+	await publishWatchAssetRequest(request)
+	return toPendingRequest(request)
+}
+
+type QueueProcessingDependencies = {
+	getRequests: typeof getPendingWatchAssetRequests
+	updateRequests: typeof updatePendingWatchAssetRequests
+	openDialog: () => Promise<PopupOrTabId | undefined>
+	dialogExists: (popupOrTabId: PopupOrTabId) => Promise<boolean>
+	closeDialog: typeof closePopupOrTabById
+	publish: typeof publishWatchAssetRequest
+}
+
+const defaultQueueProcessingDependencies: QueueProcessingDependencies = {
+	getRequests: getPendingWatchAssetRequests,
+	updateRequests: updatePendingWatchAssetRequests,
+	openDialog: async () => {
+		const opened = await openPopupOrTab({ url: getHtmlFile('watchAsset'), type: 'popup', height: 720, width: 600 })
+		return opened === undefined ? undefined : { type: opened.type, id: opened.id }
+	},
+	dialogExists: async (popupOrTabId) => await getPopupOrTabById(popupOrTabId) !== undefined,
+	closeDialog: closePopupOrTabById,
+	publish: publishWatchAssetRequest,
+}
+
+const queueProcessingSemaphore = new Semaphore(1)
+export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabConnections | undefined, dependencies: QueueProcessingDependencies = defaultQueueProcessingDependencies) {
+	await queueProcessingSemaphore.execute(async () => {
+		while (true) {
+			const [first] = await dependencies.getRequests()
+			if (first === undefined) return
+			if (first.popupOrTabId !== undefined) {
+				if (await dependencies.dialogExists(first.popupOrTabId)) {
+					const [current] = await dependencies.getRequests()
+					if (current === undefined || !requestsMatch(current, first.request.uniqueRequestIdentifier)) continue
+					const canForward = websiteTabConnections === undefined ? current.canForward : canForwardRequest(websiteTabConnections, current)
+					const active = canForward === current.canForward
+						? current
+						: (await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, current.request.uniqueRequestIdentifier) ? { ...stored, canForward } : stored)))[0]
+					if (active !== undefined) await dependencies.publish(active)
+					return
+				}
+				await dependencies.updateRequests((requests) => requests.filter((stored) => !requestsMatch(stored, first.request.uniqueRequestIdentifier)))
+				continue
+			}
+			const popupOrTabId = await dependencies.openDialog()
+			if (popupOrTabId === undefined) {
+				return
+			}
+			const canForward = websiteTabConnections === undefined ? false : canForwardRequest(websiteTabConnections, first)
+			const [active] = await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, popupOrTabId, canForward } : stored))
+			if (active === undefined || !requestsMatch(active, first.request.uniqueRequestIdentifier)) {
+				await dependencies.closeDialog(popupOrTabId)
+				continue
+			}
+			await dependencies.publish(active)
 			return
 		}
-		pendingRequest = { ...pendingRequest, canForward: false }
-		await updateWatchAssetViewWithPendingRequest()
-		return
-	}
-	pendingConfirmation.resolve(confirmation.data.action)
+	})
 }
 
-async function showWatchAssetDialog(
-	websiteTabConnections: WebsiteTabConnections,
-	request: InterceptedRequest,
-	website: Website,
-	params: WalletWatchAsset,
-	token: Erc20TokenEntry,
-) {
-	if (pendingConfirmation !== undefined || openedDialog !== undefined) return
-	pendingConfirmation = new Future<WatchAssetAction>()
-	const closedWhileOpening = new Set<string>()
-	const popupOrTabKey = (popupOrTab: PopupOrTabId) => `${ popupOrTab.type }-${ popupOrTab.id }`
-	const reject = () => pendingConfirmation?.resolve('reject')
-	const onCloseWindow = (id: number) => {
-		const closed = { type: 'popup' as const, id }
-		if (openedDialog === undefined) closedWhileOpening.add(popupOrTabKey(closed))
-		else if (openedDialog.type === closed.type && openedDialog.id === id) reject()
-	}
-	const onCloseTab = (id: number) => {
-		const closed = { type: 'tab' as const, id }
-		if (openedDialog === undefined) closedWhileOpening.add(popupOrTabKey(closed))
-		else if (openedDialog.type === closed.type && openedDialog.id === id) reject()
-	}
-	addWindowTabListeners(onCloseWindow, onCloseTab)
+type ResolutionDependencies = {
+	getRequests: typeof getPendingWatchAssetRequests
+	updateRequests: typeof updatePendingWatchAssetRequests
+	updateAddressBook: typeof updateUserAddressBookEntries
+	publishAddressBookChanged: () => Promise<void>
+	publish: typeof publishWatchAssetRequest
+	closeDialog: typeof closePopupOrTabById
+	processQueue: (websiteTabConnections: WebsiteTabConnections) => Promise<void>
+	sendToSigner: (request: StoredWatchAssetRequest) => boolean
+}
 
-	try {
-		openedDialog = await openPopupOrTab({ url: getHtmlFile('watchAsset'), type: 'popup', height: 720, width: 600 })
-		if (openedDialog === undefined || closedWhileOpening.has(popupOrTabKey(openedDialog))) return
-		const signerParameters = {
-			...params.params[0],
-			options: { ...params.params[0].options, address: checksummedAddress(params.params[0].options.address) },
-		}
-		forwardPendingWatchAsset = () => sendCallbackToConfirmedSignerOwner(
+function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
+	return {
+		getRequests: getPendingWatchAssetRequests,
+		updateRequests: updatePendingWatchAssetRequests,
+		updateAddressBook: updateUserAddressBookEntries,
+		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
+		publish: publishWatchAssetRequest,
+		closeDialog: closePopupOrTabById,
+		processQueue: async (connections) => await processWatchAssetQueue(connections),
+		sendToSigner: (request) => sendCallbackToConfirmedSignerOwner(
 			websiteTabConnections,
-			request.uniqueRequestIdentifier.requestSocket.tabId,
-			{ method: 'request_signer_to_wallet_watchAsset', result: signerParameters },
-		) !== false
-		pendingRequest = {
-			website,
-			popupOrTabId: openedDialog,
-			request,
-			token,
-			canForward: getConfirmedSignerStateToken(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId) !== undefined,
-		}
-		await updateWatchAssetViewWithPendingRequest()
-		const action = await pendingConfirmation
-		if (action === 'add') {
-			await updateUserAddressBookEntries((entries) => replaceAddressBookEntryWithVerifiedToken(entries, token))
-			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-		}
-	} finally {
-		removeWindowTabListeners(onCloseWindow, onCloseTab)
-		pendingConfirmation = undefined
-		pendingRequest = undefined
-		forwardPendingWatchAsset = undefined
-		if (openedDialog !== undefined) await closePopupOrTabById(openedDialog)
-		openedDialog = undefined
+			request.request.uniqueRequestIdentifier.requestSocket.tabId,
+			{
+				method: 'request_signer_to_wallet_watchAsset',
+				result: {
+					...request.requestedAsset,
+					options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) },
+				},
+			},
+		) !== false,
 	}
+}
+
+let resolutionInProgress = false
+export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies = defaultResolutionDependencies(websiteTabConnections)) {
+	if (resolutionInProgress) return
+	resolutionInProgress = true
+	try {
+		const requests = await dependencies.getRequests()
+		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
+		if (request === undefined || request.popupOrTabId === undefined) return
+		if (confirmation.data.action === 'forward' && dependencies.sendToSigner(request) === false) {
+			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier) ? { ...stored, canForward: false } : stored))
+			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
+			if (stillPending !== undefined) await dependencies.publish(stillPending)
+			return
+		}
+		if (confirmation.data.action === 'add') {
+			await dependencies.updateAddressBook((entries) => replaceAddressBookEntryWithVerifiedToken(entries, request.token))
+			await dependencies.publishAddressBookChanged()
+		}
+		await dependencies.updateRequests((storedRequests) => storedRequests.filter((stored) => !requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)))
+		await dependencies.closeDialog(request.popupOrTabId)
+		await dependencies.processQueue(websiteTabConnections)
+	} finally {
+		resolutionInProgress = false
+	}
+}
+
+async function dismissWatchAssetDialog(popupOrTabId: PopupOrTabId) {
+	let removed = false
+	await updatePendingWatchAssetRequests((requests) => requests.filter((request) => {
+		const matches = request.popupOrTabId?.type === popupOrTabId.type && request.popupOrTabId.id === popupOrTabId.id
+		if (matches) removed = true
+		return !matches
+	}))
+	if (removed) await processWatchAssetQueue(undefined)
+}
+
+let windowListenersInitialized = false
+export function initializeWatchAssetWindowListeners() {
+	if (windowListenersInitialized) return true
+	if (browser.windows.onRemoved === undefined || browser.tabs.onRemoved === undefined) return false
+	windowListenersInitialized = true
+	const dismiss = (popupOrTabId: PopupOrTabId) => {
+		void dismissWatchAssetDialog(popupOrTabId).catch(async (error: unknown) => {
+			await reportUnexpectedError(error, { code: 'watch_asset_dialog_close_failed' })
+		})
+	}
+	addWindowTabListeners((id) => dismiss({ type: 'popup', id }), (id) => dismiss({ type: 'tab', id }))
+	return true
 }
 
 export async function handleWatchAssetRequest(
@@ -148,6 +246,8 @@ export async function handleWatchAssetRequest(
 	dependencies: {
 		identifyAddress?: typeof itentifyAddressViaOnChainInformation,
 		scheduleDialog?: (showDialog: () => void) => void,
+		enqueueRequest?: (request: StoredWatchAssetRequest) => Promise<void>,
+		processQueue?: (websiteTabConnections: WebsiteTabConnections) => Promise<void>,
 	} = {},
 ) {
 	const validationError = validateWatchAssetParameters(params, ethereumClientService.getChainId())
@@ -156,9 +256,21 @@ export async function handleWatchAssetRequest(
 	const identified = await identifyAddress(ethereumClientService, undefined, params.params[0].options.address)
 	if (identified.type !== 'ERC20') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
 	const token: Erc20TokenEntry = { ...identified, entrySource: 'User', chainId: ethereumClientService.getChainId() }
+	const requestBeforeSignerCheck: StoredWatchAssetRequest = {
+		website,
+		popupOrTabId: undefined,
+		request,
+		requestedAsset: params.params[0],
+		token,
+		canForward: false,
+	}
+	const storedRequest = { ...requestBeforeSignerCheck, canForward: canForwardRequest(websiteTabConnections, requestBeforeSignerCheck) }
+	const enqueueRequest = dependencies.enqueueRequest ?? (async (pending) => { await updatePendingWatchAssetRequests((requests) => enqueueStoredWatchAssetRequest(requests, pending)) })
+	await enqueueRequest(storedRequest)
+	const processQueue = dependencies.processQueue ?? (async (connections) => await processWatchAssetQueue(connections))
 	const scheduleDialog = dependencies.scheduleDialog ?? ((showDialog: () => void) => { setTimeout(showDialog, 0) })
 	scheduleDialog(() => {
-		void showWatchAssetDialog(websiteTabConnections, request, website, params, token).catch(async (error: unknown) => {
+		void processQueue(websiteTabConnections).catch(async (error: unknown) => {
 			await reportUnexpectedError(error, { code: 'watch_asset_dialog_failed' })
 		})
 	})

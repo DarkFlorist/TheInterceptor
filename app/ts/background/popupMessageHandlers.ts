@@ -114,11 +114,18 @@ function isExtensionPageUrl(urlString: string) {
 	}
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'watchAsset': {
-			await updateWatchAssetViewWithPendingRequest()
-			return undefined
+			const request = await updateWatchAssetViewWithPendingRequest(websiteTabConnections)
+			if (request === undefined) return undefined
+			return {
+				method: 'popup_readyAndListening' as const,
+				data: {
+					popupOrTabId: request.popupOrTabId,
+					confirmTransactionBootstrap: undefined,
+				},
+			}
 		}
 		case 'changeChain': {
 			const promise = await getChainChangeConfirmationPromise()
@@ -182,8 +189,8 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, pa
 	}
 }
 
-export async function watchAssetDialog(confirmation: WatchAssetConfirmation) {
-	await resolveWatchAsset(confirmation)
+export async function watchAssetDialog(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation) {
+	await resolveWatchAsset(websiteTabConnections, confirmation)
 }
 
 async function getSignerAccount() {

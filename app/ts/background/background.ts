@@ -38,7 +38,13 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { handleWatchAssetRequest } from './windows/watchAsset.js'
+import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
+
+if (initializeWatchAssetWindowListeners()) {
+	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
+		await reportUnexpectedError(error, { code: 'watch_asset_startup_recovery_failed' })
+	})
+}
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -773,7 +779,7 @@ export async function popupMessageHandler(
 				case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_changeActiveRpc': return await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest, settings)
 				case 'popup_changeChainDialog': return await changeChainDialog(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
-				case 'popup_watchAssetDialog': return await watchAssetDialog(parsedRequest)
+				case 'popup_watchAssetDialog': return await watchAssetDialog(websiteTabConnections, parsedRequest)
 				case 'popup_enableSimulationMode': return await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest)
 				case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
@@ -822,7 +828,7 @@ export async function popupMessageHandler(
 				case 'popup_requestSimulationMode': return await requestSimulationMode()
 				case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
 				case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(ethereum, websiteTabConnections, parsedRequest)
-				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, parsedRequest.data.page)
+				case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, websiteTabConnections, parsedRequest.data.page)
 				case 'popup_UnexpectedErrorOccured': return await reportUnexpectedErrorInWindow(parsedRequest)
 				case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(ethereum)
 				case 'popup_importSimulationStack': return await importSimulationStack(ethereum, tokenPriceService, parsedRequest)
