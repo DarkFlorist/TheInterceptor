@@ -348,15 +348,20 @@ const ChecksummedWatchAssetAddress = funtypes.String.withConstraint((value) => {
 	serialize: value => ({ success: true, value: checksummedAddress(value) }),
 })
 export type WalletWatchAssetParameters = funtypes.Static<typeof WalletWatchAssetParameters>
-export const WalletWatchAssetParameters = funtypes.ReadonlyObject({
-	type: funtypes.String,
-	options: funtypes.ReadonlyObject({ address: ChecksummedWatchAssetAddress }).And(funtypes.Partial({
-		chainId: funtypes.Number,
-		symbol: funtypes.String,
-		decimals: funtypes.Number,
-		image: funtypes.String,
-	})),
-})
+const WatchAssetCommonOptions = funtypes.ReadonlyObject({ address: ChecksummedWatchAssetAddress }).And(funtypes.Partial({ chainId: funtypes.Number }))
+const WatchNftOptions = WatchAssetCommonOptions.And(funtypes.ReadonlyObject({ tokenId: funtypes.String }))
+export const WalletWatchAssetParameters = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ERC20'),
+		options: WatchAssetCommonOptions.And(funtypes.Partial({
+			symbol: funtypes.String,
+			decimals: funtypes.Number,
+			image: funtypes.String,
+		})),
+	}),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), options: WatchNftOptions }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1155'), options: WatchNftOptions }),
+)
 export const WalletWatchAsset = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_watchAsset'),
 	params: funtypes.ReadonlyTuple(WalletWatchAssetParameters),

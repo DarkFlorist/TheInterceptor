@@ -9,26 +9,22 @@ import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentific
 import { getPendingWatchAssetRequests, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
-import type { AddressBookEntries, Erc20TokenEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToExpectedConfirmedSignerOwner } from '../signerStateOwnership.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
-
-const invalidWatchAssetRequest = (message: string) => ({
-	type: 'result' as const,
-	method: 'wallet_watchAsset' as const,
-	error: { code: -32602, message },
-})
+import { invalidWatchAssetRequest } from '../rpcRequestParsing.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
 export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
 
 function watchAssetQueueIdentity(request: StoredWatchAssetRequest) {
-	return `${ request.website.websiteOrigin }|${ request.token.chainId ?? 1n }|${ request.requestedAsset.type }|${ request.requestedAsset.options.address }`
+	const tokenId = request.requestedAsset.type === 'ERC20' ? '' : `|${ BigInt(request.requestedAsset.options.tokenId).toString() }`
+	return `${ request.website.websiteOrigin }|${ request.token.chainId ?? 1n }|${ request.requestedAsset.type }|${ request.requestedAsset.options.address }${ tokenId }`
 }
 
 export function enqueueStoredWatchAssetRequest(requests: readonly StoredWatchAssetRequest[], request: StoredWatchAssetRequest) {
@@ -45,22 +41,37 @@ function requestsMatch(request: StoredWatchAssetRequest, identifier: UniqueReque
 
 export function validateWatchAssetParameters(params: WalletWatchAsset, currentChainId: bigint) {
 	const [{ type, options }] = params.params
-	if (type !== 'ERC20') return `Unsupported asset type: ${ type }. The Interceptor currently supports ERC20 assets.`
 	if (options.chainId !== undefined) {
 		if (!Number.isSafeInteger(options.chainId) || options.chainId < 0) return 'The asset chainId must be a non-negative safe integer.'
 		if (BigInt(options.chainId) !== currentChainId) return 'The asset chainId must match the active chain.'
 	}
-	if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || options.decimals < 0 || options.decimals > 255)) return 'The asset decimals must be an integer from 0 to 255.'
+	if (type === 'ERC20') {
+		if (options.symbol !== undefined && (options.symbol.length === 0 || options.symbol.length > 11)) return 'The asset symbol must contain from 1 to 11 characters.'
+		if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || options.decimals < 0 || options.decimals > 36)) return 'The asset decimals must be an integer from 0 to 36.'
+		if (options.image !== undefined) {
+			try {
+				const imageUrl = new URL(options.image)
+				if (imageUrl.protocol !== 'https:' && imageUrl.protocol !== 'http:') return 'The asset image must be an HTTP or HTTPS URL.'
+			} catch {
+				return 'The asset image must be a valid URL.'
+			}
+		}
+	} else {
+		if (!/^\d+$/.test(options.tokenId)) return 'The asset tokenId must be a non-negative decimal integer string.'
+		if (BigInt(options.tokenId) > (1n << 256n) - 1n) return 'The asset tokenId must fit in an unsigned 256-bit integer.'
+	}
 	return undefined
 }
 
-export function replaceAddressBookEntryWithToken(entries: AddressBookEntries, token: Erc20TokenEntry): AddressBookEntries {
+type WatchAssetAddressBookEntry = Erc20TokenEntry | Erc721Entry | Erc1155Entry
+
+export function replaceAddressBookEntryWithAsset(entries: AddressBookEntries, token: WatchAssetAddressBookEntry): AddressBookEntries {
 	const sameAddressAndChain = (entry: { address: bigint, chainId?: bigint | 'AllChains' }) => entry.address === token.address && (entry.chainId ?? 1n) === (token.chainId ?? 1n)
 	const existingIndex = entries.findIndex(sameAddressAndChain)
 	if (existingIndex === -1) return [...entries, token]
 	const existing = entries[existingIndex]
 	if (existing === undefined) return entries
-	const tokenWithUserConfiguration: Erc20TokenEntry = {
+	const tokenWithUserConfiguration: WatchAssetAddressBookEntry = {
 		...token,
 		...(token.logoUri !== undefined || existing.logoUri === undefined ? {} : { logoUri: existing.logoUri }),
 		...(existing.abi === undefined ? {} : { abi: existing.abi }),
@@ -206,19 +217,38 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 			},
 			{
 				method: 'request_signer_to_wallet_watchAsset',
-				result: {
-					...request.requestedAsset,
-					options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) },
-				},
+				result: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
 			},
 		) !== false,
 		downloadImage: async (url) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES),
 	}
 }
 
-function removeTokenLogo(token: Erc20TokenEntry): Erc20TokenEntry {
+function removeAssetLogo(token: WatchAssetAddressBookEntry): WatchAssetAddressBookEntry {
 	const { logoUri: _logoUri, ...tokenWithoutLogo } = token
 	return tokenWithoutLogo
+}
+
+function isSameAddressBookAsset(first: WatchAssetAddressBookEntry, second: WatchAssetAddressBookEntry) {
+	return first.type === second.type && first.address === second.address && (first.chainId ?? 1n) === (second.chainId ?? 1n)
+}
+
+function refreshQueuedNftRequests(requests: readonly StoredWatchAssetRequest[], entries: AddressBookEntries) {
+	return requests.map((request): StoredWatchAssetRequest => {
+		if (request.requestedAsset.type === 'ERC20') return request
+		const latest = entries.find((entry): entry is Erc721Entry | Erc1155Entry => (entry.type === 'ERC721' || entry.type === 'ERC1155') && isSameAddressBookAsset(entry, request.token))
+		if (latest === undefined || latest.type !== request.requestedAsset.type) return request
+		const requestedTokenId = BigInt(request.requestedAsset.options.tokenId)
+		return {
+			...request,
+			currentToken: latest,
+			token: {
+				...latest,
+				entrySource: 'User',
+				watchedTokenIds: Array.from(new Set([...(latest.watchedTokenIds ?? []), requestedTokenId])),
+			},
+		}
+	})
 }
 
 let resolutionInProgress = false
@@ -230,7 +260,7 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
 		if (confirmation.data.action === 'downloadImage') {
-			const imageUrl = request.requestedAsset.options.image
+			const imageUrl = request.requestedAsset.type === 'ERC20' ? request.requestedAsset.options.image : undefined
 			const imageResult = imageUrl === undefined ? undefined : await dependencies.downloadImage(imageUrl)
 			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => {
 				if (!requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)) return stored
@@ -249,8 +279,20 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 			return
 		}
 		if (confirmation.data.action === 'add') {
-			const token = request.selectedImageUri === undefined ? removeTokenLogo(request.token) : { ...request.token, logoUri: request.selectedImageUri }
-			await dependencies.updateAddressBook((entries) => replaceAddressBookEntryWithToken(entries, token))
+			let updatedAddressBook: AddressBookEntries | undefined
+			await dependencies.updateAddressBook((entries) => {
+				const latest = entries.find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && isSameAddressBookAsset(entry, request.token))
+				const mergedToken = request.token.type === 'ERC20'
+					? request.token
+					: {
+						...request.token,
+						watchedTokenIds: Array.from(new Set([...(latest?.type === request.token.type ? latest.watchedTokenIds ?? [] : []), ...(request.token.watchedTokenIds ?? [])])),
+					}
+				const token = request.selectedImageUri === undefined ? removeAssetLogo(mergedToken) : { ...mergedToken, logoUri: request.selectedImageUri }
+				updatedAddressBook = replaceAddressBookEntryWithAsset(entries, token)
+				return updatedAddressBook
+			})
+			if (updatedAddressBook !== undefined) await dependencies.updateRequests((storedRequests) => refreshQueuedNftRequests(storedRequests, updatedAddressBook ?? []))
 			await dependencies.publishAddressBookChanged()
 		}
 		await dependencies.updateRequests((storedRequests) => storedRequests.filter((stored) => !requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)))
@@ -307,31 +349,40 @@ export async function handleWatchAssetRequest(
 	const chainId = ethereumClientService.getChainId()
 	const getAddressBookEntries = dependencies.getAddressBookEntries ?? (async () => await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 	const existingEntry = (await getAddressBookEntries()).find((entry) => entry.address === requestedAsset.options.address)
-	let currentToken: Erc20TokenEntry
-	if (existingEntry?.type === 'ERC20') {
+	let currentToken: WatchAssetAddressBookEntry
+	if (existingEntry?.type === requestedAsset.type) {
 		currentToken = existingEntry
 	} else {
 		const identifyAddress = dependencies.identifyAddress ?? itentifyAddressViaOnChainInformation
 		const identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
-		if (identified.type !== 'ERC20') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
-		const identifiedToken: Erc20TokenEntry = { ...identified, entrySource: 'OnChain', chainId }
+		if (identified.type !== requestedAsset.type) return invalidWatchAssetRequest(`The requested address is not an ${ requestedAsset.type } token contract on the active chain.`)
+		const identifiedToken: WatchAssetAddressBookEntry = { ...identified, entrySource: 'OnChain', chainId }
 		currentToken = identifiedToken
 		const updateAddressBook = dependencies.updateAddressBook ?? updateUserAddressBookEntries
 		await updateAddressBook((entries) => {
-			const updatedEntries = replaceAddressBookEntryWithToken(entries, identifiedToken)
-			currentToken = updatedEntries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20' && entry.address === identifiedToken.address && (entry.chainId ?? 1n) === chainId) ?? identifiedToken
+			const updatedEntries = replaceAddressBookEntryWithAsset(entries, identifiedToken)
+			currentToken = updatedEntries.find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && entry.type === identifiedToken.type && entry.address === identifiedToken.address && (entry.chainId ?? 1n) === chainId) ?? identifiedToken
 			return updatedEntries
 		})
 		const publishAddressBookChanged = dependencies.publishAddressBookChanged ?? (async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }))
 		await publishAddressBookChanged()
 	}
-	const token: Erc20TokenEntry = {
-		...currentToken,
-		entrySource: 'User',
-		chainId,
-		symbol: requestedAsset.options.symbol ?? currentToken.symbol,
-		decimals: requestedAsset.options.decimals === undefined ? currentToken.decimals : BigInt(requestedAsset.options.decimals),
-	}
+	const token: WatchAssetAddressBookEntry = requestedAsset.type === 'ERC20' && currentToken.type === 'ERC20'
+		? {
+			...currentToken,
+			entrySource: 'User',
+			chainId,
+			symbol: requestedAsset.options.symbol ?? currentToken.symbol,
+			decimals: requestedAsset.options.decimals === undefined ? currentToken.decimals : BigInt(requestedAsset.options.decimals),
+		}
+		: requestedAsset.type !== 'ERC20' && currentToken.type === requestedAsset.type
+			? {
+				...currentToken,
+				entrySource: 'User',
+				chainId,
+				watchedTokenIds: Array.from(new Set([...(currentToken.watchedTokenIds ?? []), BigInt(requestedAsset.options.tokenId)])),
+			}
+			: currentToken
 	const requestBeforeSignerCheck: StoredWatchAssetRequest = {
 		website,
 		popupOrTabId: undefined,

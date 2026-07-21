@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
-import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithToken, resolveWatchAsset, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
+import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
+import { parseEthereumJsonRpcRequestForBackground } from '../../app/ts/background/rpcRequestParsing.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
@@ -68,6 +69,18 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 	}
 }
 
+function createStoredNftRequest(requestId: number, tokenId: string): StoredWatchAssetRequest {
+	const base = createStoredRequest(requestId)
+	const currentToken = { type: 'ERC721' as const, name: 'Collection', symbol: 'NFT', address: base.token.address, chainId: 1n, entrySource: 'User' as const, watchedTokenIds: [] }
+	return {
+		...base,
+		popupOrTabId: { type: 'popup', id: 200 + requestId },
+		requestedAsset: { type: 'ERC721', options: { address: base.token.address, chainId: 1, tokenId } },
+		currentToken,
+		token: { ...currentToken, watchedTokenIds: [BigInt(tokenId)] },
+	}
+}
+
 describe('wallet_watchAsset', () => {
 	test('serializes persisted dialog state', () => {
 		expect(() => StoredWatchAssetRequest.serialize(createStoredRequest(0))).not.toThrow()
@@ -93,13 +106,21 @@ describe('wallet_watchAsset', () => {
 		expect(validateWatchAssetParameters(parsed, 1n)).toBeUndefined()
 	})
 
-	test('rejects unsupported asset types', () => {
-		const parsed = WalletWatchAsset.parse({
-			method: 'wallet_watchAsset',
-			params: [{ type: 'ERC721', options: { address: tokenAddress } }],
-		})
+	test('requires tokenId for NFT asset types and rejects unsupported types at the RPC boundary', () => {
+		for (const type of ['ERC721', 'ERC1155', 'ERC777']) {
+			expect(() => WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type, options: { address: tokenAddress } }] })).toThrow()
+		}
+	})
 
-		expect(validateWatchAssetParameters(parsed, 1n)).toContain('Unsupported asset type')
+	test('routes malformed watch-asset parameters to the webpage as JSON-RPC invalid params', () => {
+		const parsed = parseEthereumJsonRpcRequestForBackground({ ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] })
+		expect(parsed.success).toBeFalse()
+		if (parsed.success) throw new Error('Expected malformed wallet_watchAsset request')
+		expect(parsed.invalidRequestReply).toEqual({
+			type: 'result',
+			method: 'wallet_watchAsset',
+			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
+		})
 	})
 
 	test('requires an EIP-55 checksummed address', () => {
@@ -128,7 +149,7 @@ describe('wallet_watchAsset', () => {
 	})
 
 	test('rejects invalid decimal hints before identifying or storing token data', async () => {
-		for (const decimals of [-1, 1.5, 256, Number.MAX_SAFE_INTEGER + 1]) {
+		for (const decimals of [-1, 1.5, 37, Number.MAX_SAFE_INTEGER + 1]) {
 			const requestWithInvalidDecimals = { ...interceptedRequest, params: [{ type: 'ERC20', options: { address: tokenAddress, chainId: 1, decimals } }] }
 			const parsed = WalletWatchAsset.parse(requestWithInvalidDecimals)
 			let identifyCount = 0
@@ -143,7 +164,7 @@ describe('wallet_watchAsset', () => {
 			expect(reply).toEqual({
 				type: 'result',
 				method: 'wallet_watchAsset',
-				error: { code: -32602, message: 'The asset decimals must be an integer from 0 to 255.' },
+				error: { code: -32602, message: 'The asset decimals must be an integer from 0 to 36.' },
 			})
 			expect(identifyCount).toBe(0)
 			expect(updateCount).toBe(0)
@@ -151,16 +172,42 @@ describe('wallet_watchAsset', () => {
 	})
 
 	test('accepts ERC-20 decimal boundary hints', () => {
-		for (const decimals of [0, 255]) {
+		for (const decimals of [0, 36]) {
 			const parsed = WalletWatchAsset.parse({ ...interceptedRequest, params: [{ type: 'ERC20', options: { address: tokenAddress, chainId: 1, decimals } }] })
 			expect(validateWatchAssetParameters(parsed, 1n)).toBeUndefined()
+		}
+	})
+
+	test('rejects malformed ERC20 hints before opening a dialog', () => {
+		for (const options of [
+			{ address: tokenAddress, symbol: '' },
+			{ address: tokenAddress, symbol: 'TOO-LONG-SYMBOL' },
+			{ address: tokenAddress, image: 'not a url' },
+			{ address: tokenAddress, image: 'data:image/png;base64,AA==' },
+		]) {
+			const parsed = WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC20', options }] })
+			expect(validateWatchAssetParameters(parsed, 1n)).toBeString()
+		}
+	})
+
+	test('accepts ERC721 and ERC1155 requests with decimal uint256 token IDs', () => {
+		for (const type of ['ERC721', 'ERC1155'] as const) {
+			const parsed = WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type, options: { address: tokenAddress, tokenId: '42' } }] })
+			expect(validateWatchAssetParameters(parsed, 1n)).toBeUndefined()
+		}
+	})
+
+	test('rejects malformed NFT token IDs', () => {
+		for (const tokenId of ['', '-1', '1.5', '0x1', ' 1', ((1n << 256n)).toString()]) {
+			const parsed = WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC721', options: { address: tokenAddress, tokenId } }] })
+			expect(validateWatchAssetParameters(parsed, 1n)).toBeString()
 		}
 	})
 
 	test('replaces a same-chain generic entry with verified token metadata', () => {
 		const address = BigInt(tokenAddress)
 		const token = { type: 'ERC20' as const, name: 'Verified Token', symbol: 'VER', decimals: 6n, address, chainId: 1n, entrySource: 'User' as const }
-		const entries = replaceAddressBookEntryWithToken([{
+		const entries = replaceAddressBookEntryWithAsset([{
 			type: 'contract',
 			name: 'Previously unknown',
 			address,
@@ -177,7 +224,7 @@ describe('wallet_watchAsset', () => {
 		const otherChain = { ...stale, chainId: 10n }
 		const verified = { ...stale, name: 'Verified', symbol: 'NEW', decimals: 6n }
 
-		expect(replaceAddressBookEntryWithToken([stale, otherChain], verified)).toEqual([verified, otherChain])
+		expect(replaceAddressBookEntryWithAsset([stale, otherChain], verified)).toEqual([verified, otherChain])
 	})
 
 	test('preserves user-managed fields and removes duplicate same-chain entries', () => {
@@ -197,7 +244,7 @@ describe('wallet_watchAsset', () => {
 		const duplicate = { ...configuredContract, name: 'Duplicate' }
 		const verified = { type: 'ERC20' as const, name: 'Verified', symbol: 'VER', decimals: 6n, address, chainId: 1n, entrySource: 'User' as const }
 
-		expect(replaceAddressBookEntryWithToken([configuredContract, duplicate], verified)).toEqual([{
+		expect(replaceAddressBookEntryWithAsset([configuredContract, duplicate], verified)).toEqual([{
 			...verified,
 			logoUri: configuredContract.logoUri,
 			abi: configuredContract.abi,
@@ -212,7 +259,7 @@ describe('wallet_watchAsset', () => {
 		const existing = { type: 'contract' as const, name: 'Existing', address, chainId: 1n, entrySource: 'User' as const, logoUri: 'data:image/png;base64,b2xk' }
 		const token = { type: 'ERC20' as const, name: 'Verified', symbol: 'VER', decimals: 6n, address, chainId: 1n, entrySource: 'User' as const, logoUri: 'data:image/png;base64,bmV3' }
 
-		expect(replaceAddressBookEntryWithToken([existing], token)[0]?.logoUri).toBe(token.logoUri)
+		expect(replaceAddressBookEntryWithAsset([existing], token)[0]?.logoUri).toBe(token.logoUri)
 	})
 
 	test('returns the EIP-747 recognition result before user interaction and compares with existing address-book data', async () => {
@@ -255,6 +302,46 @@ describe('wallet_watchAsset', () => {
 		expect(addressBookPublicationCount).toBe(1)
 		expect(queuedRequests[0]?.currentToken).toEqual(identifiedToken)
 		expect(queuedRequests[0]?.token).toEqual({ ...identifiedToken, entrySource: 'User' })
+	})
+
+	test('adds ERC721 and ERC1155 token IDs to verified address-book collections', async () => {
+		for (const type of ['ERC721', 'ERC1155'] as const) {
+			const rawRequest = { ...interceptedRequest, params: [{ type, options: { address: tokenAddress, chainId: 1, tokenId: '42' } }] }
+			const parsed = WalletWatchAsset.parse(rawRequest)
+			const collection = type === 'ERC721'
+				? { type, address: BigInt(tokenAddress), name: 'Collectible', symbol: 'NFT', entrySource: 'User' as const, chainId: 1n, watchedTokenIds: [7n] }
+				: { type, address: BigInt(tokenAddress), name: 'Items', symbol: 'ITEM', decimals: undefined, entrySource: 'User' as const, chainId: 1n, watchedTokenIds: [7n] }
+			const queuedRequests: StoredWatchAssetRequest[] = []
+			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+				identifyAddress: async () => { throw new Error('Existing collection metadata must not be fetched from chain') },
+				getAddressBookEntries: async () => [collection],
+				enqueueRequest: async (request) => { queuedRequests.push(request) },
+				scheduleDialog: () => undefined,
+			})
+
+			expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
+			expect(queuedRequests[0]?.currentToken).toEqual(collection)
+			expect(queuedRequests[0]?.token).toEqual({ ...collection, entrySource: 'User', watchedTokenIds: [7n, 42n] })
+		}
+	})
+
+	test('identifies missing NFT collections and rejects a mismatched token standard', async () => {
+		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC721' as const, options: { address: tokenAddress, tokenId: '1' } }] }
+		const parsed = WalletWatchAsset.parse(rawRequest)
+		let addressBook: AddressBookEntries = []
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC1155', address, name: 'Wrong standard', symbol: 'WRONG', decimals: undefined, entrySource: 'OnChain' }),
+			getAddressBookEntries: async () => addressBook,
+			updateAddressBook: async (update) => { addressBook = update(addressBook) },
+			scheduleDialog: () => { throw new Error('Mismatched request must not schedule a dialog') },
+		})
+
+		expect(reply).toEqual({
+			type: 'result',
+			method: 'wallet_watchAsset',
+			error: { code: -32602, message: 'The requested address is not an ERC721 token contract on the active chain.' },
+		})
+		expect(addressBook).toEqual([])
 	})
 
 	test('rejects a directly probed non-ERC20 without scheduling a dialog', async () => {
@@ -313,6 +400,33 @@ describe('wallet_watchAsset', () => {
 		expect(addressBookPublicationCount).toBe(1)
 		expect(closedPopupId).toBe(91)
 		expect(processQueueCount).toBe(1)
+	})
+
+	test('merges sequential queued NFT approvals and refreshes the later proposal', async () => {
+		const first = createStoredNftRequest(120, '1')
+		const second = { ...createStoredNftRequest(120, '2'), request: { ...createStoredNftRequest(121, '2').request } }
+		let requests: readonly StoredWatchAssetRequest[] = [first, second]
+		let addressBook: AddressBookEntries = [first.currentToken]
+		const dependencies = {
+			getRequests: async () => requests,
+			updateRequests: async (update: (stored: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
+			updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => { addressBook = update(addressBook) },
+			publishAddressBookChanged: async () => undefined,
+			publish: async () => undefined,
+			closeDialog: async () => undefined,
+			processQueue: async () => undefined,
+			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
+		}
+
+		await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier: first.request.uniqueRequestIdentifier } }, dependencies)
+		expect(requests[0]?.currentToken.type === 'ERC721' ? requests[0].currentToken.watchedTokenIds : undefined).toEqual([1n])
+		expect(requests[0]?.token.type === 'ERC721' ? requests[0].token.watchedTokenIds : undefined).toEqual([1n, 2n])
+
+		const refreshedSecond = requests[0]
+		if (refreshedSecond === undefined) throw new Error('Expected refreshed second NFT request')
+		await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier: refreshedSecond.request.uniqueRequestIdentifier } }, dependencies)
+		expect(addressBook[0]?.type === 'ERC721' ? addressBook[0].watchedTokenIds : undefined).toEqual([1n, 2n])
 	})
 
 	test('preserves a newer address-book logo when no downloaded replacement is selected', async () => {
@@ -574,6 +688,15 @@ describe('wallet_watchAsset', () => {
 		}
 
 		expect(enqueueStoredWatchAssetRequest([active], duplicate)).toEqual([active])
+	})
+
+	test('canonicalizes NFT token IDs for queue deduplication while keeping distinct IDs', () => {
+		const active = createStoredNftRequest(63, '1')
+		const equivalent = { ...createStoredNftRequest(63, '01'), request: createStoredNftRequest(64, '01').request }
+		const distinct = { ...createStoredNftRequest(63, '2'), request: createStoredNftRequest(65, '2').request }
+
+		expect(enqueueStoredWatchAssetRequest([active], equivalent)).toEqual([active])
+		expect(enqueueStoredWatchAssetRequest([active], distinct)).toEqual([active, distinct])
 	})
 
 	test('bounds each origin without evicting the active request', () => {

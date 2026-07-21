@@ -89,6 +89,30 @@ const pendingRequest: PendingWatchAssetRequest = {
 }
 
 describe('watch asset proposal rendering', () => {
+	test('shows the requested token ID changes for ERC721 and ERC1155 assets', async () => {
+		for (const type of ['ERC721', 'ERC1155'] as const) {
+			const currentToken = type === 'ERC721'
+				? { type, name: 'Collectible', symbol: 'NFT', address: pendingRequest.currentToken.address, chainId: 1n, entrySource: 'User' as const, watchedTokenIds: [7n] }
+				: { type, name: 'Game Items', symbol: 'ITEM', decimals: undefined, address: pendingRequest.currentToken.address, chainId: 1n, entrySource: 'User' as const, watchedTokenIds: [7n] }
+			const nftRequest: PendingWatchAssetRequest = {
+				...pendingRequest,
+				requestedAsset: { type, options: { address: pendingRequest.currentToken.address, tokenId: '42' } },
+				currentToken,
+				token: { ...currentToken, watchedTokenIds: [7n, 42n] },
+			}
+			const dom = installDomMock()
+			try {
+				await act(() => { render(h(WatchAssetDetails, { pendingRequest: nftRequest }), dom.document.body) })
+				const text = dom.document.body.textContent ?? ''
+				assert.match(text, new RegExp(`${ type }.*Token IDs.*7.*7, 42.*Will change`, 's'))
+				assert.equal(text.includes('Decimals'), false)
+			} finally {
+				render(null, dom.document.body)
+				dom.restore()
+			}
+		}
+	})
+
 	test('shows current and proposed address-book values and marks fields that will change', async () => {
 		const dom = installDomMock()
 		try {

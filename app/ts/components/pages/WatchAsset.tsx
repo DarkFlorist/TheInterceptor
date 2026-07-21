@@ -41,7 +41,7 @@ function ProposedTokenImage({ pendingRequest, busy, chooseImage }: {
 	chooseImage: () => void,
 }) {
 	if (pendingRequest.selectedImageUri !== undefined) return <TokenImageValue uri = { pendingRequest.selectedImageUri } alt = 'Proposed token image'/>
-	if (pendingRequest.requestedAsset.options.image === undefined) return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
+	if (pendingRequest.requestedAsset.type !== 'ERC20' || pendingRequest.requestedAsset.options.image === undefined) return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
 	return <span>
 		<button class = 'button is-small is-link is-light' disabled = { busy } onClick = { chooseImage }>{ busy ? 'Downloading image…' : 'Download image' }</button>
 		{ pendingRequest.imageDownloadError === undefined ? <></> : <small style = 'display: block; color: var(--negative-color); margin-top: 5px'>{ pendingRequest.imageDownloadError }</small> }
@@ -57,6 +57,9 @@ export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseIma
 	const currentChainId = currentToken.chainId === 'AllChains' ? 'All chains' : (currentToken.chainId ?? 1n).toString()
 	const proposedChainId = typeof token.chainId === 'bigint' ? token.chainId.toString() : '1'
 	const proposedLogoUri = selectedImageUri ?? currentToken.logoUri
+	const currentTokenIds = currentToken.type === 'ERC20' ? undefined : currentToken.watchedTokenIds ?? []
+	const proposedTokenIds = token.type === 'ERC20' ? undefined : token.watchedTokenIds ?? []
+	const formatTokenIds = (tokenIds: readonly bigint[] | undefined) => tokenIds === undefined || tokenIds.length === 0 ? 'None' : tokenIds.map((tokenId) => tokenId.toString()).join(', ')
 	return <>
 		<p style = 'color: var(--text-color); text-align: center; margin-bottom: 12px'>
 			<b>{ website.websiteOrigin }</b> wants to add an asset.
@@ -73,12 +76,14 @@ export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseIma
 						<ProposedAssetField label = 'Asset type' currentValue = { currentToken.type } proposedValue = { token.type } changes = { currentToken.type !== token.type }/>
 						<ProposedAssetField label = 'Chain ID' currentValue = { currentChainId } proposedValue = { proposedChainId } changes = { currentChainId !== proposedChainId }/>
 						<ProposedAssetField label = 'Symbol' currentValue = { currentToken.symbol } proposedValue = { token.symbol } changes = { currentToken.symbol !== token.symbol }/>
-						<ProposedAssetField label = 'Decimals' currentValue = { currentToken.decimals.toString() } proposedValue = { token.decimals.toString() } changes = { currentToken.decimals !== token.decimals }/>
+						{ currentToken.type === 'ERC20' && token.type === 'ERC20'
+							? <ProposedAssetField label = 'Decimals' currentValue = { currentToken.decimals.toString() } proposedValue = { token.decimals.toString() } changes = { currentToken.decimals !== token.decimals }/>
+							: <ProposedAssetField label = 'Token IDs' currentValue = { formatTokenIds(currentTokenIds) } proposedValue = { formatTokenIds(proposedTokenIds) } changes = { formatTokenIds(currentTokenIds) !== formatTokenIds(proposedTokenIds) }/> }
 						<ProposedAssetField label = 'Token image' currentValue = { <TokenImageValue uri = { currentToken.logoUri } alt = 'Current token image'/> } proposedValue = { <ProposedTokenImage pendingRequest = { pendingRequest } busy = { imageBusy } chooseImage = { chooseImage }/> } changes = { currentToken.logoUri !== proposedLogoUri }/>
 					</tbody>
 				</table>
 			</div>
-			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Fields marked “Will change” replace the current address-book values only if you add the token.</p>
+			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Fields marked “Will change” replace the current address-book values only if you add the asset.</p>
 		</section>
 	</>
 }
@@ -151,7 +156,7 @@ export function WatchAsset() {
 	return <main>
 		<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
 			<header class = 'card-header window-header'>
-				<div class = 'card-header-title'><p class = 'paragraph'>Asset Request</p></div>
+				<div class = 'card-header-title'><p class = 'paragraph'>Asset Adding Request</p></div>
 			</header>
 			<div class = 'card-content' style = 'padding: 14px'>
 				{ websiteIcon === undefined ? <></> : <figure class = 'image is-64x64' style = 'margin: 10px auto 20px'>
