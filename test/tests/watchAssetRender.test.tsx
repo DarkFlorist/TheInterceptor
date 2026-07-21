@@ -71,6 +71,7 @@ const pendingRequest: PendingWatchAssetRequest = {
 		address: 0x1111111111111111111111111111111111111111n,
 		chainId: 1n,
 		entrySource: 'User',
+		logoUri: 'data:image/png;base64,b2xk',
 	},
 	token: {
 		type: 'ERC20',
@@ -80,6 +81,7 @@ const pendingRequest: PendingWatchAssetRequest = {
 		address: 0x1111111111111111111111111111111111111111n,
 		chainId: 1n,
 		entrySource: 'User',
+		logoUri: 'data:image/png;base64,b2xk',
 	},
 	selectedImageUri: undefined,
 	imageDownloadError: undefined,
@@ -119,11 +121,10 @@ describe('watch asset proposal rendering', () => {
 				'6',
 				'8',
 				'Token image',
-				'Not set',
-				'Image hint',
-				'https://dapp.example/token.png',
-				'Download and use image',
+				'Download image',
 			]) assert.match(requestSection?.textContent ?? '', new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+			assert.equal(requestSection?.textContent?.includes('https://dapp.example/token.png'), false)
+			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'src', 'data:image/png;base64,b2xk'), undefined)
 			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'value', '0x1111111111111111111111111111111111111111'), undefined)
 		} finally {
 			render(null, dom.document.body)
@@ -147,14 +148,14 @@ describe('watch asset proposal rendering', () => {
 			const requestText = requestSection?.textContent ?? ''
 			assert.match(requestText, /SymbolOLDOLDNo change/)
 			assert.match(requestText, /Decimals66No change/)
-			assert.match(requestText, /Image hintNot provided/)
+			assert.equal(requestText.includes('Download image'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 		}
 	})
 
-	test('previews a downloaded image and marks it ready for address-book storage', async () => {
+	test('shows the old and downloaded images without a URL or remove control', async () => {
 		const dom = installDomMock()
 		try {
 			const requestWithImage = { ...pendingRequest, selectedImageUri: 'data:image/png;base64,dG9rZW4=' }
@@ -162,27 +163,27 @@ describe('watch asset proposal rendering', () => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithImage }), dom.document.body)
 			})
 
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Selected for proposal'), undefined)
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Downloaded image'), undefined)
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Remove'), undefined)
+			assert.equal(findNodeByExactText(dom.document.body, 'Remove'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('https://dapp.example/token.png'), false)
 			assert.notEqual(findNodeByAttribute(dom.document.body, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
+			assert.notEqual(findNodeByAttribute(dom.document.body, 'src', 'data:image/png;base64,b2xk'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 		}
 	})
 
-	test('shows an image download failure without hiding the original hint', async () => {
+	test('shows an image download failure without exposing the image URL', async () => {
 		const dom = installDomMock()
 		try {
-			const failedRequest = { ...pendingRequest, imageDownloadError: 'image data could not be decoded' }
+			const failedRequest = { ...pendingRequest, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest: failedRequest }), dom.document.body)
 			})
 
-			assert.notEqual(findNodeByExactText(dom.document.body, 'https://dapp.example/token.png'), undefined)
-			assert.notEqual(findNodeByExactText(dom.document.body, 'image data could not be decoded'), undefined)
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Download and use image'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('https://dapp.example/token.png'), false)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'The proposed image could not be downloaded or decoded.'), undefined)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Download image'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

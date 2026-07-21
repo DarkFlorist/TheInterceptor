@@ -315,40 +315,33 @@ describe('wallet_watchAsset', () => {
 		expect(processQueueCount).toBe(1)
 	})
 
-	test('preserves a newer address-book logo when no downloaded replacement remains selected', async () => {
-		for (const removeDownloadedImage of [false, true]) {
-			const base = createStoredRequest(removeDownloadedImage ? 111 : 110)
-			const logoAtDialogOpen = 'data:image/png;base64,b2xk'
-			const latestAddressBookLogo = 'data:image/png;base64,bmV3ZXI='
-			const stored: StoredWatchAssetRequest = {
-				...base,
-				popupOrTabId: { type: 'popup', id: removeDownloadedImage ? 111 : 110 },
-				currentToken: { ...base.currentToken, logoUri: logoAtDialogOpen },
-				token: { ...base.token, logoUri: logoAtDialogOpen },
-				requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: 'https://assets.example/replacement.png' } },
-			}
-			let requests: readonly StoredWatchAssetRequest[] = [stored]
-			let addressBook: AddressBookEntries = [{ ...stored.token, logoUri: latestAddressBookLogo }]
-			const dependencies = {
-				getRequests: async () => requests,
-				updateRequests: async (update: (storedRequests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
-				updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => { addressBook = update(addressBook) },
-				publishAddressBookChanged: async () => undefined,
-				publish: async () => undefined,
-				closeDialog: async () => undefined,
-				processQueue: async () => undefined,
-				sendToSigner: () => false,
-				downloadImage: async () => ({ data: 'data:image/png;base64,c2VsZWN0ZWQ=', failureReason: undefined }),
-			}
-
-			if (removeDownloadedImage) {
-				await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'downloadImage', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier } }, dependencies)
-				await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'removeImage', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier } }, dependencies)
-			}
-			await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier } }, dependencies)
-
-			expect(addressBook[0]?.logoUri).toBe(latestAddressBookLogo)
+	test('preserves a newer address-book logo when no downloaded replacement is selected', async () => {
+		const base = createStoredRequest(110)
+		const logoAtDialogOpen = 'data:image/png;base64,b2xk'
+		const latestAddressBookLogo = 'data:image/png;base64,bmV3ZXI='
+		const stored: StoredWatchAssetRequest = {
+			...base,
+			popupOrTabId: { type: 'popup', id: 110 },
+			currentToken: { ...base.currentToken, logoUri: logoAtDialogOpen },
+			token: { ...base.token, logoUri: logoAtDialogOpen },
+			requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: 'https://assets.example/proposed.png' } },
 		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		let addressBook: AddressBookEntries = [{ ...stored.token, logoUri: latestAddressBookLogo }]
+
+		await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier } }, {
+			getRequests: async () => requests,
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			updateAddressBook: async (update) => { addressBook = update(addressBook) },
+			publishAddressBookChanged: async () => undefined,
+			publish: async () => undefined,
+			closeDialog: async () => undefined,
+			processQueue: async () => undefined,
+			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
+		})
+
+		expect(addressBook[0]?.logoUri).toBe(latestAddressBookLogo)
 	})
 
 	test('disables wallet forwarding without dismissing the dialog when delivery is unavailable', async () => {
@@ -377,6 +370,35 @@ describe('wallet_watchAsset', () => {
 		expect(requests).toHaveLength(1)
 		expect(requests[0]?.forwardToSigner).toBeUndefined()
 		expect(published?.forwardToSigner).toBeUndefined()
+	})
+
+	test('keeps website image URLs out of user-visible download errors', async () => {
+		const imageUrl = 'not a valid URL containing private-value'
+		const base = createStoredRequest(14)
+		const stored: StoredWatchAssetRequest = {
+			...base,
+			popupOrTabId: { type: 'popup', id: 94 },
+			requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: imageUrl } },
+		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'downloadImage', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
+		}, {
+			getRequests: async () => requests,
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			updateAddressBook: async () => undefined,
+			publishAddressBookChanged: async () => undefined,
+			publish: async () => undefined,
+			closeDialog: async () => undefined,
+			processQueue: async () => undefined,
+			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: `Failed to parse URL from ${ imageUrl }` }),
+		})
+
+		expect(requests[0]?.imageDownloadError).toBe('The proposed image could not be downloaded or decoded.')
+		expect(requests[0]?.imageDownloadError).not.toContain(imageUrl)
 	})
 
 	test('downloads an opted-in image, keeps the dialog open, and stores it when the token is added', async () => {

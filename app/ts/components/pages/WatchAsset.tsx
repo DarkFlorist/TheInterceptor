@@ -16,12 +16,9 @@ function AssetField({ label, value }: { label: string, value: ComponentChildren 
 	</>
 }
 
-function TokenImageValue({ uri, proposed }: { uri: string | undefined, proposed?: boolean }) {
+function TokenImageValue({ uri, alt }: { uri: string | undefined, alt: string }) {
 	if (uri === undefined) return <>Not set</>
-	return <span style = 'display: inline-flex; align-items: center; gap: 6px'>
-		<img src = { uri } width = '24' height = '24' style = 'width: 24px; height: 24px; object-fit: contain'/>
-		<span>{ proposed ? 'Downloaded image' : 'Current image' }</span>
-	</span>
+	return <img src = { uri } alt = { alt } width = '32' height = '32' style = 'width: 32px; height: 32px; object-fit: contain'/>
 }
 
 function ProposedAssetField({ label, currentValue, proposedValue, changes }: {
@@ -38,33 +35,23 @@ function ProposedAssetField({ label, currentValue, proposedValue, changes }: {
 	</tr>
 }
 
-function WatchAssetImage({ pendingRequest, busy, chooseImage }: {
+function ProposedTokenImage({ pendingRequest, busy, chooseImage }: {
 	pendingRequest: PendingWatchAssetRequest,
 	busy: boolean,
-	chooseImage: (action: 'downloadImage' | 'removeImage') => void,
+	chooseImage: () => void,
 }) {
-	const imageUrl = pendingRequest.requestedAsset.options.image
-	if (imageUrl === undefined) return <AssetField label = 'Image hint' value = 'Not provided'/>
-	return <>
-		<AssetField label = 'Image hint' value = { <span class = 'is-family-monospace'>{ imageUrl }</span> }/>
-		<span></span>
-		<span style = 'text-align: right'>
-			{ pendingRequest.selectedImageUri === undefined ? <button class = 'button is-small is-link is-light' disabled = { busy } onClick = { () => chooseImage('downloadImage') }>
-				{ busy ? 'Downloading image…' : 'Download and use image' }
-			</button> : <span style = 'display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end'>
-				<img src = { pendingRequest.selectedImageUri } width = '24' height = '24' style = 'width: 24px; height: 24px; object-fit: contain'/>
-				<span class = 'tag is-info'>Selected for proposal</span>
-				<button class = 'button is-small' disabled = { busy } onClick = { () => chooseImage('removeImage') }>Remove</button>
-			</span> }
-			{ pendingRequest.imageDownloadError === undefined ? <></> : <small style = 'display: block; color: var(--negative-color); margin-top: 5px'>{ pendingRequest.imageDownloadError }</small> }
-		</span>
-	</>
+	if (pendingRequest.selectedImageUri !== undefined) return <TokenImageValue uri = { pendingRequest.selectedImageUri } alt = 'Proposed token image'/>
+	if (pendingRequest.requestedAsset.options.image === undefined) return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
+	return <span>
+		<button class = 'button is-small is-link is-light' disabled = { busy } onClick = { chooseImage }>{ busy ? 'Downloading image…' : 'Download image' }</button>
+		{ pendingRequest.imageDownloadError === undefined ? <></> : <small style = 'display: block; color: var(--negative-color); margin-top: 5px'>{ pendingRequest.imageDownloadError }</small> }
+	</span>
 }
 
 export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseImage = () => undefined }: {
 	pendingRequest: PendingWatchAssetRequest,
 	imageBusy?: boolean,
-	chooseImage?: (action: 'downloadImage' | 'removeImage') => void,
+	chooseImage?: () => void,
 }) {
 	const { currentToken, token, website, selectedImageUri } = pendingRequest
 	const currentChainId = currentToken.chainId === 'AllChains' ? 'All chains' : (currentToken.chainId ?? 1n).toString()
@@ -78,21 +65,20 @@ export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseIma
 			<h2 style = 'color: var(--text-color); font-weight: 600; margin-bottom: 7px'>Asset proposal</h2>
 			<div style = 'display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; row-gap: 5px; font-size: 0.85rem'>
 				<AssetField label = 'Contract' value = { <span style = 'display: inline-flex; justify-content: flex-end'><SmallAddress addressBookEntry = { currentToken } renameAddressCallBack = { () => undefined } noEditAddress = { true }/></span> }/>
-				<WatchAssetImage pendingRequest = { pendingRequest } busy = { imageBusy } chooseImage = { chooseImage }/>
 			</div>
 			<div style = 'overflow-x: auto; margin-top: 10px'>
 				<table class = 'table is-fullwidth' style = 'background: transparent; font-size: 0.8rem'>
-					<thead><tr><th>Field</th><th>Current</th><th>If accepted</th><th>Change</th></tr></thead>
+					<thead><tr><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Field</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Current</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>If accepted</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Change</th></tr></thead>
 					<tbody>
 						<ProposedAssetField label = 'Asset type' currentValue = { currentToken.type } proposedValue = { token.type } changes = { currentToken.type !== token.type }/>
 						<ProposedAssetField label = 'Chain ID' currentValue = { currentChainId } proposedValue = { proposedChainId } changes = { currentChainId !== proposedChainId }/>
 						<ProposedAssetField label = 'Symbol' currentValue = { currentToken.symbol } proposedValue = { token.symbol } changes = { currentToken.symbol !== token.symbol }/>
 						<ProposedAssetField label = 'Decimals' currentValue = { currentToken.decimals.toString() } proposedValue = { token.decimals.toString() } changes = { currentToken.decimals !== token.decimals }/>
-						<ProposedAssetField label = 'Token image' currentValue = { <TokenImageValue uri = { currentToken.logoUri }/> } proposedValue = { <TokenImageValue uri = { proposedLogoUri } proposed = { selectedImageUri !== undefined }/> } changes = { currentToken.logoUri !== proposedLogoUri }/>
+						<ProposedAssetField label = 'Token image' currentValue = { <TokenImageValue uri = { currentToken.logoUri } alt = 'Current token image'/> } proposedValue = { <ProposedTokenImage pendingRequest = { pendingRequest } busy = { imageBusy } chooseImage = { chooseImage }/> } changes = { currentToken.logoUri !== proposedLogoUri }/>
 					</tbody>
 				</table>
 			</div>
-			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Current values come from your address book. Missing token data is identified and saved before this comparison. Fields marked “Will change” replace the current values only if you add the token.</p>
+			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Fields marked “Will change” replace the current address-book values only if you add the token.</p>
 		</section>
 	</>
 }
@@ -146,13 +132,13 @@ export function WatchAsset() {
 		}
 	}
 
-	async function chooseImage(action: 'downloadImage' | 'removeImage') {
+	async function chooseImage() {
 		if (request.value === undefined || imageBusy.value || submitting.value) return
 		imageBusy.value = true
 		try {
 			await sendPopupMessageToBackgroundPage({
 				method: 'popup_watchAssetDialog',
-				data: { action, uniqueRequestIdentifier: request.value.request.uniqueRequestIdentifier },
+				data: { action: 'downloadImage', uniqueRequestIdentifier: request.value.request.uniqueRequestIdentifier },
 			})
 		} finally {
 			imageBusy.value = false
@@ -171,7 +157,7 @@ export function WatchAsset() {
 				{ websiteIcon === undefined ? <></> : <figure class = 'image is-64x64' style = 'margin: 10px auto 20px'>
 					<img src = { websiteIcon } width = '64' height = '64'/>
 				</figure> }
-				<WatchAssetDetails pendingRequest = { request.value } imageBusy = { imageBusy.value || submitting.value } chooseImage = { (action) => void chooseImage(action) }/>
+				<WatchAssetDetails pendingRequest = { request.value } imageBusy = { imageBusy.value || submitting.value } chooseImage = { () => void chooseImage() }/>
 				<WatchAssetActions forwardToSigner = { forwardToSigner } submitting = { submitting.value || imageBusy.value } choose = { (action) => void choose(action) }/>
 			</div>
 		</div>

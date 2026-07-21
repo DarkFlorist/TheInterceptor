@@ -229,16 +229,13 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const requests = await dependencies.getRequests()
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
-		if (confirmation.data.action === 'downloadImage' || confirmation.data.action === 'removeImage') {
+		if (confirmation.data.action === 'downloadImage') {
 			const imageUrl = request.requestedAsset.options.image
-			const imageResult = confirmation.data.action === 'downloadImage' && imageUrl !== undefined
-				? await dependencies.downloadImage(imageUrl)
-				: undefined
+			const imageResult = imageUrl === undefined ? undefined : await dependencies.downloadImage(imageUrl)
 			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => {
 				if (!requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)) return stored
-				if (confirmation.data.action === 'removeImage') return { ...stored, selectedImageUri: undefined, imageDownloadError: undefined }
 				if (imageUrl === undefined) return { ...stored, imageDownloadError: 'The website did not provide an image URL.' }
-				if (imageResult?.data === undefined) return { ...stored, imageDownloadError: imageResult?.failureReason ?? 'The image could not be downloaded.' }
+				if (imageResult?.data === undefined) return { ...stored, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
 				return { ...stored, selectedImageUri: imageResult.data, imageDownloadError: undefined }
 			}))
 			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
