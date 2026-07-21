@@ -13,6 +13,7 @@ Object.defineProperty(globalThis, 'browser', { value: {
 }, configurable: true, writable: true })
 
 const { getSimulationErrorAbis } = await import('../../app/ts/background/simulationErrorAbi.js')
+const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 
 describe('simulation error ABI lookup', () => {
 	test('returns the recipient ABI when metadata lookup succeeds', async () => {
@@ -47,5 +48,12 @@ describe('simulation error ABI lookup', () => {
 			console.warn = originalConsoleWarn
 			console.error = originalConsoleError
 		}
+	})
+
+	test('propagates new-block aborts from metadata lookup', async () => {
+		await assert.rejects(
+			async () => await getSimulationErrorAbis('0x12345678', async () => { throw NEW_BLOCK_ABORT }),
+			(error) => error === NEW_BLOCK_ABORT,
+		)
 	})
 })

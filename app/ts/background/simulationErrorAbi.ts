@@ -1,4 +1,4 @@
-import { reportLocalRecoveryBestEffort } from '../utils/errors.js'
+import { isNewBlockAbort, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 
 type AddressMetadataWithOptionalAbi = {
 	abi?: string
@@ -10,6 +10,7 @@ export async function getSimulationErrorAbis(errorData: string, getAddressMetada
 		const identified = await getAddressMetadata()
 		return identified.abi === undefined ? [] : [identified.abi]
 	} catch (error: unknown) {
+		if (isNewBlockAbort(error)) throw error
 		reportLocalRecoveryBestEffort(error, {
 			code: 'simulation_error_abi_lookup_failed',
 			message: 'Showing the original simulation error without contract ABI decoding.',

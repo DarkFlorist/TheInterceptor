@@ -31,12 +31,15 @@ function parseRpcResult(data: string) {
 class TokenIdentificationRequestHandler {
 	public rpcUrl = rpcEntry.httpsRpc
 
-	public constructor(private readonly ethSimulateV1Result: unknown) {}
+	public constructor(private readonly ethSimulateV1Result: unknown, private readonly onEthSimulateV1Request: ((request: EthereumJsonRpcRequest) => void) | undefined = undefined) {}
 
 	public readonly jsonRpcRequest = async (rpcEntry: EthereumJsonRpcRequest) => {
 		if (rpcEntry.method === 'eth_getCode') return '0x01'
 		if (rpcEntry.method === 'eth_getBlockByNumber') return parseRpcResult(eth_getBlockByNumber_goerli_8443561_true)
-		if (rpcEntry.method === 'eth_simulateV1') return this.ethSimulateV1Result
+		if (rpcEntry.method === 'eth_simulateV1') {
+			this.onEthSimulateV1Request?.(rpcEntry)
+			return this.ethSimulateV1Result
+		}
 		throw new Error(`Unexpected RPC method ${ rpcEntry.method }`)
 	}
 
@@ -45,8 +48,8 @@ class TokenIdentificationRequestHandler {
 	public readonly getChainId = async () => 5n
 }
 
-const createEthereum = (ethSimulateV1Result: unknown) => new EthereumClientService(
-	new TokenIdentificationRequestHandler(ethSimulateV1Result),
+const createEthereum = (ethSimulateV1Result: unknown, onEthSimulateV1Request?: (request: EthereumJsonRpcRequest) => void) => new EthereumClientService(
+	new TokenIdentificationRequestHandler(ethSimulateV1Result, onEthSimulateV1Request),
 	async () => undefined,
 	async () => undefined,
 	rpcEntry,
@@ -68,6 +71,18 @@ const createEthSimulateV1Result = (returnData: readonly `0x${ string }`[]) => [{
 }]
 
 describe('token identification', () => {
+	test('gives every metadata probe an independent bounded gas budget', async () => {
+		let simulationRequest: EthereumJsonRpcRequest | undefined
+		const ethereum = createEthereum(createEthSimulateV1Result(Array.from({ length: 7 }, () => '0x')), (request) => { simulationRequest = request })
+
+		await itentifyAddressViaOnChainInformation(ethereum, undefined, tokenAddress)
+
+		if (simulationRequest?.method !== 'eth_simulateV1') throw new Error('Missing metadata simulation request')
+		const calls = simulationRequest.params[0]?.blockStateCalls[0]?.calls
+		assert.equal(calls?.length, 7)
+		assert.equal(calls?.every((call) => call.gas === 500_000n), true)
+	})
+
 	test('identifies valid ERC20 metadata and keeps decimals as bigint', async () => {
 		const ethereum = createEthereum(createEthSimulateV1Result([
 			'0x',

@@ -11,7 +11,7 @@ import { type BlockTimeManipulation, type ExecutionSimulationState, type NonSimu
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressForVisualiser, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
@@ -432,7 +432,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
 		if (wethAddr === undefined) return undefined
-		const entry = await identifyAddress(ethereum, requestAbortController, wethAddr)
+		const entry = await identifyAddressForVisualiser(ethereum, requestAbortController, wethAddr)
 		if (entry.type !== 'ERC20') return undefined
 		return entry
 	}

@@ -150,7 +150,7 @@ export async function refreshConfirmTransactionSimulation(
 			if (!('to' in params)) return []
 			if (params.to === undefined || params.to === null) return []
 			const recipient = params.to
-			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, undefined, recipient))
+			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
 		}
 		return { statusCode: 'failed' as const, data: {
 			...info,

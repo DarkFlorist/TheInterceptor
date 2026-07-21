@@ -7,12 +7,12 @@ import type { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { getAbi } from '../utils/abi.js'
 import { parseAbiParametersToSolidityVariables } from '../utils/solidityTypes.js'
-import { identifyAddress } from '../background/metadataUtils.js'
+import { identifyAddressForVisualiser } from '../background/metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EthereumEvent } from '../types/ethSimulate-types.js'
 import type { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
-import { reportLocalRecoveryBestEffort } from '../utils/errors.js'
+import { isNewBlockAbort, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 
 type TokenLogHandler = (event: EthereumEvent) => TokenVisualizerResult[]
 
@@ -87,7 +87,7 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 export const parseInputData = async (transaction: { to: EthereumAddress | undefined | null, value: EthereumQuantity, input: EthereumData }, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<EnrichedEthereumInputData> => {
 	const nonParsed = { input: transaction.input, type: 'NonParsed' as const }
 	if (transaction.to === undefined || transaction.to === null) return nonParsed
-	const addressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, transaction.to)
+	const addressBookEntry = await identifyAddressForVisualiser(ethereumClientService, requestAbortController, transaction.to)
 	const abi = getAbi(addressBookEntry)
 	if (!abi) return nonParsed
 	const parsed = parseTransactionInputIfPossible(abi, transaction.input, transaction.value)
@@ -104,6 +104,7 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 			args: valuesWithTypes,
 		}
 	} catch (e: unknown) {
+		if (isNewBlockAbort(e)) throw e
 		reportLocalRecoveryBestEffort(e, {
 			code: 'transaction_input_parse_failed',
 			message: 'Falling back to showing unparsed calldata.',
@@ -115,7 +116,7 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 
 export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await promiseAllMapAbortSafe(events, async (event) => {
-		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
+		const loggersAddressBookEntry = await identifyAddressForVisualiser(ethereumClientService, requestAbortController, event.address)
 		const abi = getAbi(loggersAddressBookEntry)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (!abi) return nonParsed

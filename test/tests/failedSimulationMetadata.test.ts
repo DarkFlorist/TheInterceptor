@@ -59,8 +59,92 @@ const { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } = await import('../../ap
 const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
 const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+const { JsonRpcResponseError } = await import('../../app/ts/utils/errors.js')
 
 describe('visualizeSimulatorState failed simulations', () => {
+	test('visualizes a successful transaction with fallback address metadata when on-chain token probes fail', async () => {
+		installBrowserMock()
+		const rpcNetwork = {
+			name: 'Test Chain',
+			chainId: 1337n,
+			httpsRpc: 'https://example.invalid',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: true,
+		}
+		const baseEthereum = new EthereumClientService({
+			rpcUrl: rpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest() { throw new Error('Unexpected direct RPC request') },
+		}, async () => undefined, async () => undefined, rpcNetwork)
+		const ethereum = new Proxy(baseEthereum, {
+			get(target, property, receiver) {
+				if (property === 'getCode') return async () => new Uint8Array([1])
+				if (property === 'ethSimulateV1') return async () => {
+					throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'intrinsic gas too low' } })
+				}
+				return Reflect.get(target, property, receiver)
+			},
+		})
+		const targetAddress = 0x1234567890123456789012345678901234567890n
+		const created = new Date('2024-01-01T00:00:00.000Z')
+		const transaction = {
+			signedTransaction: {
+				type: '1559' as const,
+				from: 0n,
+				nonce: 0n,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+				gas: 100_000n,
+				to: targetAddress,
+				value: 0n,
+				input: new Uint8Array(),
+				chainId: rpcNetwork.chainId,
+				hash: 1n,
+				v: 1n,
+				r: 1n,
+				s: 1n,
+			},
+			website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+			created,
+			originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ from: 0n, to: targetAddress }] },
+			transactionIdentifier: 1n,
+		}
+		const simulationState = {
+			success: true as const,
+			simulationStateInput: [{
+				stateOverrides: {},
+				transactions: [transaction],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 0n, deltaUnit: 'Seconds' as const },
+				simulateWithZeroBaseFee: false,
+			}],
+			simulatedBlocks: [],
+			blockNumber: 1n,
+			blockTimestamp: created,
+			baseFeePerGas: 1n,
+			simulationConductedTimestamp: created,
+			rpcNetwork,
+		}
+		const originalConsoleWarn = console.warn
+		const originalConsoleError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		let visualized: Awaited<ReturnType<typeof visualizeSimulatorState>>
+		try {
+			visualized = await visualizeSimulatorState(simulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
+		} finally {
+			console.warn = originalConsoleWarn
+			console.error = originalConsoleError
+		}
+
+		const targetEntry = visualized.addressBookEntries.find((entry) => entry.address === targetAddress)
+		assert.equal(targetEntry?.entrySource, 'FilledIn')
+		assert.equal(targetEntry?.chainId, rpcNetwork.chainId)
+		assert.equal(visualized.visualizedSimulationState.success, true)
+	})
+
 	test('keeps fetched address metadata instead of returning an empty address book', async () => {
 		installBrowserMock()
 

@@ -100,7 +100,7 @@ async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>)
 	})
 }
 
-function makePendingTransaction(simulationConductedTimestamp: Date) {
+function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigint) {
 	const activeAddress = 0x1111111111111111111111111111111111111111n
 	const recipientAddress = 0x2222222222222222222222222222222222222222n
 	const transactionIdentifier = 1n
@@ -111,6 +111,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date) {
 		params: [{
 			from: activeAddress,
 			to: recipientAddress,
+			...(value === undefined ? {} : { value }),
 			gas: 21_000n,
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
@@ -244,11 +245,26 @@ describe('ConfirmTransaction', () => {
 		assert.equal(dom.document.body.textContent?.includes('To'), true)
 		assert.equal(dom.document.body.textContent?.includes('Transaction Input'), true)
 		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
-		assert.equal(dom.document.body.textContent?.includes('0 wei'), true)
+		assert.equal(dom.document.body.textContent?.includes('0 ether'), true)
 		assert.equal(dom.document.body.textContent?.includes('Unknown'), false)
 		assert.equal(dom.document.body.textContent?.includes('Change'), true)
 		assert.equal(dom.document.body.textContent?.includes('Gas estimation error'), true)
 		assert.equal(dom.document.body.textContent?.includes('Execution error'), false)
+
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+		assert.equal(dom.document.body.textContent?.includes('1.25 ether'), true)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
