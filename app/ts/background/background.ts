@@ -38,6 +38,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
+import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 
 const simulationAbortController = new AbortController()
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -139,18 +140,17 @@ export async function refreshConfirmTransactionSimulation(
 		if (isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
 
-		const extractToAbi = async () => {
-			const params = transactionToSimulate.originalRequestParameters.params[0]
-			if (!('to' in params)) return []
-			if (params.to === undefined || params.to === null) return []
-			const identified = await identifyAddress(ethereum, undefined, params.to)
-			if ('abi' in identified && identified.abi !== undefined) return [identified.abi]
-			return []
-		}
 		const baseError = {
 			code: error.code,
 			message: error.message,
 			data: typeof error.data === 'string' ? error.data : '0x',
+		}
+		const extractToAbi = async (): Promise<readonly string[]> => {
+			const params = transactionToSimulate.originalRequestParameters.params[0]
+			if (!('to' in params)) return []
+			if (params.to === undefined || params.to === null) return []
+			const recipient = params.to
+			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, undefined, recipient))
 		}
 		return { statusCode: 'failed' as const, data: {
 			...info,
