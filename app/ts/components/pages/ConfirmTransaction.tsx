@@ -284,7 +284,7 @@ function FailedTransactionPreviewDetails({
 					<dt>To</dt>
 					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
 					<dt>Value</dt>
-					<dd>{ request?.value === undefined ? 'Unknown' : `${ request.value.toString(10) } wei` }</dd>
+					<dd>{ request === undefined ? 'Unknown' : `${ (request.value ?? 0n).toString(10) } wei` }</dd>
 					<dt>Gas limit </dt>
 					<dd>
 						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />

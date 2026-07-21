@@ -23,8 +23,20 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { getMinimumTransactionGasLimit } from '../../utils/transactionGas.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
+
+const getBufferedGasEstimate = (gasUsed: bigint, input: Uint8Array, isContractCreation: boolean, maxGas: bigint): { error: ErrorWithCodeAndOptionalData } | { gas: bigint } => {
+	const minimumGas = getMinimumTransactionGasLimit(input, isContractCreation)
+	if (minimumGas > maxGas) return { error: {
+		code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
+		message: `Transaction intrinsic gas ${ minimumGas.toString() } exceeds the available block gas ${ maxGas.toString() }`,
+		data: '0x',
+	} }
+	const bufferedGasUsed = gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
+	return { gas: min(max(bufferedGasUsed, minimumGas), maxGas) }
+}
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -354,8 +366,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		const lastResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, currentState.simulationStateInput, estimateGasTransaction, {}, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
-		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
-		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+		return getBufferedGasEstimate(lastResult.gasUsed, estimateGasTransaction.input, estimateGasTransaction.to === null, maxGas)
 	} catch (error: unknown) {
 		if (error instanceof JsonRpcResponseError) {
 			const safeParsedData = EthereumData.safeParse(error.data)
@@ -1378,8 +1389,7 @@ export const simulateEstimateGasFromInput = async (
 		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, extraOverrides, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
-		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n)
-		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+		return getBufferedGasEstimate(lastResult.gasUsed, estimateGasTransaction.input, estimateGasTransaction.to === null, maxGas)
 	} catch (error: unknown) {
 		if (error instanceof JsonRpcResponseError) {
 			const safeParsedData = EthereumData.safeParse(error.data)

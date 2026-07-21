@@ -111,7 +111,6 @@ function makePendingTransaction(simulationConductedTimestamp: Date) {
 		params: [{
 			from: activeAddress,
 			to: recipientAddress,
-			value: 0n,
 			gas: 21_000n,
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
@@ -245,6 +244,8 @@ describe('ConfirmTransaction', () => {
 		assert.equal(dom.document.body.textContent?.includes('To'), true)
 		assert.equal(dom.document.body.textContent?.includes('Transaction Input'), true)
 		assert.equal(dom.document.body.textContent?.includes('Gas limit'), true)
+		assert.equal(dom.document.body.textContent?.includes('0 wei'), true)
+		assert.equal(dom.document.body.textContent?.includes('Unknown'), false)
 		assert.equal(dom.document.body.textContent?.includes('Change'), true)
 		assert.equal(dom.document.body.textContent?.includes('Gas estimation error'), true)
 		assert.equal(dom.document.body.textContent?.includes('Execution error'), false)

@@ -5,11 +5,11 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
-import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
@@ -207,6 +207,16 @@ describe('SimulationModeEthereumClientService', () => {
 		signedMessages: [],
 		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 		simulateWithZeroBaseFee: false,
+	}] as const
+	const createNearlyFullBlockInput = () => [{
+		...createSimulationStateInput()[0],
+		transactions: [{
+			...createSimulationStateInput()[0].transactions[0],
+			signedTransaction: mockSignTransaction({
+				...exampleTransaction,
+				gas: 29_950_000n,
+			}),
+		}],
 	}] as const
 
 	const createTwoBlockSimulationStateInput = () => [
@@ -814,6 +824,46 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
+		})
+
+		test('simulateEstimateGasFromInput does not return less than the calldata gas floor', async () => {
+			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, [], {
+				from: exampleTransaction.from,
+				to: exampleTransaction.to,
+				value: 0n,
+				input: new Uint8Array(1_000).fill(1),
+			})
+
+			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
+			assert.equal(estimateGas.gas, 61_000n)
+		})
+
+		test('simulateEstimateGasFromInput fails when the intrinsic minimum exceeds available block gas', async () => {
+			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, toResolvedSimulationInput(createNearlyFullBlockInput()), {
+				from: exampleTransaction.from,
+				to: exampleTransaction.to,
+				value: 0n,
+				input: new Uint8Array(),
+			}, 0)
+
+			if (!('error' in estimateGas)) throw new Error(`expected gas estimation failure, received ${ estimateGas.gas.toString() }`)
+			assert.equal(estimateGas.error.code, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED)
+			assert.equal(estimateGas.error.message.includes('exceeds the available block gas'), true)
+		})
+
+		test('simulateEstimateGas fails when the intrinsic minimum exceeds available block gas', async () => {
+			const simulationState = await createSimulationState(ethereum, undefined, createNearlyFullBlockInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const estimateGas = await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState(simulationState), {
+				from: exampleTransaction.from,
+				to: exampleTransaction.to,
+				value: 0n,
+				input: new Uint8Array(),
+			}, 0)
+
+			if (!('error' in estimateGas)) throw new Error(`expected gas estimation failure, received ${ estimateGas.gas.toString() }`)
+			assert.equal(estimateGas.error.code, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED)
+			assert.equal(estimateGas.error.message.includes('exceeds the available block gas'), true)
 		})
 
 		test('simulateEstimateGasFromInput preserves explicit gas', async () => {
