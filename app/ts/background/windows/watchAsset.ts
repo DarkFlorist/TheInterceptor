@@ -16,14 +16,15 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
-import { invalidWatchAssetRequest } from '../rpcRequestParsing.js'
+import { invalidWatchAssetRequest, watchAssetRequestError } from '../rpcRequestParsing.js'
+import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership, normalizeWatchAssetImageUrl } from '../watchAssetMetadata.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
 export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
 
 function watchAssetQueueIdentity(request: StoredWatchAssetRequest) {
-	const tokenId = request.requestedAsset.type === 'ERC20' ? '' : `|${ BigInt(request.requestedAsset.options.tokenId).toString() }`
+	const tokenId = request.requestedAsset.type === 'ERC721' || request.requestedAsset.type === 'ERC1155' ? `|${ BigInt(request.requestedAsset.options.tokenId).toString() }` : ''
 	return `${ request.website.websiteOrigin }|${ request.token.chainId ?? 1n }|${ request.requestedAsset.type }|${ request.requestedAsset.options.address }${ tokenId }`
 }
 
@@ -46,17 +47,14 @@ export function validateWatchAssetParameters(params: WalletWatchAsset, currentCh
 		if (BigInt(options.chainId) !== currentChainId) return 'The asset chainId must match the active chain.'
 	}
 	if (type === 'ERC20') {
+		if (options.name !== undefined && options.name.length === 0) return 'The asset name must not be empty.'
 		if (options.symbol !== undefined && (options.symbol.length === 0 || options.symbol.length > 11)) return 'The asset symbol must contain from 1 to 11 characters.'
 		if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || options.decimals < 0 || options.decimals > 36)) return 'The asset decimals must be an integer from 0 to 36.'
 		if (options.image !== undefined) {
-			try {
-				const imageUrl = new URL(options.image)
-				if (imageUrl.protocol !== 'https:' && imageUrl.protocol !== 'http:') return 'The asset image must be an HTTP or HTTPS URL.'
-			} catch {
-				return 'The asset image must be a valid URL.'
-			}
+			const imageUrl = normalizeWatchAssetImageUrl(options.image)
+			if (imageUrl === undefined || imageUrl.startsWith('data:')) return 'The asset image must be a public HTTPS URL using the default port.'
 		}
-	} else {
+	} else if (type === 'ERC721' || type === 'ERC1155') {
 		if (!/^\d+$/.test(options.tokenId)) return 'The asset tokenId must be a non-negative decimal integer string.'
 		if (BigInt(options.tokenId) > (1n << 256n) - 1n) return 'The asset tokenId must fit in an unsigned 256-bit integer.'
 	}
@@ -220,7 +218,7 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 				result: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
 			},
 		) !== false,
-		downloadImage: async (url) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES),
+		downloadImage: async (url) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES, { redirect: 'error' }),
 	}
 }
 
@@ -235,9 +233,10 @@ function isSameAddressBookAsset(first: WatchAssetAddressBookEntry, second: Watch
 
 function refreshQueuedNftRequests(requests: readonly StoredWatchAssetRequest[], entries: AddressBookEntries) {
 	return requests.map((request): StoredWatchAssetRequest => {
-		if (request.requestedAsset.type === 'ERC20') return request
+		if (request.requestedAsset.type !== 'ERC721' && request.requestedAsset.type !== 'ERC1155') return request
 		const latest = entries.find((entry): entry is Erc721Entry | Erc1155Entry => (entry.type === 'ERC721' || entry.type === 'ERC1155') && isSameAddressBookAsset(entry, request.token))
 		if (latest === undefined || latest.type !== request.requestedAsset.type) return request
+		if (request.token.type !== 'ERC721' && request.token.type !== 'ERC1155') return request
 		const requestedTokenId = BigInt(request.requestedAsset.options.tokenId)
 		return {
 			...request,
@@ -260,11 +259,13 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
 		if (confirmation.data.action === 'downloadImage') {
-			const imageUrl = request.requestedAsset.type === 'ERC20' ? request.requestedAsset.options.image : undefined
+			const requestedImageUrl = request.proposedImageUrl ?? (request.requestedAsset.type === 'ERC20' ? request.requestedAsset.options.image : undefined)
+			const imageUrl = normalizeWatchAssetImageUrl(requestedImageUrl)
 			const imageResult = imageUrl === undefined ? undefined : await dependencies.downloadImage(imageUrl)
 			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => {
 				if (!requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)) return stored
-				if (imageUrl === undefined) return { ...stored, imageDownloadError: 'The website did not provide an image URL.' }
+				if (requestedImageUrl === undefined) return { ...stored, imageDownloadError: 'The asset metadata did not provide an image.' }
+				if (imageUrl === undefined) return { ...stored, imageDownloadError: 'The proposed image URL is not safe to download.' }
 				if (imageResult?.data === undefined) return { ...stored, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
 				return { ...stored, selectedImageUri: imageResult.data, imageDownloadError: undefined }
 			}))
@@ -280,15 +281,18 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		}
 		if (confirmation.data.action === 'add') {
 			let updatedAddressBook: AddressBookEntries | undefined
+			const proposedToken = request.token
 			await dependencies.updateAddressBook((entries) => {
-				const latest = entries.find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && isSameAddressBookAsset(entry, request.token))
-				const mergedToken = request.token.type === 'ERC20'
-					? request.token
+				const latest = entries.find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && isSameAddressBookAsset(entry, proposedToken))
+				const mergedToken = proposedToken.type === 'ERC20'
+					? proposedToken
 					: {
-						...request.token,
-						watchedTokenIds: Array.from(new Set([...(latest?.type === request.token.type ? latest.watchedTokenIds ?? [] : []), ...(request.token.watchedTokenIds ?? [])])),
+						...proposedToken,
+						watchedTokenIds: Array.from(new Set([...(latest?.type === proposedToken.type ? latest.watchedTokenIds ?? [] : []), ...(proposedToken.watchedTokenIds ?? [])])),
 					}
-				const token = request.selectedImageUri === undefined ? removeAssetLogo(mergedToken) : { ...mergedToken, logoUri: request.selectedImageUri }
+				const token = request.selectedImageUri === undefined
+					? removeAssetLogo(mergedToken)
+					: { ...mergedToken, logoUri: request.selectedImageUri }
 				updatedAddressBook = replaceAddressBookEntryWithAsset(entries, token)
 				return updatedAddressBook
 			})
@@ -341,23 +345,89 @@ export async function handleWatchAssetRequest(
 		scheduleDialog?: (showDialog: () => void) => void,
 		enqueueRequest?: (request: StoredWatchAssetRequest) => Promise<void>,
 		processQueue?: (websiteTabConnections: WebsiteTabConnections) => Promise<void>,
+		loadErc1046?: typeof loadErc1046Metadata,
+		loadErc20?: typeof loadLegacyErc20Metadata,
+		loadNft?: typeof loadNftMetadataAndVerifyOwnership,
 	} = {},
+	activeAddress: bigint | undefined = undefined,
 ) {
 	const validationError = validateWatchAssetParameters(params, ethereumClientService.getChainId())
 	if (validationError !== undefined) return invalidWatchAssetRequest(validationError)
 	const requestedAsset = params.params[0]
 	const chainId = ethereumClientService.getChainId()
 	const getAddressBookEntries = dependencies.getAddressBookEntries ?? (async () => await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
-	const existingEntry = (await getAddressBookEntries()).find((entry) => entry.address === requestedAsset.options.address)
-	let currentToken: WatchAssetAddressBookEntry
-	if (existingEntry?.type === requestedAsset.type) {
-		currentToken = existingEntry
+	const addressBookEntries = await getAddressBookEntries()
+	const addressBookType = requestedAsset.type === 'ERC1046' ? 'ERC20' : requestedAsset.type
+	const existingEntry = addressBookEntries.find((entry): entry is WatchAssetAddressBookEntry => entry.address === requestedAsset.options.address && entry.type === addressBookType)
+	const identifyAddress = dependencies.identifyAddress ?? itentifyAddressViaOnChainInformation
+	let identified: Awaited<ReturnType<typeof itentifyAddressViaOnChainInformation>>
+	try {
+		identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
+	} catch {
+		return invalidWatchAssetRequest('Unable to verify the asset contract on the active chain.')
+	}
+	let identifiedToken: WatchAssetAddressBookEntry
+	let proposedImageUrl: string | undefined = requestedAsset.type === 'ERC20' ? normalizeWatchAssetImageUrl(requestedAsset.options.image) : undefined
+	let proposedAssetName: string | undefined
+	let proposedAssetDescription: string | undefined
+	if (requestedAsset.type === 'ERC20') {
+		if (identified.type === 'EOA' || identified.type === 'ERC721' || identified.type === 'ERC1155') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
+		const legacyMetadata = identified.type === 'ERC20'
+			? { success: true as const, metadata: { name: identified.name, symbol: identified.symbol, decimals: identified.decimals } }
+			: await (dependencies.loadErc20 ?? loadLegacyErc20Metadata)(ethereumClientService, requestedAsset.options.address)
+		if (!legacyMetadata.success) return watchAssetRequestError(legacyMetadata.message, legacyMetadata.code)
+		if (requestedAsset.options.name !== undefined && legacyMetadata.metadata.name !== undefined && requestedAsset.options.name !== legacyMetadata.metadata.name) return invalidWatchAssetRequest(`The requested name does not match the contract name (${ legacyMetadata.metadata.name }).`)
+		if (requestedAsset.options.symbol !== undefined && legacyMetadata.metadata.symbol !== undefined && requestedAsset.options.symbol.toLowerCase() !== legacyMetadata.metadata.symbol.toLowerCase()) return invalidWatchAssetRequest(`The requested symbol does not match the contract symbol (${ legacyMetadata.metadata.symbol }).`)
+		if (requestedAsset.options.decimals !== undefined && legacyMetadata.metadata.decimals !== undefined && BigInt(requestedAsset.options.decimals) !== legacyMetadata.metadata.decimals) return invalidWatchAssetRequest(`The requested decimals do not match the contract decimals (${ legacyMetadata.metadata.decimals.toString() }).`)
+		const symbol = legacyMetadata.metadata.symbol ?? requestedAsset.options.symbol
+		const decimals = legacyMetadata.metadata.decimals ?? (requestedAsset.options.decimals === undefined ? undefined : BigInt(requestedAsset.options.decimals))
+		if (symbol === undefined || symbol.length === 0 || symbol.length > 11) return invalidWatchAssetRequest('The ERC20 symbol is unavailable from the contract and must be supplied with 1 to 11 characters.')
+		if (decimals === undefined) return invalidWatchAssetRequest('The ERC20 decimals are unavailable from the contract and must be supplied.')
+		identifiedToken = {
+			type: 'ERC20',
+			address: requestedAsset.options.address,
+			name: legacyMetadata.metadata.name ?? requestedAsset.options.name ?? checksummedAddress(requestedAsset.options.address),
+			symbol,
+			decimals,
+			entrySource: 'OnChain',
+			chainId,
+		}
+	} else if (requestedAsset.type === 'ERC1046') {
+		if (identified.type === 'EOA' || identified.type === 'ERC721' || identified.type === 'ERC1155') return invalidWatchAssetRequest('The requested address is not an ERC1046 token contract on the active chain.')
+		const loaded = await (dependencies.loadErc1046 ?? loadErc1046Metadata)(ethereumClientService, requestedAsset.options.address)
+		if (!loaded.success) return watchAssetRequestError(loaded.message, loaded.code)
+		const contractMetadata = identified.type === 'ERC20'
+			? { success: true as const, metadata: { name: identified.name, symbol: identified.symbol, decimals: identified.decimals } }
+			: await (dependencies.loadErc20 ?? loadLegacyErc20Metadata)(ethereumClientService, requestedAsset.options.address)
+		if (!contractMetadata.success) return invalidWatchAssetRequest('The requested address is not an ERC1046 ERC20 token contract on the active chain.')
+		if (loaded.metadata.decimals !== undefined && (!Number.isSafeInteger(loaded.metadata.decimals) || loaded.metadata.decimals < 0)) return invalidWatchAssetRequest('The ERC1046 metadata decimals must be a non-negative safe integer.')
+		if (loaded.metadata.name !== undefined && contractMetadata.metadata.name !== undefined && contractMetadata.metadata.name !== '' && loaded.metadata.name !== contractMetadata.metadata.name) return invalidWatchAssetRequest('The ERC1046 metadata name does not match the contract name.')
+		if (loaded.metadata.symbol !== undefined && contractMetadata.metadata.symbol !== undefined && contractMetadata.metadata.symbol !== '' && loaded.metadata.symbol.toLowerCase() !== contractMetadata.metadata.symbol.toLowerCase()) return invalidWatchAssetRequest('The ERC1046 metadata symbol does not match the contract symbol.')
+		if (loaded.metadata.decimals !== undefined && contractMetadata.metadata.decimals !== undefined && BigInt(loaded.metadata.decimals) !== contractMetadata.metadata.decimals) return invalidWatchAssetRequest('The ERC1046 metadata decimals do not match the contract decimals.')
+		identifiedToken = {
+			type: 'ERC20',
+			address: requestedAsset.options.address,
+			name: loaded.metadata.name ?? contractMetadata.metadata.name ?? checksummedAddress(requestedAsset.options.address),
+			symbol: loaded.metadata.symbol ?? contractMetadata.metadata.symbol ?? '???',
+			decimals: loaded.metadata.decimals === undefined ? contractMetadata.metadata.decimals ?? 18n : BigInt(loaded.metadata.decimals),
+			entrySource: 'OnChain',
+			chainId,
+		}
+		proposedAssetName = loaded.metadata.name
+		proposedAssetDescription = loaded.metadata.description
+		proposedImageUrl = loaded.metadata.imageUrl
 	} else {
-		const identifyAddress = dependencies.identifyAddress ?? itentifyAddressViaOnChainInformation
-		const identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
 		if (identified.type !== requestedAsset.type) return invalidWatchAssetRequest(`The requested address is not an ${ requestedAsset.type } token contract on the active chain.`)
-		const identifiedToken: WatchAssetAddressBookEntry = { ...identified, entrySource: 'OnChain', chainId }
-		currentToken = identifiedToken
+		const tokenId = BigInt(requestedAsset.options.tokenId)
+		const loaded = await (dependencies.loadNft ?? loadNftMetadataAndVerifyOwnership)(ethereumClientService, requestedAsset.type, requestedAsset.options.address, tokenId, activeAddress)
+		if (!loaded.success) return watchAssetRequestError(loaded.message, loaded.code)
+		identifiedToken = { ...identified, entrySource: 'OnChain', chainId }
+		proposedAssetName = loaded.metadata.name
+		proposedAssetDescription = loaded.metadata.description
+		proposedImageUrl = loaded.metadata.imageUrl
+	}
+	let currentToken = existingEntry ?? identifiedToken
+	if (existingEntry === undefined) {
 		const updateAddressBook = dependencies.updateAddressBook ?? updateUserAddressBookEntries
 		await updateAddressBook((entries) => {
 			const updatedEntries = replaceAddressBookEntryWithAsset(entries, identifiedToken)
@@ -367,15 +437,14 @@ export async function handleWatchAssetRequest(
 		const publishAddressBookChanged = dependencies.publishAddressBookChanged ?? (async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }))
 		await publishAddressBookChanged()
 	}
-	const token: WatchAssetAddressBookEntry = requestedAsset.type === 'ERC20' && currentToken.type === 'ERC20'
+	const token: WatchAssetAddressBookEntry = (requestedAsset.type === 'ERC20' || requestedAsset.type === 'ERC1046') && currentToken.type === 'ERC20' && identifiedToken.type === 'ERC20'
 		? {
 			...currentToken,
+			...identifiedToken,
 			entrySource: 'User',
 			chainId,
-			symbol: requestedAsset.options.symbol ?? currentToken.symbol,
-			decimals: requestedAsset.options.decimals === undefined ? currentToken.decimals : BigInt(requestedAsset.options.decimals),
 		}
-		: requestedAsset.type !== 'ERC20' && currentToken.type === requestedAsset.type
+		: (requestedAsset.type === 'ERC721' || requestedAsset.type === 'ERC1155') && currentToken.type === requestedAsset.type
 			? {
 				...currentToken,
 				entrySource: 'User',
@@ -390,6 +459,9 @@ export async function handleWatchAssetRequest(
 		requestedAsset,
 		currentToken,
 		token,
+		proposedAssetName,
+		proposedAssetDescription,
+		proposedImageUrl,
 		selectedImageUri: undefined,
 		imageDownloadError: undefined,
 		forwardToSigner: undefined,

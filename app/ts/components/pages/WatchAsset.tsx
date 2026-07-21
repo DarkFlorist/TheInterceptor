@@ -41,7 +41,8 @@ function ProposedTokenImage({ pendingRequest, busy, chooseImage }: {
 	chooseImage: () => void,
 }) {
 	if (pendingRequest.selectedImageUri !== undefined) return <TokenImageValue uri = { pendingRequest.selectedImageUri } alt = 'Proposed token image'/>
-	if (pendingRequest.requestedAsset.type !== 'ERC20' || pendingRequest.requestedAsset.options.image === undefined) return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
+	const proposedImageUrl = pendingRequest.proposedImageUrl ?? (pendingRequest.requestedAsset.type === 'ERC20' ? pendingRequest.requestedAsset.options.image : undefined)
+	if (proposedImageUrl === undefined) return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
 	return <span>
 		<button class = 'button is-small is-link is-light' disabled = { busy } onClick = { chooseImage }>{ busy ? 'Downloading image…' : 'Download image' }</button>
 		{ pendingRequest.imageDownloadError === undefined ? <></> : <small style = 'display: block; color: var(--negative-color); margin-top: 5px'>{ pendingRequest.imageDownloadError }</small> }
@@ -56,7 +57,11 @@ export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseIma
 	const { currentToken, token, website, selectedImageUri } = pendingRequest
 	const currentChainId = currentToken.chainId === 'AllChains' ? 'All chains' : (currentToken.chainId ?? 1n).toString()
 	const proposedChainId = typeof token.chainId === 'bigint' ? token.chainId.toString() : '1'
-	const proposedLogoUri = selectedImageUri ?? currentToken.logoUri
+	const currentAssetImage = currentToken.logoUri
+	const proposedLogoUri = selectedImageUri ?? currentAssetImage
+	const isNftRequest = pendingRequest.requestedAsset.type === 'ERC721' || pendingRequest.requestedAsset.type === 'ERC1155'
+	const metadataName = isNftRequest ? pendingRequest.proposedAssetName : undefined
+	const hasInformationalMetadata = metadataName !== undefined || pendingRequest.proposedAssetDescription !== undefined
 	const currentTokenIds = currentToken.type === 'ERC20' ? undefined : currentToken.watchedTokenIds ?? []
 	const proposedTokenIds = token.type === 'ERC20' ? undefined : token.watchedTokenIds ?? []
 	const formatTokenIds = (tokenIds: readonly bigint[] | undefined) => tokenIds === undefined || tokenIds.length === 0 ? 'None' : tokenIds.map((tokenId) => tokenId.toString()).join(', ')
@@ -73,17 +78,27 @@ export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseIma
 				<table class = 'table is-fullwidth' style = 'background: transparent; font-size: 0.8rem'>
 					<thead><tr><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Field</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Current</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>If accepted</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Change</th></tr></thead>
 					<tbody>
+						<ProposedAssetField label = 'Request type' currentValue = '—' proposedValue = { pendingRequest.requestedAsset.type } changes = { false }/>
 						<ProposedAssetField label = 'Asset type' currentValue = { currentToken.type } proposedValue = { token.type } changes = { currentToken.type !== token.type }/>
 						<ProposedAssetField label = 'Chain ID' currentValue = { currentChainId } proposedValue = { proposedChainId } changes = { currentChainId !== proposedChainId }/>
+						<ProposedAssetField label = 'Name' currentValue = { currentToken.name } proposedValue = { token.name } changes = { currentToken.name !== token.name }/>
 						<ProposedAssetField label = 'Symbol' currentValue = { currentToken.symbol } proposedValue = { token.symbol } changes = { currentToken.symbol !== token.symbol }/>
 						{ currentToken.type === 'ERC20' && token.type === 'ERC20'
 							? <ProposedAssetField label = 'Decimals' currentValue = { currentToken.decimals.toString() } proposedValue = { token.decimals.toString() } changes = { currentToken.decimals !== token.decimals }/>
 							: <ProposedAssetField label = 'Token IDs' currentValue = { formatTokenIds(currentTokenIds) } proposedValue = { formatTokenIds(proposedTokenIds) } changes = { formatTokenIds(currentTokenIds) !== formatTokenIds(proposedTokenIds) }/> }
-						<ProposedAssetField label = 'Token image' currentValue = { <TokenImageValue uri = { currentToken.logoUri } alt = 'Current token image'/> } proposedValue = { <ProposedTokenImage pendingRequest = { pendingRequest } busy = { imageBusy } chooseImage = { chooseImage }/> } changes = { currentToken.logoUri !== proposedLogoUri }/>
+						<ProposedAssetField label = 'Token image' currentValue = { <TokenImageValue uri = { currentAssetImage } alt = 'Current token image'/> } proposedValue = { <ProposedTokenImage pendingRequest = { pendingRequest } busy = { imageBusy } chooseImage = { chooseImage }/> } changes = { currentAssetImage !== proposedLogoUri }/>
 					</tbody>
 				</table>
 			</div>
 			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Fields marked “Will change” replace the current address-book values only if you add the asset.</p>
+			{ hasInformationalMetadata ? <div style = 'border-top: 1px solid var(--alpha-015); margin-top: 10px; padding-top: 9px'>
+				<h3 style = 'color: var(--text-color); font-weight: 600; font-size: 0.85rem; margin-bottom: 5px'>Token metadata</h3>
+				<div style = 'display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; row-gap: 5px; font-size: 0.8rem'>
+					{ metadataName === undefined ? <></> : <AssetField label = 'Token name' value = { metadataName }/> }
+					{ pendingRequest.proposedAssetDescription === undefined ? <></> : <AssetField label = 'Description' value = { pendingRequest.proposedAssetDescription }/> }
+				</div>
+				<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 6px'>Informational metadata is shown for verification and is not stored as an address-book field.</p>
+			</div> : <></> }
 		</section>
 	</>
 }

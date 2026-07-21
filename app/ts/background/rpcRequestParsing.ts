@@ -1,11 +1,12 @@
 import { EthereumJsonRpcRequest, type EthereumJsonRpcRequest as EthereumJsonRpcRequestType } from '../types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 
-export const invalidWatchAssetRequest = (message: string) => ({
+export const watchAssetRequestError = (message: string, code = -32602) => ({
 	type: 'result' as const,
 	method: 'wallet_watchAsset' as const,
-	error: { code: -32602, message },
+	error: { code, message },
 })
+export const invalidWatchAssetRequest = (message: string) => watchAssetRequestError(message)
 
 type BackgroundRpcParseResult =
 	| { success: true, value: EthereumJsonRpcRequestType }

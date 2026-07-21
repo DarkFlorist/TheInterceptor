@@ -63,6 +63,9 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 			chainId: 1n,
 			entrySource: 'User',
 		},
+		proposedAssetName: undefined,
+		proposedAssetDescription: undefined,
+		proposedImageUrl: undefined,
 		selectedImageUri: undefined,
 		imageDownloadError: undefined,
 		forwardToSigner: undefined,
@@ -110,6 +113,7 @@ describe('wallet_watchAsset', () => {
 		for (const type of ['ERC721', 'ERC1155', 'ERC777']) {
 			expect(() => WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type, options: { address: tokenAddress } }] })).toThrow()
 		}
+		expect(() => WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC1046', options: { address: tokenAddress } }] })).not.toThrow()
 	})
 
 	test('routes malformed watch-asset parameters to the webpage as JSON-RPC invalid params', () => {
@@ -183,6 +187,9 @@ describe('wallet_watchAsset', () => {
 			{ address: tokenAddress, symbol: '' },
 			{ address: tokenAddress, symbol: 'TOO-LONG-SYMBOL' },
 			{ address: tokenAddress, image: 'not a url' },
+			{ address: tokenAddress, image: 'http://images.example/token.png' },
+			{ address: tokenAddress, image: 'https://127.0.0.1/token.png' },
+			{ address: tokenAddress, image: 'https://images.example:8443/token.png' },
 			{ address: tokenAddress, image: 'data:image/png;base64,AA==' },
 		]) {
 			const parsed = WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC20', options }] })
@@ -269,7 +276,7 @@ describe('wallet_watchAsset', () => {
 		const queuedRequests: StoredWatchAssetRequest[] = []
 		const knownToken = { type: 'ERC20' as const, name: 'Known token', symbol: 'OLD', decimals: 18n, address: BigInt(tokenAddress), chainId: 1n, entrySource: 'User' as const }
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithHints, website, parsed, {
-			identifyAddress: async () => { throw new Error('Existing token metadata must not be fetched from chain') },
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Known token', symbol: 'NEW', decimals: 8n, entrySource: 'OnChain' }),
 			getAddressBookEntries: async () => [knownToken],
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
 			scheduleDialog: (showDialog) => { scheduledDialog = showDialog },
@@ -280,6 +287,36 @@ describe('wallet_watchAsset', () => {
 		expect(queuedRequests[0]?.currentToken).toEqual(knownToken)
 		expect(queuedRequests[0]?.token).toEqual({ ...knownToken, symbol: 'NEW', decimals: 8n })
 		expect(scheduledDialog).toBeFunction()
+	})
+
+	test('rejects ERC20 hints that differ from verified contract metadata', async () => {
+		const requestWithMismatch = { ...interceptedRequest, params: [{ type: 'ERC20' as const, options: { address: tokenAddress, symbol: 'WRONG', decimals: 8 } }] }
+		const parsed = WalletWatchAsset.parse(requestWithMismatch)
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithMismatch, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Token', symbol: 'CHAIN', decimals: 18n, entrySource: 'OnChain' }),
+			getAddressBookEntries: async () => [],
+			scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
+		})
+
+		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', error: { code: -32602, message: 'The requested symbol does not match the contract symbol (CHAIN).' } })
+	})
+
+	test('supports legacy ERC20 contracts whose optional metadata is supplied by the request', async () => {
+		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC20' as const, options: { address: tokenAddress, name: 'Legacy Token', symbol: 'LEGACY', decimals: 8 } }] }
+		const parsed = WalletWatchAsset.parse(rawRequest)
+		const queuedRequests: StoredWatchAssetRequest[] = []
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
+			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
+			getAddressBookEntries: async () => [],
+			updateAddressBook: async () => undefined,
+			publishAddressBookChanged: async () => undefined,
+			enqueueRequest: async (request) => { queuedRequests.push(request) },
+			scheduleDialog: () => undefined,
+		})
+
+		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
+		expect(queuedRequests[0]?.token).toMatchObject({ type: 'ERC20', name: 'Legacy Token', symbol: 'LEGACY', decimals: 8n })
 	})
 
 	test('identifies and stores missing token data before comparing the proposal', async () => {
@@ -313,11 +350,12 @@ describe('wallet_watchAsset', () => {
 				: { type, address: BigInt(tokenAddress), name: 'Items', symbol: 'ITEM', decimals: undefined, entrySource: 'User' as const, chainId: 1n, watchedTokenIds: [7n] }
 			const queuedRequests: StoredWatchAssetRequest[] = []
 			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
-				identifyAddress: async () => { throw new Error('Existing collection metadata must not be fetched from chain') },
+				identifyAddress: async () => collection,
+				loadNft: async () => ({ success: true, metadata: { metadataUri: 'data:application/json,{}', name: undefined, symbol: undefined, decimals: undefined, description: undefined, imageUrl: undefined } }),
 				getAddressBookEntries: async () => [collection],
 				enqueueRequest: async (request) => { queuedRequests.push(request) },
 				scheduleDialog: () => undefined,
-			})
+			}, 0x2222222222222222222222222222222222222222n)
 
 			expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
 			expect(queuedRequests[0]?.currentToken).toEqual(collection)
@@ -356,20 +394,55 @@ describe('wallet_watchAsset', () => {
 		expect(reply).toEqual({
 			type: 'result',
 			method: 'wallet_watchAsset',
-			error: { code: -32602, message: 'The requested address is not an ERC20 token contract on the active chain.' },
+			error: { code: -32602, message: 'The requested address could not be verified as an ERC20 token contract.' },
 		})
 		expect(scheduled).toBeFalse()
 	})
 
-	test('propagates unexpected on-chain metadata failures', async () => {
+	test('returns unexpected on-chain verification failures to the webpage', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		const failure = new Error('RPC transport failed')
 
-		await expect(handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async () => { throw failure },
 			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { throw new Error('Dialog must not be scheduled') },
-		})).rejects.toBe(failure)
+		})
+		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', error: { code: -32602, message: 'Unable to verify the asset contract on the active chain.' } })
+	})
+
+	test('loads and accepts EIP-747 ERC1046 metadata before acknowledging the request', async () => {
+		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC1046' as const, options: { address: tokenAddress, chainId: 1 } }] }
+		const parsed = WalletWatchAsset.parse(rawRequest)
+		const queuedRequests: StoredWatchAssetRequest[] = []
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
+			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
+			loadErc1046: async () => ({ success: true, metadata: { metadataUri: 'https://tokens.example/token.json', name: 'Metadata Token', symbol: 'META', decimals: 6, description: 'Token metadata', imageUrl: 'https://tokens.example/token.png' } }),
+			getAddressBookEntries: async () => [],
+			updateAddressBook: async () => undefined,
+			publishAddressBookChanged: async () => undefined,
+			enqueueRequest: async (request) => { queuedRequests.push(request) },
+			scheduleDialog: () => undefined,
+		})
+
+		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
+		expect(queuedRequests[0]?.requestedAsset.type).toBe('ERC1046')
+		expect(queuedRequests[0]?.token).toMatchObject({ type: 'ERC20', name: 'Metadata Token', symbol: 'META', decimals: 6n })
+		expect(queuedRequests[0]?.proposedImageUrl).toBe('https://tokens.example/token.png')
+	})
+
+	test('returns MetaMask-compatible NFT ownership errors to the webpage', async () => {
+		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC721' as const, options: { address: tokenAddress, tokenId: '1' } }] }
+		const parsed = WalletWatchAsset.parse(rawRequest)
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC721', address, name: 'Collection', symbol: 'NFT', entrySource: 'OnChain' }),
+			loadNft: async () => ({ success: false, code: -32000, message: 'The selected address does not own the requested ERC721 token.' }),
+			getAddressBookEntries: async () => [],
+			scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
+		}, 0x2222222222222222222222222222222222222222n)
+
+		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', error: { code: -32000, message: 'The selected address does not own the requested ERC721 token.' } })
 	})
 
 	test('resolves a persisted request without relying on in-memory dialog state', async () => {
@@ -486,8 +559,8 @@ describe('wallet_watchAsset', () => {
 		expect(published?.forwardToSigner).toBeUndefined()
 	})
 
-	test('keeps website image URLs out of user-visible download errors', async () => {
-		const imageUrl = 'not a valid URL containing private-value'
+	test('does not fetch an unsafe image URL from a legacy persisted request', async () => {
+		const imageUrl = 'https://127.0.0.1/private-value.png'
 		const base = createStoredRequest(14)
 		const stored: StoredWatchAssetRequest = {
 			...base,
@@ -495,6 +568,7 @@ describe('wallet_watchAsset', () => {
 			requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: imageUrl } },
 		}
 		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		let downloadCount = 0
 
 		await resolveWatchAsset(websiteTabConnections, {
 			method: 'popup_watchAssetDialog',
@@ -508,10 +582,11 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async () => undefined,
 			processQueue: async () => undefined,
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: `Failed to parse URL from ${ imageUrl }` }),
+			downloadImage: async () => { downloadCount++; return { data: undefined, failureReason: 'must not be called' } },
 		})
 
-		expect(requests[0]?.imageDownloadError).toBe('The proposed image could not be downloaded or decoded.')
+		expect(downloadCount).toBe(0)
+		expect(requests[0]?.imageDownloadError).toBe('The proposed image URL is not safe to download.')
 		expect(requests[0]?.imageDownloadError).not.toContain(imageUrl)
 	})
 

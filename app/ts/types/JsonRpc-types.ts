@@ -354,11 +354,13 @@ export const WalletWatchAssetParameters = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('ERC20'),
 		options: WatchAssetCommonOptions.And(funtypes.Partial({
+			name: funtypes.String,
 			symbol: funtypes.String,
 			decimals: funtypes.Number,
 			image: funtypes.String,
 		})),
 	}),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1046'), options: WatchAssetCommonOptions }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), options: WatchNftOptions }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1155'), options: WatchNftOptions }),
 )

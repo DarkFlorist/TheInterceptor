@@ -85,9 +85,9 @@ async function canDecodeImage(blob: Blob) {
 	}
 }
 
-export async function imageToUri(url: string, maxSizeInBytes = 1048576): Promise<ImageToUriResult> {
+export async function imageToUri(url: string, maxSizeInBytes = 1048576, requestInit: RequestInit | undefined = undefined): Promise<ImageToUriResult> {
 	try {
-		const response = await fetchWithTimeout(url, undefined, 15_000)
+		const response = await fetchWithTimeout(url, requestInit, 15_000)
 		if (!response.ok) return imageToUriFailed(`HTTP ${ response.status }${ response.statusText === '' ? '' : ` ${ response.statusText }` }`)
 		const contentType = response.headers.get('content-type')
 		if (contentType === null) return imageToUriFailed('response did not declare an image content type')

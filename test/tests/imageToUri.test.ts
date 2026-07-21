@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { afterAll, afterEach, describe, test } from 'bun:test'
 import { imageToUri } from '../../app/ts/utils/imageToUri.js'
 
-type FetchImplementation = (url: string) => Promise<Response>
+type FetchImplementation = (url: string, init: RequestInit | undefined) => Promise<Response>
 type MockFileReaderState = {
 	result: string | ArrayBuffer | undefined
 	onabort: (() => void) | undefined
@@ -39,9 +39,9 @@ function installSuccessfulFileReader(result: string) {
 Object.defineProperty(globalThis, 'fetch', {
 	configurable: true,
 	writable: true,
-	value: async (input: RequestInfo | URL) => {
+	value: async (input: RequestInfo | URL, init: RequestInit | undefined) => {
 		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-		return await fetchImplementation(url)
+		return await fetchImplementation(url, init)
 	},
 })
 
@@ -92,6 +92,20 @@ describe('imageToUri', () => {
 
 		assert.equal(result.failureReason, undefined)
 		assert.equal(result.data?.startsWith('data:image/png;base64,'), true)
+	})
+
+	test('can prohibit redirects for privileged image downloads', async () => {
+		installSuccessfulFileReader('data:image/png;base64,b2s=')
+		let requestedRedirectMode: RequestRedirect | undefined
+		fetchImplementation = async (_url, init) => {
+			requestedRedirectMode = init?.redirect
+			return new Response(new Blob(['ok'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+		}
+
+		const result = await imageToUri('https://example.test/no-redirect.png', 262_144, { redirect: 'error' })
+
+		assert.equal(result.failureReason, undefined)
+		assert.equal(requestedRedirectMode, 'error')
 	})
 
 	test('classifies fetch rejections', async () => {

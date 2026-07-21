@@ -83,6 +83,9 @@ const pendingRequest: PendingWatchAssetRequest = {
 		entrySource: 'User',
 		logoUri: 'data:image/png;base64,b2xk',
 	},
+	proposedAssetName: undefined,
+	proposedAssetDescription: undefined,
+	proposedImageUrl: 'https://dapp.example/token.png',
 	selectedImageUri: undefined,
 	imageDownloadError: undefined,
 	forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
@@ -99,12 +102,17 @@ describe('watch asset proposal rendering', () => {
 				requestedAsset: { type, options: { address: pendingRequest.currentToken.address, tokenId: '42' } },
 				currentToken,
 				token: { ...currentToken, watchedTokenIds: [7n, 42n] },
+				proposedAssetName: 'Token #42',
+				proposedAssetDescription: 'Token-specific metadata',
 			}
 			const dom = installDomMock()
 			try {
 				await act(() => { render(h(WatchAssetDetails, { pendingRequest: nftRequest }), dom.document.body) })
 				const text = dom.document.body.textContent ?? ''
 				assert.match(text, new RegExp(`${ type }.*Token IDs.*7.*7, 42.*Will change`, 's'))
+				assert.match(text, new RegExp(`Name${ currentToken.name }${ currentToken.name }No change`, 's'))
+				assert.match(text, /Token metadataToken nameToken #42DescriptionToken-specific metadata/)
+				assert.match(text, /Informational metadata is shown for verification and is not stored as an address-book field/)
 				assert.equal(text.includes('Decimals'), false)
 			} finally {
 				render(null, dom.document.body)
@@ -163,6 +171,7 @@ describe('watch asset proposal rendering', () => {
 				...pendingRequest,
 				requestedAsset: { type: 'ERC20', options: { address: pendingRequest.requestedAsset.options.address } },
 				token: { ...pendingRequest.currentToken, entrySource: 'User' },
+				proposedImageUrl: undefined,
 			}
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithoutHints }), dom.document.body)

@@ -775,7 +775,32 @@ describe('inpage signer bridge', () => {
 
 		assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
 			method: 'wallet_watchAsset',
-			params: [parameters],
+			params: parameters,
+		})
+	})
+
+	test('accepts MetaMask by-name wallet_watchAsset parameters from webpages', async () => {
+		let capturedRequest: InpageRequest | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method !== 'wallet_watchAsset') return false
+				capturedRequest = request
+				return true
+			},
+		})
+		const parameters = {
+			type: 'ERC20',
+			options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 },
+		}
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?watch-asset-named-params', async () => {
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params: Readonly<Record<string, unknown>> }) => Promise<unknown> }
+			const resultPromise = provider.request({ method: 'wallet_watchAsset', params: parameters })
+			await waitFor(() => capturedRequest !== undefined)
+			assert.deepEqual(capturedRequest?.params, [parameters])
+			if (capturedRequest === undefined) throw new Error('Expected a captured wallet_watchAsset request')
+			sendBackgroundMessage({ interceptorApproved: true, requestId: capturedRequest.requestId, type: 'result', method: 'wallet_watchAsset', result: true })
+			assert.equal(await resultPromise, true)
 		})
 	})
 

@@ -247,6 +247,8 @@ async function handleRPCRequest(
 			request,
 			website,
 			parsedRequest,
+			{},
+			activeAddress,
 		)
 		case 'wallet_requestPermissions': return await requestPermissions(activeAddress, website)
 		case 'wallet_getPermissions': return await getPermissions(activeAddress, website)
