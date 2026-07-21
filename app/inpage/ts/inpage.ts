@@ -1218,6 +1218,11 @@ class InterceptorMessageListener {
 		})
 	}
 
+	private readonly requestWatchAssetFromSigner = async (parameters: unknown) => {
+		if (this.signerWindowEthereumRequest === undefined) return
+		await this.requestFromCurrentSigner({ method: 'wallet_watchAsset', params: [parameters] })
+	}
+
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
 		try {
 			if (replyRequest.subscription !== undefined) {
@@ -1298,6 +1303,7 @@ class InterceptorMessageListener {
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
+				case 'request_signer_to_wallet_watchAsset': return await this.requestWatchAssetFromSigner(replyRequest.result)
 				case 'request_signer_connection_status': return await this.connectToSigner(this.signerName)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break

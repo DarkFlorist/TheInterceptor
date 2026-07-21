@@ -750,6 +750,35 @@ describe('inpage signer bridge', () => {
 		assert.match(String(reply.error.message), /No signer wallet is available/)
 	})
 
+	test('forwards an approved watch-asset dialog action to the selected signer', async () => {
+		const signerRequests: Array<{ method: string, params?: readonly unknown[] }> = []
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleSignerRequest: (request) => {
+				signerRequests.push(request)
+				return true
+			},
+		})
+		const parameters = {
+			type: 'ERC20',
+			options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 },
+		}
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?watch-asset-forward', async () => {
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_wallet_watchAsset',
+				result: parameters,
+			})
+			await waitFor(() => signerRequests.some(({ method }) => method === 'wallet_watchAsset'))
+		})
+
+		assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
+			method: 'wallet_watchAsset',
+			params: [parameters],
+		})
+	})
+
 	test('ignores replayed terminal replies after the original request settles', async () => {
 		let capturedRequest: InpageRequest | undefined
 		const { fakeWindow, interceptorErrorPayloads, sendBackgroundMessage } = createFakeWindow({

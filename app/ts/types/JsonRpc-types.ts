@@ -4,6 +4,7 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import { checksummedAddress } from '../utils/bigint.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -338,6 +339,27 @@ export const WalletAddEthereumChain = funtypes.ReadonlyObject({
 	))
 })
 
+export type WalletWatchAsset = funtypes.Static<typeof WalletWatchAsset>
+const ChecksummedWatchAssetAddress = funtypes.String.withConstraint((value) => {
+	if (!/^0x[a-fA-F0-9]{40}$/.test(value)) return false
+	return checksummedAddress(BigInt(value)) === value
+}).withParser({
+	parse: value => ({ success: true, value: BigInt(value) }),
+	serialize: value => ({ success: true, value: checksummedAddress(value) }),
+})
+export const WalletWatchAsset = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_watchAsset'),
+	params: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({
+		type: funtypes.String,
+		options: funtypes.ReadonlyObject({ address: ChecksummedWatchAssetAddress }).And(funtypes.Partial({
+			chainId: funtypes.Number,
+			symbol: funtypes.String,
+			decimals: funtypes.Number,
+			image: funtypes.String,
+		})),
+	})),
+})
+
 type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>
 const Web3ClientVersion = funtypes.ReadonlyObject({
 	method: funtypes.Literal('web3_clientVersion'),
@@ -425,6 +447,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthSign,
 	EthSimulateV1Params,
 	WalletAddEthereumChain,
+	WalletWatchAsset,
 	Web3ClientVersion,
 	FeeHistory,
 	EthNewFilter,
