@@ -29,7 +29,12 @@ export type SignerStateToken = {
 	readonly signerProviderGeneration: number
 }
 
-export type SignerStateIdentity = Omit<SignerStateToken, 'port'>
+export type SignerStateIdentity = {
+	readonly tabId: number
+	readonly connectionName: bigint
+	readonly ownerGeneration: number
+	readonly signerProviderGeneration: number
+}
 
 export function doSignerStateTokensMatch(first: SignerStateToken, second: SignerStateToken) {
 	return first.socket.tabId === second.socket.tabId
@@ -40,8 +45,8 @@ export function doSignerStateTokensMatch(first: SignerStateToken, second: Signer
 }
 
 export function doesSignerStateTokenMatchIdentity(token: SignerStateToken, identity: SignerStateIdentity) {
-	return token.socket.tabId === identity.socket.tabId
-		&& token.socket.connectionName === identity.socket.connectionName
+	return token.socket.tabId === identity.tabId
+		&& token.socket.connectionName === identity.connectionName
 		&& token.ownerGeneration === identity.ownerGeneration
 		&& token.signerProviderGeneration === identity.signerProviderGeneration
 }
@@ -202,7 +207,7 @@ function sendCallbackToSignerStateToken(websiteTabConnections: WebsiteTabConnect
 }
 
 export function sendCallbackToExpectedConfirmedSignerOwner(websiteTabConnections: WebsiteTabConnections, identity: SignerStateIdentity, message: InpageScriptCallBack) {
-	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, identity.socket.tabId)
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, identity.tabId)
 	if (signerStateToken === undefined || !doesSignerStateTokenMatchIdentity(signerStateToken, identity)) return false
 	return sendCallbackToSignerStateToken(websiteTabConnections, signerStateToken, message)
 }

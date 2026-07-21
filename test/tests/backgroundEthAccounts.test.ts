@@ -1231,27 +1231,27 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
 	})
 
-	test('does not send a callback when the expected signer owner has been replaced', async () => {
+	test('does not send a callback when a recreated connection reuses the expected generations', async () => {
 		installBrowserMock()
 		const { sendCallbackToExpectedConfirmedSignerOwner, websiteSocketToString } = await loadModules()
-		const socket = { tabId: 1, connectionName: 0n }
-		const { messages: replacedSignerMessages } = createPort(socket.tabId)
-		const { port: currentPort, messages: currentSignerMessages } = createPort(socket.tabId)
-		const websiteTabConnections = new Map([[socket.tabId, {
-			signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 2, providerGeneration: 3 },
+		const expectedSocket = { tabId: 1, connectionName: 0n }
+		const currentSocket = { tabId: 1, connectionName: 1n }
+		const { port: currentPort, messages: currentSignerMessages } = createPort(currentSocket.tabId, undefined, undefined, currentSocket.connectionName)
+		const websiteTabConnections = new Map([[currentSocket.tabId, {
+			signerStateOwner: { connectionName: currentSocket.connectionName, confirmed: true, generation: 1, providerGeneration: 1 },
 			connections: {
-				[websiteSocketToString(socket)]: { port: currentPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+				[websiteSocketToString(currentSocket)]: { port: currentPort, socket: currentSocket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 			},
 		}]])
 
 		const result = sendCallbackToExpectedConfirmedSignerOwner(websiteTabConnections, {
-			socket,
+			tabId: expectedSocket.tabId,
+			connectionName: expectedSocket.connectionName,
 			ownerGeneration: 1,
 			signerProviderGeneration: 1,
 		}, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
 
 		assert.equal(result, false)
-		assert.equal(replacedSignerMessages.length, 0)
 		assert.equal(currentSignerMessages.length, 0)
 	})
 

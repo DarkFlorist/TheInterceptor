@@ -34,6 +34,15 @@ function findFirstByTag(node: TestNode, tagName: string): TestNode | undefined {
 	return undefined
 }
 
+function findNodeByAttribute(node: TestNode, name: string, value: string): TestNode | undefined {
+	if (node.getAttribute?.(name) === value) return node
+	for (const child of node.childNodes ?? []) {
+		const match = findNodeByAttribute(child, name, value)
+		if (match !== undefined) return match
+	}
+	return undefined
+}
+
 const pendingRequest: PendingWatchAssetRequest = {
 	website: { websiteOrigin: 'https://dapp.example', title: 'Example dapp', icon: undefined },
 	popupOrTabId: { type: 'popup', id: 1 },
@@ -63,11 +72,19 @@ const pendingRequest: PendingWatchAssetRequest = {
 		chainId: 1n,
 		entrySource: 'User',
 	},
+	contractAddressEntry: {
+		type: 'contract',
+		name: 'Wrapped Ether contract',
+		address: 0x1111111111111111111111111111111111111111n,
+		chainId: 1n,
+		entrySource: 'User',
+	},
+	imageDownloadError: undefined,
 	forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
 }
 
 describe('watch asset proposal rendering', () => {
-	test('shows the complete website request and verified address-book entry with legible values', async () => {
+	test('shows the complete website request with address-book context and on-chain comparison badges', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -75,44 +92,32 @@ describe('watch asset proposal rendering', () => {
 			})
 
 			const requestSection = findNodeByExactText(dom.document.body, 'Request details')?.parentNode
-			const verifiedSection = findNodeByExactText(dom.document.body, 'Address book entry (verified on-chain)')?.parentNode
 			assert.notEqual(requestSection, undefined)
-			assert.notEqual(verifiedSection, undefined)
+			assert.equal(findNodeByExactText(dom.document.body, 'Address book entry (verified on-chain)'), undefined)
 			for (const expected of [
 				'https://dapp.example',
 			]) assert.match(dom.document.body.textContent, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 			for (const expected of [
 				'Asset type',
 				'ERC20',
+				'ERC-20 verified',
 				'Contract',
-				'0x1111111111111111111111111111111111111111',
+				'Wrapped Ether contract',
 				'Chain ID',
 				'1',
+				'Matches active chain',
 				'Symbol hint',
 				'SITE',
+				'Differs from on-chain',
+				'On-chain: VER',
 				'Decimals hint',
 				'8',
+				'On-chain: 6',
 				'Image hint',
 				'https://dapp.example/token.png',
+				'Download and use image',
 			]) assert.match(requestSection?.textContent ?? '', new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-			for (const expected of [
-				'Type',
-				'ERC20',
-				'Name',
-				'Verified Token',
-				'Symbol',
-				'VER',
-				'Contract',
-				'0x1111111111111111111111111111111111111111',
-				'Decimals',
-				'6',
-				'Chain ID',
-				'1',
-			]) assert.match(verifiedSection?.textContent ?? '', new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-
-			const verifiedName = findNodeByExactText(dom.document.body, 'Verified Token')
-			const verifiedNameStyle = verifiedName?.style?.color ?? verifiedName?.style?.cssText ?? verifiedName?.getAttribute?.('style') ?? ''
-			assert.match(verifiedNameStyle, /var\(--text-color\)/)
+			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'value', '0x1111111111111111111111111111111111111111'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -132,10 +137,44 @@ describe('watch asset proposal rendering', () => {
 
 			const requestSection = findNodeByExactText(dom.document.body, 'Request details')?.parentNode
 			const requestText = requestSection?.textContent ?? ''
-			assert.match(requestText, /Chain IDNot provided \(active chain used\)/)
-			assert.match(requestText, /Symbol hintNot provided/)
-			assert.match(requestText, /Decimals hintNot provided/)
+			assert.match(requestText, /Chain ID1Uses active chain/)
+			assert.match(requestText, /Symbol hintNot providedNot providedOn-chain: VER/)
+			assert.match(requestText, /Decimals hintNot providedNot providedOn-chain: 6/)
 			assert.match(requestText, /Image hintNot provided/)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('previews a downloaded image and marks it ready for address-book storage', async () => {
+		const dom = installDomMock()
+		try {
+			const requestWithImage = { ...pendingRequest, token: { ...pendingRequest.token, logoUri: 'data:image/png;base64,dG9rZW4=' } }
+			await act(() => {
+				render(h(WatchAssetDetails, { pendingRequest: requestWithImage }), dom.document.body)
+			})
+
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Ready to save'), undefined)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Remove'), undefined)
+			assert.notEqual(findNodeByAttribute(dom.document.body, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows an image download failure without hiding the original hint', async () => {
+		const dom = installDomMock()
+		try {
+			const failedRequest = { ...pendingRequest, imageDownloadError: 'image data could not be decoded' }
+			await act(() => {
+				render(h(WatchAssetDetails, { pendingRequest: failedRequest }), dom.document.body)
+			})
+
+			assert.notEqual(findNodeByExactText(dom.document.body, 'https://dapp.example/token.png'), undefined)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'image data could not be decoded'), undefined)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Download and use image'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

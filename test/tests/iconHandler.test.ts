@@ -13,6 +13,7 @@ type Listener = (tabId: number, info: browser.tabs._OnUpdatedChangeInfo) => void
 
 const originalFetch = globalThis.fetch
 const originalFileReader = globalThis.FileReader
+const originalCreateImageBitmap = globalThis.createImageBitmap
 const originalWarn = console.warn
 
 const storageState: Record<string, unknown> = {}
@@ -114,6 +115,11 @@ Object.defineProperty(globalThis, 'fetch', {
 		return new Response(new Blob(['icon'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
 	},
 })
+Object.defineProperty(globalThis, 'createImageBitmap', {
+	configurable: true,
+	writable: true,
+	value: async () => ({ width: 16, height: 16, close: () => undefined }),
+})
 console.warn = (...args: unknown[]) => {
 	warnings.push(args.map((arg) => String(arg)).join(' '))
 }
@@ -130,6 +136,11 @@ afterEach(() => {
 		writable: true,
 		value: originalFileReader,
 	})
+	Object.defineProperty(globalThis, 'createImageBitmap', {
+		configurable: true,
+		writable: true,
+		value: async () => ({ width: 16, height: 16, close: () => undefined }),
+	})
 })
 
 afterAll(() => {
@@ -142,6 +153,11 @@ afterAll(() => {
 		configurable: true,
 		writable: true,
 		value: originalFileReader,
+	})
+	Object.defineProperty(globalThis, 'createImageBitmap', {
+		configurable: true,
+		writable: true,
+		value: originalCreateImageBitmap,
 	})
 	console.warn = originalWarn
 })

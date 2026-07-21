@@ -9,6 +9,16 @@ export type ImageToUriResult = {
 const imageToUriFailed = (failureReason: string): ImageToUriResult => ({ data: undefined, failureReason })
 const imageToUriSucceeded = (data: string): ImageToUriResult => ({ data, failureReason: undefined })
 const imageTooLarge = (maxSizeInBytes: number) => imageToUriFailed(`image data exceeded ${ maxSizeInBytes } bytes`)
+const supportedImageContentTypes = new Set([
+	'image/avif',
+	'image/gif',
+	'image/jpeg',
+	'image/png',
+	'image/svg+xml',
+	'image/vnd.microsoft.icon',
+	'image/webp',
+	'image/x-icon',
+])
 
 async function readBlobAsDataUrl(blob: Blob): Promise<ImageToUriResult> {
 	const reader = new FileReader()
@@ -62,14 +72,30 @@ async function readBlobWithSizeLimit(response: Response, maxSizeInBytes: number)
 	return new Blob(chunks, { type: response.headers.get('content-type') ?? undefined })
 }
 
+async function canDecodeImage(blob: Blob) {
+	try {
+		const image = await createImageBitmap(blob)
+		try {
+			return image.width > 0 && image.height > 0
+		} finally {
+			image.close()
+		}
+	} catch {
+		return false
+	}
+}
+
 export async function imageToUri(url: string, maxSizeInBytes = 1048576): Promise<ImageToUriResult> {
 	try {
 		const response = await fetchWithTimeout(url, undefined, 15_000)
 		if (!response.ok) return imageToUriFailed(`HTTP ${ response.status }${ response.statusText === '' ? '' : ` ${ response.statusText }` }`)
 		const contentType = response.headers.get('content-type')
-		if (contentType !== null && !contentType.startsWith('image/')) return imageToUriFailed(`response was not an image (${ contentType })`)
+		if (contentType === null) return imageToUriFailed('response did not declare an image content type')
+		const normalizedContentType = contentType.split(';', 1)[0]?.trim().toLowerCase()
+		if (normalizedContentType === undefined || !supportedImageContentTypes.has(normalizedContentType)) return imageToUriFailed(`response was not a supported image (${ contentType })`)
 		const blob = await readBlobWithSizeLimit(response, maxSizeInBytes)
 		if (!(blob instanceof Blob)) return blob
+		if (!await canDecodeImage(blob)) return imageToUriFailed('image data could not be decoded')
 		const result = await readBlobAsDataUrl(blob)
 		if (result.failureReason !== undefined || result.data === undefined) return result
 		if (result.data.length > maxSizeInBytes) return imageTooLarge(maxSizeInBytes)

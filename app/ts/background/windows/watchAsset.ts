@@ -6,7 +6,7 @@ import type { InterceptedRequest, UniqueRequestIdentifier } from '../../utils/re
 import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
-import { getPendingWatchAssetRequests, getTabState, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
+import { getPendingWatchAssetRequests, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc20TokenEntry } from '../../types/addressBookTypes.js'
@@ -15,6 +15,7 @@ import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackTo
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
+import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
 
 const invalidWatchAssetRequest = (message: string) => ({
 	type: 'result' as const,
@@ -24,6 +25,7 @@ const invalidWatchAssetRequest = (message: string) => ({
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
+export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
 
 function watchAssetQueueIdentity(request: StoredWatchAssetRequest) {
 	return `${ request.website.websiteOrigin }|${ request.token.chainId ?? 1n }|${ request.requestedAsset.type }|${ request.requestedAsset.options.address }`
@@ -59,7 +61,7 @@ export function replaceAddressBookEntryWithVerifiedToken(entries: AddressBookEnt
 	if (existing === undefined) return entries
 	const verifiedTokenWithUserConfiguration: Erc20TokenEntry = {
 		...token,
-		...(existing.logoUri === undefined ? {} : { logoUri: existing.logoUri }),
+		...(token.logoUri !== undefined || existing.logoUri === undefined ? {} : { logoUri: existing.logoUri }),
 		...(existing.abi === undefined ? {} : { abi: existing.abi }),
 		...(existing.useAsActiveAddress === undefined ? {} : { useAsActiveAddress: existing.useAsActiveAddress }),
 		...(existing.askForAddressAccess === undefined ? {} : { askForAddressAccess: existing.askForAddressAccess }),
@@ -181,6 +183,7 @@ type ResolutionDependencies = {
 	closeDialog: typeof closePopupOrTabById
 	processQueue: (websiteTabConnections: WebsiteTabConnections) => Promise<void>
 	sendToSigner: (request: StoredWatchAssetRequest) => boolean
+	downloadImage: (url: string) => Promise<ImageToUriResult>
 }
 
 function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
@@ -195,10 +198,8 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 		sendToSigner: (request) => request.forwardToSigner !== undefined && sendCallbackToExpectedConfirmedSignerOwner(
 			websiteTabConnections,
 			{
-				socket: {
-					tabId: request.request.uniqueRequestIdentifier.requestSocket.tabId,
-					connectionName: request.forwardToSigner.connectionName,
-				},
+				tabId: request.request.uniqueRequestIdentifier.requestSocket.tabId,
+				connectionName: request.forwardToSigner.connectionName,
 				ownerGeneration: request.forwardToSigner.ownerGeneration,
 				signerProviderGeneration: request.forwardToSigner.signerProviderGeneration,
 			},
@@ -210,7 +211,13 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 				},
 			},
 		) !== false,
+		downloadImage: async (url) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES),
 	}
+}
+
+function removeTokenLogo(token: Erc20TokenEntry): Erc20TokenEntry {
+	const { logoUri: _logoUri, ...tokenWithoutLogo } = token
+	return tokenWithoutLogo
 }
 
 let resolutionInProgress = false
@@ -221,6 +228,22 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const requests = await dependencies.getRequests()
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
+		if (confirmation.data.action === 'downloadImage' || confirmation.data.action === 'removeImage') {
+			const imageUrl = request.requestedAsset.options.image
+			const imageResult = confirmation.data.action === 'downloadImage' && imageUrl !== undefined
+				? await dependencies.downloadImage(imageUrl)
+				: undefined
+			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => {
+				if (!requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)) return stored
+				if (confirmation.data.action === 'removeImage') return { ...stored, token: removeTokenLogo(stored.token), imageDownloadError: undefined }
+				if (imageUrl === undefined) return { ...stored, imageDownloadError: 'The website did not provide an image URL.' }
+				if (imageResult?.data === undefined) return { ...stored, imageDownloadError: imageResult?.failureReason ?? 'The image could not be downloaded.' }
+				return { ...stored, token: { ...stored.token, logoUri: imageResult.data }, imageDownloadError: undefined }
+			}))
+			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
+			if (stillPending !== undefined) await dependencies.publish(stillPending)
+			return
+		}
 		if (confirmation.data.action === 'forward' && dependencies.sendToSigner(request) === false) {
 			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier) ? { ...stored, forwardToSigner: undefined } : stored))
 			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
@@ -271,6 +294,7 @@ export async function handleWatchAssetRequest(
 	params: WalletWatchAsset,
 	dependencies: {
 		identifyAddress?: typeof itentifyAddressViaOnChainInformation,
+		getAddressBookEntries?: () => Promise<AddressBookEntries>,
 		scheduleDialog?: (showDialog: () => void) => void,
 		enqueueRequest?: (request: StoredWatchAssetRequest) => Promise<void>,
 		processQueue?: (websiteTabConnections: WebsiteTabConnections) => Promise<void>,
@@ -282,12 +306,16 @@ export async function handleWatchAssetRequest(
 	const identified = await identifyAddress(ethereumClientService, undefined, params.params[0].options.address)
 	if (identified.type !== 'ERC20') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
 	const token: Erc20TokenEntry = { ...identified, entrySource: 'User', chainId: ethereumClientService.getChainId() }
+	const getAddressBookEntries = dependencies.getAddressBookEntries ?? (async () => await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
+	const contractAddressEntry = (await getAddressBookEntries()).find((entry) => entry.address === token.address) ?? token
 	const requestBeforeSignerCheck: StoredWatchAssetRequest = {
 		website,
 		popupOrTabId: undefined,
 		request,
 		requestedAsset: params.params[0],
 		token,
+		contractAddressEntry,
+		imageDownloadError: undefined,
 		forwardToSigner: undefined,
 	}
 	const storedRequest = { ...requestBeforeSignerCheck, forwardToSigner: await getForwardSignerTarget(websiteTabConnections, requestBeforeSignerCheck) }

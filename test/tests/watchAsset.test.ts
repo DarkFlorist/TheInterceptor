@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
 import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithVerifiedToken, resolveWatchAsset, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import type { StoredWatchAssetRequest, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 
 const tokenAddress = '0x1111111111111111111111111111111111111111'
@@ -53,11 +53,28 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 			chainId: 1n,
 			entrySource: 'User',
 		},
+		contractAddressEntry: {
+			type: 'contract',
+			name: `Known contract ${ requestId }`,
+			address,
+			chainId: 1n,
+			entrySource: 'User',
+		},
+		imageDownloadError: undefined,
 		forwardToSigner: undefined,
 	}
 }
 
 describe('wallet_watchAsset', () => {
+	test('serializes persisted dialog state', () => {
+		expect(() => StoredWatchAssetRequest.serialize(createStoredRequest(0))).not.toThrow()
+		const serialized = StoredWatchAssetRequest.serialize({
+			...createStoredRequest(0),
+			forwardToSigner: { signerName: 'MetaMask', connectionName: 0n, ownerGeneration: 3, signerProviderGeneration: 1 },
+		})
+		expect(serialized.forwardToSigner?.connectionName).toBe('0x0')
+	})
+
 	test('is accepted as a supported ERC20 RPC request', () => {
 		const parsed = EthereumJsonRpcRequest.parse({
 			method: 'wallet_watchAsset',
@@ -157,20 +174,31 @@ describe('wallet_watchAsset', () => {
 		}])
 	})
 
+	test('uses an explicitly downloaded token image instead of a previous address-book logo', () => {
+		const address = BigInt(tokenAddress)
+		const existing = { type: 'contract' as const, name: 'Existing', address, chainId: 1n, entrySource: 'User' as const, logoUri: 'data:image/png;base64,b2xk' }
+		const token = { type: 'ERC20' as const, name: 'Verified', symbol: 'VER', decimals: 6n, address, chainId: 1n, entrySource: 'User' as const, logoUri: 'data:image/png;base64,bmV3' }
+
+		expect(replaceAddressBookEntryWithVerifiedToken([existing], token)[0]?.logoUri).toBe(token.logoUri)
+	})
+
 	test('settles a valid request before scheduled dialog work starts', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		let scheduledDialog: (() => void) | undefined
-		const queuedRequests: unknown[] = []
+		const queuedRequests: StoredWatchAssetRequest[] = []
+		const knownContract = { type: 'contract' as const, name: 'Known token contract', address: BigInt(tokenAddress), chainId: 1n, entrySource: 'User' as const }
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({
 				type: 'ERC20', address, name: 'Verified', symbol: 'VER', decimals: 6n, entrySource: 'OnChain',
 			}),
+			getAddressBookEntries: async () => [knownContract],
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
 			scheduleDialog: (showDialog) => { scheduledDialog = showDialog },
 		})
 
 		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
 		expect(queuedRequests).toHaveLength(1)
+		expect(queuedRequests[0]?.contractAddressEntry).toEqual(knownContract)
 		expect(scheduledDialog).toBeFunction()
 	})
 
@@ -179,6 +207,7 @@ describe('wallet_watchAsset', () => {
 		let scheduled = false
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
+			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { scheduled = true },
 		})
 
@@ -196,6 +225,7 @@ describe('wallet_watchAsset', () => {
 
 		await expect(handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async () => { throw failure },
+			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { throw new Error('Dialog must not be scheduled') },
 		})).rejects.toBe(failure)
 	})
@@ -220,6 +250,7 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async (popupOrTabId) => { closedPopupId = popupOrTabId.id },
 			processQueue: async () => { processQueueCount += 1 },
 			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(requests).toEqual([])
@@ -249,11 +280,56 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async () => { throw new Error('Dialog must remain open') },
 			processQueue: async () => { throw new Error('Queue must not advance') },
 			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(requests).toHaveLength(1)
 		expect(requests[0]?.forwardToSigner).toBeUndefined()
 		expect(published?.forwardToSigner).toBeUndefined()
+	})
+
+	test('downloads an opted-in image, keeps the dialog open, and stores it when the token is added', async () => {
+		const base = createStoredRequest(13)
+		const stored: StoredWatchAssetRequest = {
+			...base,
+			popupOrTabId: { type: 'popup', id: 93 },
+			requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: 'https://assets.example/token.png' } },
+		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		let addressBook: AddressBookEntries = []
+		let publishCount = 0
+		let closeCount = 0
+		const dependencies = {
+			getRequests: async () => requests,
+			updateRequests: async (update: (storedRequests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
+			updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => { addressBook = update(addressBook) },
+			publishAddressBookChanged: async () => undefined,
+			publish: async () => { publishCount += 1 },
+			closeDialog: async () => { closeCount += 1 },
+			processQueue: async () => undefined,
+			sendToSigner: () => false,
+			downloadImage: async (url: string) => url === stored.requestedAsset.options.image
+				? { data: 'data:image/png;base64,dG9rZW4=', failureReason: undefined }
+				: { data: undefined, failureReason: 'unexpected URL' },
+		}
+
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'downloadImage', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
+		}, dependencies)
+
+		expect(requests[0]?.token.logoUri).toBe('data:image/png;base64,dG9rZW4=')
+		expect(publishCount).toBe(1)
+		expect(closeCount).toBe(0)
+
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'add', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
+		}, dependencies)
+
+		expect(addressBook[0]?.logoUri).toBe('data:image/png;base64,dG9rZW4=')
+		expect(requests).toEqual([])
+		expect(closeCount).toBe(1)
 	})
 
 	test('queues concurrent requests and opens the second dialog after the first settles', async () => {
@@ -285,6 +361,7 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async (popupOrTabId) => { closedPopupIds.push(popupOrTabId.id) },
 			processQueue: async () => await processWatchAssetQueue(websiteTabConnections, queueDependencies),
 			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(publishedRequestIds).toEqual([21, 22])

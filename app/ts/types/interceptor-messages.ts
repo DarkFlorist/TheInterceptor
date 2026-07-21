@@ -714,7 +714,13 @@ export const WatchAssetConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_watchAssetDialog'),
 	data: funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
-		action: funtypes.Union(funtypes.Literal('add'), funtypes.Literal('reject'), funtypes.Literal('forward')),
+		action: funtypes.Union(
+			funtypes.Literal('add'),
+			funtypes.Literal('reject'),
+			funtypes.Literal('forward'),
+			funtypes.Literal('downloadImage'),
+			funtypes.Literal('removeImage'),
+		),
 	}),
 }).asReadonly()
 
