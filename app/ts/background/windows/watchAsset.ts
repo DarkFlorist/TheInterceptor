@@ -50,16 +50,17 @@ export function validateWatchAssetParameters(params: WalletWatchAsset, currentCh
 		if (!Number.isSafeInteger(options.chainId) || options.chainId < 0) return 'The asset chainId must be a non-negative safe integer.'
 		if (BigInt(options.chainId) !== currentChainId) return 'The asset chainId must match the active chain.'
 	}
+	if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || options.decimals < 0 || options.decimals > 255)) return 'The asset decimals must be an integer from 0 to 255.'
 	return undefined
 }
 
-export function replaceAddressBookEntryWithVerifiedToken(entries: AddressBookEntries, token: Erc20TokenEntry): AddressBookEntries {
+export function replaceAddressBookEntryWithToken(entries: AddressBookEntries, token: Erc20TokenEntry): AddressBookEntries {
 	const sameAddressAndChain = (entry: { address: bigint, chainId?: bigint | 'AllChains' }) => entry.address === token.address && (entry.chainId ?? 1n) === (token.chainId ?? 1n)
 	const existingIndex = entries.findIndex(sameAddressAndChain)
 	if (existingIndex === -1) return [...entries, token]
 	const existing = entries[existingIndex]
 	if (existing === undefined) return entries
-	const verifiedTokenWithUserConfiguration: Erc20TokenEntry = {
+	const tokenWithUserConfiguration: Erc20TokenEntry = {
 		...token,
 		...(token.logoUri !== undefined || existing.logoUri === undefined ? {} : { logoUri: existing.logoUri }),
 		...(existing.abi === undefined ? {} : { abi: existing.abi }),
@@ -69,7 +70,7 @@ export function replaceAddressBookEntryWithVerifiedToken(entries: AddressBookEnt
 	}
 	return entries.flatMap((entry, index) => {
 		if (!sameAddressAndChain(entry)) return [entry]
-		return index === existingIndex ? [verifiedTokenWithUserConfiguration] : []
+		return index === existingIndex ? [tokenWithUserConfiguration] : []
 	})
 }
 
@@ -235,10 +236,10 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 				: undefined
 			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => {
 				if (!requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)) return stored
-				if (confirmation.data.action === 'removeImage') return { ...stored, token: removeTokenLogo(stored.token), imageDownloadError: undefined }
+				if (confirmation.data.action === 'removeImage') return { ...stored, selectedImageUri: undefined, imageDownloadError: undefined }
 				if (imageUrl === undefined) return { ...stored, imageDownloadError: 'The website did not provide an image URL.' }
 				if (imageResult?.data === undefined) return { ...stored, imageDownloadError: imageResult?.failureReason ?? 'The image could not be downloaded.' }
-				return { ...stored, token: { ...stored.token, logoUri: imageResult.data }, imageDownloadError: undefined }
+				return { ...stored, selectedImageUri: imageResult.data, imageDownloadError: undefined }
 			}))
 			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 			if (stillPending !== undefined) await dependencies.publish(stillPending)
@@ -251,7 +252,8 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 			return
 		}
 		if (confirmation.data.action === 'add') {
-			await dependencies.updateAddressBook((entries) => replaceAddressBookEntryWithVerifiedToken(entries, request.token))
+			const token = request.selectedImageUri === undefined ? removeTokenLogo(request.token) : { ...request.token, logoUri: request.selectedImageUri }
+			await dependencies.updateAddressBook((entries) => replaceAddressBookEntryWithToken(entries, token))
 			await dependencies.publishAddressBookChanged()
 		}
 		await dependencies.updateRequests((storedRequests) => storedRequests.filter((stored) => !requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)))
@@ -295,6 +297,8 @@ export async function handleWatchAssetRequest(
 	dependencies: {
 		identifyAddress?: typeof itentifyAddressViaOnChainInformation,
 		getAddressBookEntries?: () => Promise<AddressBookEntries>,
+		updateAddressBook?: typeof updateUserAddressBookEntries,
+		publishAddressBookChanged?: () => Promise<void>,
 		scheduleDialog?: (showDialog: () => void) => void,
 		enqueueRequest?: (request: StoredWatchAssetRequest) => Promise<void>,
 		processQueue?: (websiteTabConnections: WebsiteTabConnections) => Promise<void>,
@@ -302,19 +306,43 @@ export async function handleWatchAssetRequest(
 ) {
 	const validationError = validateWatchAssetParameters(params, ethereumClientService.getChainId())
 	if (validationError !== undefined) return invalidWatchAssetRequest(validationError)
-	const identifyAddress = dependencies.identifyAddress ?? itentifyAddressViaOnChainInformation
-	const identified = await identifyAddress(ethereumClientService, undefined, params.params[0].options.address)
-	if (identified.type !== 'ERC20') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
-	const token: Erc20TokenEntry = { ...identified, entrySource: 'User', chainId: ethereumClientService.getChainId() }
+	const requestedAsset = params.params[0]
+	const chainId = ethereumClientService.getChainId()
 	const getAddressBookEntries = dependencies.getAddressBookEntries ?? (async () => await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
-	const contractAddressEntry = (await getAddressBookEntries()).find((entry) => entry.address === token.address) ?? token
+	const existingEntry = (await getAddressBookEntries()).find((entry) => entry.address === requestedAsset.options.address)
+	let currentToken: Erc20TokenEntry
+	if (existingEntry?.type === 'ERC20') {
+		currentToken = existingEntry
+	} else {
+		const identifyAddress = dependencies.identifyAddress ?? itentifyAddressViaOnChainInformation
+		const identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
+		if (identified.type !== 'ERC20') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
+		const identifiedToken: Erc20TokenEntry = { ...identified, entrySource: 'OnChain', chainId }
+		currentToken = identifiedToken
+		const updateAddressBook = dependencies.updateAddressBook ?? updateUserAddressBookEntries
+		await updateAddressBook((entries) => {
+			const updatedEntries = replaceAddressBookEntryWithToken(entries, identifiedToken)
+			currentToken = updatedEntries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20' && entry.address === identifiedToken.address && (entry.chainId ?? 1n) === chainId) ?? identifiedToken
+			return updatedEntries
+		})
+		const publishAddressBookChanged = dependencies.publishAddressBookChanged ?? (async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }))
+		await publishAddressBookChanged()
+	}
+	const token: Erc20TokenEntry = {
+		...currentToken,
+		entrySource: 'User',
+		chainId,
+		symbol: requestedAsset.options.symbol ?? currentToken.symbol,
+		decimals: requestedAsset.options.decimals === undefined ? currentToken.decimals : BigInt(requestedAsset.options.decimals),
+	}
 	const requestBeforeSignerCheck: StoredWatchAssetRequest = {
 		website,
 		popupOrTabId: undefined,
 		request,
-		requestedAsset: params.params[0],
+		requestedAsset,
+		currentToken,
 		token,
-		contractAddressEntry,
+		selectedImageUri: undefined,
 		imageDownloadError: undefined,
 		forwardToSigner: undefined,
 	}
@@ -328,5 +356,6 @@ export async function handleWatchAssetRequest(
 			await reportUnexpectedError(error, { code: 'watch_asset_dialog_failed' })
 		})
 	})
+	// EIP-747 requires valid requests to return true before prompting. This acknowledges recognition, not user consent or address-book insertion.
 	return { type: 'result' as const, method: params.method, result: true }
 }

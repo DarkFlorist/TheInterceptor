@@ -16,22 +16,26 @@ function AssetField({ label, value }: { label: string, value: ComponentChildren 
 	</>
 }
 
-type Comparison = 'match' | 'different' | 'missing'
-
-function ComparisonBadge({ comparison, children }: { comparison: Comparison, children: ComponentChildren }) {
-	const className = comparison === 'match' ? 'tag is-success' : comparison === 'different' ? 'tag is-danger' : 'tag'
-	return <span class = { className } style = 'margin-left: 7px; white-space: nowrap'>{ children }</span>
+function TokenImageValue({ uri, proposed }: { uri: string | undefined, proposed?: boolean }) {
+	if (uri === undefined) return <>Not set</>
+	return <span style = 'display: inline-flex; align-items: center; gap: 6px'>
+		<img src = { uri } width = '24' height = '24' style = 'width: 24px; height: 24px; object-fit: contain'/>
+		<span>{ proposed ? 'Downloaded image' : 'Current image' }</span>
+	</span>
 }
 
-function ComparedAssetField({ label, requestedValue, onChainValue }: { label: string, requestedValue: string | undefined, onChainValue: string }) {
-	const comparison: Comparison = requestedValue === undefined ? 'missing' : requestedValue === onChainValue ? 'match' : 'different'
-	return <AssetField label = { label } value = { <span>
-		<span>{ requestedValue ?? 'Not provided' }</span>
-		<ComparisonBadge comparison = { comparison }>
-			{ comparison === 'match' ? 'Matches on-chain' : comparison === 'different' ? 'Differs from on-chain' : 'Not provided' }
-		</ComparisonBadge>
-		{ comparison === 'match' ? <></> : <small style = 'display: block; color: var(--subtitle-text-color); margin-top: 3px'>{ `On-chain: ${ onChainValue }` }</small> }
-	</span> }/>
+function ProposedAssetField({ label, currentValue, proposedValue, changes }: {
+	label: string,
+	currentValue: ComponentChildren,
+	proposedValue: ComponentChildren,
+	changes: boolean,
+}) {
+	return <tr>
+		<th style = 'color: var(--subtitle-text-color); font-weight: 400'>{ label }</th>
+		<td style = 'color: var(--text-color); overflow-wrap: anywhere'>{ currentValue }</td>
+		<td style = 'color: var(--text-color); overflow-wrap: anywhere'>{ proposedValue }</td>
+		<td>{ changes ? <span class = 'tag is-warning' style = 'white-space: nowrap'>Will change</span> : <span style = 'color: var(--disabled-text-color); white-space: nowrap'>No change</span> }</td>
+	</tr>
 }
 
 function WatchAssetImage({ pendingRequest, busy, chooseImage }: {
@@ -40,16 +44,16 @@ function WatchAssetImage({ pendingRequest, busy, chooseImage }: {
 	chooseImage: (action: 'downloadImage' | 'removeImage') => void,
 }) {
 	const imageUrl = pendingRequest.requestedAsset.options.image
-	if (imageUrl === undefined) return <AssetField label = 'Image hint' value = { <span>Not provided <ComparisonBadge comparison = 'missing'>Not provided</ComparisonBadge></span> }/>
+	if (imageUrl === undefined) return <AssetField label = 'Image hint' value = 'Not provided'/>
 	return <>
 		<AssetField label = 'Image hint' value = { <span class = 'is-family-monospace'>{ imageUrl }</span> }/>
 		<span></span>
 		<span style = 'text-align: right'>
-			{ pendingRequest.token.logoUri === undefined ? <button class = 'button is-small is-link is-light' disabled = { busy } onClick = { () => chooseImage('downloadImage') }>
+			{ pendingRequest.selectedImageUri === undefined ? <button class = 'button is-small is-link is-light' disabled = { busy } onClick = { () => chooseImage('downloadImage') }>
 				{ busy ? 'Downloading image…' : 'Download and use image' }
 			</button> : <span style = 'display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end'>
-				<img src = { pendingRequest.token.logoUri } width = '24' height = '24' style = 'width: 24px; height: 24px; object-fit: contain'/>
-				<span><ComparisonBadge comparison = 'match'>Ready to save</ComparisonBadge></span>
+				<img src = { pendingRequest.selectedImageUri } width = '24' height = '24' style = 'width: 24px; height: 24px; object-fit: contain'/>
+				<span class = 'tag is-info'>Selected for proposal</span>
 				<button class = 'button is-small' disabled = { busy } onClick = { () => chooseImage('removeImage') }>Remove</button>
 			</span> }
 			{ pendingRequest.imageDownloadError === undefined ? <></> : <small style = 'display: block; color: var(--negative-color); margin-top: 5px'>{ pendingRequest.imageDownloadError }</small> }
@@ -62,27 +66,33 @@ export function WatchAssetDetails({ pendingRequest, imageBusy = false, chooseIma
 	imageBusy?: boolean,
 	chooseImage?: (action: 'downloadImage' | 'removeImage') => void,
 }) {
-	const { requestedAsset, token, website, contractAddressEntry } = pendingRequest
-	const activeChainId = typeof token.chainId === 'bigint' ? token.chainId.toString() : '1'
-	const requestedChainId = requestedAsset.options.chainId?.toString()
+	const { currentToken, token, website, selectedImageUri } = pendingRequest
+	const currentChainId = currentToken.chainId === 'AllChains' ? 'All chains' : (currentToken.chainId ?? 1n).toString()
+	const proposedChainId = typeof token.chainId === 'bigint' ? token.chainId.toString() : '1'
+	const proposedLogoUri = selectedImageUri ?? currentToken.logoUri
 	return <>
 		<p style = 'color: var(--text-color); text-align: center; margin-bottom: 12px'>
 			<b>{ website.websiteOrigin }</b> wants to add an asset.
 		</p>
 		<section style = 'background-color: var(--alpha-005); border-radius: 4px; padding: 10px; margin-bottom: 12px'>
-			<h2 style = 'color: var(--text-color); font-weight: 600; margin-bottom: 7px'>Request details</h2>
+			<h2 style = 'color: var(--text-color); font-weight: 600; margin-bottom: 7px'>Asset proposal</h2>
 			<div style = 'display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; row-gap: 5px; font-size: 0.85rem'>
-				<AssetField label = 'Asset type' value = { <span>{ requestedAsset.type } <ComparisonBadge comparison = 'match'>ERC-20 verified</ComparisonBadge></span> }/>
-				<AssetField label = 'Contract' value = { <span style = 'display: inline-flex; justify-content: flex-end'><SmallAddress addressBookEntry = { contractAddressEntry } renameAddressCallBack = { () => undefined } noEditAddress = { true }/></span> }/>
-				<AssetField label = 'Chain ID' value = { <span>
-					{ requestedChainId ?? activeChainId }
-					<ComparisonBadge comparison = 'match'>{ requestedChainId === undefined ? 'Uses active chain' : 'Matches active chain' }</ComparisonBadge>
-				</span> }/>
-				<ComparedAssetField label = 'Symbol hint' requestedValue = { requestedAsset.options.symbol } onChainValue = { token.symbol }/>
-				<ComparedAssetField label = 'Decimals hint' requestedValue = { requestedAsset.options.decimals?.toString() } onChainValue = { token.decimals.toString() }/>
+				<AssetField label = 'Contract' value = { <span style = 'display: inline-flex; justify-content: flex-end'><SmallAddress addressBookEntry = { currentToken } renameAddressCallBack = { () => undefined } noEditAddress = { true }/></span> }/>
 				<WatchAssetImage pendingRequest = { pendingRequest } busy = { imageBusy } chooseImage = { chooseImage }/>
 			</div>
-			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Website hints are compared with contract metadata. Downloading the image is optional; it is saved only if you add the token.</p>
+			<div style = 'overflow-x: auto; margin-top: 10px'>
+				<table class = 'table is-fullwidth' style = 'background: transparent; font-size: 0.8rem'>
+					<thead><tr><th>Field</th><th>Current</th><th>If accepted</th><th>Change</th></tr></thead>
+					<tbody>
+						<ProposedAssetField label = 'Asset type' currentValue = { currentToken.type } proposedValue = { token.type } changes = { currentToken.type !== token.type }/>
+						<ProposedAssetField label = 'Chain ID' currentValue = { currentChainId } proposedValue = { proposedChainId } changes = { currentChainId !== proposedChainId }/>
+						<ProposedAssetField label = 'Symbol' currentValue = { currentToken.symbol } proposedValue = { token.symbol } changes = { currentToken.symbol !== token.symbol }/>
+						<ProposedAssetField label = 'Decimals' currentValue = { currentToken.decimals.toString() } proposedValue = { token.decimals.toString() } changes = { currentToken.decimals !== token.decimals }/>
+						<ProposedAssetField label = 'Token image' currentValue = { <TokenImageValue uri = { currentToken.logoUri }/> } proposedValue = { <TokenImageValue uri = { proposedLogoUri } proposed = { selectedImageUri !== undefined }/> } changes = { currentToken.logoUri !== proposedLogoUri }/>
+					</tbody>
+				</table>
+			</div>
+			<p style = 'color: var(--disabled-text-color); font-size: 0.75rem; margin-top: 9px'>Current values come from your address book. Missing token data is identified and saved before this comparison. Fields marked “Will change” replace the current values only if you add the token.</p>
 		</section>
 	</>
 }

@@ -63,56 +63,63 @@ const pendingRequest: PendingWatchAssetRequest = {
 			image: 'https://dapp.example/token.png',
 		},
 	},
-	token: {
+	currentToken: {
 		type: 'ERC20',
-		name: 'Verified Token',
-		symbol: 'VER',
+		name: 'Saved Token',
+		symbol: 'OLD',
 		decimals: 6n,
 		address: 0x1111111111111111111111111111111111111111n,
 		chainId: 1n,
 		entrySource: 'User',
 	},
-	contractAddressEntry: {
-		type: 'contract',
-		name: 'Wrapped Ether contract',
+	token: {
+		type: 'ERC20',
+		name: 'Saved Token',
+		symbol: 'SITE',
+		decimals: 8n,
 		address: 0x1111111111111111111111111111111111111111n,
 		chainId: 1n,
 		entrySource: 'User',
 	},
+	selectedImageUri: undefined,
 	imageDownloadError: undefined,
 	forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
 }
 
 describe('watch asset proposal rendering', () => {
-	test('shows the complete website request with address-book context and on-chain comparison badges', async () => {
+	test('shows current and proposed address-book values and marks fields that will change', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest }), dom.document.body)
 			})
 
-			const requestSection = findNodeByExactText(dom.document.body, 'Request details')?.parentNode
+			const requestSection = findNodeByExactText(dom.document.body, 'Asset proposal')?.parentNode
 			assert.notEqual(requestSection, undefined)
-			assert.equal(findNodeByExactText(dom.document.body, 'Address book entry (verified on-chain)'), undefined)
+			assert.equal(dom.document.body.textContent?.includes('on-chain'), false)
 			for (const expected of [
 				'https://dapp.example',
 			]) assert.match(dom.document.body.textContent, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 			for (const expected of [
+				'Contract',
+				'Saved Token',
+				'Field',
+				'Current',
+				'If accepted',
+				'Change',
 				'Asset type',
 				'ERC20',
-				'ERC-20 verified',
-				'Contract',
-				'Wrapped Ether contract',
 				'Chain ID',
 				'1',
-				'Matches active chain',
-				'Symbol hint',
+				'Symbol',
+				'OLD',
 				'SITE',
-				'Differs from on-chain',
-				'On-chain: VER',
-				'Decimals hint',
+				'Will change',
+				'Decimals',
+				'6',
 				'8',
-				'On-chain: 6',
+				'Token image',
+				'Not set',
 				'Image hint',
 				'https://dapp.example/token.png',
 				'Download and use image',
@@ -130,16 +137,16 @@ describe('watch asset proposal rendering', () => {
 			const requestWithoutHints: PendingWatchAssetRequest = {
 				...pendingRequest,
 				requestedAsset: { type: 'ERC20', options: { address: pendingRequest.requestedAsset.options.address } },
+				token: { ...pendingRequest.currentToken, entrySource: 'User' },
 			}
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithoutHints }), dom.document.body)
 			})
 
-			const requestSection = findNodeByExactText(dom.document.body, 'Request details')?.parentNode
+			const requestSection = findNodeByExactText(dom.document.body, 'Asset proposal')?.parentNode
 			const requestText = requestSection?.textContent ?? ''
-			assert.match(requestText, /Chain ID1Uses active chain/)
-			assert.match(requestText, /Symbol hintNot providedNot providedOn-chain: VER/)
-			assert.match(requestText, /Decimals hintNot providedNot providedOn-chain: 6/)
+			assert.match(requestText, /SymbolOLDOLDNo change/)
+			assert.match(requestText, /Decimals66No change/)
 			assert.match(requestText, /Image hintNot provided/)
 		} finally {
 			render(null, dom.document.body)
@@ -150,12 +157,13 @@ describe('watch asset proposal rendering', () => {
 	test('previews a downloaded image and marks it ready for address-book storage', async () => {
 		const dom = installDomMock()
 		try {
-			const requestWithImage = { ...pendingRequest, token: { ...pendingRequest.token, logoUri: 'data:image/png;base64,dG9rZW4=' } }
+			const requestWithImage = { ...pendingRequest, selectedImageUri: 'data:image/png;base64,dG9rZW4=' }
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithImage }), dom.document.body)
 			})
 
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Ready to save'), undefined)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Selected for proposal'), undefined)
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Downloaded image'), undefined)
 			assert.notEqual(findNodeByExactText(dom.document.body, 'Remove'), undefined)
 			assert.notEqual(findNodeByAttribute(dom.document.body, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
 		} finally {

@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimesta
 import type { SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import type { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
-import { type AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from './addressBookTypes.js'
+import { type AddressBookEntries, type AddressBookEntry, Erc20TokenEntry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACCESS_DENIED_WITH_SHIELD, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
@@ -218,8 +218,9 @@ const WatchAssetRequestDetails = funtypes.ReadonlyObject({
 	website: Website,
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
+	currentToken: Erc20TokenEntry,
 	token: Erc20TokenEntry,
-	contractAddressEntry: AddressBookEntry,
+	selectedImageUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	imageDownloadError: funtypes.Union(funtypes.String, funtypes.Undefined),
 	forwardToSigner: funtypes.Union(funtypes.ReadonlyObject({
 		signerName: SignerName,
