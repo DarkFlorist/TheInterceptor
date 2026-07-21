@@ -1,20 +1,60 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
 import { type EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumUnsignedTransaction } from '../../app/ts/types/visualizer-types.js'
 import { PendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage as PendingTransactionOrSignableMessageType } from '../../app/ts/types/accessRequest.js'
 import { EthereumAddress, EthereumBlockHeader, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
-import { keccak256, privateKeyToAccount } from '../../app/ts/utils/viem.js'
+import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
 import { dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { parseSendRawTransaction } from '../../app/ts/utils/sendRawTransactionParsing.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
+import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
 const accessListAddress = '0x0000000000000000000000000000000000000003'
 const accessListStorageKey = '0x0000000000000000000000000000000000000000000000000000000000000042'
+
+const privateKeyToTestAccount = (privateKey: `0x${ string }`) => ({
+	address: addr.fromPrivateKey(privateKey),
+	signAuthorization: async (request: { readonly address: string, readonly chainId: number | bigint, readonly nonce: number | bigint }) => eip7702Authorization.sign({
+		address: request.address,
+		chainId: BigInt(request.chainId),
+		nonce: BigInt(request.nonce),
+	}, privateKey),
+	signTransaction: async (transaction: {
+		readonly type: 'eip1559' | 'eip7702'
+		readonly chainId: number | bigint
+		readonly nonce: number | bigint
+		readonly maxFeePerGas: bigint
+		readonly maxPriorityFeePerGas: bigint
+		readonly gas: bigint
+		readonly to: string
+		readonly value: bigint
+		readonly data: string
+		readonly accessList?: readonly { readonly address: string, readonly storageKeys: readonly string[] }[]
+		readonly authorizationList?: readonly ReturnType<typeof eip7702Authorization.sign>[]
+	}) => {
+		const common = {
+			chainId: BigInt(transaction.chainId),
+			nonce: BigInt(transaction.nonce),
+			maxFeePerGas: transaction.maxFeePerGas,
+			maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+			gasLimit: transaction.gas,
+			to: transaction.to,
+			value: transaction.value,
+			data: transaction.data,
+			accessList: transaction.accessList?.map((entry) => ({ ...entry, storageKeys: [...entry.storageKeys] })) ?? [],
+		}
+		const prepared = transaction.type === 'eip7702'
+			? Transaction.prepare({ ...common, type: transaction.type, authorizationList: transaction.authorizationList?.map((authorization) => ({ ...authorization })) ?? [] }, false)
+			: Transaction.prepare({ ...common, type: transaction.type }, false)
+		return prepared.signBy(privateKey).toHex()
+	},
+})
 
 const rpcNetwork: RpcEntry = {
 	name: 'Test Chain',
@@ -76,12 +116,12 @@ const createEip7702TransactionParsingRequestHandler = () => ({
 })
 
 type SignedAuthorizationForRpc = {
-	readonly chainId: number
+	readonly chainId: number | bigint
 	readonly address: `0x${ string }`
-	readonly nonce: number
+	readonly nonce: number | bigint
 	readonly yParity: number
-	readonly r: `0x${ string }`
-	readonly s: `0x${ string }`
+	readonly r: `0x${ string }` | bigint
+	readonly s: `0x${ string }` | bigint
 }
 
 const signedAuthorizationToRpc = (authorization: SignedAuthorizationForRpc) => ({
@@ -89,8 +129,8 @@ const signedAuthorizationToRpc = (authorization: SignedAuthorizationForRpc) => (
 	address: authorization.address,
 	nonce: `0x${ authorization.nonce.toString(16) }`,
 	yParity: authorization.yParity === 0 ? '0x0' : '0x1',
-	r: authorization.r,
-	s: authorization.s,
+	r: typeof authorization.r === 'bigint' ? `0x${ authorization.r.toString(16) }` : authorization.r,
+	s: typeof authorization.s === 'bigint' ? `0x${ authorization.s.toString(16) }` : authorization.s,
 })
 
 function restoreGlobalProperty(key: 'browser' | 'chrome', descriptor: PropertyDescriptor | undefined) {
@@ -334,8 +374,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	})
 
 	test('formEthSendTransaction recovers authorization authority from signed tuples', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
-		const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
 		const clearDelegationAuthorization = await victim.signAuthorization({
 			address: zeroAddress,
 			chainId: 1,
@@ -384,8 +424,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	})
 
 	test('formEthSendTransaction recovers signed authorization authority over supplied authority', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
-		const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
 		const suppliedAuthority = '0x0000000000000000000000000000000000000004'
 		const clearDelegationAuthorization = await victim.signAuthorization({
 			address: zeroAddress,
@@ -453,35 +493,24 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		)
 	})
 
-	test('normalizing signed authorizations rejects unsafe chain id and nonce values', async () => {
-		const unsafeValue = BigInt(Number.MAX_SAFE_INTEGER) + 1n
-		await assert.rejects(
-			async () => await normalizeEip7702AuthorizationList([{
-				chainId: unsafeValue,
-				address: 0n,
-				nonce: 5n,
-				r: 1n,
-				s: 2n,
-				yParity: 'even',
-			}]),
-			/EIP-7702 authorization chainId exceeds the maximum safe integer/
-		)
-		await assert.rejects(
-			async () => await normalizeEip7702AuthorizationList([{
-				chainId: 1n,
-				address: 0n,
-				nonce: unsafeValue,
-				r: 1n,
-				s: 2n,
-				yParity: 'even',
-			}]),
-			/EIP-7702 authorization nonce exceeds the maximum safe integer/
-		)
+	test('normalizing signed authorizations preserves valid bigint chain ids and nonces', async () => {
+		const largeValue = BigInt(Number.MAX_SAFE_INTEGER) + 1n
+		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const signedAuthorization = await victim.signAuthorization({ address: zeroAddress, chainId: largeValue, nonce: largeValue })
+		const [normalized] = await normalizeEip7702AuthorizationList([{
+			...signedAuthorization,
+			address: BigInt(signedAuthorization.address),
+			yParity: signedAuthorization.yParity === 0 ? 'even' : 'odd',
+		}])
+		if (normalized === undefined) throw new Error('Expected normalized authorization')
+		assert.equal(normalized.chainId, largeValue)
+		assert.equal(normalized.nonce, largeValue)
+		assert.equal(normalized.authority, EthereumAddress.parse(victim.address))
 	})
 
 	test('parses raw EIP-7702 transactions and recovers authorization authority', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
-		const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
 		const clearDelegationAuthorization = await victim.signAuthorization({
 			address: zeroAddress,
 			chainId: 1,
@@ -535,8 +564,40 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		assert.equal(signedAuthorization.s, BigInt(clearDelegationAuthorization.s))
 	})
 
+	test('preserves raw EIP-7702 chain IDs and nonces above Number.MAX_SAFE_INTEGER', async () => {
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const largeValue = BigInt(Number.MAX_SAFE_INTEGER) + 2n
+		const authorization = await victim.signAuthorization({
+			address: zeroAddress,
+			chainId: largeValue,
+			nonce: largeValue,
+		})
+		const signedTransaction = await sponsor.signTransaction({
+			type: 'eip7702',
+			chainId: largeValue,
+			nonce: largeValue,
+			maxFeePerGas: 2n,
+			maxPriorityFeePerGas: 1n,
+			gas: 50_000n,
+			to: recipientAddress,
+			value: 0n,
+			data: '0x',
+			authorizationList: [authorization],
+		})
+
+		const parsedTransaction = await parseSendRawTransaction(stringToUint8Array(signedTransaction))
+		assert.equal(parsedTransaction.transaction.chainId, largeValue)
+		assert.equal(parsedTransaction.transaction.nonce, largeValue)
+		assert.equal(parsedTransaction.transaction.type, '7702')
+		if (parsedTransaction.transaction.type !== '7702') throw new Error('Expected a 7702 transaction')
+		assert.equal(parsedTransaction.transaction.authorizationList[0]?.chainId, largeValue)
+		assert.equal(parsedTransaction.transaction.authorizationList[0]?.nonce, largeValue)
+		assert.equal(dataStringWith0xStart(serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(parsedTransaction.signedTransaction))), signedTransaction)
+	})
+
 	test('parses raw EIP-1559 transactions with signed chain and access list', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip1559',
 			chainId: 5,
@@ -573,7 +634,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	})
 
 	test('accepting a raw EIP-1559 transaction preserves the original signed transaction hash', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip1559',
 			chainId: 5,
@@ -590,8 +651,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	})
 
 	test('accepting a raw EIP-7702 transaction preserves the original signed transaction hash and authorizations', async () => {
-		const sponsor = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
-		const victim = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
 		const clearDelegationAuthorization = await victim.signAuthorization({
 			address: zeroAddress,
 			chainId: 5,

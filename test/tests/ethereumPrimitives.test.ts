@@ -1018,11 +1018,11 @@ describe('local Ethereum primitive helpers', () => {
 				s: transactionSignature.s,
 				v: 28n,
 				yParity: 1,
-				chainId: 1,
+				chainId: 1n,
 				type: 'eip1559',
 				to: lowercaseDeadAddress,
 				gas: 21_000n,
-				nonce: 7,
+				nonce: 7n,
 				value: 123_456_789n,
 				maxFeePerGas: 20_000_000_000n,
 				maxPriorityFeePerGas: 1_500_000_000n,
@@ -1035,12 +1035,12 @@ describe('local Ethereum primitive helpers', () => {
 			s: transactionSignature.s,
 			v: 28n,
 			yParity: 1,
-			chainId: 1,
+			chainId: 1n,
 			type: 'eip1559',
 			to: lowercaseDeadAddress,
 			gas: 30_000n,
 			data: '0x1234',
-			nonce: 7,
+			nonce: 7n,
 			value: 123_456_789n,
 			maxFeePerGas: 20_000_000_000n,
 			maxPriorityFeePerGas: 1_500_000_000n,
@@ -1051,8 +1051,8 @@ describe('local Ethereum primitive helpers', () => {
 		})
 		const serializedContractCreation = serializeTransaction({
 			type: 'eip1559',
-			chainId: 1,
-			nonce: 0,
+			chainId: 1n,
+			nonce: 0n,
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
 			gas: 100_000n,
@@ -1061,11 +1061,11 @@ describe('local Ethereum primitive helpers', () => {
 		})
 		assert.equal(serializedContractCreation, '0x02d001800101830186a080808460006000c0')
 		assert.deepStrictEqual(parseTransaction(serializedContractCreation), {
-			chainId: 1,
+			chainId: 1n,
 			type: 'eip1559',
 			gas: 100_000n,
 			data: '0x60006000',
-			nonce: 0,
+			nonce: 0n,
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
 		})

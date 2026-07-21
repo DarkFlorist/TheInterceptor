@@ -5,19 +5,8 @@ import { normalizeEip7702AuthorizationList, type NormalizedEip7702Authorization 
 import {
 	keccak256,
 	parseTransaction as parseSerializedTransaction,
-	recoverAddress,
-	serializeTransaction,
-} from './viem.js'
-
-const recoverParsedTransactionAddress = async (
-	serializedUnsignedTransaction: `0x${ string }`,
-	signature: { r: `0x${ string }`, s: `0x${ string }`, yParity: number }
-) => {
-	return await recoverAddress({
-		hash: keccak256(serializedUnsignedTransaction),
-		signature,
-	})
-}
+	recoverTransactionSender,
+} from './ethereumPrimitives.js'
 
 const parseAccessList = (accessList: readonly { readonly address: `0x${ string }`, readonly storageKeys: readonly `0x${ string }`[] }[] | undefined) => {
 	return (accessList ?? []).map((accessListEntry) => ({
@@ -30,9 +19,9 @@ const parseToAddress = (address: `0x${ string }` | null | undefined) => {
 	return address === undefined || address === null ? null : EthereumAddress.parse(address)
 }
 
-const parseRequiredChainId = (transactionChainId: number | undefined) => {
+const parseRequiredChainId = (transactionChainId: bigint | undefined) => {
 	if (transactionChainId === undefined) throw new Error('Serialized transaction is missing chainId')
-	return BigInt(transactionChainId)
+	return transactionChainId
 }
 
 const parseAuthorizationParity = (yParity: number): 'even' | 'odd' => {
@@ -42,9 +31,9 @@ const parseAuthorizationParity = (yParity: number): 'even' | 'odd' => {
 }
 
 const parseSignedAuthorization = (authorization: {
-	readonly chainId: number
+	readonly chainId: bigint
 	readonly address: `0x${ string }`
-	readonly nonce: number
+	readonly nonce: bigint
 	readonly r?: `0x${ string }`
 	readonly s?: `0x${ string }`
 	readonly yParity?: number
@@ -87,28 +76,12 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 			throw new Error('Serialized EIP-1559 transaction is missing required fields')
 		}
 		const chainId = parseRequiredChainId(parsedTransaction.chainId)
-		const unsignedTransaction = serializeTransaction({
-			type: 'eip1559',
-			chainId: Number(parsedTransaction.chainId),
-			nonce: parsedTransaction.nonce,
-			maxFeePerGas: parsedTransaction.maxFeePerGas,
-			maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
-			gas: parsedTransaction.gas,
-			to: parsedTransaction.to,
-			value: parsedTransaction.value,
-			data: parsedTransaction.data,
-			accessList: parsedTransaction.accessList,
-		})
-		const from = await recoverParsedTransactionAddress(unsignedTransaction, {
-			r: parsedTransaction.r,
-			s: parsedTransaction.s,
-			yParity: parsedTransaction.yParity,
-		})
+		const from = recoverTransactionSender(serializedTransaction)
 		const transaction = {
 			type: '1559' as const,
 			from: EthereumAddress.parse(from),
 			chainId,
-			nonce: BigInt(parsedTransaction.nonce),
+			nonce: parsedTransaction.nonce,
 			maxFeePerGas: parsedTransaction.maxFeePerGas,
 			maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
 			gas: parsedTransaction.gas,
@@ -135,29 +108,12 @@ export const parseSendRawTransaction = async (serializedTransactionBytes: Uint8A
 		}
 		const chainId = parseRequiredChainId(parsedTransaction.chainId)
 		const authorizationList = (await normalizeEip7702AuthorizationList((parsedTransaction.authorizationList ?? []).map(parseSignedAuthorization))).map(requireSignedAuthorization)
-		const unsignedTransaction = serializeTransaction({
-			type: 'eip7702',
-			chainId: Number(parsedTransaction.chainId),
-			nonce: parsedTransaction.nonce,
-			maxFeePerGas: parsedTransaction.maxFeePerGas,
-			maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
-			gas: parsedTransaction.gas,
-			to: parsedTransaction.to,
-			value: parsedTransaction.value,
-			data: parsedTransaction.data,
-			accessList: parsedTransaction.accessList,
-			authorizationList: parsedTransaction.authorizationList ?? [],
-		})
-		const from = await recoverParsedTransactionAddress(unsignedTransaction, {
-			r: parsedTransaction.r,
-			s: parsedTransaction.s,
-			yParity: parsedTransaction.yParity,
-		})
+		const from = recoverTransactionSender(serializedTransaction)
 		const transaction = {
 			type: '7702' as const,
 			from: EthereumAddress.parse(from),
 			chainId,
-			nonce: BigInt(parsedTransaction.nonce),
+			nonce: parsedTransaction.nonce,
 			maxFeePerGas: parsedTransaction.maxFeePerGas,
 			maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
 			gas: parsedTransaction.gas,

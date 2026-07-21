@@ -6,7 +6,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAIL
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
@@ -23,7 +23,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
+import { normalizeEip7702AuthorizationList, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -256,7 +256,8 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 				break
 			}
 			for (const signed of block.simulatedTransactions) {
-				if (signed.preSimulationTransaction.signedTransaction.from === address) addedTransactions += 1n
+				const transaction = signed.preSimulationTransaction.signedTransaction
+				addedTransactions += getTransactionNonceContribution(transaction, address)
 			}
 			index++
 		}
@@ -273,6 +274,15 @@ type ISigned7702Authorization = IUnsigned7702Authorization & {
 	readonly yParity: 'even' | 'odd'
 	readonly r: bigint
 	readonly s: bigint
+}
+
+const getTransactionNonceContribution = (transaction: EthereumSendableSignedTransaction, address: bigint) => {
+	const senderContribution = transaction.from === address ? 1n : 0n
+	if (transaction.type !== '7702') return senderContribution
+	return transaction.authorizationList.reduce(
+		(contribution, authorization) => authorization.authority === address ? contribution + 1n : contribution,
+		senderContribution,
+	)
 }
 
 const has7702AuthorizationSignature = (authorization: IUnsigned7702Authorization): authorization is ISigned7702Authorization => {
@@ -295,11 +305,7 @@ const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBloc
 		const { authorizationList, ...transactionWithoutOptionalAuthorizationMetadata } = transactionWithoutOptionalGasFields
 		return {
 			...transactionWithoutOptionalAuthorizationMetadata,
-			authorizationList: authorizationList.map((authorization) => ({
-				chainId: authorization.chainId,
-				address: authorization.address,
-				nonce: authorization.nonce,
-			})),
+			authorizationList: authorizationList.map(projectEip7702AuthorizationForRpc),
 			accessList: accessList ?? [],
 			...(maxFeePerGas === 0n ? {} : { maxFeePerGas }),
 			...(gasLimit === undefined ? {} : { gas: gasLimit }),
@@ -1059,7 +1065,7 @@ const getSimulatedTransactionCountFromPreparedInputContext = async (
 	let addedTransactions = 0n
 	for (const block of getExecutionBlocksUpToTag(context, blockTag)) {
 		for (const transaction of block.inputBlock.transactions) {
-			if (transaction.signedTransaction.from === address) addedTransactions += 1n
+			addedTransactions += getTransactionNonceContribution(transaction.signedTransaction, address)
 		}
 	}
 	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions

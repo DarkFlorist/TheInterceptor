@@ -1,6 +1,6 @@
+import { authorization as eip7702Authorization } from 'micro-eth-signer'
 import { EthereumAddress } from '../types/wire-types.js'
 import { addressString, bytes32String } from './bigint.js'
-import { recoverAuthorizationAddress } from './viem.js'
 
 export type Eip7702Authorization = {
 	readonly chainId: bigint
@@ -37,6 +37,8 @@ type SignedNormalizedEip7702Authorization = SignedEip7702Authorization & {
 
 export type NormalizedEip7702Authorization = UnsignedNormalizedEip7702Authorization | SignedNormalizedEip7702Authorization
 
+export const projectEip7702AuthorizationForRpc = ({ authority: _authority, ...authorization }: Eip7702Authorization) => authorization
+
 const hasAuthorizationSignature = (authorization: Eip7702Authorization): authorization is SignedEip7702Authorization => {
 	return authorization.r !== undefined && authorization.s !== undefined && authorization.yParity !== undefined
 }
@@ -45,23 +47,14 @@ const hasPartialAuthorizationSignature = (authorization: Eip7702Authorization) =
 	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
 }
 
-const maximumSafeAuthorizationNumber = BigInt(Number.MAX_SAFE_INTEGER)
-
-const toSafeAuthorizationNumber = (value: bigint, fieldName: 'chainId' | 'nonce') => {
-	if (value < 0n || value > maximumSafeAuthorizationNumber) throw new Error(`EIP-7702 authorization ${ fieldName } exceeds the maximum safe integer`)
-	return Number(value)
-}
-
 export const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => {
-	return EthereumAddress.parse(await recoverAuthorizationAddress({
-		authorization: {
-			chainId: toSafeAuthorizationNumber(authorization.chainId, 'chainId'),
-			address: addressString(authorization.address),
-			nonce: toSafeAuthorizationNumber(authorization.nonce, 'nonce'),
-			r: bytes32String(authorization.r),
-			s: bytes32String(authorization.s),
-			yParity: authorization.yParity === 'even' ? 0 : 1,
-		},
+	return EthereumAddress.parse(eip7702Authorization.getAuthority({
+		chainId: authorization.chainId,
+		address: addressString(authorization.address),
+		nonce: authorization.nonce,
+		r: BigInt(bytes32String(authorization.r)),
+		s: BigInt(bytes32String(authorization.s)),
+		yParity: authorization.yParity === 'even' ? 0 : 1,
 	}))
 }
 

@@ -15,12 +15,8 @@ import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalRe
 import {
 	stringToBytes,
 	keccak256,
-	recoverAddress,
-	parseTransaction as parseSerializedTransaction,
-	serializeTransaction,
 } from '../../utils/ethereumPrimitives.js'
-import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
