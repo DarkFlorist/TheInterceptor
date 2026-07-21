@@ -23,7 +23,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { normalizeEip7702AuthorizationList, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -285,17 +285,9 @@ const getTransactionNonceContribution = (transaction: EthereumSendableSignedTran
 	)
 }
 
-const has7702AuthorizationSignature = (authorization: IUnsigned7702Authorization): authorization is ISigned7702Authorization => {
-	return authorization.r !== undefined && authorization.s !== undefined && authorization.yParity !== undefined
-}
-
-const hasPartial7702AuthorizationSignature = (authorization: IUnsigned7702Authorization) => {
-	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
-}
-
 const mockSign7702Authorization = (authorization: IUnsigned7702Authorization): ISigned7702Authorization => {
-	if (has7702AuthorizationSignature(authorization)) return authorization
-	if (hasPartial7702AuthorizationSignature(authorization)) throw new Error('EIP-7702 authorization signature is missing required fields')
+	if (hasEip7702AuthorizationSignature(authorization)) return authorization
+	if (hasPartialEip7702AuthorizationSignature(authorization)) throw new Error('EIP-7702 authorization signature is missing required fields')
 	return { ...authorization, r: 0n, s: 0n, yParity: 'even' }
 }
 
@@ -367,10 +359,6 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	)
 }
 
-const normalizeEstimateGasAuthorizationList = async (data: PartialEthereumTransaction) => {
-	return data.authorizationList === undefined ? undefined : await normalizeEip7702AuthorizationList(data.authorizationList)
-}
-
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, data: PartialEthereumTransaction, blockDelta: number | undefined = undefined): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> => {
 	if (simulationState.kind === 'passthrough') return { gas: await ethereumClientService.estimateGas(data, requestAbortController) }
 	const currentState = simulationState.value
@@ -396,17 +384,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
-	const authorizationList = await normalizeEstimateGasAuthorizationList(data)
-	const estimateGasTransaction = data.type === '7702' || authorizationList !== undefined
-		? {
-			...estimateGasTransactionBase,
-			type: '7702' as const,
-			authorizationList: authorizationList ?? [],
-		}
-		: {
-			...estimateGasTransactionBase,
-			type: '1559' as const,
-		}
+	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
 		const lastResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, currentState.simulationStateInput, estimateGasTransaction, {}, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
@@ -1432,17 +1410,7 @@ export const simulateEstimateGasFromInput = async (
 		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
-	const authorizationList = await normalizeEstimateGasAuthorizationList(data)
-	const estimateGasTransaction = data.type === '7702' || authorizationList !== undefined
-		? {
-			...estimateGasTransactionBase,
-			type: '7702' as const,
-			authorizationList: authorizationList ?? [],
-		}
-		: {
-			...estimateGasTransactionBase,
-			type: '1559' as const,
-		}
+	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
 		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, extraOverrides, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }

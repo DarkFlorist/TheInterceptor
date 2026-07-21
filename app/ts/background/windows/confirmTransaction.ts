@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedTransactionCount, mockSignTransaction, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
@@ -32,7 +32,8 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
-import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
+import { getSignedTransactionForSimulation } from '../../utils/transactionSimulation.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -243,7 +244,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
 		case 'Transaction': {
-			const signedTransaction = getSignedTransactionForConfirmedTransaction(pendingTransactionOrMessage.transactionToSimulate)
+			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
 			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
@@ -315,10 +316,6 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
-const getSignedTransactionForConfirmedTransaction = (transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction) => (
-	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction)
-)
-
 export const formSendRawTransaction = async(_ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
 	const parsedTransaction = await parseSendRawTransaction(sendRawTransactionParams.params[0])
 	return {
@@ -360,17 +357,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}
-	const authorizationList = transactionDetails.authorizationList === undefined ? undefined : await normalizeEip7702AuthorizationList(transactionDetails.authorizationList)
-	const transactionWithoutGas = transactionDetails.type === '7702' || authorizationList !== undefined
-		? {
-			...transactionWithoutGasBase,
-			type: '7702' as const,
-			authorizationList: authorizationList ?? [],
-		}
-		: {
-			...transactionWithoutGasBase,
-			type: '1559' as const,
-		}
+	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
 	const extraParams = {
 		website,
 		created,

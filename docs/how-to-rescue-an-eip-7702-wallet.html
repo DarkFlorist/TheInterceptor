@@ -216,20 +216,30 @@
 			<h2><span class="step-number">3</span>Enable Make Me Rich for the simulation</h2>
 			<p>Turn on <strong>Make Me Rich</strong> below the active address. This only changes the simulated state, making it easier to test the complete rescue before real funds are involved.</p>
 
-			<h2><span class="step-number">4</span>Create the clear-delegation transaction</h2>
-			<p>Use your trusted rescue tool to prepare an EIP-7702 authorization for the compromised account with the delegation target set to the zero address:</p>
-			<p><code>0x0000000000000000000000000000000000000000</code></p>
-			<p>The authorization must use the correct chain ID and the compromised account's current authorization nonce. A separate clean sponsor must be the outer transaction sender and gas payer. Interceptor can inspect both <code>eth_sendTransaction</code> requests and signed type-4 transactions submitted through <code>eth_sendRawTransaction</code>.</p>
-
-			<aside class="callout danger">
-				<p><strong>Do not broadcast this transaction on its own.</strong> Keep it in simulation so it can be included as the first transaction in Bouquet's private atomic bundle.</p>
-			</aside>
-
-			<h2><span class="step-number">5</span>Add the asset transfers</h2>
+			<h2><span class="step-number">4</span>Add the asset transfers</h2>
 			<p>While still simulating, create transfers that send each token, NFT, and any remaining ETH to the new safe wallet. Check every token contract and recipient address carefully. Leave enough ETH in the compromised account to pay for every transaction it signs.</p>
 
-			<h2><span class="step-number">6</span>Export the simulation stack to Bouquet</h2>
-			<p>Review the stack in Interceptor, then export it to Bouquet. The export preserves the EIP-7702 authorization, its recovered authority address, and the sponsored transaction sender so Bouquet can distinguish the compromised authority from the clean sponsor.</p>
+			<h2><span class="step-number">5</span>Export the simulation stack to Bouquet</h2>
+			<p>Review the funding and asset transfers in Interceptor. Open Bouquet and select <strong>Import Payload from The Interceptor</strong>, then approve Interceptor's request to share the simulation stack.</p>
+
+			<h2><span class="step-number">6</span>Create the delegation-clearing transaction in Bouquet</h2>
+			<p>Select <strong>Add EIP-7702 Delegation Clear</strong>. Bouquet creates the sponsored type-4 transaction and fixes its authorization target to the zero address:</p>
+			<p><code>0x0000000000000000000000000000000000000000</code></p>
+			<ul>
+				<li>Confirm the suggested compromised account.</li>
+				<li>Enter the address of your separate, clean funded sponsor.</li>
+				<li>Select <strong>Load Current Nonce</strong>. Bouquet retrieves the account nonce before the simulated transactions.</li>
+				<li>Confirm the displayed chain ID, then select <strong>Add Delegation Clear</strong>.</li>
+			</ul>
+
+			<figure>
+				<img src="images/eip-7702-rescue/bouquet-create-clear-delegation.png" alt="Bouquet form for creating an EIP-7702 delegation-clearing transaction with compromised account, clean sponsor, authorization nonce, and chain ID fields" width="1200" height="1050" loading="lazy">
+				<figcaption>Bouquet builds the zero-address authorization and adds it to the rescue bundle; the required keys are entered later.</figcaption>
+			</figure>
+
+			<aside class="callout danger">
+				<p><strong>Do not broadcast the clearing transaction on its own.</strong> Bouquet keeps it inside the private atomic bundle and refuses to submit an EIP-7702 rescue through mempool mode.</p>
+			</aside>
 
 			<h2><span class="step-number">7</span>Verify Rescue Mode and transaction order</h2>
 			<p>Bouquet detects the zero-address authorization and enters <strong>EIP-7702 Rescue Mode</strong>. It should order the bundle as follows:</p>
@@ -250,8 +260,7 @@
 			<p>In Bouquet, add the required keys to the matching accounts:</p>
 			<ul>
 				<li>The clean sponsor key signs the outer type-4 transaction and pays for clearing the delegation.</li>
-				<li>The compromised account key signs its sweep transactions.</li>
-				<li>If the imported authorization is already signed, Bouquet preserves that signature. The authority key is only needed when an authorization still needs signing.</li>
+				<li>The compromised account key signs the new zero-address authorization and its sweep transactions.</li>
 			</ul>
 
 			<figure>
