@@ -6,14 +6,15 @@ import type { InterceptedRequest, UniqueRequestIdentifier } from '../../utils/re
 import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
-import { getPendingWatchAssetRequests, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
+import { getPendingWatchAssetRequests, getTabState, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc20TokenEntry } from '../../types/addressBookTypes.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
-import { getConfirmedSignerStateToken, sendCallbackToConfirmedSignerOwner } from '../signerStateOwnership.js'
+import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToExpectedConfirmedSignerOwner } from '../signerStateOwnership.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
+import { isSignerMissing } from '../../utils/signerMetadata.js'
 
 const invalidWatchAssetRequest = (message: string) => ({
 	type: 'result' as const,
@@ -75,8 +76,26 @@ function toPendingRequest(request: StoredWatchAssetRequest): PendingWatchAssetRe
 	return { ...request, popupOrTabId: request.popupOrTabId }
 }
 
-function canForwardRequest(websiteTabConnections: WebsiteTabConnections, request: StoredWatchAssetRequest) {
-	return getConfirmedSignerStateToken(websiteTabConnections, request.request.uniqueRequestIdentifier.requestSocket.tabId) !== undefined
+async function getForwardSignerTarget(websiteTabConnections: WebsiteTabConnections, request: StoredWatchAssetRequest) {
+	const tabId = request.request.uniqueRequestIdentifier.requestSocket.tabId
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	if (signerStateToken === undefined) return undefined
+	const signerName = (await getTabState(tabId)).signerName
+	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) || isSignerMissing(signerName)) return undefined
+	return {
+		signerName,
+		connectionName: signerStateToken.socket.connectionName,
+		ownerGeneration: signerStateToken.ownerGeneration,
+		signerProviderGeneration: signerStateToken.signerProviderGeneration,
+	}
+}
+
+function doForwardSignerTargetsMatch(first: StoredWatchAssetRequest['forwardToSigner'], second: StoredWatchAssetRequest['forwardToSigner']) {
+	if (first === undefined || second === undefined) return first === second
+	return first.signerName === second.signerName
+		&& first.connectionName === second.connectionName
+		&& first.ownerGeneration === second.ownerGeneration
+		&& first.signerProviderGeneration === second.signerProviderGeneration
 }
 
 async function publishWatchAssetRequest(request: StoredWatchAssetRequest) {
@@ -87,10 +106,10 @@ async function publishWatchAssetRequest(request: StoredWatchAssetRequest) {
 export async function updateWatchAssetViewWithPendingRequest(websiteTabConnections?: WebsiteTabConnections) {
 	const [first] = await getPendingWatchAssetRequests()
 	if (first === undefined || first.popupOrTabId === undefined) return undefined
-	const canForward = websiteTabConnections === undefined ? first.canForward : canForwardRequest(websiteTabConnections, first)
-	const request = canForward === first.canForward
+	const forwardToSigner = websiteTabConnections === undefined ? undefined : await getForwardSignerTarget(websiteTabConnections, first)
+	const request = doForwardSignerTargetsMatch(forwardToSigner, first.forwardToSigner)
 		? first
-		: (await updatePendingWatchAssetRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, canForward } : stored)))[0]
+		: (await updatePendingWatchAssetRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, forwardToSigner } : stored)))[0]
 	if (request === undefined) return undefined
 	await publishWatchAssetRequest(request)
 	return toPendingRequest(request)
@@ -127,10 +146,10 @@ export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabCo
 				if (await dependencies.dialogExists(first.popupOrTabId)) {
 					const [current] = await dependencies.getRequests()
 					if (current === undefined || !requestsMatch(current, first.request.uniqueRequestIdentifier)) continue
-					const canForward = websiteTabConnections === undefined ? current.canForward : canForwardRequest(websiteTabConnections, current)
-					const active = canForward === current.canForward
+					const forwardToSigner = websiteTabConnections === undefined ? undefined : await getForwardSignerTarget(websiteTabConnections, current)
+					const active = doForwardSignerTargetsMatch(forwardToSigner, current.forwardToSigner)
 						? current
-						: (await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, current.request.uniqueRequestIdentifier) ? { ...stored, canForward } : stored)))[0]
+						: (await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, current.request.uniqueRequestIdentifier) ? { ...stored, forwardToSigner } : stored)))[0]
 					if (active !== undefined) await dependencies.publish(active)
 					return
 				}
@@ -141,8 +160,8 @@ export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabCo
 			if (popupOrTabId === undefined) {
 				return
 			}
-			const canForward = websiteTabConnections === undefined ? false : canForwardRequest(websiteTabConnections, first)
-			const [active] = await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, popupOrTabId, canForward } : stored))
+			const forwardToSigner = websiteTabConnections === undefined ? undefined : await getForwardSignerTarget(websiteTabConnections, first)
+			const [active] = await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, popupOrTabId, forwardToSigner } : stored))
 			if (active === undefined || !requestsMatch(active, first.request.uniqueRequestIdentifier)) {
 				await dependencies.closeDialog(popupOrTabId)
 				continue
@@ -173,9 +192,16 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
 		processQueue: async (connections) => await processWatchAssetQueue(connections),
-		sendToSigner: (request) => sendCallbackToConfirmedSignerOwner(
+		sendToSigner: (request) => request.forwardToSigner !== undefined && sendCallbackToExpectedConfirmedSignerOwner(
 			websiteTabConnections,
-			request.request.uniqueRequestIdentifier.requestSocket.tabId,
+			{
+				socket: {
+					tabId: request.request.uniqueRequestIdentifier.requestSocket.tabId,
+					connectionName: request.forwardToSigner.connectionName,
+				},
+				ownerGeneration: request.forwardToSigner.ownerGeneration,
+				signerProviderGeneration: request.forwardToSigner.signerProviderGeneration,
+			},
 			{
 				method: 'request_signer_to_wallet_watchAsset',
 				result: {
@@ -196,7 +222,7 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
 		if (confirmation.data.action === 'forward' && dependencies.sendToSigner(request) === false) {
-			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier) ? { ...stored, canForward: false } : stored))
+			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier) ? { ...stored, forwardToSigner: undefined } : stored))
 			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 			if (stillPending !== undefined) await dependencies.publish(stillPending)
 			return
@@ -262,9 +288,9 @@ export async function handleWatchAssetRequest(
 		request,
 		requestedAsset: params.params[0],
 		token,
-		canForward: false,
+		forwardToSigner: undefined,
 	}
-	const storedRequest = { ...requestBeforeSignerCheck, canForward: canForwardRequest(websiteTabConnections, requestBeforeSignerCheck) }
+	const storedRequest = { ...requestBeforeSignerCheck, forwardToSigner: await getForwardSignerTarget(websiteTabConnections, requestBeforeSignerCheck) }
 	const enqueueRequest = dependencies.enqueueRequest ?? (async (pending) => { await updatePendingWatchAssetRequests((requests) => enqueueStoredWatchAssetRequest(requests, pending)) })
 	await enqueueRequest(storedRequest)
 	const processQueue = dependencies.processQueue ?? (async (connections) => await processWatchAssetQueue(connections))

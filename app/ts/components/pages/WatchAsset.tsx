@@ -6,6 +6,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '..
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { SignerLogoText, getPrettySignerName } from '../subcomponents/signers.js'
 
 function AssetField({ label, value, monospace = false }: { label: string, value: string, monospace?: boolean }) {
 	return <>
@@ -49,6 +50,22 @@ export function WatchAssetDetails({ pendingRequest }: { pendingRequest: PendingW
 	</>
 }
 
+export function WatchAssetActions({ forwardToSigner, submitting, choose }: {
+	forwardToSigner: PendingWatchAssetRequest['forwardToSigner'],
+	submitting: boolean,
+	choose: (action: 'add' | 'reject' | 'forward') => void,
+}) {
+	return <div style = 'display: flex; gap: 8px; justify-content: center; flex-wrap: wrap'>
+		<button class = 'button is-danger' disabled = { submitting } onClick = { () => choose('reject') }>Don't add</button>
+		<button class = 'button is-link' disabled = { submitting || forwardToSigner === undefined } onClick = { () => choose('forward') }>
+			{ forwardToSigner === undefined
+				? <SignerLogoText signerName = 'NoSignerDetected' text = 'Forward to wallet' reserveLogoSpace = { true }/>
+				: <SignerLogoText signerName = { forwardToSigner.signerName } text = { `Forward to ${ getPrettySignerName(forwardToSigner.signerName) }` } reserveLogoSpace = { true }/> }
+		</button>
+		<button class = 'button is-primary' disabled = { submitting } onClick = { () => choose('add') }>Add to address book</button>
+	</div>
+}
+
 export function WatchAsset() {
 	const request = useSignal<PendingWatchAssetRequest | undefined>(undefined)
 	const submitting = useSignal(false)
@@ -81,7 +98,7 @@ export function WatchAsset() {
 	}
 
 	if (request.value === undefined) return <main></main>
-	const { website, canForward } = request.value
+	const { website, forwardToSigner } = request.value
 	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
 	return <main>
 		<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
@@ -93,11 +110,7 @@ export function WatchAsset() {
 					<img src = { websiteIcon } width = '64' height = '64'/>
 				</figure> }
 				<WatchAssetDetails pendingRequest = { request.value }/>
-				<div style = 'display: flex; gap: 8px; justify-content: center; flex-wrap: wrap'>
-					<button class = 'button is-danger' disabled = { submitting.value } onClick = { () => void choose('reject') }>Don't add</button>
-					{ canForward ? <button class = 'button is-link' disabled = { submitting.value } onClick = { () => void choose('forward') }>Forward to wallet</button> : <></> }
-					<button class = 'button is-primary' disabled = { submitting.value } onClick = { () => void choose('add') }>Add to address book</button>
-				</div>
+				<WatchAssetActions forwardToSigner = { forwardToSigner } submitting = { submitting.value } choose = { (action) => void choose(action) }/>
 			</div>
 		</div>
 	</main>

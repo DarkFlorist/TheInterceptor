@@ -219,7 +219,12 @@ const WatchAssetRequestDetails = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
 	token: Erc20TokenEntry,
-	canForward: funtypes.Boolean,
+	forwardToSigner: funtypes.Union(funtypes.ReadonlyObject({
+		signerName: SignerName,
+		connectionName: funtypes.BigInt,
+		ownerGeneration: funtypes.Number,
+		signerProviderGeneration: funtypes.Number,
+	}), funtypes.Undefined),
 })
 export type StoredWatchAssetRequest = funtypes.Static<typeof StoredWatchAssetRequest>
 export const StoredWatchAssetRequest = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({

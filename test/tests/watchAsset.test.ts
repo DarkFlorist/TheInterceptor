@@ -53,7 +53,7 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 			chainId: 1n,
 			entrySource: 'User',
 		},
-		canForward: false,
+		forwardToSigner: undefined,
 	}
 }
 
@@ -229,6 +229,33 @@ describe('wallet_watchAsset', () => {
 		expect(processQueueCount).toBe(1)
 	})
 
+	test('disables wallet forwarding without dismissing the dialog when delivery is unavailable', async () => {
+		const stored = {
+			...createStoredRequest(12),
+			popupOrTabId: { type: 'popup' as const, id: 92 },
+			forwardToSigner: { signerName: 'MetaMask' as const, connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
+		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		let published: StoredWatchAssetRequest | undefined
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'forward', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
+		}, {
+			getRequests: async () => requests,
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			updateAddressBook: async () => undefined,
+			publishAddressBookChanged: async () => undefined,
+			publish: async (request) => { published = request },
+			closeDialog: async () => { throw new Error('Dialog must remain open') },
+			processQueue: async () => { throw new Error('Queue must not advance') },
+			sendToSigner: () => false,
+		})
+
+		expect(requests).toHaveLength(1)
+		expect(requests[0]?.forwardToSigner).toBeUndefined()
+		expect(published?.forwardToSigner).toBeUndefined()
+	})
+
 	test('queues concurrent requests and opens the second dialog after the first settles', async () => {
 		let requests: readonly StoredWatchAssetRequest[] = [createStoredRequest(21), createStoredRequest(22)]
 		let nextPopupId = 100
@@ -280,7 +307,7 @@ describe('wallet_watchAsset', () => {
 		})
 
 		expect(requests[0]?.popupOrTabId).toEqual({ type: 'popup', id: 131 })
-		expect(requests[0]?.canForward).toBeFalse()
+		expect(requests[0]?.forwardToSigner).toBeUndefined()
 		expect(publishedRequestIds).toEqual([31])
 	})
 

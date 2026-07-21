@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
+import { WatchAssetActions, WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
 import type { PendingWatchAssetRequest } from '../../app/ts/types/user-interface-types.js'
 import { installDomMock } from './domMock.js'
 
@@ -12,12 +12,23 @@ type TestNode = {
 	parentNode?: TestNode | null
 	getAttribute?: (name: string) => string | null
 	style?: Record<string, string>
+	tagName?: string
+	disabled?: boolean
 }
 
 function findNodeByExactText(node: TestNode, text: string): TestNode | undefined {
 	if (node.getAttribute !== undefined && node.textContent === text) return node
 	for (const child of node.childNodes ?? []) {
 		const match = findNodeByExactText(child, text)
+		if (match !== undefined) return match
+	}
+	return undefined
+}
+
+function findFirstByTag(node: TestNode, tagName: string): TestNode | undefined {
+	if (node.tagName === tagName.toUpperCase()) return node
+	for (const child of node.childNodes ?? []) {
+		const match = findFirstByTag(child, tagName)
 		if (match !== undefined) return match
 	}
 	return undefined
@@ -52,7 +63,7 @@ const pendingRequest: PendingWatchAssetRequest = {
 		chainId: 1n,
 		entrySource: 'User',
 	},
-	canForward: true,
+	forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
 }
 
 describe('watch asset proposal rendering', () => {
@@ -125,6 +136,42 @@ describe('watch asset proposal rendering', () => {
 			assert.match(requestText, /Symbol hintNot provided/)
 			assert.match(requestText, /Decimals hintNot provided/)
 			assert.match(requestText, /Image hintNot provided/)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('keeps wallet forwarding visible but disabled when no wallet is connected', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(WatchAssetActions, { forwardToSigner: undefined, submitting: false, choose: () => undefined }), dom.document.body)
+			})
+			const forwardButton = findNodeByExactText(dom.document.body, 'Forward to wallet')
+			assert.notEqual(forwardButton, undefined)
+			assert.equal(forwardButton?.disabled === true || forwardButton?.getAttribute?.('disabled') !== null, true)
+			assert.notEqual(findFirstByTag(forwardButton ?? {}, 'svg'), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('names the connected wallet and renders its icon in the forwarding action', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(WatchAssetActions, {
+					forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
+					submitting: false,
+					choose: () => undefined,
+				}), dom.document.body)
+			})
+			const forwardButton = findNodeByExactText(dom.document.body, 'Forward to MetaMask')
+			assert.notEqual(forwardButton, undefined)
+			assert.equal(forwardButton?.disabled === true || forwardButton?.getAttribute?.('disabled') !== null, false)
+			assert.equal(findFirstByTag(forwardButton ?? {}, 'img')?.getAttribute?.('src'), '../img/signers/metamask.svg')
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
