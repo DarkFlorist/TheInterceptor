@@ -19,7 +19,7 @@ import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, Enriche
 import type { PureGroupedSolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
-import { isNewBlockAbort, reportLocalRecoveryBestEffort } from '../utils/errors.js'
+import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -136,8 +136,19 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
-	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
 	const chainId = ethereumClientService.getChainId()
+	let tokenIdentification: IdentifiedAddress
+	try {
+		tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
+		reportLocalRecoveryBestEffort(error, {
+			code: 'token_metadata_probe_failed',
+			message: 'Using fallback address metadata after optional on-chain token probes failed.',
+			details: { address: addrString },
+		})
+		return { ...getFilledInContactEntry(address), chainId }
+	}
 	const getEntry = (tokenIdentification: IdentifiedAddress): AddressBookEntry => {
 		switch (tokenIdentification.type) {
 			case 'ERC20': return {
@@ -188,20 +199,6 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
-export async function identifyAddressForVisualiser(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint): Promise<AddressBookEntry> {
-	try {
-		return await identifyAddress(ethereumClientService, requestAbortController, address)
-	} catch(error: unknown) {
-		if (isNewBlockAbort(error)) throw error
-		reportLocalRecoveryBestEffort(error, {
-			code: 'simulation_address_metadata_lookup_failed',
-			message: 'Continuing transaction visualization with fallback address metadata.',
-			details: { address: addressString(address) },
-		})
-		return { ...getFilledInContactEntry(address), chainId: ethereumClientService.getChainId() }
-	}
-}
-
 const getAddressesForSolidityType = (typeValue: PureGroupedSolidityType): readonly bigint[] => {
 	switch(typeValue.type) {
 		case 'address': return [typeValue.value]
@@ -245,7 +242,7 @@ export function getAddressesToIdentifyForVisualiserFromTransactions(events: Enri
 
 export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
 	const addressesToIdentify = getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput)
-	return await promiseAllMapAbortSafe(addressesToIdentify, async (address) => await identifyAddressForVisualiser(ethereumClientService, requestAbortController, address))
+	return await promiseAllMapAbortSafe(addressesToIdentify, async (address) => await identifyAddress(ethereumClientService, requestAbortController, address))
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {

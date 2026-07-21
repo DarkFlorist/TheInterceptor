@@ -59,10 +59,11 @@ const { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } = await import('../../ap
 const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
 const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+const { identifyAddress } = await import('../../app/ts/background/metadataUtils.js')
 const { JsonRpcResponseError } = await import('../../app/ts/utils/errors.js')
 
 describe('visualizeSimulatorState failed simulations', () => {
-	test('visualizes a successful transaction with fallback address metadata when on-chain token probes fail', async () => {
+	test('recovers JSON-RPC metadata probe failures without hiding unexpected metadata errors', async () => {
 		installBrowserMock()
 		const rpcNetwork = {
 			name: 'Test Chain',
@@ -82,7 +83,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			get(target, property, receiver) {
 				if (property === 'getCode') return async () => new Uint8Array([1])
 				if (property === 'ethSimulateV1') return async () => {
-					throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'intrinsic gas too low' } })
+					throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'err: intrinsic gas too low: have 11332, want 21240 (supplied gas 11332)' } })
 				}
 				return Reflect.get(target, property, receiver)
 			},
@@ -132,7 +133,9 @@ describe('visualizeSimulatorState failed simulations', () => {
 		console.warn = () => undefined
 		console.error = () => undefined
 		let visualized: Awaited<ReturnType<typeof visualizeSimulatorState>>
+		let directlyIdentifiedEntry: Awaited<ReturnType<typeof identifyAddress>>
 		try {
+			directlyIdentifiedEntry = await identifyAddress(ethereum, undefined, targetAddress)
 			visualized = await visualizeSimulatorState(simulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
 		} finally {
 			console.warn = originalConsoleWarn
@@ -140,9 +143,23 @@ describe('visualizeSimulatorState failed simulations', () => {
 		}
 
 		const targetEntry = visualized.addressBookEntries.find((entry) => entry.address === targetAddress)
+		assert.equal(directlyIdentifiedEntry.entrySource, 'FilledIn')
 		assert.equal(targetEntry?.entrySource, 'FilledIn')
 		assert.equal(targetEntry?.chainId, rpcNetwork.chainId)
 		assert.equal(visualized.visualizedSimulationState.success, true)
+
+		const unexpectedEthereum = new Proxy(baseEthereum, {
+			get(target, property, receiver) {
+				if (property === 'getCode') return async () => new Uint8Array([1])
+				if (property === 'ethSimulateV1') return async () => { throw new Error('unexpected metadata defect') }
+				return Reflect.get(target, property, receiver)
+			},
+		})
+		await assert.rejects(async () => await identifyAddress(unexpectedEthereum, undefined, targetAddress), /unexpected metadata defect/)
+		await assert.rejects(
+			async () => await visualizeSimulatorState(simulationState, unexpectedEthereum, { estimateEthereumPricesForTokens: async () => [] }, undefined),
+			/unexpected metadata defect/,
+		)
 	})
 
 	test('keeps fetched address metadata instead of returning an empty address book', async () => {
