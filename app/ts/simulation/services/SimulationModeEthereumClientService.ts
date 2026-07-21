@@ -3,7 +3,7 @@ import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction, type EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState, WebsiteCreatedEthereumUnsignedTransaction } from '../../types/visualizer-types.js'
+import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState, WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
@@ -94,7 +94,7 @@ type PreparedSimulatedExecutionBlock = PreparedSimulationExecutionBlock & {
 	simulatedTransactions: readonly ExecutionSimulatedTransaction[]
 }
 
-export const getWebsiteCreatedEthereumUnsignedTransactions = (simulatedTransactions: readonly SimulatedTransaction[]) => {
+export const getWebsiteCreatedEthereumTransactions = (simulatedTransactions: readonly SimulatedTransaction[]) => {
 	return simulatedTransactions.map((simulatedTransaction) => ({
 		transaction: simulatedTransaction.preSimulationTransaction.signedTransaction,
 		website: simulatedTransaction.preSimulationTransaction.website,
@@ -427,7 +427,7 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 	return { ...transaction, ...signatureParams, hash }
 }
 
-export const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction) => (
+export const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumTransaction) => (
 	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction)
 )
 

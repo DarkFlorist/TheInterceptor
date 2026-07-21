@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
 import { type EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import type { WebsiteCreatedEthereumUnsignedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
 import { PendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage as PendingTransactionOrSignableMessageType } from '../../app/ts/types/accessRequest.js'
 import { EthereumAddress, EthereumBlockHeader, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
 import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -235,7 +235,7 @@ function installBrowserMock() {
 	}
 }
 
-function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction) {
+function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreatedEthereumTransaction) {
 	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
 	const pendingTransaction: PendingTransactionOrSignableMessageType = {
 		type: 'Transaction',
