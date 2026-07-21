@@ -1032,8 +1032,10 @@ describe('inpage signer bridge', () => {
 			on: () => throwingConnectedMetaMaskProvider,
 		}
 		const conflictingMetaMaskProviders = [
+			{ ...concreteMetaMaskProvider, isAmbire: true },
 			{ ...concreteMetaMaskProvider, isBraveWallet: true },
 			{ ...concreteMetaMaskProvider, isCoinbaseWallet: true },
+			{ ...concreteMetaMaskProvider, isRabby: true },
 			{ ...concreteMetaMaskProvider, isInterceptor: true },
 		]
 		let statefulMetaMaskMarkerReads = 0
@@ -1277,6 +1279,56 @@ describe('inpage signer bridge', () => {
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x3'))
 	})
 
+	test('uses an initially announced MetaMask provider instead of MetaMask-compatible Ambire or Rabby', async () => {
+		const walletCases = [
+			{ name: 'Ambire', marker: { isAmbire: true, isMetaMask: true } },
+			{ name: 'Rabby', marker: { isMetaMask: true, isRabby: true } },
+		] as const
+
+		for (const walletCase of walletCases) {
+			const connectedSignerNames: unknown[] = []
+			const announcedSignerRequests: string[] = []
+			const { fakeWindow } = createFakeWindow({
+				handleRequest: (request) => {
+					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+					return false
+				},
+			})
+			const rootSigner = {
+				...walletCase.marker,
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+				on: () => rootSigner,
+				removeListener: () => rootSigner,
+			}
+			const announcedMetaMaskProvider = {
+				isMetaMask: true,
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => {
+					announcedSignerRequests.push(method)
+					return method === 'eth_chainId' ? '0x1' : []
+				},
+				on: () => announcedMetaMaskProvider,
+				removeListener: () => announcedMetaMaskProvider,
+			}
+			Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: rootSigner })
+			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: {
+					info: { uuid: '55555555-5555-4555-8555-555555555555', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+					provider: announcedMetaMaskProvider,
+				},
+			}))
+
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?eip6963-replace-${ walletCase.name }-${ Date.now() }-${ Math.random() }`, async () => {
+				await waitFor(() => connectedSignerNames.includes('MetaMask'))
+				await waitFor(() => announcedSignerRequests.includes('eth_chainId'))
+			})
+
+			assert.deepEqual(connectedSignerNames, [walletCase.name, 'MetaMask'])
+		}
+	})
+
 	test('normalizes object-valued MetaMask rejection data before sending signer_reply', async () => {
 		const signerReplies: unknown[] = []
 		const { fakeWindow } = createFakeWindow({
@@ -1369,10 +1421,12 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
 	})
 
-	test('does not replace Coinbase or unrecognized signers from MetaMask announcements', async () => {
+	test('recognizes supported MetaMask-compatible wallets and does not replace selected non-MetaMask signers from announcements', async () => {
 		const signerCases = [
+			{ name: 'Ambire', marker: { isAmbire: true, isMetaMask: true } },
 			{ name: 'CoinbaseWallet', marker: { isCoinbaseWallet: true } },
 			{ name: 'NotRecognizedSigner', marker: {} },
+			{ name: 'Rabby', marker: { isMetaMask: true, isRabby: true } },
 		] as const
 
 		for (const signerCase of signerCases) {

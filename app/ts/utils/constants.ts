@@ -193,8 +193,10 @@ export const MAX_BLOCK_CACHE = 5
 export const TIME_BETWEEN_BLOCKS = 12
 export const GAS_PER_BLOB = 2n**17n
 export const METAMASK_LOGO = '../img/signers/metamask.svg'
+export const AMBIRE_LOGO = '../img/signers/ambire.svg'
 export const BRAVE_LOGO = '../img/signers/brave.svg'
 export const COINBASEWALLET_LOGO = '../img/signers/coinbasewallet.svg'
+export const RABBY_LOGO = '../img/signers/rabby.svg'
 
 export function getChainName(chainId: bigint) { return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${chainId.toString()}` }
 

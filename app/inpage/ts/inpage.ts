@@ -288,8 +288,10 @@ type UnsupportedWindowEthereumMethods = {
 }
 
 type WindowEthereum = InjectFunctions & {
+	isAmbire?: boolean,
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
+	isRabby?: boolean,
 	isInterceptor?: boolean,
 	providerMap?: Map<string, WindowEthereum>, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
 	providers?: readonly WindowEthereum[],
@@ -331,7 +333,30 @@ type OutstandingRequest = {
 }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
-type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
+type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Ambire' | 'Brave' | 'CoinbaseWallet' | 'Rabby'
+
+function getSignerNameFromWalletMarkers(markers: { readonly isAmbire: boolean, readonly isBrave: boolean, readonly isCoinbase: boolean, readonly isMetaMask: boolean, readonly isRabby: boolean }): Signer {
+	if (markers.isCoinbase) return 'CoinbaseWallet'
+	if (markers.isAmbire) return 'Ambire'
+	if (markers.isBrave) return 'Brave'
+	if (markers.isRabby) return 'Rabby'
+	if (markers.isMetaMask) return 'MetaMask'
+	return 'NotRecognizedSigner'
+}
+
+function canAnnouncedMetaMaskReplaceSigner(signerName: Signer): boolean {
+	switch (signerName) {
+		case 'NoSigner':
+		case 'MetaMask':
+		case 'Ambire':
+		case 'Brave':
+		case 'Rabby':
+			return true
+		case 'NotRecognizedSigner':
+		case 'CoinbaseWallet':
+			return false
+	}
+}
 
 function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
@@ -459,8 +484,10 @@ class InterceptorMessageListener {
 	}
 	private static readonly hasNoConflictingWalletMarkers = (provider: WindowEthereum) => {
 		return (provider.isMetaMask === undefined || provider.isMetaMask === true)
+			&& (provider.isAmbire === undefined || provider.isAmbire === false)
 			&& (provider.isBraveWallet === undefined || provider.isBraveWallet === false)
 			&& (provider.isCoinbaseWallet === undefined || provider.isCoinbaseWallet === false)
+			&& (provider.isRabby === undefined || provider.isRabby === false)
 			&& (provider.isInterceptor === undefined || provider.isInterceptor === false)
 	}
 
@@ -896,7 +923,7 @@ class InterceptorMessageListener {
 		const { provider, info } = announcement
 		if (provider === this.signerWindowEthereumProvider) return
 		if (this.announcedMetaMaskUuid !== undefined) return
-		if (this.signerName !== 'NoSigner' && this.signerName !== 'MetaMask' && this.signerName !== 'Brave') return
+		if (!canAnnouncedMetaMaskReplaceSigner(this.signerName)) return
 		const preparedSigner = this.prepareSignerProvider(provider, 'MetaMask')
 		if (preparedSigner === undefined) return
 		this.announcedMetaMaskUuid = info.uuid
@@ -1569,15 +1596,25 @@ class InterceptorMessageListener {
 		if (rootIsInterceptor) return
 		const preparedMetaMaskProvider = this.findPreparedLegacyMetaMaskProvider(injectedWindowEthereum)
 
+		let rootIsAmbire = false
 		let rootIsBraveWallet = false
 		let rootIsCoinbaseWallet = false
 		let rootIsMetaMask = false
+		let rootIsRabby = false
 		let rootProviderMap: Map<string, WindowEthereum> | undefined
+		try { rootIsAmbire = injectedWindowEthereum.isAmbire === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Ambire marker', error) }
 		try { rootIsBraveWallet = injectedWindowEthereum.isBraveWallet === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Brave marker', error) }
 		try { rootIsCoinbaseWallet = injectedWindowEthereum.isCoinbaseWallet === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Coinbase marker', error) }
 		try { rootIsMetaMask = injectedWindowEthereum.isMetaMask === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root MetaMask marker', error) }
+		try { rootIsRabby = injectedWindowEthereum.isRabby === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Rabby marker', error) }
 		try { rootProviderMap = injectedWindowEthereum.providerMap } catch (error: unknown) { this.reportSignerDiscoveryError('read root provider map', error) }
-		const rootSignerName = rootIsCoinbaseWallet ? 'CoinbaseWallet' as const : rootIsBraveWallet ? 'Brave' as const : rootIsMetaMask ? 'MetaMask' as const : 'NotRecognizedSigner' as const
+		const rootSignerName = getSignerNameFromWalletMarkers({
+			isAmbire: rootIsAmbire,
+			isBrave: rootIsBraveWallet,
+			isCoinbase: rootIsCoinbaseWallet,
+			isMetaMask: rootIsMetaMask,
+			isRabby: rootIsRabby,
+		})
 
 		if (preparedMetaMaskProvider === undefined && (rootIsBraveWallet || rootProviderMap !== undefined || rootIsCoinbaseWallet)) {
 			let mapSignerWindowEthereum: WindowEthereum | undefined
