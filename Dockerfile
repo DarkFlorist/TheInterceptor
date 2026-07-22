@@ -30,7 +30,7 @@ COPY scripts/ /workspace/scripts/
 
 WORKDIR /workspace
 RUN bun run setup-firefox
-RUN bun test
+RUN bun run test
 
 WORKDIR /workspace/app
 RUN zip ../interceptor-firefox.zip -r .

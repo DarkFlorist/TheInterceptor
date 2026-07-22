@@ -4,7 +4,7 @@
 	"type": "module",
 	"packageManager": "bun@1.3.13",
 	"scripts": {
-		"test": "bun test",
+		"test": "bun run compile-contracts && bun test",
 		"typecheck": "bun run compile-contracts && bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
 		"compile-contracts": "bun ./build/compileSolidityContracts.mts",
 		"install-chrome": "bash ./scripts/install-chrome.sh",

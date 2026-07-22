@@ -56,6 +56,15 @@ function parseExactMajorMinor(version: string) {
 }
 
 describe('package scripts', () => {
+	test('test script compiles Solidity contracts before starting the test runner', () => {
+		const scripts = getPackageScripts()
+
+		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
+			'bun run compile-contracts',
+			'bun test',
+		])
+	})
+
 	test('firefox build compiles app scripts before writing the manifest', () => {
 		const scripts = getPackageScripts()
 

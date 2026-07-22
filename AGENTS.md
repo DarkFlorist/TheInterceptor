@@ -6,7 +6,7 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
 
 - After completing a user-requested task that changes code, tests, configuration, tooling, or repository instructions, run these commands separately and in this order before handing off:
   ```bash
-  bun test
+  bun run test
   bun run setup-chrome
   bun run typecheck
   bun run lint
