@@ -7,7 +7,7 @@ import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSign
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -138,13 +138,12 @@ export async function refreshConfirmTransactionSimulation(
 	} catch (error) {
 		if (isNewBlockAbort(error)) return undefined
 		if (isFailedToFetchError(error)) return undefined
-		if (!(error instanceof JsonRpcResponseError)) throw error
+		const isJsonRpcResponseError = error instanceof JsonRpcResponseError
+		if (!isJsonRpcResponseError) await reportUnexpectedError(error, { code: 'confirm_transaction_simulation_failed' })
 
-		const baseError = {
-			code: error.code,
-			message: error.message,
-			data: typeof error.data === 'string' ? error.data : '0x',
-		}
+		const baseError = isJsonRpcResponseError
+			? { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }
+			: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: error instanceof Error ? error.message : 'Unknown simulation error', data: '0x' }
 		const extractToAbi = async (): Promise<readonly string[]> => {
 			const params = transactionToSimulate.originalRequestParameters.params[0]
 			if (!('to' in params)) return []
@@ -155,7 +154,7 @@ export async function refreshConfirmTransactionSimulation(
 		return { statusCode: 'failed' as const, data: {
 			...info,
 			simulationStartedTimestamp,
-			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
+			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
 			simulationState: {
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()

@@ -4,8 +4,9 @@
 	"type": "module",
 	"packageManager": "bun@1.3.13",
 	"scripts": {
-		"test": "bun test",
-		"typecheck": "bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
+		"test": "bun run compile-contracts && bun test",
+		"typecheck": "bun run compile-contracts && bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
+		"compile-contracts": "bun ./build/compileSolidityContracts.mts",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"setup-firefox": "bun run vendor && bun run inpage && bun run build-firefox",
 		"setup-chrome": "bun ./scripts/setup-chrome.mts",
@@ -20,7 +21,7 @@
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",
 		"chrome": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV3.json`))'",
 		"inpage": "bun run clean-inpage-output && bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json && bun ./scripts/inline-inpage-document-start.mts",
-		"compile-app": "bun run clean-js-output && bun --bun tsc --project tsconfig.json",
+		"compile-app": "bun run compile-contracts && bun run clean-js-output && bun --bun tsc --project tsconfig.json",
 		"clean-js-output": "bun ./build/cleanOutput.mts app/js",
 		"clean-inpage-output": "bun ./build/cleanOutput.mts app/inpage/js",
 		"knip": "bunx knip@5.1.6",
@@ -52,6 +53,7 @@
 	},
 	"devDependencies": {
 		"@types/firefox-webext-browser": "120.0.3",
+		"solc": "0.8.18",
 		"typescript": "5.9.3"
 	}
 }
