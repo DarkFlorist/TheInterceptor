@@ -55,36 +55,6 @@ export const defaultRpcs = [
 		primary: true,
 		minimized: true,
 	},
-	{
-		name: 'Sepolia',
-		chainId: 11155111n,
-		httpsRpc: 'https://sepolia.dark.florist',
-		currencyName: 'Sepolia Testnet ETH',
-		currencyTicker: 'SEETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: true,
-		minimized: true,
-	},
-	{
-		name: 'Holesky',
-		chainId: 17000n,
-		httpsRpc: 'https://holesky.dark.florist',
-		currencyName: 'Holesky Testnet ETH',
-		currencyTicker: 'HOETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: true,
-		minimized: true,
-	},
-	{
-		name: 'Ethereum (experimental nethermind)',
-		chainId: 1n,
-		httpsRpc: 'https://nethermind.dark.florist',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: false,
-		minimized: true,
-	},
 ] as const
 
 export const defaultSimulationMode = true

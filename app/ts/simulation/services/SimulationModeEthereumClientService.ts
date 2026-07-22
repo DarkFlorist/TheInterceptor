@@ -27,6 +27,65 @@ import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPa
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
+type GasEstimate = { error: ErrorWithCodeAndOptionalData } | { gas: bigint }
+
+const gasEstimationError = (message: string): GasEstimate => ({ error: {
+	code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
+	message,
+	data: '0x',
+} })
+
+const jsonRpcErrorToGasEstimate = (error: JsonRpcResponseError): GasEstimate => {
+	const safeParsedData = EthereumData.safeParse(error.data)
+	return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
+}
+
+const failedSimulationToGasEstimate = (result: Extract<EthSimulateV1CallResult, { status: 'failure' }>): GasEstimate => ({
+	error: { ...result.error, data: dataStringWith0xStart(result.returnData) },
+})
+
+// This is a wallet policy buffer, not an Ethereum protocol gas cost. The node-provided
+// peak is increased by 25% so small state changes between estimation and mining do not
+// make the submitted transaction run out of gas.
+const addGasEstimateSafetyBuffer = (gas: bigint) => (gas * 125n + 99n) / 100n
+
+const getGasEstimateFromSimulation = async (
+	initialResult: EthSimulateV1CallResult,
+	maxGas: bigint,
+	simulateWithGasLimit: (gasLimit: bigint) => Promise<EthSimulateV1CallResult | undefined>,
+): Promise<GasEstimate> => {
+	if (initialResult.status === 'failure') return failedSimulationToGasEstimate(initialResult)
+	const nodeReportedPeakGas = initialResult.maxUsedGas
+	if (nodeReportedPeakGas !== undefined) {
+		if (nodeReportedPeakGas > maxGas) return gasEstimationError(
+			`Node-reported peak gas ${ nodeReportedPeakGas.toString() } exceeds the available block gas ${ maxGas.toString() }`,
+		)
+		return { gas: min(addGasEstimateSafetyBuffer(nodeReportedPeakGas), maxGas) }
+	}
+
+	// maxUsedGas is a widely implemented eth_simulateV1 extension, but it is not yet
+	// required by the RPC specification. For nodes that omit it, discover a working
+	// limit by rerunning the exact call. This delegates fork-specific gas rules to the
+	// execution client instead of duplicating mutable protocol constants here.
+	let candidate = min(addGasEstimateSafetyBuffer(initialResult.gasUsed), maxGas)
+	while (true) {
+		try {
+			const verificationResult = await simulateWithGasLimit(candidate)
+			if (verificationResult === undefined) return gasEstimationError('ETH Simulate Failed to estimate gas')
+			if (verificationResult.status === 'success') return { gas: min(addGasEstimateSafetyBuffer(candidate), maxGas) }
+			if (candidate === maxGas) return failedSimulationToGasEstimate(verificationResult)
+		} catch (error: unknown) {
+			if (!(error instanceof JsonRpcResponseError)) throw error
+			if (candidate === maxGas) return jsonRpcErrorToGasEstimate(error)
+		}
+		const largerCandidate = min(max(candidate * 2n, 1n), maxGas)
+		if (largerCandidate === candidate) return gasEstimationError(
+			`Unable to find a successful gas limit within the available block gas ${ maxGas.toString() }`,
+		)
+		candidate = largerCandidate
+	}
+}
+
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
@@ -386,16 +445,20 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
-		const lastResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, currentState.simulationStateInput, estimateGasTransaction, {}, true)
+		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, currentState.simulationStateInput)
+		const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
+			ethereumClientService,
+			requestAbortController,
+			context,
+			{ ...estimateGasTransaction, gasLimit },
+			{},
+			true,
+		)
+		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, {}, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
-		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
-		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
-		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
 	} catch (error: unknown) {
-		if (error instanceof JsonRpcResponseError) {
-			const safeParsedData = EthereumData.safeParse(error.data)
-			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
-		}
+		if (error instanceof JsonRpcResponseError) return jsonRpcErrorToGasEstimate(error)
 		throw error
 	}
 }
@@ -1416,16 +1479,19 @@ export const simulateEstimateGasFromInput = async (
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
+		const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
+			ethereumClientService,
+			requestAbortController,
+			context,
+			{ ...estimateGasTransaction, gasLimit },
+			extraOverrides,
+			true,
+		)
 		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, extraOverrides, true)
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
-		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
-		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n)
-		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
 	} catch (error: unknown) {
-		if (error instanceof JsonRpcResponseError) {
-			const safeParsedData = EthereumData.safeParse(error.data)
-			return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
-		}
+		if (error instanceof JsonRpcResponseError) return jsonRpcErrorToGasEstimate(error)
 		throw error
 	}
 }
