@@ -208,15 +208,13 @@ export function SettingsView() {
 
 const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
-	const latestEntry = useComputed(() => rpcEntries.value[0])
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
 	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs }))
 
-	if (shouldOfferBundledRpcReset(rpcEntries.value, defaultRpcs) && latestEntry.value !== undefined) {
+	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (
-			<>
-				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
-					<p style = { { color: 'var(--disabled-text-color)' } }>You have one RPC connection configured. Do you want to restore the bundled default RPC list?</p>
+			<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
+				<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least one RPC connection. Do you want to restore the bundled default RPC list?</p>
 				<AsyncActionButton
 					class = 'btn btn--outline'
 					style = 'font-weight: 600'
@@ -224,12 +222,8 @@ const RpcListings = () => {
 					text = 'Yes, load the default RPC list'
 					pendingText = 'Loading default RPC list'
 					onClick = { loadDefaultRpcs }
-						/>
-				</aside>
-				<ul class = 'grid' style = '--gap-y: 0.5rem'>
-						<RpcSummary info = { latestEntry } />
-				</ul>
-			</>
+				/>
+			</aside>
 		)
 	}
 

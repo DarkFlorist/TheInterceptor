@@ -44,17 +44,21 @@ function makeBlock(timestamp: Date, number = 123n) {
 
 describe('rpcConnectionUi', () => {
 	test('does not offer to reset the bundled singleton RPC list to itself', () => {
-		assert.equal(shouldOfferBundledRpcReset([rpcNetwork], [rpcNetwork]), false)
+		assert.equal(shouldOfferBundledRpcReset([rpcNetwork]), false)
 	})
 
-	test('offers to restore the bundled RPC list when only a custom RPC remains', () => {
+	test('does not offer to reset when only a custom RPC remains', () => {
 		const customRpcNetwork = {
 			...rpcNetwork,
 			name: 'Custom Chain',
 			httpsRpc: 'https://custom.example.invalid',
 		}
 
-		assert.equal(shouldOfferBundledRpcReset([customRpcNetwork], [rpcNetwork]), true)
+		assert.equal(shouldOfferBundledRpcReset([customRpcNetwork]), false)
+	})
+
+	test('offers to restore the bundled RPC list when no RPCs remain', () => {
+		assert.equal(shouldOfferBundledRpcReset([]), true)
 	})
 
 	test('treats an active disconnect as an immediate warning with a retry countdown', () => {
