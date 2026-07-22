@@ -1,4 +1,6 @@
 import type { RpcConnectionStatus, RpcSlowRequest } from '../types/user-interface-types.js'
+import { type RpcEntries, RpcEntry } from '../types/rpc.js'
+import { serialize } from '../types/wire-types.js'
 import { TIME_BETWEEN_BLOCKS } from './constants.js'
 
 type RpcWarningBase = {
@@ -42,4 +44,13 @@ export function shouldShowRpcWarningCountdown(warningState: RpcWarningState, now
 	return warningState.retryState === 'active'
 		&& warningState.nextRetryAt !== undefined
 		&& warningState.nextRetryAt.getTime() > now.getTime()
+}
+
+export function shouldOfferBundledRpcReset(rpcEntries: RpcEntries, bundledRpcEntries: RpcEntries) {
+	if (rpcEntries.length !== 1) return false
+	if (rpcEntries.length !== bundledRpcEntries.length) return true
+	return rpcEntries.some((entry, index) => {
+		const bundledEntry = bundledRpcEntries[index]
+		return bundledEntry === undefined || JSON.stringify(serialize(RpcEntry, entry)) !== JSON.stringify(serialize(RpcEntry, bundledEntry))
+	})
 }

@@ -16,6 +16,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -211,11 +212,11 @@ const RpcListings = () => {
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
 	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs }))
 
-	if (rpcEntries.value.length < 2 && latestEntry.value !== undefined) {
+	if (shouldOfferBundledRpcReset(rpcEntries.value, defaultRpcs) && latestEntry.value !== undefined) {
 		return (
 			<>
 				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
-					<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
+					<p style = { { color: 'var(--disabled-text-color)' } }>You have one RPC connection configured. Do you want to restore the bundled default RPC list?</p>
 				<AsyncActionButton
 					class = 'btn btn--outline'
 					style = 'font-weight: 600'

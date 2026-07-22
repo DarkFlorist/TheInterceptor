@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getNextRpcRetryAt, getRpcWarningState, noNewBlockForOverTwoMins, shouldShowRpcWarningCountdown } from '../../app/ts/utils/rpcConnectionUi.js'
+import { getNextRpcRetryAt, getRpcWarningState, noNewBlockForOverTwoMins, shouldOfferBundledRpcReset, shouldShowRpcWarningCountdown } from '../../app/ts/utils/rpcConnectionUi.js'
 
 const rpcNetwork = {
 	name: 'Test Chain',
@@ -43,6 +43,20 @@ function makeBlock(timestamp: Date, number = 123n) {
 }
 
 describe('rpcConnectionUi', () => {
+	test('does not offer to reset the bundled singleton RPC list to itself', () => {
+		assert.equal(shouldOfferBundledRpcReset([rpcNetwork], [rpcNetwork]), false)
+	})
+
+	test('offers to restore the bundled RPC list when only a custom RPC remains', () => {
+		const customRpcNetwork = {
+			...rpcNetwork,
+			name: 'Custom Chain',
+			httpsRpc: 'https://custom.example.invalid',
+		}
+
+		assert.equal(shouldOfferBundledRpcReset([customRpcNetwork], [rpcNetwork]), true)
+	})
+
 	test('treats an active disconnect as an immediate warning with a retry countdown', () => {
 		const status = {
 			isConnected: false,
