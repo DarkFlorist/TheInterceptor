@@ -37,12 +37,18 @@ if (compilerErrors.length > 0) {
 	throw new Error(`Solidity compilation failed:\n${ compilerErrors.map((error: { formattedMessage: string }) => error.formattedMessage).join('\n') }`)
 }
 
-const generatedExports = contracts.map(({ sourceFile, contractName, exportName }) => {
-	const byteCode = compilerOutput.contracts?.[sourceFile]?.[contractName]?.evm?.deployedBytecode?.object
-	if (typeof byteCode !== 'string' || byteCode.length === 0 || !/^[0-9a-f]+$/i.test(byteCode)) {
+const normalizeByteCode = (byteCode: unknown, sourceFile: string, contractName: string) => {
+	if (typeof byteCode !== 'string') throw new Error(`Solidity compiler did not produce deployable bytecode for ${ sourceFile }:${ contractName }`)
+	const unprefixedByteCode = byteCode.startsWith('0x') ? byteCode.slice(2) : byteCode
+	if (unprefixedByteCode.length === 0 || unprefixedByteCode.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(unprefixedByteCode)) {
 		throw new Error(`Solidity compiler did not produce deployable bytecode for ${ sourceFile }:${ contractName }`)
 	}
-	return `export const ${ exportName } = '0x${ byteCode }'\n`
+	return `0x${ unprefixedByteCode }`
+}
+
+const generatedExports = contracts.map(({ sourceFile, contractName, exportName }) => {
+	const byteCode = normalizeByteCode(compilerOutput.contracts?.[sourceFile]?.[contractName]?.evm?.deployedBytecode?.object, sourceFile, contractName)
+	return `export const ${ exportName } = '${ byteCode }'\n`
 }).join('')
 
 await fs.mkdir(path.dirname(generatedModulePath), { recursive: true })
