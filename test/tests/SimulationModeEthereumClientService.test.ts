@@ -5,10 +5,10 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
+import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
@@ -90,6 +90,10 @@ const rpcNetwork = {
 class MockEthereumJSONRpcRequestHandler {
 	public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
 	public rejectOmittedGas = false
+	public omitMaxUsedGas = false
+	public simulatedCallGasUsed: bigint | undefined = undefined
+	public simulatedCallMaxUsedGas: bigint | undefined = undefined
+	public minimumSuccessfulGasLimit: bigint | undefined = undefined
 	public balance = 0n
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBlockByHashErrorsByHash = new Map<bigint, Error>()
@@ -147,7 +151,36 @@ class MockEthereumJSONRpcRequestHandler {
 						}],
 					})
 				}
-				return createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
+				const result = createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
+				if (aggregate3BalanceQueryCount !== undefined) return result
+				const lastBlock = result.at(-1)
+				const lastResult = lastBlock?.calls[0]
+				if (lastBlock === undefined || lastResult === undefined) return result
+				const gasUsed = this.simulatedCallGasUsed === undefined ? lastResult.gasUsed : `0x${ this.simulatedCallGasUsed.toString(16) }`
+				const maxUsedGas = this.simulatedCallMaxUsedGas === undefined ? lastResult.maxUsedGas ?? gasUsed : `0x${ this.simulatedCallMaxUsedGas.toString(16) }`
+				const successfulCall = {
+					...lastResult,
+					gasUsed,
+					maxUsedGas,
+				}
+				const callResult = lastCallGas !== undefined && this.minimumSuccessfulGasLimit !== undefined && lastCallGas < this.minimumSuccessfulGasLimit
+					? (() => {
+						const { logs: _logs, maxUsedGas: _maxUsedGas, ...failedCallBase } = successfulCall
+						return {
+						...failedCallBase,
+						status: '0x0',
+						gasUsed: `0x${ lastCallGas.toString(16) }`,
+						error: { code: -32000, message: 'out of gas' },
+					}
+					})()
+					: successfulCall
+				const customCall = this.omitMaxUsedGas
+					? (() => {
+						const { maxUsedGas: _maxUsedGas, ...callWithoutMaxUsedGas } = callResult
+						return callWithoutMaxUsedGas
+					})()
+					: callResult
+				return createMockEthSimulateV1ResultWithCustomLastBlock(blockStateCallCount, { ...lastBlock, calls: [customCall] })
 			}
 			default: throw new Error(`unsupported method ${ rpcRequest.method }`)
 		}
@@ -208,7 +241,6 @@ describe('SimulationModeEthereumClientService', () => {
 		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 		simulateWithZeroBaseFee: false,
 	}] as const
-
 	const createTwoBlockSimulationStateInput = () => [
 		{
 			stateOverrides: {},
@@ -814,6 +846,94 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
+		})
+
+		test('simulateEstimateGasFromInput uses the node-reported peak gas', async () => {
+			requestHandler.simulatedCallGasUsed = 11_332n
+			requestHandler.simulatedCallMaxUsedGas = 61_000n
+			try {
+				const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, [], {
+					from: exampleTransaction.from,
+					to: exampleTransaction.to,
+					value: 0n,
+					input: new Uint8Array(1_000).fill(1),
+				})
+
+				if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
+				assert.equal(estimateGas.gas, 76_250n)
+			} finally {
+				requestHandler.simulatedCallGasUsed = undefined
+				requestHandler.simulatedCallMaxUsedGas = undefined
+			}
+		})
+
+		test('simulateEstimateGas uses the node-reported peak gas', async () => {
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			requestHandler.simulatedCallGasUsed = 11_332n
+			requestHandler.simulatedCallMaxUsedGas = 61_000n
+			try {
+				const estimateGas = await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState(simulationState), {
+					from: exampleTransaction.from,
+					to: exampleTransaction.to,
+					value: 0n,
+					input: new Uint8Array(1_000).fill(1),
+				})
+
+				if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
+				assert.equal(estimateGas.gas, 76_250n)
+			} finally {
+				requestHandler.simulatedCallGasUsed = undefined
+				requestHandler.simulatedCallMaxUsedGas = undefined
+			}
+		})
+
+		test('simulateEstimateGasFromInput adaptively verifies gas when maxUsedGas is omitted', async () => {
+			requestHandler.ethSimulateV1Calls.length = 0
+			requestHandler.omitMaxUsedGas = true
+			requestHandler.simulatedCallGasUsed = 11_332n
+			requestHandler.minimumSuccessfulGasLimit = 113_000n
+			try {
+				const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, [], {
+					from: exampleTransaction.from,
+					to: exampleTransaction.to,
+					value: 0n,
+					input: new Uint8Array(1_000).fill(1),
+				})
+
+				if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
+				assert.equal(estimateGas.gas, 141_650n)
+				assert.deepEqual(requestHandler.ethSimulateV1Calls.map((call) => call.lastCallGas), [undefined, 14_165n, 28_330n, 56_660n, 113_320n])
+			} finally {
+				requestHandler.omitMaxUsedGas = false
+				requestHandler.simulatedCallGasUsed = undefined
+				requestHandler.minimumSuccessfulGasLimit = undefined
+			}
+		})
+
+		test('simulateEstimateGas adaptively verifies gas when maxUsedGas is omitted', async () => {
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			requestHandler.ethSimulateV1Calls.length = 0
+			requestHandler.omitMaxUsedGas = true
+			requestHandler.simulatedCallGasUsed = 11_332n
+			requestHandler.minimumSuccessfulGasLimit = 113_000n
+			try {
+				const estimateGas = await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState(simulationState), {
+					from: exampleTransaction.from,
+					to: exampleTransaction.to,
+					value: 0n,
+					input: new Uint8Array(1_000).fill(1),
+				})
+
+				if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
+				assert.equal(estimateGas.gas, 141_650n)
+				assert.deepEqual(requestHandler.ethSimulateV1Calls.map((call) => call.lastCallGas), [undefined, 14_165n, 28_330n, 56_660n, 113_320n])
+			} finally {
+				requestHandler.omitMaxUsedGas = false
+				requestHandler.simulatedCallGasUsed = undefined
+				requestHandler.minimumSuccessfulGasLimit = undefined
+			}
 		})
 
 		test('simulateEstimateGasFromInput preserves explicit gas', async () => {

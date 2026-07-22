@@ -19,11 +19,14 @@ type UnknownContract = {
 
 export type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
 
+const TOKEN_METADATA_PROBE_GAS_LIMIT = 500_000n
+
 async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, calls: { targetAddress: EthereumAddress, callData: Uint8Array }[]): Promise<{ success: boolean, returnData: Uint8Array }[]> {
 	const results = await ethereumClientService.ethSimulateV1([{ calls: calls.map((call) => ({
 		type: '1559' as const,
 		to: call.targetAddress,
-		input: call.callData
+		input: call.callData,
+		gas: TOKEN_METADATA_PROBE_GAS_LIMIT,
 	}))}], 'latest', requestAbortController)
 	const blockResult = results[0]
 	if (blockResult === undefined) throw new Error('Failed eth_simulateV1 call: did not get a block')
