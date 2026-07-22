@@ -203,6 +203,7 @@ function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Arra
 			status: 'success',
 			returnData: index === callCount - 1 ? lastReturnData : new Uint8Array(),
 			gasUsed: 21_000n,
+			maxUsedGas: 21_000n,
 			logs: [],
 		}],
 	})))
