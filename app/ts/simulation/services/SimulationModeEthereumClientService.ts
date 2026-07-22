@@ -5,7 +5,7 @@ import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, 
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
-import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData, isAbiDataDecodeError } from '../../utils/ethereumPrimitives.js'
+import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -23,6 +23,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -98,6 +99,10 @@ const getCodeAbi = [
 		outputs: [{ name: 'code', type: 'bytes' }],
 	},
 ] as const satisfies Abi
+
+const getCodeStateOverrides = (): StateOverrides => ({
+	[addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() },
+})
 
 export const DEFAULT_BLOCK_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const
 
@@ -998,12 +1003,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		accessList: []
 	} as const
 	try {
-		const result = await simulatedCall(ethereumClientService, undefined, simulationState, getCodeTransaction, blockTag)
+		const result = await simulatedCall(ethereumClientService, undefined, simulationState, getCodeTransaction, blockTag, getCodeStateOverrides())
 		if ('error' in result) return { statusCode: 'failure' } as const
 		const parsed = decodeFunctionOutput(getCodeAbi, 'at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed) } as const
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError || isAbiDataDecodeError(error)) return { statusCode: 'failure' } as const
+		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
 		throw error
 	}
 }
@@ -1292,6 +1297,7 @@ const simulatedCallWithPreparedInputContext = async (
 	context: PreparedSimulationExecutionContext | undefined,
 	params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>,
 	blockTag: EthereumBlockTag = 'latest',
+	extraOverrides: StateOverrides = {},
 ) => {
 	if (blockTag === 'finalized') {
 		try {
@@ -1314,7 +1320,7 @@ const simulatedCallWithPreparedInputContext = async (
 		...(params.gasLimit === undefined ? {} : { gasLimit: params.gasLimit }),
 	} as const
 	try {
-		const callResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, transaction)
+		const callResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, transaction, extraOverrides)
 		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 		if (callResult.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }
@@ -1370,12 +1376,12 @@ export const getSimulatedCodeFromInput = async (
 		accessList: []
 	} as const
 	try {
-		const result = await simulatedCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, getCodeTransaction, blockTag)
+		const result = await simulatedCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, getCodeTransaction, blockTag, getCodeStateOverrides())
 		if ('error' in result) return { statusCode: 'failure' } as const
 		const parsed = decodeFunctionOutput(getCodeAbi, 'at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed) } as const
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError || isAbiDataDecodeError(error)) return { statusCode: 'failure' } as const
+		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
 		throw error
 	}
 }
@@ -1651,7 +1657,7 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 }
 
-export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest') => {
+export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest', extraOverrides: StateOverrides = {}) => {
 	if (blockTag === 'finalized') {
 		try {
 			return { result: await ethereumClientService.call(params, 'finalized', requestAbortController) }
@@ -1675,7 +1681,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 
 	//todo, we can optimize this by leaving nonce out
 	try {
-		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction)
+		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction, extraOverrides)
 		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 		if (callResult?.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }
