@@ -1,3 +1,6 @@
 [install]
 exact = true
 ignoreScripts = true
+
+[test]
+preload = ["./build/compileSolidityContracts.mts"]

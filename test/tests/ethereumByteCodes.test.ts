@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getCodeByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
+import { getCodeByteCode, getCompoundGovernanceTimeLockMulticall, getEcRecoverOverride, getGnosisSafeProxyProxy } from '../../app/ts/utils/ethereumByteCodes.js'
 
 const PUSH1 = 0x60
 const PUSH2 = 0x61
@@ -37,7 +37,13 @@ const decodeExecutableInstructions = (bytecode: Uint8Array): readonly Instructio
 	return instructions
 }
 
-describe('embedded EVM bytecode', () => {
+describe('compiled Solidity contracts', () => {
+	test('all simulation helper contracts have runtime bytecode', () => {
+		for (const getByteCode of [getEcRecoverOverride, getCompoundGovernanceTimeLockMulticall, getCodeByteCode, getGnosisSafeProxyProxy]) {
+			assert.ok(getByteCode().length > 0)
+		}
+	})
+
 	test('GetCode static labels target JUMPDEST instructions', () => {
 		const bytecode = getCodeByteCode()
 		const instructions = decodeExecutableInstructions(bytecode)
