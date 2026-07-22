@@ -5,7 +5,7 @@ import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, 
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
-import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
+import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData, isAbiDataDecodeError } from '../../utils/ethereumPrimitives.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -1003,7 +1003,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		const parsed = decodeFunctionOutput(getCodeAbi, 'at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed) } as const
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
+		if (error instanceof JsonRpcResponseError || isAbiDataDecodeError(error)) return { statusCode: 'failure' } as const
 		throw error
 	}
 }
@@ -1375,7 +1375,7 @@ export const getSimulatedCodeFromInput = async (
 		const parsed = decodeFunctionOutput(getCodeAbi, 'at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed) } as const
 	} catch(error: unknown) {
-		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' } as const
+		if (error instanceof JsonRpcResponseError || isAbiDataDecodeError(error)) return { statusCode: 'failure' } as const
 		throw error
 	}
 }

@@ -5,7 +5,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
@@ -94,6 +94,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public simulatedCallGasUsed: bigint | undefined = undefined
 	public simulatedCallMaxUsedGas: bigint | undefined = undefined
 	public minimumSuccessfulGasLimit: bigint | undefined = undefined
+	public malformedGetCodeReturn = false
 	public balance = 0n
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBlockByHashErrorsByHash = new Map<bigint, Error>()
@@ -147,7 +148,7 @@ class MockEthereumJSONRpcRequestHandler {
 						...singleTransactionBlock,
 						calls: [{
 							...singleCall,
-							returnData: encodeFunctionReturn(getCodeAbi, 'at', ['0x1234']),
+							returnData: this.malformedGetCodeReturn ? '0x' : encodeFunctionReturn(getCodeAbi, 'at', ['0x1234']),
 						}],
 					})
 				}
@@ -987,6 +988,28 @@ describe('SimulationModeEthereumClientService', () => {
 			if (simulatedCode.statusCode !== 'success') throw new Error('simulated code unexpectedly failed')
 			assert.equal(dataStringWith0xStart(simulatedCode.getCodeReturn), '0x1234')
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
+		})
+
+		test('getSimulatedCodeFromInput treats malformed code lookup output as a lookup failure', async () => {
+			requestHandler.malformedGetCodeReturn = true
+			try {
+				const simulatedCode = await getSimulatedCodeFromInput(ethereum, undefined, createSimulationStateInput(), 0x1234n)
+				assert.deepEqual(simulatedCode, { statusCode: 'failure' })
+			} finally {
+				requestHandler.malformedGetCodeReturn = false
+			}
+		})
+
+		test('getSimulatedCode treats malformed code lookup output as a lookup failure', async () => {
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			requestHandler.malformedGetCodeReturn = true
+			try {
+				const simulatedCode = await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(simulationState), 0x1234n)
+				assert.deepEqual(simulatedCode, { statusCode: 'failure' })
+			} finally {
+				requestHandler.malformedGetCodeReturn = false
+			}
 		})
 
 		test('simulateEstimateGasFromInput surfaces RPC errors when omitted gas is rejected', async () => {
