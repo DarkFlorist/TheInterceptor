@@ -56,6 +56,15 @@ function parseExactMajorMinor(version: string) {
 }
 
 describe('package scripts', () => {
+	test('test script compiles Solidity contracts before starting the test runner', () => {
+		const scripts = getPackageScripts()
+
+		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
+			'bun run compile-contracts',
+			'bun test',
+		])
+	})
+
 	test('firefox build compiles app scripts before writing the manifest', () => {
 		const scripts = getPackageScripts()
 
@@ -91,7 +100,7 @@ describe('package scripts', () => {
 		}
 	})
 
-	test('app compilation keeps declaration output enabled through the project configuration', () => {
+	test('app compilation builds Solidity contracts and keeps declaration output enabled', () => {
 		const scripts = getPackageScripts()
 		const configFile = ts.readConfigFile(path.join(repositoryRoot, 'tsconfig.json'), ts.sys.readFile)
 		assert.equal(configFile.error, undefined)
@@ -99,7 +108,11 @@ describe('package scripts', () => {
 		const compilerOptions = configFile.config.compilerOptions
 		assert.ok(isRecord(compilerOptions))
 
-		assert.equal(getScript(scripts, 'compile-app'), 'bun run clean-js-output && bun --bun tsc --project tsconfig.json')
+		assert.deepEqual(getScript(scripts, 'compile-app').split(' && '), [
+			'bun run compile-contracts',
+			'bun run clean-js-output',
+			'bun --bun tsc --project tsconfig.json',
+		])
 		assert.equal(compilerOptions.declaration, true)
 		assert.equal(compilerOptions.declarationMap, true)
 	})
