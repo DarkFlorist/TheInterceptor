@@ -3,7 +3,7 @@ import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEt
 import { getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getInputFieldFromDataOrInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../types/visualizer-types.js'
+import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SendRawTransactionParams, SendTransactionParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
@@ -13,7 +13,7 @@ import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { printError } from '../utils/errors.js'
-import { openFetchSimulationStackDialogOrGetCachedResult } from './windows/fetchSimulationStack.js'
+import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
@@ -214,8 +214,6 @@ export async function handleIterceptorError(request: InterceptorError) {
 	return { type: 'doNotReply' as const }
 }
 
-export async function requestInterceptorSimulatorStack(simulationState: ResolvedSimulationState, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
-	const result = await openFetchSimulationStackDialogOrGetCachedResult(simulationState, websiteTabConnections, params, website, request, socket)
-	if ('error' in result && result.error !== undefined) return { type: 'result' as const, method: params.method, error: result.error }
-	return { type: 'result' as const, method: params.method, ...result }
+export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, websiteTabConnections, params, website, request, socket)
 }
