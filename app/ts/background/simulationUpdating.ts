@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
@@ -381,7 +381,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			)
 			const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
 				prevState.simulationState.value.simulatedBlocks, async (block) => {
-					const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
+					const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 					return promiseAllMapAbortSafe(transactions, (transaction) =>
 						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
 					)
@@ -506,7 +506,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	)
 	const protectorsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulatedBlocks, async (block, blockIndex) => {
-			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
+			const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 			return await promiseAllMapAbortSafe(transactions, async (transaction, transactionIndex) => {
 				const slicedSimulationState = sliceSimulationState(simulationState, blockIndex, transactionIndex)
 				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController)
