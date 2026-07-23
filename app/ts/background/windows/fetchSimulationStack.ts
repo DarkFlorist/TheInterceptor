@@ -133,7 +133,10 @@ export const openFetchSimulationStackDialog = async (
 				simulationStackHash: getSimulationStackHash(reply.snapshot.simulationInput),
 			}
 		}
-		return userDeniedChange
+		return {
+			...userDeniedChange,
+			simulationStackHash: getSimulationStackHash(reply.snapshot.simulationInput),
+		}
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined
@@ -157,7 +160,7 @@ export async function openFetchSimulationStackDialogOrGetCachedResult(initialSna
 	}
 	const result = await openFetchSimulationStackDialog(initialSnapshot, websiteTabConnections, request.uniqueRequestIdentifier, params, website)
 	simulationStackDecisions = simulationStackDecisions.filter((x) => x.identifier !== identifier)
-	simulationStackDecisions.push({ identifier, hash: 'error' in result ? newHash : result.simulationStackHash, accept: !('error' in result) })
+	simulationStackDecisions.push({ identifier, hash: 'simulationStackHash' in result ? result.simulationStackHash : newHash, accept: !('error' in result) })
 	if (simulationStackDecisions.length > MAX_DECISION_CACHE) simulationStackDecisions.shift()
 	if ('error' in result) return { type: 'result' as const, method: params.method, error: result.error }
 	return { type: 'result' as const, method: params.method, result: result.result }

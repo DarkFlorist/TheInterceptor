@@ -14,6 +14,7 @@ import type { BlockTimeManipulation, SimulationStateInputMinimalData, Simulation
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
+import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -83,7 +84,7 @@ const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 			maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
 			maxFeePerGas: transaction.maxFeePerGas,
 			...transaction.accessList !== undefined ? { accessList: transaction.accessList } : {},
-			authorizationList: transaction.authorizationList,
+			authorizationList: transaction.authorizationList.map(projectEip7702AuthorizationForRpc),
 			...signatureFields,
 		}
 		default: {

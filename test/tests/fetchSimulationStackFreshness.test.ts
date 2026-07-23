@@ -5,6 +5,7 @@ import type { SimulationStackSnapshot } from '../../app/ts/background/windows/fe
 
 const storageState: Record<string, unknown> = {}
 let popupWindowExists = false
+let popupWindowCreationCount = 0
 
 function installBrowserMock() {
 	Object.defineProperty(globalThis, 'browser', {
@@ -39,6 +40,7 @@ function installBrowserMock() {
 			windows: {
 				async create() {
 					popupWindowExists = true
+					popupWindowCreationCount += 1
 					return { id: 41 }
 				},
 				async get() {
@@ -106,6 +108,7 @@ describe('fetch simulation stack freshness', () => {
 	test('returns and fingerprints the confirmation-time snapshot', async () => {
 		for (const key of Object.keys(storageState)) delete storageState[key]
 		popupWindowExists = false
+		popupWindowCreationCount = 0
 		const modules = await modulesPromise
 		const initialSnapshot = createSnapshot(1n)
 		const confirmationSnapshot = createSnapshot(2n)
@@ -133,5 +136,41 @@ describe('fetch simulation stack freshness', () => {
 		assert.deepEqual(result.result.payload.stateOverrides, confirmationSnapshot.simulationInput.value[0]?.stateOverrides)
 		assert.equal(result.simulationStackHash, modules.getSimulationStackHash(confirmationSnapshot.simulationInput))
 		assert.notEqual(result.simulationStackHash, modules.getSimulationStackHash(initialSnapshot.simulationInput))
+	})
+
+	test('caches rejection for the confirmation-time snapshot only', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		popupWindowExists = false
+		popupWindowCreationCount = 0
+		const modules = await modulesPromise
+		const initialSnapshot = createSnapshot(3n)
+		const confirmationSnapshot = createSnapshot(4n)
+		const socket = { tabId: 8, connectionName: 13n }
+		const website = { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }
+		const params = { method: 'interceptor_getSimulationStack' as const, params: ['2.0.0' as const] }
+		const createRequest = (requestId: number) => ({ method: params.method, params: params.params, uniqueRequestIdentifier: { requestId, requestSocket: socket } })
+		const reject = (requestId: number): FetchSimulationStackRequestConfirmation => ({
+			method: 'popup_fetchSimulationStackRequestConfirmation',
+			data: {
+				accept: false,
+				simulationStackVersion: '2.0.0',
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+			},
+		})
+
+		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, new Map(), params, website, createRequest(20), socket)
+		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), reject(20))
+		const firstResult = await firstRequest
+		assert.ok('error' in firstResult)
+		assert.equal(popupWindowCreationCount, 1)
+
+		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, new Map(), params, website, createRequest(21), socket)
+		assert.ok('error' in cachedConfirmationResult)
+		assert.equal(popupWindowCreationCount, 1)
+
+		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, new Map(), params, website, createRequest(22), socket)
+		await modules.resolveFetchSimulationStackRequest(initialSnapshot, new Map(), reject(22))
+		await initialSnapshotRequest
+		assert.equal(popupWindowCreationCount, 2)
 	})
 })

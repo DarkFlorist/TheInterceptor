@@ -35,7 +35,7 @@ import { searchWebsiteAccess } from './websiteAccessSearch.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { getWebsiteCreatedEthereumUnsignedTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
@@ -1182,7 +1182,7 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 	))
 	const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(Promise.all(
 		simulationState.value.simulatedBlocks.map((block) => {
-			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
+			const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 			return Promise.all(transactions.map((transaction) =>
 				parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereumClientService, undefined)
 			))
