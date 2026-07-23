@@ -29,12 +29,26 @@ export type SignerStateToken = {
 	readonly signerProviderGeneration: number
 }
 
+export type SignerStateIdentity = {
+	readonly tabId: number
+	readonly connectionName: bigint
+	readonly ownerGeneration: number
+	readonly signerProviderGeneration: number
+}
+
 export function doSignerStateTokensMatch(first: SignerStateToken, second: SignerStateToken) {
 	return first.socket.tabId === second.socket.tabId
 		&& first.socket.connectionName === second.socket.connectionName
 		&& first.port === second.port
 		&& first.ownerGeneration === second.ownerGeneration
 		&& first.signerProviderGeneration === second.signerProviderGeneration
+}
+
+export function doesSignerStateTokenMatchIdentity(token: SignerStateToken, identity: SignerStateIdentity) {
+	return token.socket.tabId === identity.tabId
+		&& token.socket.connectionName === identity.connectionName
+		&& token.ownerGeneration === identity.ownerGeneration
+		&& token.signerProviderGeneration === identity.signerProviderGeneration
 }
 
 function createSignerStateConfirmation() {
@@ -182,10 +196,20 @@ export function tabHasApprovedWebsiteConnection(websiteTabConnections: WebsiteTa
 export function sendCallbackToConfirmedSignerOwner(websiteTabConnections: WebsiteTabConnections, tabId: number, message: InpageScriptCallBack) {
 	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
 	if (signerStateToken === undefined) return false
-	const tabConnection = websiteTabConnections.get(tabId)
+	return sendCallbackToSignerStateToken(websiteTabConnections, signerStateToken, message)
+}
+
+function sendCallbackToSignerStateToken(websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, message: InpageScriptCallBack) {
+	const tabConnection = websiteTabConnections.get(signerStateToken.socket.tabId)
 	const ownerConnection = tabConnection?.connections[websiteSocketToString(signerStateToken.socket)]
-	if (!tabHasApprovedWebsiteConnection(websiteTabConnections, tabId) || ownerConnection?.port !== signerStateToken.port) return false
+	if (!tabHasApprovedWebsiteConnection(websiteTabConnections, signerStateToken.socket.tabId) || ownerConnection?.port !== signerStateToken.port) return false
 	return sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, { type: 'result', ...message }) ? signerStateToken : false
+}
+
+export function sendCallbackToExpectedConfirmedSignerOwner(websiteTabConnections: WebsiteTabConnections, identity: SignerStateIdentity, message: InpageScriptCallBack) {
+	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, identity.tabId)
+	if (signerStateToken === undefined || !doesSignerStateTokenMatchIdentity(signerStateToken, identity)) return false
+	return sendCallbackToSignerStateToken(websiteTabConnections, signerStateToken, message)
 }
 
 export function sendCallbackToAllConfirmedSignerOwners(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {

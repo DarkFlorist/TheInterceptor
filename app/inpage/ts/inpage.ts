@@ -264,7 +264,8 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((error: ProviderRpcError) => void)
 	| ((chainId: string) => void)
 
-type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
+type EthereumRequestParameters = readonly unknown[] | Readonly<Record<string, unknown>>
+type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
 
 type InjectFunctions = {
 	request: EthereumRequest
@@ -705,13 +706,17 @@ class InterceptorMessageListener {
 	}
 
 	// sends a message to interceptors background script
-	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
+	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
+			const params = methodAndParams.method === 'wallet_watchAsset' && methodAndParams.params !== undefined && !Array.isArray(methodAndParams.params)
+				? [methodAndParams.params]
+				: methodAndParams.params
+			if (params !== undefined && !Array.isArray(params)) throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, 'Named parameters are only supported for wallet_watchAsset.')
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
-				...(methodAndParams.params !== undefined ? { params: methodAndParams.params } : {}),
+				...(params !== undefined ? { params } : {}),
 			})
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
@@ -719,7 +724,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false) => {
+	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false) => {
 		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 		try {
 			return await this.signerWindowEthereumRequest(methodAndParams)
@@ -1056,7 +1061,7 @@ class InterceptorMessageListener {
 		return { type: 'error', requestAccounts, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }
 	}
 
-	private readonly requestFromCurrentSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false): Promise<SignerProviderRequestOutcome> => {
+	private readonly requestFromCurrentSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false): Promise<SignerProviderRequestOutcome> => {
 		const signerProviderGeneration = this.signerProviderGeneration
 		const providerChange = new InterceptorFuture<void>()
 		this.signerProviderChangeWaiters.add(providerChange)
@@ -1218,6 +1223,12 @@ class InterceptorMessageListener {
 		})
 	}
 
+	private readonly requestWatchAssetFromSigner = async (parameters: unknown) => {
+		if (this.signerWindowEthereumRequest === undefined) return
+		if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) return
+		await this.requestFromCurrentSigner({ method: 'wallet_watchAsset', params: Object.fromEntries(Object.entries(parameters)) })
+	}
+
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
 		try {
 			if (replyRequest.subscription !== undefined) {
@@ -1298,6 +1309,7 @@ class InterceptorMessageListener {
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
+				case 'request_signer_to_wallet_watchAsset': return await this.requestWatchAssetFromSigner(replyRequest.result)
 				case 'request_signer_connection_status': return await this.connectToSigner(this.signerName)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
