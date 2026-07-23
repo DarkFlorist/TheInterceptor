@@ -382,11 +382,12 @@ describe('wallet_watchAsset', () => {
 		expect(addressBook).toEqual([])
 	})
 
-	test('rejects a directly probed non-ERC20 without scheduling a dialog', async () => {
+	test('rejects an unverified non-ERC20 without scheduling a dialog', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		let scheduled = false
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
+			loadErc20: async () => ({ success: false, code: -32602, message: 'The requested address could not be verified as an ERC20 token contract.' }),
 			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { scheduled = true },
 		})
@@ -399,16 +400,16 @@ describe('wallet_watchAsset', () => {
 		expect(scheduled).toBeFalse()
 	})
 
-	test('returns unexpected on-chain verification failures to the webpage', async () => {
+	test('propagates unexpected on-chain verification failures to the background error handler', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		const failure = new Error('RPC transport failed')
 
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+		const result = handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async () => { throw failure },
 			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { throw new Error('Dialog must not be scheduled') },
 		})
-		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', error: { code: -32602, message: 'Unable to verify the asset contract on the active chain.' } })
+		await expect(result).rejects.toBe(failure)
 	})
 
 	test('loads and accepts EIP-747 ERC1046 metadata before acknowledging the request', async () => {

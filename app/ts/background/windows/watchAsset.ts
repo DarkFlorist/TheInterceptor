@@ -360,12 +360,7 @@ export async function handleWatchAssetRequest(
 	const addressBookType = requestedAsset.type === 'ERC1046' ? 'ERC20' : requestedAsset.type
 	const existingEntry = addressBookEntries.find((entry): entry is WatchAssetAddressBookEntry => entry.address === requestedAsset.options.address && entry.type === addressBookType)
 	const identifyAddress = dependencies.identifyAddress ?? itentifyAddressViaOnChainInformation
-	let identified: Awaited<ReturnType<typeof itentifyAddressViaOnChainInformation>>
-	try {
-		identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
-	} catch {
-		return invalidWatchAssetRequest('Unable to verify the asset contract on the active chain.')
-	}
+	const identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
 	let identifiedToken: WatchAssetAddressBookEntry
 	let proposedImageUrl: string | undefined = requestedAsset.type === 'ERC20' ? normalizeWatchAssetImageUrl(requestedAsset.options.image) : undefined
 	let proposedAssetName: string | undefined

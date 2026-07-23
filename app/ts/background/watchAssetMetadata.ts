@@ -4,6 +4,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import { Erc1046ABI, Erc1155ABI, Erc20ABI, Erc721ABI } from '../utils/abi.js'
 import { decodeFunctionOutputSafely, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, stringToUint8Array } from '../utils/bigint.js'
+import { JsonRpcResponseError } from '../utils/errors.js'
 import { fetchWithTimeout } from '../utils/requests.js'
 import { isBigint, isNumberOrBigint, isString } from '../utils/typescript.js'
 
@@ -168,7 +169,8 @@ async function getOptionalContractResult<T>(ethereum: EthereumClientService, add
 	try {
 		const result = await callContract(ethereum, address, abi, functionName, args)
 		return decodeFunctionOutputSafely(abi, functionName, result, isExpectedType)
-	} catch {
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
 		return undefined
 	}
 }
@@ -187,7 +189,8 @@ export async function loadErc1046Metadata(ethereum: EthereumClientService, addre
 	let metadataUri: string | undefined
 	try {
 		metadataUri = await getStringContractResult(ethereum, address, Erc1046ABI, 'tokenURI', [])
-	} catch {
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
 		return invalidMetadata('The ERC1046 tokenURI() call failed.')
 	}
 	if (metadataUri === undefined) return invalidMetadata('The ERC1046 tokenURI() result was invalid.')
@@ -230,7 +233,8 @@ export async function loadNftMetadataAndVerifyOwnership(ethereum: EthereumClient
 			if (balance === undefined) return { success: false, code: -32002, message: 'Unable to verify ERC1155 ownership.' }
 			if (balance === 0n) return { success: false, code: -32000, message: 'The selected address does not own the requested ERC1155 token.' }
 		}
-	} catch {
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
 		return { success: false, code: -32002, message: `Unable to verify ${ type } ownership.` }
 	}
 	let metadataUri: string | undefined
@@ -238,7 +242,8 @@ export async function loadNftMetadataAndVerifyOwnership(ethereum: EthereumClient
 		metadataUri = type === 'ERC721'
 			? await getStringContractResult(ethereum, address, Erc721ABI, 'tokenURI', [tokenId])
 			: await getStringContractResult(ethereum, address, Erc1155ABI, 'uri', [tokenId])
-	} catch {
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
 		return invalidMetadata(`The ${ type } metadata URI call failed.`)
 	}
 	if (metadataUri === undefined) return invalidMetadata(`The ${ type } metadata URI result was invalid.`)

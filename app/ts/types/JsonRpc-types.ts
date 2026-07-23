@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -62,6 +62,13 @@ export const EthBalanceChanges = funtypes.ReadonlyArray(
 
 export type PartialEthereumTransaction = funtypes.Static<typeof PartialEthereumTransaction>
 export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
+	type: funtypes.Union(
+		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
+		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+	),
 	from: EthereumAddress,
 	gas: EthereumQuantity,
 	value: EthereumQuantity,
@@ -71,6 +78,15 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
+	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		chainId: EthereumQuantity,
+		address: EthereumAddress,
+		nonce: EthereumQuantity,
+	}).And(funtypes.ReadonlyPartial({
+		r: EthereumQuantity,
+		s: EthereumQuantity,
+		yParity: EthereumSignatureParity,
+	}))),
 }).withConstraint((PartialEthereumTransaction) => {
 	if (PartialEthereumTransaction.input !== undefined && PartialEthereumTransaction.data !== undefined) {
 		return areEqualUint8Arrays(PartialEthereumTransaction.input, PartialEthereumTransaction.data)

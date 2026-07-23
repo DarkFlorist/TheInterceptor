@@ -3,6 +3,7 @@ import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { describe, test } from 'bun:test'
 
 type RuntimeMessage = {
@@ -318,9 +319,20 @@ const {
 
 const activeAddress = defaultActiveAddresses[0]?.address
 const rpcNetwork = defaultRpcs[0]
-const sameChainRpcNetwork = defaultRpcs[3]
-const otherChainRpcNetwork = defaultRpcs[1]
-if (activeAddress === undefined || rpcNetwork === undefined || sameChainRpcNetwork === undefined || otherChainRpcNetwork === undefined) throw new Error('test defaults are missing')
+if (activeAddress === undefined || rpcNetwork === undefined) throw new Error('test defaults are missing')
+const sameChainRpcNetwork: RpcNetwork = {
+	...rpcNetwork,
+	name: 'Alternative Ethereum Mainnet',
+	httpsRpc: 'https://mainnet.example.com',
+	primary: false,
+}
+const otherChainRpcNetwork: RpcNetwork = {
+	...rpcNetwork,
+	name: 'Test Chain',
+	chainId: 2n,
+	httpsRpc: 'https://chain.example.com',
+	primary: false,
+}
 
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
@@ -455,8 +467,8 @@ describe('popup clear reset', () => {
 	test('preserves the interceptor stack when changing rpc within the same chain', async () => {
 		browserMock.reset()
 		browserMock.setPopupOpen(false)
-		const resets: TestModules['defaultRpcs'][number][] = []
-		const resetSimulationServices = (nextRpcEntry: TestModules['defaultRpcs'][number]) => {
+		const resets: RpcNetwork[] = []
+		const resetSimulationServices = (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
 		}
 		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
@@ -483,8 +495,8 @@ describe('popup clear reset', () => {
 
 	test('clears the interceptor stack when changing rpc to another chain', async () => {
 		browserMock.reset()
-		const resets: TestModules['defaultRpcs'][number][] = []
-		const resetSimulationServices = (nextRpcEntry: TestModules['defaultRpcs'][number]) => {
+		const resets: RpcNetwork[] = []
+		const resetSimulationServices = (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
 		}
 		await browserStorageLocalSet({

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { Erc1046ABI, Erc1155ABI, Erc721ABI } from '../../app/ts/utils/abi.js'
+import { Erc1046ABI, Erc1155ABI, Erc20ABI, Erc721ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
-import { loadErc1046Metadata, loadNftMetadataAndVerifyOwnership } from '../../app/ts/background/watchAssetMetadata.js'
+import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership } from '../../app/ts/background/watchAssetMetadata.js'
 
 const rpcEntry = {
 	name: 'Ethereum',
@@ -17,18 +17,19 @@ const rpcEntry = {
 
 class SequentialCallHandler {
 	public rpcUrl = rpcEntry.httpsRpc
-	public constructor(private readonly replies: string[]) {}
+	public constructor(private readonly replies: (string | Error)[]) {}
 	public readonly jsonRpcRequest = async (request: EthereumJsonRpcRequest) => {
 		if (request.method !== 'eth_call') throw new Error(`Unexpected RPC method ${ request.method }`)
 		const reply = this.replies.shift()
 		if (reply === undefined) throw new Error('Unexpected extra eth_call')
+		if (reply instanceof Error) throw reply
 		return reply
 	}
 	public readonly clearCache = () => undefined
 	public readonly getChainId = async () => 1n
 }
 
-function createEthereum(replies: string[]) {
+function createEthereum(replies: (string | Error)[]) {
 	return new EthereumClientService(new SequentialCallHandler(replies), async () => undefined, async () => undefined, rpcEntry)
 }
 
@@ -118,5 +119,29 @@ describe('watch asset contract metadata', () => {
 
 		const noAddress = await loadNftMetadataAndVerifyOwnership(createEthereum([]), 'ERC721', 1n, 42n, undefined)
 		expect(noAddress).toEqual({ success: false, code: -32002, message: 'Unable to verify NFT ownership because no active address is available.' })
+	})
+
+	test('propagates unexpected contract-call failures instead of reporting invalid metadata', async () => {
+		const failure = new Error('RPC transport failed')
+		const totalSupply = encodeFunctionReturn(Erc20ABI, 'totalSupply', [1n])
+		const name = encodeFunctionReturn(Erc20ABI, 'name', ['Token'])
+		const symbol = encodeFunctionReturn(Erc20ABI, 'symbol', ['TKN'])
+
+		await expect(loadLegacyErc20Metadata(createEthereum([
+			totalSupply,
+			name,
+			symbol,
+			failure,
+		]), 1n)).rejects.toBe(failure)
+		await expect(loadErc1046Metadata(createEthereum([failure]), 1n)).rejects.toBe(failure)
+
+		const activeAddress = 0x2222222222222222222222222222222222222222n
+		await expect(loadNftMetadataAndVerifyOwnership(createEthereum([failure]), 'ERC721', 1n, 42n, activeAddress)).rejects.toBe(failure)
+		await expect(loadNftMetadataAndVerifyOwnership(createEthereum([failure]), 'ERC1155', 1n, 42n, activeAddress)).rejects.toBe(failure)
+
+		const owner = encodeFunctionReturn(Erc721ABI, 'ownerOf', [`0x${ activeAddress.toString(16) }`])
+		await expect(loadNftMetadataAndVerifyOwnership(createEthereum([owner, failure]), 'ERC721', 1n, 42n, activeAddress)).rejects.toBe(failure)
+		const balance = encodeFunctionReturn(Erc1155ABI, 'balanceOf', [1n])
+		await expect(loadNftMetadataAndVerifyOwnership(createEthereum([balance, failure]), 'ERC1155', 1n, 42n, activeAddress)).rejects.toBe(failure)
 	})
 })
